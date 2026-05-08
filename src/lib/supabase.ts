@@ -61,18 +61,18 @@ export interface LeaderboardEntry {
 
 // ── Auth helpers ────────────────────────────────────────────
 export async function signUp(email: string, password: string, profile: Omit<Profile, "id" | "created_at">) {
-  const { data, error } = await supabase.auth.signUp({ email, password });
-  if (error || !data.user) throw error;
-  // Insert profile row linked to auth user
-  const { error: profileError } = await supabase
-    .from("profiles")
-    .insert({ id: data.user.id, ...profile });
-  if (profileError) throw profileError;
-  return data;
-}
-
-export async function signIn(email: string, password: string) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        name: profile.name,
+        role: profile.role,
+        position: profile.position,
+        jersey: profile.jersey,
+      }
+    }
+  });
   if (error) throw error;
   return data;
 }
