@@ -27,7 +27,7 @@ export type ScoringType = "competitive" | "self_reported" | "flat";
 
 // ── Streak bonus ──────────────────────────────────────────────
 export const STREAK_BONUS_DAYS = 7;   // consecutive days to trigger bonus
-export const STREAK_BONUS_PTS  = 50;  // bonus points awarded
+export const STREAK_BONUS_PTS  = 3;  // bonus points awarded
 
 // ── Biweekly period helper ────────────────────────────────────
 // Returns the start date of the current 2-week period (anchored to a fixed epoch)
