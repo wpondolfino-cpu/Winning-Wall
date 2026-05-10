@@ -40,7 +40,8 @@ export default function App() {
 
   if (loading) return <div className="full-center">Loading…</div>;
   if (!user || !profile) return <LoginPage />;
-
+  if (profile.must_change_password) return <ChangePassword onComplete={() => window.location.reload()} />;
+  
   const isPlayer = profile.role === "player";
   const isCoach  = profile.role === "coach";
   const isAdmin  = profile.role === "admin";
