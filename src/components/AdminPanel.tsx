@@ -69,8 +69,16 @@ export default function AdminPanel({ allScores, workouts }: Props) {
     try {
       const role = activeTab === "coaches" ? "coach" : "player";
       const { error } = await supabase.auth.signUp({
-        email: addEmail, password: addPass,
-        options: { data: { name: addName, role, grade_category: activeTab === "players" ? addGrade : undefined } },
+        email: addEmail,
+        password: addPass,
+        options: {
+          data: {
+            name: addName,
+            role,
+            grade_category: activeTab === "players" ? addGrade : undefined,
+            temp_password: addPass,
+          },
+        },
       });
       if (error) throw error;
       setShowAdd(false); setAddName(""); setAddEmail(""); setAddPass("");
