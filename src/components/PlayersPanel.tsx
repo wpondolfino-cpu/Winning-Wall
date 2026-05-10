@@ -106,7 +106,14 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       const { data, error } = await supabase.auth.signUp({
         email: addEmail,
         password: addPass,
-        options: { data: { name: addName, role: "player", grade_category: addGrade } },
+        options: {
+          data: {
+            name: addName,
+            role: "player",
+            grade_category: addGrade,
+            temp_password: addPass,
+          },
+        },
       });
       if (error) throw error;
       setShowAdd(false); setAddName(""); setAddEmail(""); setAddPass("");
