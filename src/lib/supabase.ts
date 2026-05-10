@@ -6,6 +6,12 @@ const SUPABASE_ANON_KEY = (import.meta as any).env.VITE_SUPABASE_ANON_KEY as str
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   realtime: { params: { eventsPerSecond: 10 } },
+  auth: {
+    persistSession: true,
+    storageKey: "ahs-winning-wall-auth",
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
 });
 
 // ── Grade Categories ──────────────────────────────────────────
