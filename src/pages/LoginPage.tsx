@@ -22,7 +22,11 @@ export default function LoginPage() {
     setLoading(true);
     try {
       if (mode === "signin") {
-        await signIn(email, password);
+       await supabase.auth.signInWithPassword({
+  email,
+  password,
+  options: { captchaToken: undefined }
+});
       } else {
         if (!name.trim()) { setError("Please enter your name."); setLoading(false); return; }
         await signUp(email, password, {
