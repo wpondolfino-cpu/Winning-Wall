@@ -1,4 +1,5 @@
 // src/App.tsx
+import ChangePassword from "./components/ChangePassword";
 import { useEffect, useState } from "react";
 import { useAuth } from "./hooks/useAuth";
 import { useWorkouts } from "./hooks/useWorkouts";
