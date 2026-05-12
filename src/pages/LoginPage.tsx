@@ -107,7 +107,7 @@ export default function LoginPage() {
                   </select>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <div className="form-group">
                     <label>Position</label>
                     <select value={position} onChange={e => setPosition(e.target.value)}>
