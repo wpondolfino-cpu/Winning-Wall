@@ -107,25 +107,7 @@ export default function LoginPage() {
                   </select>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  <div className="form-group">
-                    <label>Position</label>
-                    <select value={position} onChange={e => setPosition(e.target.value)}>
-                      {["PG", "SG", "SF", "PF", "C"].map(p => (
-                        <option key={p}>{p}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Jersey #</label>
-                    <input
-                      type="number"
-                      value={jersey}
-                      onChange={e => setJersey(e.target.value)}
-                      placeholder="e.g. 4"
-                    />
-                  </div>
-                </div>
+                
               </>
             )}
           </>
