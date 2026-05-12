@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#1a3fa8" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- iOS specific -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Winning Wall" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+
+    <!-- SEO / share -->
+    <meta name="description" content="AHS Offseason Basketball Training Platform" />
+    <meta property="og:title" content="AHS Winning Wall" />
+    <meta property="og:description" content="Track workouts, compete on the leaderboard, and grind this offseason." />
+    <meta property="og:image" content="/icons/icon-512.png" />
+
+    <title>AHS Winning Wall</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Register Service Worker -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('SW registered:', reg.scope))
+            .catch(err => console.log('SW failed:', err));
+        });
+      }
+    </script>
+  </body>
+</html>
