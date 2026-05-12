@@ -4,7 +4,7 @@ Full-stack offseason basketball training platform with real auth, persistent dat
 
 ---
 
-## Tech Stack
+## Tech Stack 
 
 | Layer | Technology |
 |---|---|
