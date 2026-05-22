@@ -6,7 +6,7 @@ export interface Badge {
   icon: string;
   name: string;
   description: string;
-  trigger_type: "workouts" | "points" | "streak" | "champion" | "top_score";
+  trigger_type: "workouts" | "points" | "streak" | "champion" | "top_score" | "challenges_won";
   trigger_value: number;
   is_active: boolean;
 }
@@ -19,6 +19,7 @@ export interface PlayerStats {
   isGroupChampion: boolean;
   hasPerfectScore: boolean;
   daysActive: number;
+  challengesWon: number;
 }
 
 export async function getActiveBadges(): Promise<Badge[]> {
@@ -33,11 +34,12 @@ export async function getActiveBadges(): Promise<Badge[]> {
 
 export function checkBadge(badge: Badge, stats: PlayerStats): boolean {
   switch (badge.trigger_type) {
-    case "workouts":  return stats.totalWorkouts >= badge.trigger_value;
-    case "points":    return stats.totalPoints >= badge.trigger_value;
-    case "streak":    return stats.currentStreak >= badge.trigger_value;
-    case "champion":  return stats.isGroupChampion;
-    case "top_score": return stats.hasPerfectScore;
+    case "workouts":        return stats.totalWorkouts >= badge.trigger_value;
+    case "points":          return stats.totalPoints >= badge.trigger_value;
+    case "streak":          return stats.currentStreak >= badge.trigger_value;
+    case "champion":        return stats.isGroupChampion;
+    case "top_score":       return stats.hasPerfectScore;
+    case "challenges_won":  return (stats.challengesWon ?? 0) >= badge.trigger_value;
     default: return false;
   }
 }
