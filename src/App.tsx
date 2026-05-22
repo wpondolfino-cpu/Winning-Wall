@@ -27,6 +27,25 @@ export default function App() {
   const [playerTab, setPlayerTab] = useState<PlayerTab>("workouts");
   const [coachTab, setCoachTab]   = useState<CoachTab>("workouts");
   const [adminTab, setAdminTab]   = useState<AdminTab>("workouts");
+  const [pendingChallenges, setPendingChallenges] = useState(0);
+
+  // Poll for unseen challenges every 30s to keep the red dot accurate
+  useEffect(() => {
+    if (!user || profile?.role !== "player") return;
+    async function checkChallenges() {
+      const { supabase: sb } = await import("./lib/supabase");
+      const { count } = await sb
+        .from("challenges")
+        .select("id", { count: "exact", head: true })
+        .eq("opponent_id", user!.id)
+        .eq("status", "pending")
+        .eq("opponent_seen", false);
+      setPendingChallenges(count ?? 0);
+    }
+    checkChallenges();
+    const interval = setInterval(checkChallenges, 30000);
+    return () => clearInterval(interval);
+  }, [user, profile]);
 
   useEffect(() => {
     if (user && profile?.role === "player") loadMyScores();
@@ -88,7 +107,14 @@ export default function App() {
               <div className={`nav-item ${playerTab==="workouts"?"active":""}`} onClick={()=>setPlayerTab("workouts")}><span className="nav-icon">🏋️</span> Workouts</div>
               <div className={`nav-item ${playerTab==="leaderboard"?"active":""}`} onClick={()=>setPlayerTab("leaderboard")}><span className="nav-icon">🏆</span> Leaderboard</div>
               <div className={`nav-item ${playerTab==="progress"?"active":""}`} onClick={()=>setPlayerTab("progress")}><span className="nav-icon">📈</span> My Progress</div>
-              <div className={`nav-item ${playerTab==="h2h"?"active":""}`} onClick={()=>setPlayerTab("h2h")}><span className="nav-icon">⚔️</span> Challenges</div>
+              <div className={`nav-item ${playerTab==="h2h"?"active":""}`} onClick={()=>{ setPlayerTab("h2h"); setPendingChallenges(0); }} style={{ position: "relative" }}>
+                <span className="nav-icon">⚔️</span> Challenges
+                {pendingChallenges > 0 && (
+                  <span style={{ position: "absolute", top: 6, right: 8, background: "#e53935", color: "#fff", borderRadius: "50%", width: 18, height: 18, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>
+                    {pendingChallenges}
+                  </span>
+                )}
+              </div>
             </>
           )}
           {isCoach && (
@@ -124,7 +150,7 @@ export default function App() {
             <ProgressPanel profile={profile} myScores={myScores} workouts={workouts} />
           )}
           {isPlayer && playerTab === "h2h" && (
-            <HeadToHead currentUserId={user.id} currentUserName={profile.name} workouts={workouts} myScores={myScores} />
+            <HeadToHead currentUserId={user.id} currentUserName={profile.name} workouts={workouts} myScores={myScores} onScoreLogged={loadMyScores} />
           )}
           {isCoach && coachTab === "workouts" && (
             <CoachPanel workouts={workouts} onPublished={refreshWorkouts} />
