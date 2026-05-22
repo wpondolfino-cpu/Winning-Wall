@@ -178,7 +178,54 @@ export default function AdminSettings() {
     fontSize: 13, fontFamily: "inherit", outline: "none", width: "100%",
   } as const;
 
-  const COMMON_EMOJIS = ["🏅","🏀","🔥","💪","⚡","🌟","🎯","👑","💯","🥇","🥈","🥉","💎","🏆","🎽","⏱️","🦅"];
+  const EMOJI_CATEGORIES = {
+    "🏆 Awards":   ["🏆","🥇","🥈","🥉","🏅","🎖️","👑","🎗️","🏵️","🎀","🌟","⭐","💫","✨","🌠"],
+    "🏀 Sports":   ["🏀","⚽","🏈","⚾","🎾","🏐","🏉","🥏","🎯","🏓","🏸","🥊","🥋","🤺","🏋️","🤸","⛹️","🏃","🤾","🧗"],
+    "🔥 Energy":   ["🔥","⚡","💥","💢","🌪️","☄️","🚀","💨","🌊","❄️","🌈","⚡","🎆","✴️","🔱"],
+    "💪 Grind":    ["💪","🦾","🧠","👊","✊","🤛","🤜","🙌","👏","🤝","💯","🔝","🆙","🆒","⬆️"],
+    "🎭 Fun":      ["😤","😎","🤩","🥳","🤯","🦅","🦁","🐯","🦊","🐺","🦈","🦅","🦋","🐉","👾"],
+    "🔢 Numbers":  ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟","💯","🔢","📊","📈","🎰"],
+    "💎 Gems":     ["💎","💍","🔮","🌙","☀️","🌟","💠","🔷","🔶","🟡","🟠","🔴","🟣","🟢","🔵"],
+  };
+  function EmojiPicker({ value, onChange }: { value: string; onChange: (e: string) => void }) {
+    const [tab, setTab] = useState("🏆 Awards");
+    return (
+      <div>
+        {/* Category tabs */}
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
+          {Object.keys(EMOJI_CATEGORIES).map(cat => (
+            <button key={cat} onClick={() => setTab(cat)} style={{
+              background: tab === cat ? "var(--royal)" : "var(--surface)",
+              border: `1px solid ${tab === cat ? "var(--royal)" : "var(--border)"}`,
+              color: tab === cat ? "#fff" : "var(--muted)",
+              borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 600,
+              fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap",
+            }}>{cat}</button>
+          ))}
+        </div>
+        {/* Emoji grid */}
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8, padding: "8px", background: "var(--surface)", borderRadius: 8, minHeight: 52 }}>
+          {(EMOJI_CATEGORIES as Record<string, string[]>)[tab]?.map(e => (
+            <button key={e} onClick={() => onChange(e)} style={{
+              background: value === e ? "var(--royal)" : "transparent",
+              border: `1px solid ${value === e ? "var(--royal)" : "transparent"}`,
+              borderRadius: 6, padding: "4px 6px", fontSize: 20, cursor: "pointer",
+              transition: "all 0.1s",
+            }}>{e}</button>
+          ))}
+        </div>
+        {/* Custom input */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ fontSize: 28 }}>{value}</div>
+          <input
+            value={value} onChange={e => onChange(e.target.value)}
+            placeholder="Or paste any emoji here"
+            style={{ ...inputStyle, width: 200, fontSize: 16 }}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -242,16 +289,7 @@ export default function AdminSettings() {
             {/* Emoji picker */}
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 6 }}>Icon</label>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                {COMMON_EMOJIS.map(e => (
-                  <button key={e} onClick={() => setNewIcon(e)} style={{
-                    background: newIcon === e ? "var(--royal)" : "var(--surface)",
-                    border: `1px solid ${newIcon === e ? "var(--royal-light)" : "var(--border)"}`,
-                    borderRadius: 8, padding: "5px 9px", fontSize: 18, cursor: "pointer",
-                  }}>{e}</button>
-                ))}
-              </div>
-              <input value={newIcon} onChange={e => setNewIcon(e.target.value)} placeholder="Or type any emoji" style={{ ...inputStyle, width: 120 }} />
+              <EmojiPicker value={newIcon} onChange={setNewIcon} />
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
@@ -344,16 +382,7 @@ export default function AdminSettings() {
 
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 6 }}>Icon</label>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                {COMMON_EMOJIS.map(e => (
-                  <button key={e} onClick={() => setEditBadge({ ...editBadge, icon: e })} style={{
-                    background: editBadge.icon === e ? "var(--royal)" : "var(--surface2)",
-                    border: `1px solid ${editBadge.icon === e ? "var(--royal-light)" : "var(--border)"}`,
-                    borderRadius: 8, padding: "5px 9px", fontSize: 18, cursor: "pointer",
-                  }}>{e}</button>
-                ))}
-              </div>
-              <input value={editBadge.icon} onChange={e => setEditBadge({ ...editBadge, icon: e.target.value })} style={{ ...inputStyle, width: 120 }} />
+              <EmojiPicker value={editBadge.icon} onChange={e => setEditBadge({ ...editBadge, icon: e })} />
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
