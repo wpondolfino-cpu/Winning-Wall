@@ -268,9 +268,10 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <input
-                  type="number" value={myResponse} onChange={e => setMyResponse(e.target.value)}
-                  placeholder="Your score" min="0"
-                  style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", color: "var(--text)", fontSize: 14, fontFamily: "inherit", outline: "none" }}
+                  type="text" inputMode="numeric" pattern="[0-9]*"
+                  value={myResponse} onChange={e => setMyResponse(e.target.value.replace(/[^0-9]/g, ""))}
+                  placeholder="Type your score" autoFocus
+                  style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--royal)", borderRadius: 8, padding: "8px 12px", color: "var(--text)", fontSize: 16, fontFamily: "inherit", outline: "none" }}
                 />
                 <button onClick={() => submitResponse(c)} style={{
                   background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8,
