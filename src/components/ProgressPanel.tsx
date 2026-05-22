@@ -5,11 +5,12 @@ import { Badge, getActiveBadges, checkBadge, PlayerStats } from "../lib/badges";
 
 interface Props {
   profile: Profile;
-  myScores: Score[];    // personal bests
+  myScores: Score[];
   workouts: Workout[];
+  onProfileUpdated?: (updates: Partial<Profile>) => void;
 }
 
-export default function ProgressPanel({ profile, myScores, workouts }: Props) {
+export default function ProgressPanel({ profile, myScores, workouts, onProfileUpdated }: Props) {
   const [attempts, setAttempts] = useState<ScoreAttempt[]>([]);
   const [view, setView] = useState<"bests" | "history" | "badges">("bests");
   const [allBadges, setAllBadges] = useState<Badge[]>([]);
