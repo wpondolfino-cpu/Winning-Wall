@@ -262,6 +262,21 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
           <input value={groupName} onChange={e => setGroupName(e.target.value)} placeholder="e.g. Week 1 & 2" />
         </div>
 
+        {/* Deadline */}
+        <div style={{ marginBottom: 4 }}>
+          <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>
+            Deadline (optional)
+          </label>
+          <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)}
+            min={new Date().toISOString().split("T")[0]}
+            style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+          {deadline && (
+            <div style={{ fontSize: 11, color: "var(--gold)", marginTop: 4 }}>
+              ⏰ Players will see a countdown to this date
+            </div>
+          )}
+        </div>
+
         {/* Active toggle */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)" }}>
           <div style={{ flex: 1 }}>
@@ -419,6 +434,57 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
 
   return (
     <div className="panel active">
+
+      {/* ── Announcements ── */}
+      <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: "16px 20px", marginBottom: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#93b4ff", letterSpacing: 1 }}>📢 Announcements</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Post messages players see when they open the app</div>
+          </div>
+          <button onClick={() => setShowAnnounce(s => !s)} style={{ background: showAnnounce ? "var(--surface)" : "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+            {showAnnounce ? "✕ Cancel" : "+ Post"}
+          </button>
+        </div>
+        {showAnnounce && (
+          <div style={{ marginBottom: 16, padding: "14px", background: "var(--surface)", borderRadius: 10, border: "1px solid var(--border)" }}>
+            <textarea value={newMsg} onChange={e => setNewMsg(e.target.value)}
+              placeholder="Write your announcement here... (e.g. 'Great work this week! 🔥 Remember workouts close Friday.')"
+              rows={3}
+              style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", resize: "vertical", boxSizing: "border-box" }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", cursor: "pointer" }}>
+                <input type="checkbox" checked={isPinned} onChange={e => setIsPinned(e.target.checked)} />
+                📌 Pin to top
+              </label>
+              <button onClick={postAnnouncement} disabled={postingSave || !newMsg.trim()} style={{ marginLeft: "auto", background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                {postingSave ? "Posting…" : "Post Announcement"}
+              </button>
+            </div>
+          </div>
+        )}
+        {announcements.length === 0 ? (
+          <div style={{ fontSize: 13, color: "var(--muted)", textAlign: "center", padding: "12px 0" }}>No announcements yet</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {announcements.map(ann => (
+              <div key={ann.id} style={{ padding: "12px 14px", background: ann.is_pinned ? "rgba(240,192,64,0.08)" : "var(--surface)", borderRadius: 10, border: `1px solid ${ann.is_pinned ? "rgba(240,192,64,0.25)" : "var(--border)"}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    {ann.is_pinned && <span style={{ fontSize: 10, fontWeight: 700, color: "var(--gold)", marginRight: 6 }}>📌 PINNED</span>}
+                    <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.5 }}>{ann.message}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>{ann.coach_name} · {new Date(ann.created_at).toLocaleDateString()}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    <button onClick={() => togglePin(ann)} title={ann.is_pinned ? "Unpin" : "Pin"} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: ann.is_pinned ? "var(--gold)" : "var(--muted)" }}>📌</button>
+                    <button onClick={() => deleteAnnouncement(ann.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#ff7b7b" }}>🗑</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* ── Biweekly Champions Banner ── */}
       <div style={{
