@@ -1,4 +1,4 @@
-# 🏀 AHS Winning Wall — Setup Guide
+# 🏀 Attleboro High School Winning Wall — Setup Guide
 
 Full-stack offseason basketball training platform with real auth, persistent data, live leaderboard via WebSockets, and automated push/email notifications.
 
