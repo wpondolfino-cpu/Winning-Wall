@@ -38,6 +38,59 @@ const DEFAULT_BADGES: Omit<Badge, "id">[] = [
   { icon: "🎯", name: "Sharpshooter",    description: "Scored #1 on any drill",           trigger_type: "top_score", trigger_value: 1,   is_active: true },
 ];
 
+const EMOJI_CATEGORIES: Record<string, string[]> = {
+  "🏆 Awards":  ["🏆","🥇","🥈","🥉","🏅","🎖️","👑","🎗️","🏵️","🎀","🌟","⭐","💫","✨","🌠"],
+  "🏀 Sports":  ["🏀","⚽","🏈","⚾","🎾","🏐","🏉","🥏","🎯","🏓","🏸","🥊","🥋","🤺","🏋️","🤸","⛹️","🏃","🤾","🧗"],
+  "🔥 Energy":  ["🔥","⚡","💥","💢","🌪️","☄️","🚀","💨","🌊","❄️","🌈","🎆","✴️","🔱","⚡"],
+  "💪 Grind":   ["💪","🦾","🧠","👊","✊","🤛","🤜","🙌","👏","🤝","💯","🔝","🆙","🆒","⬆️"],
+  "🎭 Fun":     ["😤","😎","🤩","🥳","🤯","🦅","🦁","🐯","🦊","🐺","🦈","🦋","🐉","👾","🎮"],
+  "🔢 Numbers": ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟","💯","🔢","📊","📈","🎰"],
+  "💎 Gems":    ["💎","💍","🔮","🌙","☀️","🌟","💠","🔷","🔶","🟡","🟠","🔴","🟣","🟢","🔵"],
+};
+
+const inputStyleGlobal = {
+  background: "var(--surface2)", border: "1px solid var(--border)",
+  borderRadius: 8, padding: "9px 12px", color: "var(--text)",
+  fontSize: 13, fontFamily: "inherit", outline: "none", width: "100%",
+} as const;
+
+function EmojiPicker({ value, onChange }: { value: string; onChange: (e: string) => void }) {
+  const [tab, setTab] = useState("🏆 Awards");
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
+        {Object.keys(EMOJI_CATEGORIES).map(cat => (
+          <button key={cat} onClick={() => setTab(cat)} style={{
+            background: tab === cat ? "var(--royal)" : "var(--surface)",
+            border: `1px solid ${tab === cat ? "var(--royal)" : "var(--border)"}`,
+            color: tab === cat ? "#fff" : "var(--muted)",
+            borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 600,
+            fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap",
+          }}>{cat}</button>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8, padding: "8px", background: "var(--surface)", borderRadius: 8, minHeight: 52 }}>
+        {EMOJI_CATEGORIES[tab]?.map(e => (
+          <button key={e} onClick={() => onChange(e)} style={{
+            background: value === e ? "var(--royal)" : "transparent",
+            border: `1px solid ${value === e ? "var(--royal)" : "transparent"}`,
+            borderRadius: 6, padding: "4px 6px", fontSize: 20, cursor: "pointer",
+            transition: "all 0.1s",
+          }}>{e}</button>
+        ))}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ fontSize: 28 }}>{value}</div>
+        <input
+          value={value} onChange={e => onChange(e.target.value)}
+          placeholder="Or paste any emoji here"
+          style={{ ...inputStyleGlobal, width: 200, fontSize: 16 }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function AdminSettings() {
   const [badges, setBadges]         = useState<Badge[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -109,7 +162,9 @@ export default function AdminSettings() {
       trigger_type: newTrigger, trigger_value: parseInt(newValue) || 1,
       is_active: true,
     });
-    if (!error) {
+    if (error) {
+      showToast("Error: " + error.message);
+    } else {
       setShowAdd(false);
       setNewIcon("🏅"); setNewName(""); setNewDesc(""); setNewValue("1");
       showToast("Badge created! 🏅");
@@ -177,55 +232,6 @@ export default function AdminSettings() {
     borderRadius: 8, padding: "9px 12px", color: "var(--text)",
     fontSize: 13, fontFamily: "inherit", outline: "none", width: "100%",
   } as const;
-
-  const EMOJI_CATEGORIES = {
-    "🏆 Awards":   ["🏆","🥇","🥈","🥉","🏅","🎖️","👑","🎗️","🏵️","🎀","🌟","⭐","💫","✨","🌠"],
-    "🏀 Sports":   ["🏀","⚽","🏈","⚾","🎾","🏐","🏉","🥏","🎯","🏓","🏸","🥊","🥋","🤺","🏋️","🤸","⛹️","🏃","🤾","🧗"],
-    "🔥 Energy":   ["🔥","⚡","💥","💢","🌪️","☄️","🚀","💨","🌊","❄️","🌈","⚡","🎆","✴️","🔱"],
-    "💪 Grind":    ["💪","🦾","🧠","👊","✊","🤛","🤜","🙌","👏","🤝","💯","🔝","🆙","🆒","⬆️"],
-    "🎭 Fun":      ["😤","😎","🤩","🥳","🤯","🦅","🦁","🐯","🦊","🐺","🦈","🦅","🦋","🐉","👾"],
-    "🔢 Numbers":  ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟","💯","🔢","📊","📈","🎰"],
-    "💎 Gems":     ["💎","💍","🔮","🌙","☀️","🌟","💠","🔷","🔶","🟡","🟠","🔴","🟣","🟢","🔵"],
-  };
-  function EmojiPicker({ value, onChange }: { value: string; onChange: (e: string) => void }) {
-    const [tab, setTab] = useState("🏆 Awards");
-    return (
-      <div>
-        {/* Category tabs */}
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
-          {Object.keys(EMOJI_CATEGORIES).map(cat => (
-            <button key={cat} onClick={() => setTab(cat)} style={{
-              background: tab === cat ? "var(--royal)" : "var(--surface)",
-              border: `1px solid ${tab === cat ? "var(--royal)" : "var(--border)"}`,
-              color: tab === cat ? "#fff" : "var(--muted)",
-              borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 600,
-              fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap",
-            }}>{cat}</button>
-          ))}
-        </div>
-        {/* Emoji grid */}
-        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8, padding: "8px", background: "var(--surface)", borderRadius: 8, minHeight: 52 }}>
-          {(EMOJI_CATEGORIES as Record<string, string[]>)[tab]?.map(e => (
-            <button key={e} onClick={() => onChange(e)} style={{
-              background: value === e ? "var(--royal)" : "transparent",
-              border: `1px solid ${value === e ? "var(--royal)" : "transparent"}`,
-              borderRadius: 6, padding: "4px 6px", fontSize: 20, cursor: "pointer",
-              transition: "all 0.1s",
-            }}>{e}</button>
-          ))}
-        </div>
-        {/* Custom input */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ fontSize: 28 }}>{value}</div>
-          <input
-            value={value} onChange={e => onChange(e.target.value)}
-            placeholder="Or paste any emoji here"
-            style={{ ...inputStyle, width: 200, fontSize: 16 }}
-          />
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
