@@ -232,22 +232,40 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
           </div>
         </div>
 
-        {/* Score comparison */}
+        {/* Score comparison — hidden until both have submitted (prevents gaming) */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 10, alignItems: "center", marginBottom: 10 }}>
           <div style={{ textAlign: "center", padding: "10px", background: "var(--surface)", borderRadius: 8 }}>
             <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>YOU</div>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: iWon ? "var(--gold)" : "var(--text)" }}>
-              {myScore ?? "—"}
-            </div>
+            {c.status === "completed" ? (
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: iWon ? "var(--gold)" : "var(--text)" }}>
+                {myScore ?? "—"}
+              </div>
+            ) : myScore !== null ? (
+              <div style={{ fontSize: 13, color: "#5de098", fontWeight: 600 }}>🔒 Logged</div>
+            ) : (
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--muted)" }}>—</div>
+            )}
           </div>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--muted)" }}>VS</div>
           <div style={{ textAlign: "center", padding: "10px", background: "var(--surface)", borderRadius: 8 }}>
             <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>{theirName.split(" ")[0].toUpperCase()}</div>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: theyWon ? "var(--gold)" : "var(--text)" }}>
-              {theirScore ?? "—"}
-            </div>
+            {c.status === "completed" ? (
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: theyWon ? "var(--gold)" : "var(--text)" }}>
+                {theirScore ?? "—"}
+              </div>
+            ) : theirScore !== null ? (
+              <div style={{ fontSize: 13, color: "#5de098", fontWeight: 600 }}>🔒 Logged</div>
+            ) : (
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--muted)" }}>—</div>
+            )}
           </div>
         </div>
+        {/* Waiting message while pending */}
+        {c.status === "pending" && (myScore !== null || theirScore !== null) && (
+          <div style={{ textAlign: "center", fontSize: 12, color: "var(--muted)", marginBottom: 8, padding: "6px 10px", background: "rgba(255,255,255,0.04)", borderRadius: 8 }}>
+            🔒 Scores hidden until both players submit
+          </div>
+        )}
 
         {/* Result */}
         {c.status === "completed" && (
