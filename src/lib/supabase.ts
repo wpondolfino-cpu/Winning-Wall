@@ -430,8 +430,9 @@ export async function getBiweeklyChampions(): Promise<BiweeklyChampion[]> {
 // Called by a Supabase cron Edge Function every 2 weeks,
 // but also exposed here so coaches can manually trigger it
 export async function crownBiweeklyWinners(leaderboard: LeaderboardEntry[]): Promise<void> {
-  const periodStart = currentPeriodStart().toISOString();
-  const periodEnd   = currentPeriodEnd().toISOString();
+  const periodStart  = currentPeriodStart().toISOString();
+  const periodEnd    = currentPeriodEnd().toISOString();
+  const periodNumber = getPeriodNumber();
 
   // Find winner per grade group
   const winners: Record<string, LeaderboardEntry> = {};
@@ -442,24 +443,30 @@ export async function crownBiweeklyWinners(leaderboard: LeaderboardEntry[]): Pro
     }
   }
 
-  // Clear current champions and set new ones
+  // Clear current champions
   await supabase.from("profiles").update({ is_period_champion: false }).neq("id", "none");
 
   for (const [grade, winner] of Object.entries(winners)) {
-    if (!winner.total_points) continue; // don't crown someone with 0 pts
+    if (!winner.total_points) continue;
+
+    // Fetch avatar_url for this winner
+    const { data: prof } = await supabase
+      .from("profiles").select("avatar_url").eq("id", winner.id).single();
 
     await supabase.from("profiles")
       .update({ is_period_champion: true, champion_since: new Date().toISOString() })
       .eq("id", winner.id);
 
     await supabase.from("biweekly_champions").insert({
-      player_id: winner.id,
-      player_name: winner.name,
+      player_id:     winner.id,
+      player_name:   winner.name,
       grade_category: grade,
-      points: winner.total_points,
-      period_start: periodStart,
-      period_end: periodEnd,
-      crowned_at: new Date().toISOString(),
+      points:        winner.total_points,
+      period_start:  periodStart,
+      period_end:    periodEnd,
+      period_number: periodNumber,
+      crowned_at:    new Date().toISOString(),
+      avatar_url:    prof?.avatar_url ?? null,
     });
   }
 }
