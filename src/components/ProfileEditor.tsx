@@ -236,8 +236,8 @@ export default function ProfileEditor({ profile, onUpdated }: Props) {
         </div>
       </div>
 
-      {/* Grade selector */}
-      <div style={{ marginTop: 14 }}>
+      {/* Grade selector — players only */}
+      {profile.role === "player" && <div style={{ marginTop: 14 }}>
         <label style={{ display: "block", fontSize: 12, color: "var(--muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>
           Grade / Level
         </label>
@@ -281,7 +281,7 @@ export default function ProfileEditor({ profile, onUpdated }: Props) {
             {savingGrade ? "Saving…" : "Save"}
           </button>
         </div>
-      </div>
+      </div>}
 
       {toast && (
         <div style={{
