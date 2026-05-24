@@ -182,11 +182,22 @@ export default function ProgressPanel({ profile, myScores, workouts }: Props) {
   const [attempts, setAttempts]     = useState<ScoreAttempt[]>([]);
   const [view, setView]             = useState<"bests" | "history" | "badges" | "calendar" | "chart">("bests");
   const [allBadges, setAllBadges]   = useState<Badge[]>([]);
+  const [champCount, setChampCount] = useState(0);
   const { leaderboard }             = useLeaderboard();
 
-  useEffect(() => { loadAttempts(); loadBadges(); }, []);
+  useEffect(() => { loadAttempts(); loadBadges(); loadChampCount(); }, []);
 
   async function loadBadges() { setAllBadges(await getActiveBadges()); }
+
+  async function loadChampCount() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { count } = await supabase
+      .from("biweekly_champions")
+      .select("id", { count: "exact", head: true })
+      .eq("player_id", user.id);
+    setChampCount(count ?? 0);
+  }
 
   async function loadAttempts() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -217,7 +228,14 @@ export default function ProgressPanel({ profile, myScores, workouts }: Props) {
 
   return (
     <div className="panel active">
-      <div className="section-title">My Progress</div>
+      <div className="section-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        My Progress
+        {champCount > 0 && (
+          <span style={{ fontSize: 20, letterSpacing: 2 }} title={`${champCount} biweekly championship${champCount !== 1 ? "s" : ""} won`}>
+            {"👑".repeat(champCount)}
+          </span>
+        )}
+      </div>
       <div className="section-sub">Track your growth, {profile.name.split(" ")[0]} 🏀</div>
 
       {/* ── Rank Banner ── */}
