@@ -10,7 +10,7 @@ interface Props { currentUserId?: string; }
 
 const ALL = "All Players";
 type GradeTab = typeof ALL | GradeCategory;
-type TimeMode = "alltime" | "period";
+type TimeMode = "alltime" | "period" | "hof";
 type BoardView = "overall" | string; // string = workout id
 
 const SHORT: Record<string, string> = {
@@ -40,12 +40,21 @@ export default function Leaderboard({ currentUserId }: Props) {
   const [periodScores, setPeriodScores] = useState<Score[]>([]);
   const [profiles, setProfiles]     = useState<{id:string;name:string;grade_category?:string}[]>([]);
   const [periodEntries, setPeriodEntries] = useState<PeriodEntry[]>([]);
+  const [hofChampions, setHofChampions] = useState<any[]>([]);
 
   const periodStart = currentPeriodStart();
   const periodEnd   = currentPeriodEnd();
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); loadHof(); }, []);
   useEffect(() => { if (periodScores.length > 0) buildPeriodBoard(); }, [periodScores, profiles]);
+
+  async function loadHof() {
+    const { data } = await supabase
+      .from("biweekly_champions")
+      .select("*")
+      .order("crowned_at", { ascending: false });
+    setHofChampions(data ?? []);
+  }
 
   async function loadData() {
     const [{ data: ws }, { data: sc }, { data: pr }, { data: psc }] = await Promise.all([
@@ -342,6 +351,73 @@ export default function Leaderboard({ currentUserId }: Props) {
           {periodRanked.length === 0 && (
             <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", fontSize: 14 }}>
               No activity yet this period. Start logging! 🏀
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══ HALL OF FAME ══ */}
+      {timeMode === "hof" && (
+        <div>
+          {hofChampions.length === 0 ? (
+            <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 14, padding: "60px 0" }}>
+              No champions yet — crown the first winner to start the Hall of Fame! 👑
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {hofChampions.map((c, i) => {
+                const initials = c.player_name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0,2);
+                const isLatest = i === 0;
+                return (
+                  <div key={c.id} style={{
+                    background: isLatest ? "linear-gradient(135deg, rgba(240,192,64,0.12), rgba(26,63,168,0.15))" : "var(--surface2)",
+                    border: `1px solid ${isLatest ? "rgba(240,192,64,0.4)" : "var(--border)"}`,
+                    borderRadius: 14, padding: "18px 20px",
+                    display: "flex", alignItems: "center", gap: 16,
+                  }}>
+                    {/* Avatar */}
+                    <div style={{ position: "relative", flexShrink: 0 }}>
+                      <div style={{
+                        width: 64, height: 64, borderRadius: "50%", overflow: "hidden",
+                        border: `3px solid ${isLatest ? "var(--gold)" : "var(--border)"}`,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        background: "rgba(26,63,168,0.3)", flexShrink: 0,
+                      }}>
+                        {c.avatar_url ? (
+                          <img src={c.avatar_url} alt={c.player_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        ) : (
+                          <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)" }}>{initials}</span>
+                        )}
+                      </div>
+                      {isLatest && (
+                        <div style={{ position: "absolute", bottom: -4, right: -4, fontSize: 18 }}>👑</div>
+                      )}
+                    </div>
+
+                    {/* Info */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        {!isLatest && <span>👑</span>}
+                        <div style={{ fontWeight: 700, fontSize: 16, color: isLatest ? "var(--gold)" : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {c.player_name}
+                        </div>
+                        {isLatest && <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "rgba(240,192,64,0.2)", color: "var(--gold)" }}>REIGNING</span>}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
+                        {c.grade_category && <span>{SHORT[c.grade_category] ?? c.grade_category} · </span>}
+                        {c.period_number ? `Period ${c.period_number} · ` : ""}
+                        {new Date(c.period_start).toLocaleDateString()} – {new Date(c.period_end).toLocaleDateString()}
+                      </div>
+                    </div>
+
+                    {/* Points */}
+                    <div style={{ textAlign: "center", flexShrink: 0 }}>
+                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: isLatest ? "var(--gold)" : "#93b4ff", lineHeight: 1 }}>{c.points}</div>
+                      <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>pts</div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
