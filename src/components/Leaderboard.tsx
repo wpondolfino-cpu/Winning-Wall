@@ -124,7 +124,9 @@ export default function Leaderboard({ currentUserId }: Props) {
     const gradeFiltered = gradeTab === ALL ? wScores
       : wScores.filter(s => profiles.find(pr => pr.id === s.player_id)?.grade_category === gradeTab);
 
-    return gradeFiltered.map(s => {
+    const workout = workouts.find(w => w.id === workoutId);
+
+    const sorted = gradeFiltered.map(s => {
       const p = profiles.find(pr => pr.id === s.player_id);
       const rawScore = s.self_points > 0 ? s.self_points : (s.made + s.reps);
       const displayScore = s.sprint_secs > 0 && s.made === 0 && s.reps === 0 ? `${s.sprint_secs}s` : rawScore.toString();
@@ -132,9 +134,22 @@ export default function Leaderboard({ currentUserId }: Props) {
         playerId: s.player_id,
         name: p?.name ?? "Unknown",
         rawScore: s.sprint_secs > 0 && s.made === 0 ? -s.sprint_secs : rawScore,
-        displayScore, points: s.points ?? 0,
+        displayScore,
+        points: s.points ?? 0,
       };
-    }).sort((a, b) => b.rawScore - a.rawScore).map((r, i) => ({ ...r, rank: i + 1 }));
+    }).sort((a, b) => b.rawScore - a.rawScore);
+
+    // Recalculate rank-based points based on current position
+    return sorted.map((r, i) => {
+      let rankPts = r.points;
+      if (workout?.scoring_type === "competitive") {
+        if (i === 0) rankPts = workout.first_place_pts ?? 5;
+        else if (i === 1) rankPts = workout.second_place_pts ?? 3;
+        else if (i === 2) rankPts = workout.third_place_pts ?? 1;
+        else rankPts = 0;
+      }
+      return { ...r, points: rankPts, rank: i + 1 };
+    });
   }
 
   // ── Per-workout period board (best attempt within period) ──
@@ -247,7 +262,7 @@ export default function Leaderboard({ currentUserId }: Props) {
           </> : <>
             <div className="stat-card"><div className="stat-label">Period Rank</div><div className="stat-value gold">{myPeriodEntry ? `#${myPeriodEntry.rank}` : "—"}</div></div>
             <div className="stat-card"><div className="stat-label">Period Points</div><div className="stat-value blue">{myPeriodEntry?.period_points ?? 0}</div></div>
-            <div className="stat-card"><div className="stat-label">Days Left</div><div className="stat-value">{Math.ceil((periodEnd.getTime() - Date.now()) / 86400000)}</div></div>
+            <div className="stat-card"><div className="stat-label">Workouts Done</div><div className="stat-value">{myPeriodEntry?.workouts_logged ?? 0}</div></div>
           </>}
         </div>
       )}
