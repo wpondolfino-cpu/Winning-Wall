@@ -340,23 +340,72 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
       {/* Log Score Modal */}
       {activeWorkout && (
         <div className="modal-overlay open" onClick={() => setActiveWorkout(null)}>
-          <div className="log-modal" onClick={e => e.stopPropagation()}>
+          <div className="log-modal" onClick={e => e.stopPropagation()} style={{ maxHeight: "90vh", overflowY: "auto" }}>
             <button className="modal-close" onClick={() => setActiveWorkout(null)}>✕</button>
-            <div className="modal-title">Log Attempt</div>
-    <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>{activeWorkout.title}</div>
-    {scoreFor(activeWorkout.id) && (() => {
-      const s = scoreFor(activeWorkout.id)!;
-      const best = s.self_points > 0 ? s.self_points : (s.made + s.reps);
-      return (
-        <div style={{ padding: "10px 14px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, fontSize: 12, color: "var(--silver-light)", marginBottom: 14, lineHeight: 1.6 }}>
-          🏆 <strong style={{ color: "var(--gold)" }}>Your personal best: {best}</strong><br />
-          <span style={{ color: "var(--muted)" }}>
-            Log today's attempt — if you beat your best it updates the leaderboard.
-            If not, your best stays and your streak still counts! 🔥
-          </span>
-        </div>
-      );
-    })()}
+
+            {/* Title + category tag */}
+            <div className="modal-title" style={{ marginBottom: 4 }}>{activeWorkout.title}</div>
+            {activeWorkout.category && (
+              <span className={`tag ${TAG_COLORS[activeWorkout.category] ?? "tag-blue"}`} style={{ fontSize: 11, marginBottom: 14, display: "inline-block" }}>
+                {activeWorkout.category}
+              </span>
+            )}
+
+            {/* Embedded video */}
+            {(() => {
+              const vid = getVideoId(activeWorkout.video_url);
+              if (!vid) return null;
+              return (
+                <div style={{ borderRadius: 10, overflow: "hidden", marginBottom: 16, marginTop: 10, background: "#000", position: "relative", paddingTop: "56.25%" }}>
+                  <iframe
+                    src={`https://www.youtube.com/embed/${vid}?rel=0&modestbranding=1`}
+                    title={activeWorkout.title}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }}
+                  />
+                </div>
+              );
+            })()}
+
+            {/* Description */}
+            {activeWorkout.description && (
+              <div style={{
+                padding: "12px 14px",
+                background: "rgba(255,255,255,0.04)",
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                fontSize: 13,
+                color: "var(--silver-light)",
+                lineHeight: 1.7,
+                marginBottom: 16,
+                whiteSpace: "pre-wrap",
+              }}>
+                {activeWorkout.description}
+              </div>
+            )}
+
+            {/* Divider */}
+            <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0 16px", opacity: 0.5 }} />
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>
+              📊 Log Your Score
+            </div>
+
+            {/* Personal best banner */}
+            {scoreFor(activeWorkout.id) && (() => {
+              const s = scoreFor(activeWorkout.id)!;
+              const best = s.self_points > 0 ? s.self_points : (s.made + s.reps);
+              return (
+                <div style={{ padding: "10px 14px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, fontSize: 12, color: "var(--silver-light)", marginBottom: 14, lineHeight: 1.6 }}>
+                  🏆 <strong style={{ color: "var(--gold)" }}>Your personal best: {best}</strong><br />
+                  <span style={{ color: "var(--muted)" }}>
+                    Log today's attempt — if you beat your best it updates the leaderboard.
+                    If not, your best stays and your streak still counts! 🔥
+                  </span>
+                </div>
+              );
+            })()}
+
             {getLogFields(activeWorkout)}
             <button className="btn-primary" onClick={handleSubmitScore} disabled={saving} style={{ marginTop: 16 }}>
               {saving ? "Saving…" : "Log My Score"}
