@@ -356,16 +356,17 @@ export default function Leaderboard({ currentUserId }: Props) {
                   }
                 </div>
                 <div>
-                <div className="lb-name" style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-                  {entry.is_period_champion && <span title="Biweekly Champion!">👑</span>}
-                  {entry.name}
-                  {entry.id === currentUserId && <span style={{ fontSize: 11, color: "#93b4ff" }}>(you)</span>}
-                  {entry.current_streak && entry.current_streak >= 2 && (
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 10, background: "rgba(255,100,0,0.2)", color: "#ff8c42", border: "1px solid rgba(255,100,0,0.3)" }}>🔥 {entry.current_streak}d</span>
-                  )}
-                </div>
-                <div className="lb-pos">
-                  {entry.grade_category && gradeTab === ALL && <span style={{ color: "var(--muted)" }}>{SHORT[entry.grade_category] ?? entry.grade_category}</span>}
+                  <div className="lb-name" style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                    {entry.is_period_champion && <span title="Biweekly Champion!">👑</span>}
+                    {entry.name}
+                    {entry.id === currentUserId && <span style={{ fontSize: 11, color: "#93b4ff" }}>(you)</span>}
+                    {entry.current_streak && entry.current_streak >= 2 && (
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 10, background: "rgba(255,100,0,0.2)", color: "#ff8c42", border: "1px solid rgba(255,100,0,0.3)" }}>🔥 {entry.current_streak}d</span>
+                    )}
+                  </div>
+                  <div className="lb-pos">
+                    {entry.grade_category && gradeTab === ALL && <span style={{ color: "var(--muted)" }}>{SHORT[entry.grade_category] ?? entry.grade_category}</span>}
+                  </div>
                 </div>
               </div>
               <div className="lb-cell">{entry.total_attempts > 0 ? Math.round(entry.total_made / entry.total_attempts * 100) + "%" : "—"}</div>
