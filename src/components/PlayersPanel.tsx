@@ -102,7 +102,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
 
   async function loadPending() {
     const { data } = await supabase.from("profiles")
-      .select("id,name,role,grade_category,created_at")
+      .select("id,name,role,grade_category,created_at,email")
       .in("role", ["pending_player", "pending_coach"])
       .order("created_at", { ascending: true });
     const all = data ?? [];
@@ -142,9 +142,9 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       const { data, error } = await supabase.auth.signUp({
         email: addEmail,
         password: addPass,
-        options: { data: { name: addName, role: "player", grade_category: addGrade } },
+        options: { data: { name: addName, role: "player", grade_category: addGrade, must_change_password: true } },
       });
-      // Coach-added players are pre-approved — update role immediately if needed
+      // Coach-added players are pre-approved — must change their temp password on first login
       if (error) throw error;
       setShowAdd(false); setAddName(""); setAddEmail(""); setAddPass("");
       setAddGrade(GRADE_CATEGORIES[0]);
@@ -330,7 +330,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "var(--surface2)", borderRadius: 10, marginBottom: 6, border: "1px solid var(--border)" }}>
                   <div>
                     <div style={{ fontWeight: 600, color: "var(--text)", fontSize: 14 }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>Requested coach access · {new Date(p.created_at).toLocaleDateString()}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.email} · Requested coach access · {new Date(p.created_at).toLocaleDateString()}</div>
                   </div>
                   <div style={{ display: "flex", gap: 6 }}>
                     <div style={{ fontSize: 11, color: "#ff7b7b", fontStyle: "italic" }}>Admin only</div>
@@ -349,7 +349,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "var(--surface2)", borderRadius: 10, marginBottom: 6, border: "1px solid var(--border)" }}>
                   <div>
                     <div style={{ fontWeight: 600, color: "var(--text)", fontSize: 14 }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.grade_category} · Requested {new Date(p.created_at).toLocaleDateString()}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.email} · {p.grade_category} · Requested {new Date(p.created_at).toLocaleDateString()}</div>
                   </div>
                   <div style={{ display: "flex", gap: 6 }}>
                     <button onClick={() => handleApprove(p.id, "player")} disabled={approving === p.id}
