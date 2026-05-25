@@ -58,6 +58,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
   const [champions, setChampions]       = useState<BiweeklyChampion[]>([]);
   const [showChampions, setShowChampions] = useState(false);
   const [crowning, setCrowning]         = useState(false);
+  const [undoing, setUndoing]           = useState(false);
   const [deactivatingGroup, setDeactivatingGroup] = useState(false);
 
   // ── group filter (coach view) ──
@@ -533,6 +534,9 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
           <button onClick={loadChampions} style={{ background: "var(--surface2)", color: "var(--silver-light)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>View History</button>
           <button onClick={handleCrownWinners} disabled={crowning} style={{ background: "var(--gold)", color: "#0a0c14", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
             {crowning ? "Crowning…" : "Crown Winners Now"}
+          </button>
+          <button onClick={handleUndoCrown} disabled={undoing || crowning} style={{ background: "rgba(255,107,107,0.15)", color: "#ff7b7b", border: "1px solid rgba(255,107,107,0.3)", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+            {undoing ? "Undoing…" : "↩️ Undo Last Crown"}
           </button>
         </div>
       </div>
