@@ -265,6 +265,34 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
     finally { setCrowning(false); }
   }
 
+  async function handleUndoCrown() {
+    if (!window.confirm("Undo the most recent crowning?\n\nThis will:\n• Remove the most recent Hall of Fame entries\n• Clear champion status from those players\n• Remove their crown emojis from My Progress")) return;
+    setUndoing(true);
+    try {
+      const { data: recent } = await supabase
+        .from("biweekly_champions")
+        .select("crowned_at, player_id")
+        .order("crowned_at", { ascending: false })
+        .limit(10);
+      if (!recent || recent.length === 0) { alert("No crownings to undo."); return; }
+      const latestTime = new Date(recent[0].crowned_at).getTime();
+      const sameCrowning = recent.filter((r: any) =>
+        Math.abs(new Date(r.crowned_at).getTime() - latestTime) < 60000
+      );
+      const playerIds = sameCrowning.map((r: any) => r.player_id);
+      await supabase.from("biweekly_champions")
+        .delete()
+        .in("player_id", playerIds)
+        .gte("crowned_at", new Date(latestTime - 60000).toISOString());
+      await supabase.from("profiles")
+        .update({ is_period_champion: false, champion_since: null })
+        .in("id", playerIds);
+      await loadChampions();
+      alert("↩️ Crown has been undone successfully.");
+    } catch (e: any) { alert("Error: " + e.message); }
+    finally { setUndoing(false); }
+  }
+
   const EMOJIS = ["🏀","🎯","⚡","💪","🏆","🔥","🎽","⏱️"];
 
   // ── shared builder form JSX ──
