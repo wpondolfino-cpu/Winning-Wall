@@ -58,6 +58,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
   const [champions, setChampions]       = useState<BiweeklyChampion[]>([]);
   const [showChampions, setShowChampions] = useState(false);
   const [crowning, setCrowning]         = useState(false);
+  const [deactivatingGroup, setDeactivatingGroup] = useState(false);
 
   // ── group filter (coach view) ──
   const [selectedGroup, setSelectedGroup] = useState<string>("all");
@@ -72,6 +73,35 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
     if (!user) return;
     const { data } = await supabase.from("profiles").select("name").eq("id", user.id).single();
     setCoachProfile(data);
+  }
+
+  async function deactivateGroupFromLeaderboard(groupName: string) {
+    if (!window.confirm(`Remove "${groupName}" workouts from the leaderboard?\n\nPlayers can still log scores and do challenges — they just won\'t count toward leaderboard points.`)) return;
+    setDeactivatingGroup(true);
+    try {
+      await supabase.from("workouts")
+        .update({ leaderboard_active: false })
+        .eq("group_name", groupName);
+      onPublished(); // refresh workouts
+    } catch (e: any) {
+      alert("Error: " + e.message);
+    } finally {
+      setDeactivatingGroup(false);
+    }
+  }
+
+  async function reactivateGroupOnLeaderboard(groupName: string) {
+    setDeactivatingGroup(true);
+    try {
+      await supabase.from("workouts")
+        .update({ leaderboard_active: true })
+        .eq("group_name", groupName);
+      onPublished();
+    } catch (e: any) {
+      alert("Error: " + e.message);
+    } finally {
+      setDeactivatingGroup(false);
+    }
   }
 
   async function loadAnnouncements() {
@@ -549,17 +579,51 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
 
       {/* ── Group filter tabs ── */}
       {groups.length > 1 && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20, background: "var(--surface2)", padding: 6, borderRadius: 12, border: "1px solid var(--border)" }}>
-          {groups.map(g => (
-            <button key={g} onClick={() => setSelectedGroup(g)} style={{
-              padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer",
-              fontFamily: "inherit", fontSize: 12, fontWeight: 600,
-              background: selectedGroup === g ? "var(--royal)" : "transparent",
-              color: selectedGroup === g ? "#fff" : "var(--muted)", transition: "all .2s",
-            }}>
-              {g === "all" ? "All Groups" : g}
-            </button>
-          ))}
+        <div style={{ marginBottom: 20 }}>
+          {/* Group tabs */}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, background: "var(--surface2)", padding: 6, borderRadius: 12, border: "1px solid var(--border)" }}>
+            {groups.map(g => (
+              <button key={g} onClick={() => setSelectedGroup(g)} style={{
+                padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer",
+                fontFamily: "inherit", fontSize: 12, fontWeight: 600,
+                background: selectedGroup === g ? "var(--royal)" : "transparent",
+                color: selectedGroup === g ? "#fff" : "var(--muted)", transition: "all .2s",
+              }}>
+                {g === "all" ? "All Groups" : g}
+              </button>
+            ))}
+          </div>
+          {/* Deactivate/reactivate button for selected group */}
+          {selectedGroup !== "all" && (() => {
+            const groupWorkouts = workouts.filter(w => w.group_name === selectedGroup);
+            const allDeactivated = groupWorkouts.length > 0 && groupWorkouts.every(w => w.leaderboard_active === false);
+            const someDeactivated = groupWorkouts.some(w => w.leaderboard_active === false);
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: allDeactivated ? "rgba(255,107,107,0.08)" : "rgba(40,180,80,0.06)", border: `1px solid ${allDeactivated ? "rgba(255,107,107,0.25)" : "rgba(40,180,80,0.2)"}`, borderRadius: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: allDeactivated ? "#ff7b7b" : "#5de098" }}>
+                    {allDeactivated ? "🔴 Excluded from leaderboard" : someDeactivated ? "⚠️ Partially excluded from leaderboard" : "🟢 Active on leaderboard"}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                    {allDeactivated
+                      ? "Players can still log scores & do challenges — won't count toward leaderboard points"
+                      : "Scores from these drills count toward leaderboard rankings"}
+                  </div>
+                </div>
+                {allDeactivated ? (
+                  <button onClick={() => reactivateGroupOnLeaderboard(selectedGroup)} disabled={deactivatingGroup}
+                    style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
+                    {deactivatingGroup ? "Updating…" : "✓ Re-activate on Leaderboard"}
+                  </button>
+                ) : (
+                  <button onClick={() => deactivateGroupFromLeaderboard(selectedGroup)} disabled={deactivatingGroup}
+                    style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
+                    {deactivatingGroup ? "Updating…" : "🔴 Remove from Leaderboard"}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
