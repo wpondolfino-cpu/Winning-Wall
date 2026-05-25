@@ -8,18 +8,17 @@ interface Badge {
   icon: string;
   name: string;
   description: string;
-  trigger_type: "workouts" | "points" | "streak" | "champion" | "top_score" | "challenges_won";
+  trigger_type: "workouts" | "points" | "streak" | "champion" | "top_score";
   trigger_value: number;
   is_active: boolean;
 }
 
 const TRIGGER_LABELS: Record<string, string> = {
-  workouts:       "Workouts logged",
-  points:         "Total points earned",
-  streak:         "Day logging streak",
-  champion:       "Won a biweekly period",
-  top_score:      "Scored #1 on any drill",
-  challenges_won: "Head-to-head challenges won",
+  workouts:  "Workouts logged",
+  points:    "Total points earned",
+  streak:    "Day logging streak",
+  champion:  "Won a biweekly period",
+  top_score: "Scored #1 on any drill",
 };
 
 const DEFAULT_BADGES: Omit<Badge, "id">[] = [
@@ -272,10 +271,10 @@ export default function AdminSettings() {
                 <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Description</label>
                 <input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="e.g. Logged 30 workouts" style={inputStyle} />
               </div>
-              {(newTrigger === "workouts" || newTrigger === "points" || newTrigger === "streak" || newTrigger === "challenges_won") && (
+              {(newTrigger === "workouts" || newTrigger === "points" || newTrigger === "streak") && (
                 <div>
                   <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>
-                    {newTrigger === "workouts" ? "# of workouts" : newTrigger === "points" ? "# of points" : newTrigger === "challenges_won" ? "# of wins" : "# of days"}
+                    {newTrigger === "workouts" ? "# of workouts" : newTrigger === "points" ? "# of points" : "# of days"}
                   </label>
                   <input type="number" value={newValue} onChange={e => setNewValue(e.target.value)} min="1" style={inputStyle} />
                 </div>
@@ -374,10 +373,10 @@ export default function AdminSettings() {
                 <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Description</label>
                 <input value={editBadge.description} onChange={e => setEditBadge({ ...editBadge, description: e.target.value })} style={inputStyle} />
               </div>
-              {(editBadge.trigger_type === "workouts" || editBadge.trigger_type === "points" || editBadge.trigger_type === "streak" || editBadge.trigger_type === "challenges_won") && (
+              {(editBadge.trigger_type === "workouts" || editBadge.trigger_type === "points" || editBadge.trigger_type === "streak") && (
                 <div>
                   <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>
-                    {editBadge.trigger_type === "workouts" ? "# of workouts" : editBadge.trigger_type === "points" ? "# of points" : editBadge.trigger_type === "challenges_won" ? "# of wins" : "# of days"}
+                    {editBadge.trigger_type === "workouts" ? "# of workouts" : editBadge.trigger_type === "points" ? "# of points" : "# of days"}
                   </label>
                   <input type="number" value={editBadge.trigger_value} onChange={e => setEditBadge({ ...editBadge, trigger_value: parseInt(e.target.value) || 1 })} min="1" style={inputStyle} />
                 </div>
@@ -392,6 +391,62 @@ export default function AdminSettings() {
       )}
 
       {toast && <div className="toast show">{toast}</div>}
+      {/* ── Season Reset ── */}
+      <div style={{ marginTop: 32, background: "rgba(255,60,60,0.05)", border: "2px solid rgba(255,60,60,0.2)", borderRadius: 14, padding: "20px 24px" }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "#ff7b7b", letterSpacing: 1, marginBottom: 8 }}>
+          🔄 Season / All-Time Reset
+        </div>
+        <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.7, marginBottom: 16 }}>
+          Use this at the end of an offseason to start fresh. This will:
+          <ul style={{ marginTop: 8, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 4 }}>
+            <li>Clear all player scores from the leaderboard</li>
+            <li>Reset all streaks to zero</li>
+            <li>Clear biweekly champion status</li>
+            <li>Keep all player accounts, workouts, badges and Hall of Fame intact</li>
+          </ul>
+        </div>
+
+        {resetStep === 0 && (
+          <button onClick={handleSeasonReset} style={{ background: "rgba(255,60,60,0.15)", color: "#ff7b7b", border: "1px solid rgba(255,60,60,0.4)", borderRadius: 8, padding: "10px 20px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+            🔄 Start Season Reset
+          </button>
+        )}
+
+        {resetStep === 1 && (
+          <div style={{ padding: "14px 16px", background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", borderRadius: 10 }}>
+            <div style={{ fontWeight: 700, color: "#ff7b7b", marginBottom: 8 }}>⚠️ Are you sure? This will erase ALL scores.</div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={handleSeasonReset} style={{ background: "#ff3c3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                Yes, continue
+              </button>
+              <button onClick={() => setResetStep(0)} style={{ background: "var(--surface2)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {resetStep === 2 && (
+          <div style={{ padding: "14px 16px", background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", borderRadius: 10 }}>
+            <div style={{ fontWeight: 700, color: "#ff7b7b", marginBottom: 8 }}>🚨 FINAL CONFIRMATION — This cannot be undone!</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>Type this to confirm you understand all scores will be permanently deleted.</div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={handleSeasonReset} disabled={resetting} style={{ background: "#ff3c3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                {resetting ? "Resetting…" : "🔄 RESET SEASON NOW"}
+              </button>
+              <button onClick={() => setResetStep(0)} style={{ background: "var(--surface2)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {toast && (
+          <div style={{ marginTop: 12, padding: "8px 14px", background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", borderRadius: 8, fontSize: 13, color: "#5de098", fontWeight: 600 }}>
+            {toast}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
