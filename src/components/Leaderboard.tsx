@@ -214,6 +214,12 @@ export default function Leaderboard({ currentUserId }: Props) {
           background: timeMode === "period" ? "var(--royal)" : "transparent",
           color: timeMode === "period" ? "#fff" : "var(--muted)", transition: "all .2s",
         }}>📅 Current Period</button>
+        <button onClick={() => { setTimeMode("hof"); setView("overall"); }} style={{
+          flex: 1, padding: "10px", borderRadius: 9, border: "none", cursor: "pointer",
+          fontFamily: "inherit", fontSize: 13, fontWeight: 600,
+          background: timeMode === "hof" ? "var(--royal)" : "transparent",
+          color: timeMode === "hof" ? "#fff" : "var(--muted)", transition: "all .2s",
+        }}>👑 Hall of Fame</button>
       </div>
 
       {/* Period date range banner */}
