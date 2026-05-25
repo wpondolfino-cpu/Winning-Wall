@@ -202,9 +202,8 @@ export async function approveUser(userId: string, role: "player" | "coach"): Pro
 }
 
 export async function rejectUser(userId: string): Promise<void> {
-  const { error } = await supabase.from("profiles")
-    .delete()
-    .eq("id", userId);
+  // Use RPC to delete both the profile and auth user with elevated privileges
+  const { error } = await supabase.rpc("delete_pending_user", { target_user_id: userId });
   if (error) throw error;
 }
 
