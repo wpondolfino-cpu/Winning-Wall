@@ -170,21 +170,41 @@ export interface LeaderboardEntry {
 export async function signUp(
   email: string,
   password: string,
-  profile: Omit<Profile, "id" | "created_at">
+  profile: Omit<Profile, "id" | "created_at">,
+  selfRegistered = true  // true = needs approval, false = added by coach/admin
 ) {
+  // Self-registered accounts go into pending state for approval
+  const pendingRole = selfRegistered
+    ? (profile.role === "coach" ? "pending_coach" : "pending_player")
+    : profile.role;
+
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
       data: {
         name: profile.name,
-        role: profile.role,
+        role: pendingRole,
         grade_category: profile.grade_category,
       },
     },
   });
   if (error) throw error;
   return data;
+}
+
+export async function approveUser(userId: string, role: "player" | "coach"): Promise<void> {
+  const { error } = await supabase.from("profiles")
+    .update({ role })
+    .eq("id", userId);
+  if (error) throw error;
+}
+
+export async function rejectUser(userId: string): Promise<void> {
+  const { error } = await supabase.from("profiles")
+    .delete()
+    .eq("id", userId);
+  if (error) throw error;
 }
 
 export async function signIn(email: string, password: string) {
