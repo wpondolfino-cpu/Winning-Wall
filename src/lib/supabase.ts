@@ -66,7 +66,7 @@ export function getPeriodNumber(): number {
 }
 
 // ── Database Types ────────────────────────────────────────────
-export type Role = "player" | "coach" | "admin";
+export type Role = "player" | "coach" | "admin" | "inactive" | "pending_player" | "pending_coach";
 
 export interface Profile {
   id: string;
