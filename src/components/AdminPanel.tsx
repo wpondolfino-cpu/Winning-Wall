@@ -47,6 +47,8 @@ export default function AdminPanel({ allScores, workouts }: Props) {
   const [toast, setToast]             = useState("");
   const [pendingCoaches, setPendingCoaches] = useState<any[]>([]);
   const [approvingCoach, setApprovingCoach] = useState<string | null>(null);
+  const [resetRequests, setResetRequests] = useState<any[]>([]);
+  const [resettingPw, setResettingPw] = useState<string | null>(null);
 
   // ── edit scores ──
   const [editScoresFor, setEditScoresFor] = useState<string | null>(null);
@@ -60,8 +62,50 @@ export default function AdminPanel({ allScores, workouts }: Props) {
 
   useEffect(() => {
     loadPendingCoaches();
+    loadResetRequests();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function loadResetRequests() {
+    const { data } = await supabase
+      .from("password_reset_requests")
+      .select("*")
+      .eq("status", "pending")
+      .order("created_at", { ascending: true });
+    setResetRequests(data ?? []);
+  }
+
+  async function handleResetPassword(req: any) {
+    if (!window.confirm(`Reset ${req.name}'s password to "Bombardiers1!"?\n\nThey'll be prompted to change it on next login.`)) return;
+    setResettingPw(req.id);
+    try {
+      // Reset password via RPC
+      if (req.player_id) {
+        await supabase.rpc("reset_user_password", {
+          target_user_id: req.player_id,
+          new_password: "Bombardiers1!"
+        });
+        // Set must_change_password so they get prompted
+        await supabase.from("profiles")
+          .update({ must_change_password: true })
+          .eq("id", req.player_id);
+      }
+      // Mark request as done
+      await supabase.from("password_reset_requests")
+        .update({ status: "done" })
+        .eq("id", req.id);
+      await loadResetRequests();
+      showToast(`✅ Password reset for ${req.name}!`);
+    } catch (e: any) { showToast("Error: " + e.message); }
+    finally { setResettingPw(null); }
+  }
+
+  async function handleDismissRequest(id: string) {
+    await supabase.from("password_reset_requests")
+      .update({ status: "dismissed" })
+      .eq("id", id);
+    await loadResetRequests();
+  }
 
   async function loadPendingCoaches() {
     const { data } = await supabase.from("profiles")
