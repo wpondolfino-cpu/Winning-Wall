@@ -24,7 +24,7 @@ export type ScoringType = "competitive" | "self_reported" | "flat";
 
 // ── Streak bonus ──────────────────────────────────────────────
 export const STREAK_BONUS_DAYS = 7;   // consecutive days to trigger bonus
-export const STREAK_BONUS_PTS  = 50;  // bonus points awarded
+export const STREAK_BONUS_PTS  = 3;   // bonus points awarded every 7 days
 
 // ── Biweekly period helper ────────────────────────────────────
 // Uses a configurable anchor date stored in the database settings
@@ -414,7 +414,9 @@ export async function updateStreak(playerId: string): Promise<{ newStreak: numbe
   const prevBonusAt = existing?.bonus_awarded_at;
   const alreadyAwardedToday = prevBonusAt === today;
 
-  if (newStreak >= STREAK_BONUS_DAYS && prevStreak < STREAK_BONUS_DAYS && !alreadyAwardedToday) {
+  // Award bonus every 7 days (7, 14, 21, etc.)
+  const crossedNewMilestone = Math.floor(newStreak / STREAK_BONUS_DAYS) > Math.floor(prevStreak / STREAK_BONUS_DAYS);
+  if (crossedNewMilestone && !alreadyAwardedToday) {
     bonusAwarded = true;
     // Award streak bonus points as a special score entry
     await supabase.from("streak_bonuses").insert({
