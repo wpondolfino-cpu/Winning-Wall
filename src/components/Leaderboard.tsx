@@ -416,9 +416,15 @@ export default function Leaderboard({ currentUserId }: Props) {
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {hofChampions.map((c, i) => {
+              {(() => {
+                // Find the most recent crown timestamp and mark all entries within 1 min as "reigning"
+                const latestTime = hofChampions.length > 0 ? new Date(hofChampions[0].crowned_at).getTime() : 0;
+                const reigningIds = new Set(hofChampions
+                  .filter(c => Math.abs(new Date(c.crowned_at).getTime() - latestTime) < 60000)
+                  .map(c => c.id));
+                return hofChampions.map((c, i) => {
                 const initials = c.player_name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0,2);
-                const isLatest = i === 0;
+                const isLatest = reigningIds.has(c.id);
                 return (
                   <div key={c.id} style={{
                     background: isLatest ? "linear-gradient(135deg, rgba(240,192,64,0.12), rgba(26,63,168,0.15))" : "var(--surface2)",
@@ -468,7 +474,8 @@ export default function Leaderboard({ currentUserId }: Props) {
                     </div>
                   </div>
                 );
-              })}
+                });
+              })()}
             </div>
           )}
         </div>
