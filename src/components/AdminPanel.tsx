@@ -44,11 +44,19 @@ export default function AdminPanel({ allScores, workouts }: Props) {
   const [editSaving, setEditSaving]   = useState(false);
   const [editError, setEditError]     = useState("");
   const [removing, setRemoving]       = useState<string | null>(null);
+  const [toast, setToast]             = useState("");
+  const [pendingCoaches, setPendingCoaches] = useState<any[]>([]);
+  const [approvingCoach, setApprovingCoach] = useState<string | null>(null);
 
   // ── edit scores ──
   const [editScoresFor, setEditScoresFor] = useState<string | null>(null);
   const [playerScores, setPlayerScores]   = useState<EditScore[]>([]);
   const [scoreSaving, setScoreSaving]     = useState(false);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3000);
+  }
 
   useEffect(() => {
     loadPendingCoaches();
