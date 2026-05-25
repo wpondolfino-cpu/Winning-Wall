@@ -41,6 +41,7 @@ export default function Leaderboard({ currentUserId }: Props) {
   const [profiles, setProfiles]     = useState<{id:string;name:string;grade_category?:string}[]>([]);
   const [periodEntries, setPeriodEntries] = useState<PeriodEntry[]>([]);
   const [hofChampions, setHofChampions] = useState<any[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
 
   const periodStart = currentPeriodStart();
   const periodEnd   = currentPeriodEnd();
@@ -59,6 +60,7 @@ export default function Leaderboard({ currentUserId }: Props) {
   async function loadData() {
     const [{ data: ws }, { data: sc }, { data: pr }, { data: psc }] = await Promise.all([
       supabase.from("workouts").select("*").eq("is_active", true).order("created_at", { ascending: false }),
+      // Note: leaderboard_active filtering handled client-side below
       supabase.from("scores").select("*"),
       supabase.from("profiles").select("id,name,grade_category,is_period_champion").eq("role", "player"),
       // Period scores: attempts logged within the current 2-week window
@@ -66,8 +68,11 @@ export default function Leaderboard({ currentUserId }: Props) {
         .gte("attempted_at", periodStart.toISOString())
         .lte("attempted_at", periodEnd.toISOString()),
     ]);
-    setWorkouts(ws ?? []);
-    setAllScores(sc ?? []);
+    const allWorkouts = ws ?? [];
+    setWorkouts(allWorkouts);
+    // Only count scores from leaderboard-active workouts toward rankings
+    const lbActiveIds = new Set((ws ?? []).filter((w: any) => w.leaderboard_active !== false).map((w: any) => w.id));
+    setAllScores((sc ?? []).filter((s: any) => lbActiveIds.has(s.workout_id)));
     setProfiles(pr ?? []);
     setPeriodScores(psc ?? []);
   }
@@ -249,23 +254,63 @@ export default function Leaderboard({ currentUserId }: Props) {
         ))}
       </div>
 
-      {/* ── View selector ── */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
-        <button onClick={() => setView("overall")} style={{
-          padding: "6px 14px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600,
-          border: `1px solid ${view === "overall" ? "var(--royal-light)" : "var(--border)"}`,
-          background: view === "overall" ? "rgba(26,63,168,0.2)" : "var(--surface2)",
-          color: view === "overall" ? "#93b4ff" : "var(--muted)",
-        }}>🏆 Overall</button>
-        {workouts.map(w => (
-          <button key={w.id} onClick={() => setView(w.id)} style={{
-            padding: "6px 14px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
-            border: `1px solid ${view === w.id ? "var(--royal-light)" : "var(--border)"}`,
-            background: view === w.id ? "rgba(26,63,168,0.2)" : "var(--surface2)",
-            color: view === w.id ? "#93b4ff" : "var(--muted)",
-          }}>{w.emoji} {w.title}</button>
-        ))}
-      </div>
+      {/* ── View selector: Overall + grouped by week ── */}
+      {(() => {
+        const groups = Array.from(new Set(workouts.map(w => w.group_name).filter(Boolean))) as string[];
+        const ungrouped = workouts.filter(w => !w.group_name);
+        const activeGroup = selectedGroup ?? (groups[0] ?? null);
+        const visibleWorkouts = activeGroup
+          ? workouts.filter(w => w.group_name === activeGroup)
+          : ungrouped;
+
+        return (
+          <div style={{ marginBottom: 20 }}>
+            {/* Row 1: Overall + group tabs */}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+              <button onClick={() => { setView("overall"); setSelectedGroup(null); }} style={{
+                padding: "6px 14px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600,
+                border: `1px solid ${view === "overall" ? "var(--royal-light)" : "var(--border)"}`,
+                background: view === "overall" ? "rgba(26,63,168,0.2)" : "var(--surface2)",
+                color: view === "overall" ? "#93b4ff" : "var(--muted)",
+              }}>🏆 Overall</button>
+              {groups.map(g => {
+                const firstInGroup = workouts.find(w => w.group_name === g);
+                return (
+                <button key={g} onClick={() => { setSelectedGroup(g); if (firstInGroup) setView(firstInGroup.id); }} style={{
+                  padding: "6px 14px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
+                  border: `1px solid ${activeGroup === g && view !== "overall" ? "var(--royal-light)" : "var(--border)"}`,
+                  background: activeGroup === g && view !== "overall" ? "rgba(26,63,168,0.2)" : "var(--surface2)",
+                  color: activeGroup === g && view !== "overall" ? "#93b4ff" : "var(--muted)",
+                }}>📋 {g}</button>
+                );
+              })}
+              {ungrouped.length > 0 && groups.length > 0 && (
+                <button onClick={() => setSelectedGroup(null)} style={{
+                  padding: "6px 14px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600,
+                  border: `1px solid ${!activeGroup && view !== "overall" ? "var(--royal-light)" : "var(--border)"}`,
+                  background: !activeGroup && view !== "overall" ? "rgba(26,63,168,0.2)" : "var(--surface2)",
+                  color: !activeGroup && view !== "overall" ? "#93b4ff" : "var(--muted)",
+                }}>📋 Other</button>
+              )}
+            </div>
+            {/* Row 2: individual drills within selected group (hidden when overall is selected) */}
+            {view !== "overall" && visibleWorkouts.length > 0 && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", paddingLeft: 8, borderLeft: "2px solid var(--border)" }}>
+                {visibleWorkouts.map(w => (
+                  <button key={w.id} onClick={() => setView(w.id)} style={{
+                    padding: "5px 12px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap",
+                    border: `1px solid ${view === w.id ? "var(--royal-light)" : "var(--border)"}`,
+                    background: view === w.id ? "rgba(26,63,168,0.2)" : "transparent",
+                    color: view === w.id ? "#93b4ff" : "var(--muted)",
+                  }}>{w.emoji} {w.title}</button>
+                ))}
+              </div>
+            )}
+            {/* If a group tab is clicked but no drill selected yet, auto-select first drill */}
+            {view === "overall" && false && null}
+          </div>
+        );
+      })()}
 
       {/* ── My stats (players only, overall view) ── */}
       {currentUserId && view === "overall" && (
