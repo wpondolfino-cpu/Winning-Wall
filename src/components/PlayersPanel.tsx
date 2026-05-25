@@ -1,6 +1,6 @@
 // src/components/PlayersPanel.tsx  (Coach view — manage players)
 import { useState } from "react";
-import { supabase, Score, Workout, GRADE_CATEGORIES, GradeCategory } from "../lib/supabase";
+import { supabase, Score, Workout, GRADE_CATEGORIES, GradeCategory, approveUser, rejectUser } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
 interface Props {
@@ -26,7 +26,6 @@ interface EditScore {
 
 export default function PlayersPanel({ allScores, workouts }: Props) {
   const { leaderboard, loading, refresh } = useLeaderboard();
-  const [tab, setTab] = useState<"all" | "inactive">("all");
 
   // ── Add player manually ──
   const [showAdd, setShowAdd]         = useState(false);
@@ -48,6 +47,9 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const [editSaving, setEditSaving]   = useState(false);
   const [editError, setEditError]     = useState("");
   const [removing, setRemoving]       = useState<string | null>(null);
+  const [pendingPlayers, setPendingPlayers] = useState<any[]>([]);
+  const [pendingCoaches, setPendingCoaches] = useState<any[]>([]);
+  const [approving, setApproving]         = useState<string | null>(null);
 
   // ── Remove / delete player ──
   async function removePlayer(id: string, name: string) {
@@ -95,6 +97,39 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
 
   const inactiveCount = playersWithStatus.filter(p => p.isInactive).length;
 
+  // ── Load pending users ──
+  useState(() => { loadPending(); });
+
+  async function loadPending() {
+    const { data } = await supabase.from("profiles")
+      .select("id,name,role,grade_category,created_at")
+      .in("role", ["pending_player", "pending_coach"])
+      .order("created_at", { ascending: true });
+    const all = data ?? [];
+    setPendingPlayers(all.filter(p => p.role === "pending_player"));
+    setPendingCoaches(all.filter(p => p.role === "pending_coach"));
+  }
+
+  async function handleApprove(id: string, role: "player" | "coach") {
+    setApproving(id);
+    try {
+      await approveUser(id, role);
+      await loadPending();
+      refresh();
+    } catch (e: any) { alert("Error: " + e.message); }
+    finally { setApproving(null); }
+  }
+
+  async function handleReject(id: string, name: string) {
+    if (!window.confirm(`Reject "${name}"? This will delete their account.`)) return;
+    setApproving(id);
+    try {
+      await rejectUser(id);
+      await loadPending();
+    } catch (e: any) { alert("Error: " + e.message); }
+    finally { setApproving(null); }
+  }
+
   // ── Add player manually ──
   async function addPlayer() {
     if (!addName.trim() || !addEmail.trim() || !addPass.trim()) {
@@ -109,6 +144,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
         password: addPass,
         options: { data: { name: addName, role: "player", grade_category: addGrade } },
       });
+      // Coach-added players are pre-approved — update role immediately if needed
       if (error) throw error;
       setShowAdd(false); setAddName(""); setAddEmail(""); setAddPass("");
       setAddGrade(GRADE_CATEGORIES[0]);
@@ -278,6 +314,60 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
         </div>
       )}
 
+      {/* ── Pending Approvals ── */}
+      {(pendingPlayers.length > 0 || pendingCoaches.length > 0) && (
+        <div style={{ background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 14, padding: "16px 20px", marginBottom: 20 }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 14 }}>
+            ⏳ Pending Approvals ({pendingPlayers.length + pendingCoaches.length})
+          </div>
+
+          {pendingCoaches.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, fontWeight: 700 }}>
+                🏀 Coach Requests — Admin Approval Required
+              </div>
+              {pendingCoaches.map(p => (
+                <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "var(--surface2)", borderRadius: 10, marginBottom: 6, border: "1px solid var(--border)" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, color: "var(--text)", fontSize: 14 }}>{p.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>Requested coach access · {new Date(p.created_at).toLocaleDateString()}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <div style={{ fontSize: 11, color: "#ff7b7b", fontStyle: "italic" }}>Admin only</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {pendingPlayers.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, fontWeight: 700 }}>
+                ⚡ Player Requests
+              </div>
+              {pendingPlayers.map(p => (
+                <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "var(--surface2)", borderRadius: 10, marginBottom: 6, border: "1px solid var(--border)" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, color: "var(--text)", fontSize: 14 }}>{p.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.grade_category} · Requested {new Date(p.created_at).toLocaleDateString()}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => handleApprove(p.id, "player")} disabled={approving === p.id}
+                      style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 7, padding: "5px 12px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                      ✓ Approve
+                    </button>
+                    <button onClick={() => handleReject(p.id, p.name)} disabled={approving === p.id}
+                      style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 7, padding: "5px 12px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                      ✕ Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Stats ── */}
       {inactiveCount > 0 && (
         <div className="notif-banner">
@@ -290,16 +380,6 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
         <div className="stat-card"><div className="stat-label">Total Players</div><div className="stat-value">{playersWithStatus.length}</div></div>
         <div className="stat-card"><div className="stat-label">Active (7d)</div><div className="stat-value" style={{ color: "#5de098" }}>{playersWithStatus.filter(p => !p.isInactive).length}</div></div>
         <div className="stat-card"><div className="stat-label">Needs Nudge</div><div className="stat-value" style={{ color: "#ff7b7b" }}>{inactiveCount}</div></div>
-      </div>
-
-      {/* ── Tab selector ── */}
-      <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 10, padding: 4, marginBottom: 20, border: "1px solid var(--border)", gap: 4 }}>
-        <button onClick={() => setTab("all")} style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "all" ? "var(--royal)" : "transparent", color: tab === "all" ? "#fff" : "var(--muted)" }}>
-          👥 All Players ({playersWithStatus.length})
-        </button>
-        <button onClick={() => setTab("inactive")} style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "inactive" ? "#e53935" : "transparent", color: tab === "inactive" ? "#fff" : inactiveCount > 0 ? "#ff7b7b" : "var(--muted)" }}>
-          🔴 Inactive ({inactiveCount})
-        </button>
       </div>
 
       {/* ── Player Table ── */}
@@ -316,7 +396,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
             </tr>
           </thead>
           <tbody>
-            {playersWithStatus.filter(p => tab === "all" || p.isInactive).map(p => (
+            {playersWithStatus.map(p => (
               <tr key={p.id}>
                 <td>
                   <strong>{p.name}</strong>
