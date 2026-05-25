@@ -99,6 +99,7 @@ export interface Workout {
   group_name?: string;
   is_active?: boolean;
   deadline?: string;
+  leaderboard_active?: boolean;
   created_at: string;
 }
 
