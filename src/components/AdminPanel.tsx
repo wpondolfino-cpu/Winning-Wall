@@ -1,6 +1,6 @@
 // src/components/AdminPanel.tsx
 import { useState, useEffect } from "react";
-import { supabase, GRADE_CATEGORIES, GradeCategory, Profile, Score, Workout } from "../lib/supabase";
+import { supabase, approveUser, rejectUser, GRADE_CATEGORIES, GradeCategory, Profile, Score, Workout } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
 interface Props {
@@ -49,6 +49,40 @@ export default function AdminPanel({ allScores, workouts }: Props) {
   const [editScoresFor, setEditScoresFor] = useState<string | null>(null);
   const [playerScores, setPlayerScores]   = useState<EditScore[]>([]);
   const [scoreSaving, setScoreSaving]     = useState(false);
+
+  useEffect(() => {
+    loadPendingCoaches();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function loadPendingCoaches() {
+    const { data } = await supabase.from("profiles")
+      .select("id,name,role,created_at")
+      .eq("role", "pending_coach")
+      .order("created_at", { ascending: true });
+    setPendingCoaches(data ?? []);
+  }
+
+  async function handleApproveCoach(id: string) {
+    setApprovingCoach(id);
+    try {
+      await approveUser(id, "coach");
+      await loadPendingCoaches();
+      showToast("Coach approved! 🏀");
+    } catch (e: any) { showToast("Error: " + e.message); }
+    finally { setApprovingCoach(null); }
+  }
+
+  async function handleRejectCoach(id: string, name: string) {
+    if (!window.confirm(`Reject coach request from "${name}"? This deletes their account.`)) return;
+    setApprovingCoach(id);
+    try {
+      await rejectUser(id);
+      await loadPendingCoaches();
+      showToast("Request rejected.");
+    } catch (e: any) { showToast("Error: " + e.message); }
+    finally { setApprovingCoach(null); }
+  }
 
   useEffect(() => { loadCoaches(); }, []);
 
