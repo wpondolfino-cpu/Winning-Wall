@@ -88,6 +88,30 @@ export default function App() {
     return <ChangePassword title="Welcome to Attleboro Winning Wall! 🦅" subtitle="Your account was set up by a coach. Please create your own personal password before continuing." onComplete={() => window.location.reload()} />;
   }
 
+  // Pending approval screen
+  if (profile.role === "pending_player" || profile.role === "pending_coach") {
+    const isCoachRequest = profile.role === "pending_coach";
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0a0c14", flexDirection: "column", gap: 20, padding: 24 }}>
+        <img src="/logo.png" alt="Winning Wall" style={{ height: 80, objectFit: "contain", opacity: 0.9 }} />
+        <div style={{ textAlign: "center", maxWidth: 400 }}>
+          <div style={{ fontSize: 32 }}>⏳</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#f0c040", letterSpacing: 1, marginTop: 10 }}>
+            Awaiting Approval
+          </div>
+          <div style={{ fontSize: 14, color: "#7a85a0", marginTop: 12, lineHeight: 1.7 }}>
+            Your {isCoachRequest ? "coach" : "player"} account is pending approval
+            {isCoachRequest ? " from an admin" : " from a coach or admin"}.
+            You'll be able to log in once approved. Check back soon!
+          </div>
+          <button onClick={signOut} style={{ marginTop: 24, background: "var(--surface2)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 24px", fontSize: 14, fontFamily: "inherit", cursor: "pointer" }}>
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const isPlayer = profile.role === "player";
   const isCoach  = profile.role === "coach";
   const isAdmin  = profile.role === "admin";
