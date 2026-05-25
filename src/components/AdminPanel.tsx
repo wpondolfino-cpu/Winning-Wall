@@ -65,7 +65,7 @@ export default function AdminPanel({ allScores, workouts }: Props) {
 
   async function loadPendingCoaches() {
     const { data } = await supabase.from("profiles")
-      .select("id,name,role,created_at")
+      .select("id,name,role,created_at,email")
       .eq("role", "pending_coach")
       .order("created_at", { ascending: true });
     setPendingCoaches(data ?? []);
