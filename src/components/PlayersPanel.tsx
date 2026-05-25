@@ -116,8 +116,9 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       await approveUser(id, role);
       await loadPending();
       refresh();
-    } catch (e: any) { alert("Error: " + e.message); }
-    finally { setApproving(null); }
+    } catch (e: any) {
+      alert("Approval failed: " + e.message + "\n\nMake sure you ran 013_approval_rls.sql in Supabase.");
+    } finally { setApproving(null); }
   }
 
   async function handleReject(id: string, name: string) {
@@ -126,8 +127,9 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     try {
       await rejectUser(id);
       await loadPending();
-    } catch (e: any) { alert("Error: " + e.message); }
-    finally { setApproving(null); }
+    } catch (e: any) {
+      alert("Rejection failed: " + e.message + "\n\nMake sure you ran 013_approval_rls.sql in Supabase.");
+    } finally { setApproving(null); }
   }
 
   // ── Add player manually ──
