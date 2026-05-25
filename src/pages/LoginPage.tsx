@@ -7,6 +7,7 @@ type Role = "player" | "coach";
 
 export default function LoginPage() {
   const [mode, setMode]           = useState<Mode>("signin");
+  const [submitted, setSubmitted] = useState(false);
   const [role, setRole]           = useState<Role>("player");
   const [email, setEmail]         = useState("");
   const [password, setPassword]   = useState("");
@@ -31,12 +32,36 @@ export default function LoginPage() {
           role,
           grade_category: role === "player" ? gradeCategory : undefined,
         });
+        setSubmitted(true);
+        return;
       }
     } catch (e: any) {
       setError(e.message ?? "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
+  }
+
+  if (submitted) {
+    return (
+      <div className="login-screen">
+        <div className="login-box" style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>⏳</div>
+          <div className="app-logo" style={{ fontSize: 24 }}>Account Submitted!</div>
+          <div style={{ fontSize: 14, color: "var(--muted)", marginTop: 12, lineHeight: 1.7 }}>
+            Your {role} account request has been submitted.
+            {role === "coach"
+              ? " An admin will review and approve your account."
+              : " A coach or admin will review and approve your account."}
+            <br/><br/>You'll be able to sign in once approved.
+          </div>
+          <button onClick={() => { setSubmitted(false); setMode("signin"); }}
+            style={{ marginTop: 20, background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "10px 24px", fontSize: 14, fontFamily: "inherit", cursor: "pointer", fontWeight: 600 }}>
+            Back to Sign In
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
