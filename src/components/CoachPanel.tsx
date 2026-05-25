@@ -42,6 +42,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
 
   // ── announcements ──
   const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [showAnnounce, setShowAnnounce]   = useState(false);
   const [newMsg, setNewMsg]               = useState("");
   const [isPinned, setIsPinned]           = useState(false);
@@ -67,7 +68,14 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
   const { leaderboard } = useLeaderboard();
   const embedPreview = getEmbedUrl(videoUrl);
 
-  useEffect(() => { loadAnnouncements(); loadCoachProfile(); }, []);
+  useEffect(() => { loadAnnouncements(); loadCoachProfile(); checkAdmin(); }, []);
+
+  async function checkAdmin() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+    setIsAdmin(data?.role === "admin");
+  }
 
   async function loadCoachProfile() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -535,8 +543,12 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>{ann.coach_name} · {new Date(ann.created_at).toLocaleDateString()}</div>
                   </div>
                   <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                    <button onClick={() => togglePin(ann)} title={ann.is_pinned ? "Unpin" : "Pin"} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: ann.is_pinned ? "var(--gold)" : "var(--muted)" }}>📌</button>
-                    <button onClick={() => deleteAnnouncement(ann.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#ff7b7b" }}>🗑</button>
+                    {(isAdmin || ann.coach_id === coachProfile?.id) && (
+                      <button onClick={() => togglePin(ann)} title={ann.is_pinned ? "Unpin" : "Pin"} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: ann.is_pinned ? "var(--gold)" : "var(--muted)" }}>📌</button>
+                    )}
+                    {(isAdmin || ann.coach_id === coachProfile?.id) && (
+                      <button onClick={() => deleteAnnouncement(ann.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#ff7b7b" }}>🗑</button>
+                    )}
                   </div>
                 </div>
               </div>
