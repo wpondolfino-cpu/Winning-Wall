@@ -347,7 +347,15 @@ export default function Leaderboard({ currentUserId }: Props) {
           {ranked.map(entry => (
             <div key={entry.id} className={`lb-row ${entry.id === currentUserId ? "me" : ""}`}>
               <div className={`lb-rank ${rankClass(entry.rank)}`}>{entry.rank}</div>
-              <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {/* Avatar */}
+                <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", flexShrink: 0, background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--border)" }}>
+                  {entry.avatar_url
+                    ? <img src={entry.avatar_url} alt={entry.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    : <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)" }}>{entry.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}</span>
+                  }
+                </div>
+                <div>
                 <div className="lb-name" style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                   {entry.is_period_champion && <span title="Biweekly Champion!">👑</span>}
                   {entry.name}
