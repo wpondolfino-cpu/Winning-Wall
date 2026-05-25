@@ -57,6 +57,8 @@ export default function AdminSettings() {
   const [anchorDate, setAnchorDate] = useState(() => getPeriodAnchor().toISOString().split("T")[0]);
   const [anchorSaved, setAnchorSaved] = useState(false);
   const [exporting, setExporting]   = useState(false);
+  const [resetting, setResetting]   = useState(false);
+  const [resetStep, setResetStep]   = useState(0);
 
   const periodStart = currentPeriodStart();
   const periodEnd   = currentPeriodEnd();
@@ -164,6 +166,23 @@ export default function AdminSettings() {
       a.click();
       URL.revokeObjectURL(url);
     } finally { setExporting(false); }
+  }
+
+  async function handleSeasonReset() {
+    if (resetStep === 0) { setResetStep(1); return; }
+    if (resetStep === 1) { setResetStep(2); return; }
+    setResetting(true);
+    try {
+      await supabase.from("scores").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      await supabase.from("streaks").delete().neq("player_id", "00000000-0000-0000-0000-000000000000");
+      await supabase.from("streak_bonuses").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      await supabase.from("profiles").update({ is_period_champion: false, champion_since: null }).neq("id", "00000000-0000-0000-0000-000000000000");
+      setResetStep(0);
+      showToast("✅ Season reset complete!");
+    } catch (e: any) {
+      showToast("Error: " + e.message);
+      setResetStep(0);
+    } finally { setResetting(false); }
   }
 
   function showToast(msg: string) {
