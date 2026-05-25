@@ -84,7 +84,9 @@ export default function App() {
 
   if (!user || !profile) return <LoginPage />;
 
-  if (profile.must_change_password) {
+  // Only show change password screen for coach/admin-added accounts (not self-registered)
+  const wasSelfRegistered = profile.role === "player" && !profile.must_change_password;
+  if (profile.must_change_password && !wasSelfRegistered) {
     return <ChangePassword title="Welcome to Attleboro Winning Wall! 🦅" subtitle="Your account was set up by a coach. Please create your own personal password before continuing." onComplete={() => window.location.reload()} />;
   }
 
