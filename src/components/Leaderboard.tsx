@@ -42,12 +42,20 @@ export default function Leaderboard({ currentUserId }: Props) {
   const [periodEntries, setPeriodEntries] = useState<PeriodEntry[]>([]);
   const [hofChampions, setHofChampions] = useState<any[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  const [allRecords, setAllRecords] = useState<any[]>([]);
+  const [drillRecords, setDrillRecords] = useState<any[]>([]);
 
   const periodStart = currentPeriodStart();
   const periodEnd   = currentPeriodEnd();
 
-  useEffect(() => { loadData(); loadHof(); }, []);
+  useEffect(() => { loadData(); loadHof(); loadRecords(); }, []);
   useEffect(() => { if (periodScores.length > 0) buildPeriodBoard(); }, [periodScores, profiles]);
+
+  async function loadRecords() {
+    const [all, drills] = await Promise.all([getRecords(), getBestScoreRecords()]);
+    setAllRecords(all.filter(r => r.record_type !== "best_score"));
+    setDrillRecords(drills);
+  }
 
   async function loadHof() {
     const { data } = await supabase
@@ -225,6 +233,7 @@ export default function Leaderboard({ currentUserId }: Props) {
           background: timeMode === "hof" ? "var(--royal)" : "transparent",
           color: timeMode === "hof" ? "#fff" : "var(--muted)", transition: "all .2s",
         }}>👑 Hall of Fame</button>
+
       </div>
 
       {/* Period date range banner */}
@@ -487,6 +496,107 @@ export default function Leaderboard({ currentUserId }: Props) {
               })()}
             </div>
           )}
+        </div>
+        {/* ══ Records ══ */}
+        <div style={{ marginTop: 32, borderTop: "1px solid var(--border)", paddingTop: 24 }}>
+          {(() => {
+        const RECORD_META: Record<string, { label: string; icon: string; desc: string }> = {
+          most_points_alltime:  { label: "Most Points All-Time",        icon: "💯", desc: "Highest total points ever accumulated across all seasons" },
+          most_workouts_alltime:{ label: "Most Workouts All-Time",       icon: "💪", desc: "Most total drill submissions ever recorded" },
+          most_challenges_won:  { label: "Most Challenges Won",          icon: "⚔️", desc: "Most head-to-head challenge victories all-time" },
+          best_win_rate:        { label: "Best Challenge Win Rate",      icon: "🎯", desc: "Highest win % with a minimum of 10 challenges completed" },
+          longest_streak:       { label: "Longest Streak Ever",          icon: "🔥", desc: "Most consecutive days with at least one workout logged" },
+          most_points_period:   { label: "Most Points in a Single Period",icon: "📅", desc: "Highest points earned in one biweekly competition period" },
+          most_periods_won:     { label: "Most Biweekly Periods Won",      icon: "👑", desc: "Most total biweekly championship periods won all-time" },
+        };
+
+        return (
+          <div>
+            {/* Global records */}
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1, marginBottom: 14 }}>
+              🏅 All-Time Records
+            </div>
+            {allRecords.length === 0 ? (
+              <div style={{ fontSize: 13, color: "var(--muted)", padding: "20px 0" }}>No records yet — start logging workouts and competing to set them!</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28 }}>
+                {Object.entries(RECORD_META).map(([type, meta]) => {
+                  const rec = allRecords.find(r => r.record_type === type);
+                  const initials = rec ? rec.player_name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase() : "?";
+                  return (
+                    <div key={type} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 14 }}>
+                      <div style={{ fontSize: 28, flexShrink: 0 }}>{meta.icon}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: "var(--gold)" }}>{meta.label}</div>
+                        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, lineHeight: 1.4 }}>{meta.desc}</div>
+                        {rec && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>{rec.season}</div>}
+                      </div>
+                      {rec ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                          <div style={{ textAlign: "right" }}>
+                            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "#93b4ff", lineHeight: 1 }}>{rec.display_value}</div>
+                            <div style={{ fontSize: 11, color: "var(--muted)" }}>{rec.player_name}</div>
+                          </div>
+                          <div style={{ width: 40, height: 40, borderRadius: "50%", overflow: "hidden", border: "2px solid var(--gold)", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            {rec.avatar_url
+                              ? <img src={rec.avatar_url} alt={rec.player_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                              : <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{initials}</span>
+                            }
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic", flexShrink: 0 }}>Not set yet</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Drill records */}
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1, marginBottom: 14 }}>
+              🎯 Best Score Per Drill
+            </div>
+            {drillRecords.length === 0 ? (
+              <div style={{ fontSize: 13, color: "var(--muted)", padding: "20px 0" }}>No drill records yet — be the first to set one!</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {drillRecords.map(rec => {
+                  const initials = rec.player_name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase();
+                  return (
+                    <div key={rec.id} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>{rec.workout_title}</div>
+                          {rec.workout_desc && (
+                            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3, lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as any }}>
+                              {rec.workout_desc}
+                            </div>
+                          )}
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>{rec.season} · {new Date(rec.achieved_at).toLocaleDateString()}</div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                          <div style={{ textAlign: "right" }}>
+                            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "var(--gold)", lineHeight: 1 }}>{rec.display_value}</div>
+                            <div style={{ fontSize: 11, color: "var(--muted)" }}>{rec.player_name}</div>
+                          </div>
+                          <div style={{ width: 40, height: 40, borderRadius: "50%", overflow: "hidden", border: "2px solid var(--gold)", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            {rec.avatar_url
+                              ? <img src={rec.avatar_url} alt={rec.player_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                              : <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{initials}</span>
+                            }
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      
+          })()}
         </div>
       )}
 
