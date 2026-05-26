@@ -173,8 +173,12 @@ export default function AdminSettings() {
     if (resetStep === 1) { setResetStep(2); return; }
     setResetting(true);
     try {
-      // Note: records table is intentionally preserved across season resets
-      await supabase.from("scores").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      // Records table preserved (all-time records survive resets)
+      // Personal bests preserved — zero out points only so leaderboard resets
+      // but players can still see and beat their best scores year to year
+      await supabase.from("scores").update({ points: 0 }).neq("id", "00000000-0000-0000-0000-000000000000");
+      // Delete score_attempts history (the per-attempt log) so history starts fresh
+      await supabase.from("score_attempts").delete().neq("id", "00000000-0000-0000-0000-000000000000");
       await supabase.from("streaks").delete().neq("player_id", "00000000-0000-0000-0000-000000000000");
       await supabase.from("streak_bonuses").delete().neq("id", "00000000-0000-0000-0000-000000000000");
       await supabase.from("profiles").update({ is_period_champion: false, champion_since: null }).neq("id", "00000000-0000-0000-0000-000000000000");
@@ -419,7 +423,8 @@ export default function AdminSettings() {
         <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.7, marginBottom: 16 }}>
           Use this at the end of an offseason to start fresh. This will:
           <ul style={{ marginTop: 8, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 4 }}>
-            <li>Clear all player scores from the leaderboard</li>
+            <li>Reset leaderboard points to zero (personal bests are preserved)</li>
+            <li>Clear score history and attempt logs</li>
             <li>Reset all streaks to zero</li>
             <li>Clear biweekly champion status</li>
             <li>Keep all player accounts, workouts, badges and Hall of Fame intact</li>
