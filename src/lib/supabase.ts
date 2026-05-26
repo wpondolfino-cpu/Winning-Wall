@@ -500,15 +500,17 @@ export async function crownBiweeklyWinners(leaderboard: LeaderboardEntry[]): Pro
       .select("id", { count: "exact", head: true })
       .eq("player_id", winner.id);
     const season = await getCurrentSeason();
-    await supabase.rpc("upsert_record", {
-      p_type: "most_periods_won", p_workout_id: null,
-      p_workout_title: null, p_workout_desc: null,
-      p_player_id: winner.id, p_player_name: winner.name,
-      p_avatar_url: prof?.avatar_url ?? null,
-      p_value: (periodsWon ?? 0) + 1,
-      p_display_value: `${(periodsWon ?? 0) + 1} period${((periodsWon ?? 0) + 1) !== 1 ? "s" : ""}`,
-      p_season: season,
-    }).catch(console.error);
+    try {
+      await supabase.rpc("upsert_record", {
+        p_type: "most_periods_won", p_workout_id: null,
+        p_workout_title: null, p_workout_desc: null,
+        p_player_id: winner.id, p_player_name: winner.name,
+        p_avatar_url: prof?.avatar_url ?? null,
+        p_value: (periodsWon ?? 0) + 1,
+        p_display_value: `${(periodsWon ?? 0) + 1} period${((periodsWon ?? 0) + 1) !== 1 ? "s" : ""}`,
+        p_season: season,
+      });
+    } catch (e) { console.error(e); }
 
     await supabase.from("biweekly_champions").insert({
       player_id:     winner.id,
@@ -572,7 +574,7 @@ export async function refreshGlobalRecords(playerId: string, playerName: string,
   const season = await getCurrentSeason();
 
   // Most total points all-time (from leaderboard view)
-  const { data: lb } = await supabase.from("leaderboard").select("id,name,total_points,avatar_url").eq("id", playerId).single();
+  const { data: lb } = await supabase.from("leaderboard").select("id,name,total_points,avatar_url,workouts_completed").eq("id", playerId).single();
   if (lb) {
     await supabase.rpc("upsert_record", {
       p_type: "most_points_alltime", p_workout_id: null,
@@ -585,8 +587,8 @@ export async function refreshGlobalRecords(playerId: string, playerName: string,
       p_type: "most_workouts_alltime", p_workout_id: null,
       p_workout_title: null, p_workout_desc: null,
       p_player_id: playerId, p_player_name: playerName, p_avatar_url: avatarUrl,
-      p_value: lb.workouts_completed ?? 0,
-      p_display_value: `${lb.workouts_completed ?? 0} workouts`, p_season: season,
+      p_value: (lb as any).workouts_completed ?? 0,
+      p_display_value: `${(lb as any).workouts_completed ?? 0} workouts`, p_season: season,
     });
   }
 
