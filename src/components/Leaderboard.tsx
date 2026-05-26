@@ -49,11 +49,6 @@ export default function Leaderboard({ currentUserId }: Props) {
   useEffect(() => { loadData(); }, []);
   useEffect(() => { if (periodScores.length > 0) buildPeriodBoard(); }, [periodScores, profiles]);
 
-  async function loadRecords() {
-    const [all, drills] = await Promise.all([getRecords(), getBestScoreRecords()]);
-    setAllRecords(all.filter((r: any) => r.record_type !== "best_score"));
-    setDrillRecords(drills);
-  }
 
   async function loadData() {
     const [{ data: ws }, { data: sc }, { data: pr }, { data: psc }] = await Promise.all([
