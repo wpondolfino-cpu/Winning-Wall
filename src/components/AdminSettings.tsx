@@ -173,6 +173,7 @@ export default function AdminSettings() {
     if (resetStep === 1) { setResetStep(2); return; }
     setResetting(true);
     try {
+      // Note: records table is intentionally preserved across season resets
       await supabase.from("scores").delete().neq("id", "00000000-0000-0000-0000-000000000000");
       await supabase.from("streaks").delete().neq("player_id", "00000000-0000-0000-0000-000000000000");
       await supabase.from("streak_bonuses").delete().neq("id", "00000000-0000-0000-0000-000000000000");
