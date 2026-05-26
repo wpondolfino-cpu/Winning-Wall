@@ -7,6 +7,7 @@ import LoginPage from "./pages/LoginPage";
 import WorkoutsPanel from "./components/WorkoutsPanel";
 import CoachPanel from "./components/CoachPanel";
 import Leaderboard from "./components/Leaderboard";
+import HallOfFame from "./components/HallOfFame";
 import ProgressPanel from "./components/ProgressPanel";
 import PlayersPanel from "./components/PlayersPanel";
 import AdminPanel from "./components/AdminPanel";
@@ -15,7 +16,7 @@ import InstallPrompt from "./components/InstallPrompt";
 import ChangePassword from "./components/ChangePassword";
 import HeadToHead from "./components/HeadToHead";
 
-type PlayerTab = "workouts" | "leaderboard" | "progress" | "h2h" | "profile";
+type PlayerTab = "workouts" | "leaderboard" | "progress" | "h2h" | "hof" | "profile";
 type CoachTab  = "workouts" | "leaderboard" | "players" | "profile";
 type AdminTab  = "workouts" | "leaderboard" | "players" | "admin" | "settings" | "profile";
 
@@ -139,6 +140,7 @@ export default function App() {
               <div className={`nav-item ${playerTab==="workouts"?"active":""}`} onClick={()=>setPlayerTab("workouts")}><span className="nav-icon">🏋️</span> Workouts</div>
               <div className={`nav-item ${playerTab==="leaderboard"?"active":""}`} onClick={()=>setPlayerTab("leaderboard")}><span className="nav-icon">🏆</span> Leaderboard</div>
               <div className={`nav-item ${playerTab==="progress"?"active":""}`} onClick={()=>setPlayerTab("progress")}><span className="nav-icon">📈</span> My Progress</div>
+              <div className={`nav-item ${playerTab==="hof"?"active":""}`} onClick={()=>setPlayerTab("hof")}><span className="nav-icon">👑</span> Hall of Fame</div>
               <div className={`nav-item ${playerTab==="profile"?"active":""}`} onClick={()=>setPlayerTab("profile")}><span className="nav-icon">👤</span> My Profile</div>
               <div className={`nav-item ${playerTab==="h2h"?"active":""}`} onClick={()=>{ setPlayerTab("h2h"); setPendingChallenges(0); }} style={{ position: "relative" }}>
                 <span className="nav-icon">⚔️</span> Challenges
@@ -155,6 +157,7 @@ export default function App() {
               <div className={`nav-item ${coachTab==="workouts"?"active":""}`} onClick={()=>setCoachTab("workouts")}><span className="nav-icon">➕</span> Manage Workouts</div>
               <div className={`nav-item ${coachTab==="leaderboard"?"active":""}`} onClick={()=>setCoachTab("leaderboard")}><span className="nav-icon">🏆</span> Leaderboard</div>
               <div className={`nav-item ${coachTab==="players"?"active":""}`} onClick={()=>setCoachTab("players")}><span className="nav-icon">👥</span> Player Data</div>
+              <div className={`nav-item ${coachTab==="hof"?"active":""}`} onClick={()=>setCoachTab("hof")}><span className="nav-icon">👑</span> Hall of Fame</div>
               <div className={`nav-item ${coachTab==="profile"?"active":""}`} onClick={()=>setCoachTab("profile")}><span className="nav-icon">👤</span> My Profile</div>
             </>
           )}
@@ -164,6 +167,7 @@ export default function App() {
               <div className={`nav-item ${adminTab==="leaderboard"?"active":""}`} onClick={()=>setAdminTab("leaderboard")}><span className="nav-icon">🏆</span> Leaderboard</div>
               <div className={`nav-item ${adminTab==="players"?"active":""}`} onClick={()=>setAdminTab("players")}><span className="nav-icon">👥</span> Player Data</div>
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
+              <div className={`nav-item ${adminTab==="hof"?"active":""}`} onClick={()=>setAdminTab("hof")} style={{ color: adminTab==="hof" ? "var(--gold)" : undefined }}><span className="nav-icon">👑</span> Hall of Fame</div>
               <div className={`nav-item ${adminTab==="admin"?"active":""}`} onClick={()=>setAdminTab("admin")} style={{ color: adminTab==="admin" ? "var(--gold)" : undefined }}>
                 <span className="nav-icon">👑</span> Admin
               </div>
@@ -193,6 +197,7 @@ export default function App() {
               <ProfileEditor profile={displayProfile} onUpdated={handleProfileUpdated} />
             </div>
           )}
+          {isPlayer && playerTab === "hof" && <HallOfFame />}
           {isPlayer && playerTab === "h2h" && (
             <HeadToHead currentUserId={user.id} currentUserName={displayProfile.name} workouts={workouts} myScores={myScores} onScoreLogged={loadMyScores} />
           )}
@@ -200,6 +205,7 @@ export default function App() {
             <CoachPanel workouts={workouts} onPublished={refreshWorkouts} />
           )}
           {isCoach && coachTab === "leaderboard" && <Leaderboard />}
+          {isCoach && coachTab === "hof" && <HallOfFame />}
           {isCoach && coachTab === "players" && (
             <PlayersPanel allScores={allScores} workouts={workouts} />
           )}
@@ -214,6 +220,7 @@ export default function App() {
             <CoachPanel workouts={workouts} onPublished={refreshWorkouts} />
           )}
           {isAdmin && adminTab === "leaderboard" && <Leaderboard />}
+          {isAdmin && adminTab === "hof" && <HallOfFame />}
           {isAdmin && adminTab === "players" && (
             <PlayersPanel allScores={allScores} workouts={workouts} />
           )}
