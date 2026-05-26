@@ -428,6 +428,7 @@ export default function Leaderboard({ currentUserId }: Props) {
       {/* ══ HALL OF FAME ══ */}
       {timeMode === "hof" && (
         <div>
+          <div>
           {hofChampions.length === 0 ? (
             <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 14, padding: "60px 0" }}>
               No champions yet — crown the first winner to start the Hall of Fame! 👑
@@ -496,6 +497,7 @@ export default function Leaderboard({ currentUserId }: Props) {
               })()}
             </div>
           )}
+          </div>
         </div>
         {/* ══ Records ══ */}
         <div style={{ marginTop: 32, borderTop: "1px solid var(--border)", paddingTop: 24 }}>
