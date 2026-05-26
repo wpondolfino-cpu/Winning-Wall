@@ -17,8 +17,8 @@ import ChangePassword from "./components/ChangePassword";
 import HeadToHead from "./components/HeadToHead";
 
 type PlayerTab = "workouts" | "leaderboard" | "progress" | "h2h" | "hof" | "profile";
-type CoachTab  = "workouts" | "leaderboard" | "players" | "profile";
-type AdminTab  = "workouts" | "leaderboard" | "players" | "admin" | "settings" | "profile";
+type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "profile";
+type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "admin" | "settings" | "profile";
 
 export default function App() {
   const { user, profile, authState } = useAuth();
