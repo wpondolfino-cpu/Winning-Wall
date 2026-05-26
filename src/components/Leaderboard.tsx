@@ -3,7 +3,8 @@ import { useState, useEffect } from "react";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 import {
   supabase, LeaderboardEntry, GRADE_CATEGORIES, GradeCategory,
-  Workout, Score, currentPeriodStart, currentPeriodEnd
+  Workout, Score, currentPeriodStart, currentPeriodEnd,
+  getRecords, getBestScoreRecords
 } from "../lib/supabase";
 
 interface Props { currentUserId?: string; }
@@ -53,7 +54,7 @@ export default function Leaderboard({ currentUserId }: Props) {
 
   async function loadRecords() {
     const [all, drills] = await Promise.all([getRecords(), getBestScoreRecords()]);
-    setAllRecords(all.filter(r => r.record_type !== "best_score"));
+    setAllRecords(all.filter((r: any) => r.record_type !== "best_score"));
     setDrillRecords(drills);
   }
 
