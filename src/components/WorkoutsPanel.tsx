@@ -134,7 +134,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
           <div className="score-input-wrap">
             <label>Points Earned</label>
             <input
-              type="number" value={selfPoints}
+              type="number" inputMode="numeric" value={selfPoints}
               onChange={e => setSelfPoints(e.target.value)}
               placeholder="Enter points your coach assigned" min="0"
             />
@@ -210,13 +210,14 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
           {isTime ? (
             <div className="score-input-wrap">
               <label>Your Time (seconds)</label>
-              <input type="number" value={sprintSecs} onChange={e => setSprintSecs(e.target.value)} placeholder="e.g. 4.5" step="0.1" />
+              <input type="number" inputMode="decimal" value={sprintSecs} onChange={e => setSprintSecs(e.target.value)} placeholder="e.g. 4.5" step="0.1" />
             </div>
           ) : (
             <div className="score-input-wrap">
               <label>{inputLabel}</label>
               <input
                 type="number"
+                inputMode="numeric"
                 value={inputValue}
                 onChange={e => inputSetter(e.target.value)}
                 placeholder={inputPlaceholder}
