@@ -39,7 +39,7 @@ export default function Leaderboard({ currentUserId }: Props) {
   const [workouts, setWorkouts]     = useState<Workout[]>([]);
   const [allScores, setAllScores]   = useState<Score[]>([]);
   const [periodScores, setPeriodScores] = useState<Score[]>([]);
-  const [profiles, setProfiles]     = useState<{id:string;name:string;grade_category?:string}[]>([]);
+  const [profiles, setProfiles]     = useState<{id:string;name:string;grade_category?:string;avatar_url?:string}[]>([]);
   const [periodEntries, setPeriodEntries] = useState<PeriodEntry[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
 
@@ -56,7 +56,7 @@ export default function Leaderboard({ currentUserId }: Props) {
       supabase.from("workouts").select("*").eq("is_active", true).order("created_at", { ascending: false }),
       // Note: leaderboard_active filtering handled client-side below
       supabase.from("scores").select("*"),
-      supabase.from("profiles").select("id,name,grade_category,is_period_champion").eq("role", "player"),
+      supabase.from("profiles").select("id,name,grade_category,is_period_champion,avatar_url").eq("role", "player"),
       // Period scores: attempts logged within the current 2-week window
       supabase.from("score_attempts").select("*")
         .gte("attempted_at", periodStart.toISOString())
