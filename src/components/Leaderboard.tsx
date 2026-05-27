@@ -328,16 +328,17 @@ export default function Leaderboard({ currentUserId }: Props) {
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <div className="lb-header-row">
             <div>RNK</div><div>PLAYER</div>
-            <div style={{ textAlign: "center" }}>SHOT%</div>
-            <div style={{ textAlign: "center" }}>SPRINT</div>
-            <div style={{ textAlign: "center" }}>DONE</div>
             <div style={{ textAlign: "center" }}>PTS</div>
           </div>
           {ranked.map(entry => (
-            <div key={entry.id} className={`lb-row ${entry.id === currentUserId ? "me" : ""}`}>
+            <div key={entry.id} style={{
+              display: "grid", gridTemplateColumns: "44px 1fr 80px",
+              padding: "12px 16px", alignItems: "center",
+              borderBottom: "1px solid rgba(176,184,200,0.05)",
+              background: entry.id === currentUserId ? "rgba(26,63,168,0.15)" : undefined,
+            }}>
               <div className={`lb-rank ${rankClass(entry.rank)}`}>{entry.rank}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                {/* Avatar */}
                 <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", flexShrink: 0, background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--border)" }}>
                   {entry.avatar_url
                     ? <img src={entry.avatar_url} alt={entry.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -358,10 +359,7 @@ export default function Leaderboard({ currentUserId }: Props) {
                   </div>
                 </div>
               </div>
-              <div className="lb-cell">{entry.total_attempts > 0 ? Math.round(entry.total_made / entry.total_attempts * 100) + "%" : "—"}</div>
-              <div className="lb-cell">{entry.best_sprint > 0 ? `${entry.best_sprint}s` : "—"}</div>
-              <div className="lb-cell">{entry.workouts_completed}</div>
-              <div className="lb-cell highlight">{entry.total_points}</div>
+              <div style={{ textAlign: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)" }}>{entry.total_points}</div>
             </div>
           ))}
           {ranked.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", fontSize: 14 }}>No players yet. 🏀</div>}
@@ -372,28 +370,34 @@ export default function Leaderboard({ currentUserId }: Props) {
       {timeMode === "period" && view === "overall" && (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: "44px 1fr 80px 80px", padding: "8px 16px", fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "1px", borderBottom: "1px solid var(--border)" }}>
-            <div>RNK</div><div>PLAYER</div><div style={{ textAlign: "center" }}>LOGGED</div><div style={{ textAlign: "center" }}>PTS</div>
+            <div>RNK</div><div>PLAYER</div><div style={{ textAlign: "center" }}>PTS</div>
           </div>
           {periodRanked.map((entry, i) => (
             <div key={entry.player_id} style={{
-              display: "grid", gridTemplateColumns: "44px 1fr 80px 80px",
+              display: "grid", gridTemplateColumns: "44px 1fr 80px",
               padding: "12px 16px", alignItems: "center",
               borderBottom: "1px solid rgba(176,184,200,0.05)",
               background: entry.player_id === currentUserId ? "rgba(26,63,168,0.15)" : undefined,
-              borderRadius: entry.player_id === currentUserId ? 8 : undefined,
             }}>
               <div className={`lb-rank ${rankClass(i + 1)}`}>{i + 1}</div>
-              <div>
-                <div className="lb-name" style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                  {entry.is_period_champion && <span>👑</span>}
-                  {entry.name}
-                  {entry.player_id === currentUserId && <span style={{ fontSize: 11, color: "#93b4ff" }}>(you)</span>}
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", flexShrink: 0, background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--border)" }}>
+                  {entry.avatar_url
+                    ? <img src={entry.avatar_url} alt={entry.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    : <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)" }}>{entry.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}</span>
+                  }
                 </div>
-                {entry.grade_category && gradeTab === ALL && (
-                  <div className="lb-pos">{SHORT[entry.grade_category] ?? entry.grade_category}</div>
-                )}
+                <div>
+                  <div className="lb-name" style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                    {entry.is_period_champion && <span>👑</span>}
+                    {entry.name}
+                    {entry.player_id === currentUserId && <span style={{ fontSize: 11, color: "#93b4ff" }}>(you)</span>}
+                  </div>
+                  {entry.grade_category && gradeTab === ALL && (
+                    <div className="lb-pos">{SHORT[entry.grade_category] ?? entry.grade_category}</div>
+                  )}
+                </div>
               </div>
-              <div style={{ textAlign: "center", fontSize: 13, fontWeight: 600, color: "var(--silver-light)" }}>{entry.workouts_logged}</div>
               <div style={{ textAlign: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)" }}>{entry.period_points}</div>
             </div>
           ))}
