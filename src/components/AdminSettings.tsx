@@ -219,15 +219,15 @@ export default function AdminSettings() {
           </div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>{daysLeft} days remaining</div>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
-          <div style={{ flex: 1 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 160 }}>
             <label style={{ display: "block", fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Period 1 Start Date</label>
             <input type="date" value={anchorDate} onChange={e => setAnchorDate(e.target.value)} style={inputStyle} />
           </div>
           <button onClick={saveAnchor} style={{
             background: anchorSaved ? "#5de098" : "var(--royal)", color: anchorSaved ? "#051a0a" : "#fff",
             border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 600,
-            fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap",
+            fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap", width: "100%",
           }}>{anchorSaved ? "✓ Saved!" : "Save Date"}</button>
         </div>
         <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>
