@@ -371,8 +371,9 @@ body {
   }
 
   .bottom-tab-icon {
-    font-size: 22px;
-    line-height: 1;
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
   }
 
   .bottom-tab .tab-badge {
