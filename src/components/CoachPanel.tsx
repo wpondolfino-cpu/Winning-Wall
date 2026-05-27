@@ -570,13 +570,13 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
             Current period: {periodStart.toLocaleDateString()} – {periodEnd.toLocaleDateString()}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <button onClick={loadChampions} style={{ background: "var(--surface2)", color: "var(--silver-light)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>View History</button>
-          <button onClick={handleCrownWinners} disabled={crowning} style={{ background: "var(--gold)", color: "#0a0c14", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
-            {crowning ? "Crowning…" : "Crown Winners Now"}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "space-between", width: "100%", marginTop: 10 }}>
+          <button onClick={loadChampions} style={{ flex: 1, minWidth: 100, background: "var(--surface2)", color: "var(--silver-light)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", textAlign: "center" }}>View History</button>
+          <button onClick={handleCrownWinners} disabled={crowning} style={{ flex: 1, minWidth: 100, background: "var(--gold)", color: "#0a0c14", border: "none", borderRadius: 8, padding: "8px 10px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", textAlign: "center" }}>
+            {crowning ? "Crowning…" : "Crown Winners"}
           </button>
-          <button onClick={handleUndoCrown} disabled={undoing || crowning} style={{ background: "rgba(255,107,107,0.15)", color: "#ff7b7b", border: "1px solid rgba(255,107,107,0.3)", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
-            {undoing ? "Undoing…" : "↩️ Undo Last Crown"}
+          <button onClick={handleUndoCrown} disabled={undoing || crowning} style={{ flex: 1, minWidth: 100, background: "rgba(255,107,107,0.15)", color: "#ff7b7b", border: "1px solid rgba(255,107,107,0.3)", borderRadius: 8, padding: "8px 10px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", textAlign: "center" }}>
+            {undoing ? "Undoing…" : "↩️ Undo Crown"}
           </button>
         </div>
       </div>
