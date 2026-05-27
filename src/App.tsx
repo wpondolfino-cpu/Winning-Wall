@@ -16,7 +16,7 @@ import InstallPrompt from "./components/InstallPrompt";
 import ChangePassword from "./components/ChangePassword";
 import HeadToHead from "./components/HeadToHead";
 
-type PlayerTab = "workouts" | "leaderboard" | "progress" | "h2h" | "hof" | "profile";
+type PlayerTab = "workouts" | "leaderboard" | "progress" | "h2h" | "hof" | "profile" | "more";
 type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "profile";
 type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "admin" | "settings" | "profile";
 
@@ -218,6 +218,26 @@ export default function App() {
             </div>
           )}
           {isPlayer && playerTab === "hof" && <HallOfFame />}
+          {isPlayer && playerTab === "more" && (
+            <div className="panel active">
+              <div className="section-title">More</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+                <div onClick={() => setPlayerTab("hof")} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>👑</span><span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>Hall of Fame</span></div>
+                  <span style={{ color: "var(--muted)" }}>›</span>
+                </div>
+                <div onClick={() => setPlayerTab("profile")} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>👤</span><span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>My Profile</span></div>
+                  <span style={{ color: "var(--muted)" }}>›</span>
+                </div>
+                <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
+                <div onClick={signOut} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>🚪</span><span style={{ fontSize: 14, color: "#ff7b7b", fontWeight: 500 }}>Sign Out</span></div>
+                  <span style={{ color: "var(--muted)" }}>›</span>
+                </div>
+              </div>
+            </div>
+          )}
           {isPlayer && playerTab === "h2h" && (
             <HeadToHead currentUserId={user.id} currentUserName={displayProfile.name} workouts={workouts} myScores={myScores} onScoreLogged={loadMyScores} />
           )}
@@ -311,8 +331,8 @@ export default function App() {
             </svg>
             <span>Progress</span>
           </button>
-          <button className={`bottom-tab${["hof","profile"].includes(playerTab) ? " active" : ""}`}
-            onClick={() => setPlayerTab(["hof","profile"].includes(playerTab) ? playerTab : "hof")}>
+          <button className={`bottom-tab${["hof","profile","more"].includes(playerTab) ? " active" : ""}`}
+            onClick={() => setPlayerTab("more")}>
             <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <line x1="3" y1="12" x2="21" y2="12"/>
               <line x1="3" y1="6" x2="21" y2="6"/>
