@@ -257,7 +257,7 @@ export default function App() {
         <nav className="bottom-tab-bar" aria-label="Main navigation">
           <button className={`bottom-tab${playerTab === "workouts" ? " active" : ""}`}
             onClick={() => setPlayerTab("workouts")}>
-            <svg className="bottom-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10"/>
               <path d="M4.93 4.93c4.25 4.25 4.25 9.9 0 14.14"/>
               <path d="M19.07 4.93c-4.25 4.25-4.25 9.9 0 14.14"/>
@@ -267,7 +267,7 @@ export default function App() {
           </button>
           <button className={`bottom-tab${playerTab === "leaderboard" ? " active" : ""}`}
             onClick={() => setPlayerTab("leaderboard")}>
-            <svg className="bottom-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M6 9H4.5a2.5 2.5 0 010-5H6"/>
               <path d="M18 9h1.5a2.5 2.5 0 000-5H18"/>
               <path d="M4 22h16"/>
@@ -280,7 +280,7 @@ export default function App() {
           <button className={`bottom-tab${playerTab === "h2h" ? " active" : ""}`}
             onClick={() => { setPlayerTab("h2h"); setPendingChallenges(0); }}
             style={{ position: "relative" }}>
-            <svg className="bottom-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z"/>
               <path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
               <path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z"/>
@@ -295,14 +295,14 @@ export default function App() {
           </button>
           <button className={`bottom-tab${playerTab === "progress" ? " active" : ""}`}
             onClick={() => setPlayerTab("progress")}>
-            <svg className="bottom-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
             </svg>
             <span>Progress</span>
           </button>
           <button className={`bottom-tab${["hof","profile"].includes(playerTab) ? " active" : ""}`}
             onClick={() => setPlayerTab(["hof","profile"].includes(playerTab) ? playerTab : "hof")}>
-            <svg className="bottom-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <line x1="3" y1="12" x2="21" y2="12"/>
               <line x1="3" y1="6" x2="21" y2="6"/>
               <line x1="3" y1="18" x2="21" y2="18"/>
