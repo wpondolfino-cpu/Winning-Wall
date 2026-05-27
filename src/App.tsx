@@ -158,8 +158,8 @@ export default function App() {
                   </span>
                 )}
               </div>
-              <div style={{ flexGrow: 1 }} />
-              <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)", marginTop: 8 }}>
+              <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
+              <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)" }}>
                 <span className="nav-icon">🚪</span> Sign Out
               </div>
             </>
@@ -171,8 +171,8 @@ export default function App() {
               <div className={`nav-item ${coachTab==="players"?"active":""}`} onClick={()=>{setCoachTab("players");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Player Data</div>
               <div className={`nav-item ${coachTab==="hof"?"active":""}`} onClick={()=>{setCoachTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👑</span> Hall of Fame</div>
               <div className={`nav-item ${coachTab==="profile"?"active":""}`} onClick={()=>{setCoachTab("profile");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👤</span> My Profile</div>
-              <div style={{ flexGrow: 1 }} />
-              <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)", marginTop: 8 }}>
+              <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
+              <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)" }}>
                 <span className="nav-icon">🚪</span> Sign Out
               </div>
             </>
@@ -193,8 +193,8 @@ export default function App() {
               <div className={`nav-item ${adminTab==="profile"?"active":""}`} onClick={()=>{setAdminTab("profile");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="profile" ? "var(--gold)" : undefined }}>
                 <span className="nav-icon">👤</span> My Profile
               </div>
-              <div style={{ flexGrow: 1 }} />
-              <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)", marginTop: 8 }}>
+              <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
+              <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)" }}>
                 <span className="nav-icon">🚪</span> Sign Out
               </div>
             </>
