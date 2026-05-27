@@ -93,7 +93,7 @@ body {
 .btn-logout { background: none; border: 1px solid var(--border); color: var(--muted); padding: 5px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; font-family: inherit; }
 .btn-logout:hover { color: var(--text); }
 .app-body { display: flex; flex: 1; overflow: hidden; height: calc(100vh - 60px); }
-.sidebar { width: 200px; background: var(--surface); border-right: 1px solid var(--border); padding: 18px 10px; flex-shrink: 0; display: flex; flex-direction: column; gap: 3px; }
+.sidebar { width: 200px; background: var(--surface); border-right: 1px solid var(--border); padding: 18px 10px; flex-shrink: 0; display: flex; flex-direction: column; gap: 3px; min-height: 0; }
 .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; cursor: pointer; font-size: 13px; color: var(--muted); transition: all .2s; font-weight: 500; }
 .nav-item:hover { background: var(--surface2); color: var(--text); }
 .nav-item.active { background: rgba(26,63,168,0.25); color: #93b4ff; }
@@ -245,9 +245,7 @@ body {
   border-radius: 2px;
   transition: all .25s;
 }
-.sidebar-toggle.is-open span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
-.sidebar-toggle.is-open span:nth-child(2) { opacity: 0; }
-.sidebar-toggle.is-open span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+/* Hamburger stays as three lines always — no X animation */
 
 .sidebar-overlay { display: none; }
 
