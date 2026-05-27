@@ -253,22 +253,41 @@ export default function App() {
         </div>
       </div>
       {/* ── Bottom Tab Bar (mobile players) ── */}
-      {isPlayer && (
+            {isPlayer && (
         <nav className="bottom-tab-bar" aria-label="Main navigation">
           <button className={`bottom-tab${playerTab === "workouts" ? " active" : ""}`}
             onClick={() => setPlayerTab("workouts")}>
-            <span className="bottom-tab-icon">🏋️</span>
+            <svg className="bottom-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M4.93 4.93c4.25 4.25 4.25 9.9 0 14.14"/>
+              <path d="M19.07 4.93c-4.25 4.25-4.25 9.9 0 14.14"/>
+              <line x1="2" y1="12" x2="22" y2="12"/>
+            </svg>
             <span>Workouts</span>
           </button>
           <button className={`bottom-tab${playerTab === "leaderboard" ? " active" : ""}`}
             onClick={() => setPlayerTab("leaderboard")}>
-            <span className="bottom-tab-icon">🏆</span>
+            <svg className="bottom-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 9H4.5a2.5 2.5 0 010-5H6"/>
+              <path d="M18 9h1.5a2.5 2.5 0 000-5H18"/>
+              <path d="M4 22h16"/>
+              <path d="M10 22v-4"/>
+              <path d="M14 22v-4"/>
+              <path d="M6 4h12v9a6 6 0 01-12 0V4z"/>
+            </svg>
             <span>Leaderboard</span>
           </button>
           <button className={`bottom-tab${playerTab === "h2h" ? " active" : ""}`}
             onClick={() => { setPlayerTab("h2h"); setPendingChallenges(0); }}
             style={{ position: "relative" }}>
-            <span className="bottom-tab-icon">⚔️</span>
+            <svg className="bottom-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z"/>
+              <path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+              <path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z"/>
+              <path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z"/>
+              <path d="M14 14.5V19a2 2 0 01-2 2H6a2 2 0 01-2-2v-5"/>
+              <path d="M10 9.5V5a2 2 0 012-2h6a2 2 0 012 2v5"/>
+            </svg>
             <span>Challenges</span>
             {pendingChallenges > 0 && (
               <span className="tab-badge">{pendingChallenges}</span>
@@ -276,12 +295,18 @@ export default function App() {
           </button>
           <button className={`bottom-tab${playerTab === "progress" ? " active" : ""}`}
             onClick={() => setPlayerTab("progress")}>
-            <span className="bottom-tab-icon">📈</span>
+            <svg className="bottom-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+            </svg>
             <span>Progress</span>
           </button>
           <button className={`bottom-tab${["hof","profile"].includes(playerTab) ? " active" : ""}`}
-            onClick={() => setPlayerTab(playerTab === "hof" || playerTab === "profile" ? playerTab : "hof")}>
-            <span className="bottom-tab-icon">☰</span>
+            onClick={() => setPlayerTab(["hof","profile"].includes(playerTab) ? playerTab : "hof")}>
+            <svg className="bottom-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="3" y1="12" x2="21" y2="12"/>
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <line x1="3" y1="18" x2="21" y2="18"/>
+            </svg>
             <span>More</span>
           </button>
         </nav>
