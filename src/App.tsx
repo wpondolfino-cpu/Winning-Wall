@@ -29,6 +29,7 @@ export default function App() {
   const [coachTab, setCoachTab]     = useState<CoachTab>("workouts");
   const [adminTab, setAdminTab]     = useState<AdminTab>("workouts");
   const [pendingChallenges, setPendingChallenges] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [localProfile, setLocalProfile] = useState<Profile | null>(null);
 
   useEffect(() => {
@@ -122,9 +123,16 @@ export default function App() {
   const displayProfile = localProfile ?? profile;
 
   return (
-    <div id="app-screen" className="screen active">
+    <div id="app-screen" className={`screen active${isPlayer ? " has-bottom-tabs" : ""}`}>
       {/* Header */}
       <div className="app-header">
+        <button
+          className={`sidebar-toggle${sidebarOpen ? " is-open" : ""}`}
+          onClick={() => setSidebarOpen(o => !o)}
+          aria-label={sidebarOpen ? "Close menu" : "Open menu"}
+        >
+          <span /><span /><span />
+        </button>
         <img src="/logo.png" alt="Bombardiers" style={{ height: 36, objectFit: "contain", flexShrink: 0 }} />
         <div className="header-logo">Winning <span>Wall</span></div>
         <div className="header-role">{roleLabel}</div>
@@ -132,17 +140,18 @@ export default function App() {
         <button className="btn-logout" onClick={signOut}>Sign Out</button>
       </div>
 
+      {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
       <div className="app-body">
         {/* ── Sidebar ── */}
-        <div className="sidebar">
+        <div className={`sidebar${sidebarOpen ? "" : " sidebar-collapsed"}`}>
           {isPlayer && (
             <>
-              <div className={`nav-item ${playerTab==="workouts"?"active":""}`} onClick={()=>setPlayerTab("workouts")}><span className="nav-icon">🏋️</span> Workouts</div>
-              <div className={`nav-item ${playerTab==="leaderboard"?"active":""}`} onClick={()=>setPlayerTab("leaderboard")}><span className="nav-icon">🏆</span> Leaderboard</div>
-              <div className={`nav-item ${playerTab==="progress"?"active":""}`} onClick={()=>setPlayerTab("progress")}><span className="nav-icon">📈</span> My Progress</div>
-              <div className={`nav-item ${playerTab==="hof"?"active":""}`} onClick={()=>setPlayerTab("hof")}><span className="nav-icon">👑</span> Hall of Fame</div>
-              <div className={`nav-item ${playerTab==="profile"?"active":""}`} onClick={()=>setPlayerTab("profile")}><span className="nav-icon">👤</span> My Profile</div>
-              <div className={`nav-item ${playerTab==="h2h"?"active":""}`} onClick={()=>{ setPlayerTab("h2h"); setPendingChallenges(0); }} style={{ position: "relative" }}>
+              <div className={`nav-item ${playerTab==="workouts"?"active":""}`} onClick={()=>{setPlayerTab("workouts");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏋️</span> Workouts</div>
+              <div className={`nav-item ${playerTab==="leaderboard"?"active":""}`} onClick={()=>{setPlayerTab("leaderboard");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏆</span> Leaderboard</div>
+              <div className={`nav-item ${playerTab==="progress"?"active":""}`} onClick={()=>{setPlayerTab("progress");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">📈</span> My Progress</div>
+              <div className={`nav-item ${playerTab==="hof"?"active":""}`} onClick={()=>{setPlayerTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👑</span> Hall of Fame</div>
+              <div className={`nav-item ${playerTab==="profile"?"active":""}`} onClick={()=>{setPlayerTab("profile");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👤</span> My Profile</div>
+              <div className={`nav-item ${playerTab==="h2h"?"active":""}`} onClick={()=>{ setPlayerTab("h2h"); setPendingChallenges(0); if(window.innerWidth<768)setSidebarOpen(false); }} style={{ position: "relative" }}>
                 <span className="nav-icon">⚔️</span> Challenges
                 {pendingChallenges > 0 && (
                   <span style={{ position: "absolute", top: 6, right: 8, background: "#e53935", color: "#fff", borderRadius: "50%", width: 18, height: 18, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>
@@ -154,27 +163,27 @@ export default function App() {
           )}
           {isCoach && (
             <>
-              <div className={`nav-item ${coachTab==="workouts"?"active":""}`} onClick={()=>setCoachTab("workouts")}><span className="nav-icon">➕</span> Manage Workouts</div>
-              <div className={`nav-item ${coachTab==="leaderboard"?"active":""}`} onClick={()=>setCoachTab("leaderboard")}><span className="nav-icon">🏆</span> Leaderboard</div>
-              <div className={`nav-item ${coachTab==="players"?"active":""}`} onClick={()=>setCoachTab("players")}><span className="nav-icon">👥</span> Player Data</div>
-              <div className={`nav-item ${coachTab==="hof"?"active":""}`} onClick={()=>setCoachTab("hof")}><span className="nav-icon">👑</span> Hall of Fame</div>
-              <div className={`nav-item ${coachTab==="profile"?"active":""}`} onClick={()=>setCoachTab("profile")}><span className="nav-icon">👤</span> My Profile</div>
+              <div className={`nav-item ${coachTab==="workouts"?"active":""}`} onClick={()=>{setCoachTab("workouts");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">➕</span> Manage Workouts</div>
+              <div className={`nav-item ${coachTab==="leaderboard"?"active":""}`} onClick={()=>{setCoachTab("leaderboard");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏆</span> Leaderboard</div>
+              <div className={`nav-item ${coachTab==="players"?"active":""}`} onClick={()=>{setCoachTab("players");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Player Data</div>
+              <div className={`nav-item ${coachTab==="hof"?"active":""}`} onClick={()=>{setCoachTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👑</span> Hall of Fame</div>
+              <div className={`nav-item ${coachTab==="profile"?"active":""}`} onClick={()=>{setCoachTab("profile");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👤</span> My Profile</div>
             </>
           )}
           {isAdmin && (
             <>
-              <div className={`nav-item ${adminTab==="workouts"?"active":""}`} onClick={()=>setAdminTab("workouts")}><span className="nav-icon">➕</span> Manage Workouts</div>
-              <div className={`nav-item ${adminTab==="leaderboard"?"active":""}`} onClick={()=>setAdminTab("leaderboard")}><span className="nav-icon">🏆</span> Leaderboard</div>
-              <div className={`nav-item ${adminTab==="players"?"active":""}`} onClick={()=>setAdminTab("players")}><span className="nav-icon">👥</span> Player Data</div>
+              <div className={`nav-item ${adminTab==="workouts"?"active":""}`} onClick={()=>{setAdminTab("workouts");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">➕</span> Manage Workouts</div>
+              <div className={`nav-item ${adminTab==="leaderboard"?"active":""}`} onClick={()=>{setAdminTab("leaderboard");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏆</span> Leaderboard</div>
+              <div className={`nav-item ${adminTab==="players"?"active":""}`} onClick={()=>{setAdminTab("players");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Player Data</div>
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
-              <div className={`nav-item ${adminTab==="hof"?"active":""}`} onClick={()=>setAdminTab("hof")} style={{ color: adminTab==="hof" ? "var(--gold)" : undefined }}><span className="nav-icon">👑</span> Hall of Fame</div>
-              <div className={`nav-item ${adminTab==="admin"?"active":""}`} onClick={()=>setAdminTab("admin")} style={{ color: adminTab==="admin" ? "var(--gold)" : undefined }}>
+              <div className={`nav-item ${adminTab==="hof"?"active":""}`} onClick={()=>{setAdminTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="hof" ? "var(--gold)" : undefined }}><span className="nav-icon">👑</span> Hall of Fame</div>
+              <div className={`nav-item ${adminTab==="admin"?"active":""}`} onClick={()=>{setAdminTab("admin");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="admin" ? "var(--gold)" : undefined }}>
                 <span className="nav-icon">👑</span> Admin
               </div>
-              <div className={`nav-item ${adminTab==="settings"?"active":""}`} onClick={()=>setAdminTab("settings")} style={{ color: adminTab==="settings" ? "var(--gold)" : undefined }}>
+              <div className={`nav-item ${adminTab==="settings"?"active":""}`} onClick={()=>{setAdminTab("settings");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="settings" ? "var(--gold)" : undefined }}>
                 <span className="nav-icon">⚙️</span> Settings
               </div>
-              <div className={`nav-item ${adminTab==="profile"?"active":""}`} onClick={()=>setAdminTab("profile")} style={{ color: adminTab==="profile" ? "var(--gold)" : undefined }}>
+              <div className={`nav-item ${adminTab==="profile"?"active":""}`} onClick={()=>{setAdminTab("profile");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="profile" ? "var(--gold)" : undefined }}>
                 <span className="nav-icon">👤</span> My Profile
               </div>
             </>
@@ -243,6 +252,40 @@ export default function App() {
           )}
         </div>
       </div>
+      {/* ── Bottom Tab Bar (mobile players) ── */}
+      {isPlayer && (
+        <nav className="bottom-tab-bar" aria-label="Main navigation">
+          <button className={`bottom-tab${playerTab === "workouts" ? " active" : ""}`}
+            onClick={() => setPlayerTab("workouts")}>
+            <span className="bottom-tab-icon">🏋️</span>
+            <span>Workouts</span>
+          </button>
+          <button className={`bottom-tab${playerTab === "leaderboard" ? " active" : ""}`}
+            onClick={() => setPlayerTab("leaderboard")}>
+            <span className="bottom-tab-icon">🏆</span>
+            <span>Leaderboard</span>
+          </button>
+          <button className={`bottom-tab${playerTab === "h2h" ? " active" : ""}`}
+            onClick={() => { setPlayerTab("h2h"); setPendingChallenges(0); }}
+            style={{ position: "relative" }}>
+            <span className="bottom-tab-icon">⚔️</span>
+            <span>Challenges</span>
+            {pendingChallenges > 0 && (
+              <span className="tab-badge">{pendingChallenges}</span>
+            )}
+          </button>
+          <button className={`bottom-tab${playerTab === "progress" ? " active" : ""}`}
+            onClick={() => setPlayerTab("progress")}>
+            <span className="bottom-tab-icon">📈</span>
+            <span>Progress</span>
+          </button>
+          <button className={`bottom-tab${["hof","profile"].includes(playerTab) ? " active" : ""}`}
+            onClick={() => setPlayerTab(playerTab === "hof" || playerTab === "profile" ? playerTab : "hof")}>
+            <span className="bottom-tab-icon">☰</span>
+            <span>More</span>
+          </button>
+        </nav>
+      )}
       <InstallPrompt />
     </div>
   );
