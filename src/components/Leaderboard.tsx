@@ -28,6 +28,7 @@ interface PeriodEntry {
   workouts_logged: number;
   is_period_champion?: boolean;
   current_streak?: number;
+  avatar_url?: string;
 }
 
 export default function Leaderboard({ currentUserId }: Props) {
@@ -101,6 +102,7 @@ export default function Leaderboard({ currentUserId }: Props) {
         grade_category: p.grade_category,
         period_points: periodPoints,
         workouts_logged: periodActivity[playerId].size,
+        avatar_url: profiles.find(p => p.id === playerId)?.avatar_url,
         is_period_champion: (p as any).is_period_champion,
       };
     }
