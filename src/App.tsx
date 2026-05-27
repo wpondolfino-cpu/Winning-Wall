@@ -127,7 +127,7 @@ export default function App() {
       {/* Header */}
       <div className="app-header">
         <button
-          className={`sidebar-toggle${sidebarOpen ? " is-open" : ""}`}
+          className="sidebar-toggle"
           onClick={() => setSidebarOpen(o => !o)}
           aria-label={sidebarOpen ? "Close menu" : "Open menu"}
         >
@@ -137,7 +137,6 @@ export default function App() {
         <div className="header-logo">Winning <span>Wall</span></div>
         <div className="header-role">{roleLabel}</div>
         <div className="header-user">{displayProfile.name}</div>
-        <button className="btn-logout" onClick={signOut}>Sign Out</button>
       </div>
 
       {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
@@ -159,6 +158,10 @@ export default function App() {
                   </span>
                 )}
               </div>
+              <div style={{ flexGrow: 1 }} />
+              <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)", marginTop: 8 }}>
+                <span className="nav-icon">🚪</span> Sign Out
+              </div>
             </>
           )}
           {isCoach && (
@@ -168,6 +171,10 @@ export default function App() {
               <div className={`nav-item ${coachTab==="players"?"active":""}`} onClick={()=>{setCoachTab("players");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Player Data</div>
               <div className={`nav-item ${coachTab==="hof"?"active":""}`} onClick={()=>{setCoachTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👑</span> Hall of Fame</div>
               <div className={`nav-item ${coachTab==="profile"?"active":""}`} onClick={()=>{setCoachTab("profile");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👤</span> My Profile</div>
+              <div style={{ flexGrow: 1 }} />
+              <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)", marginTop: 8 }}>
+                <span className="nav-icon">🚪</span> Sign Out
+              </div>
             </>
           )}
           {isAdmin && (
@@ -185,6 +192,10 @@ export default function App() {
               </div>
               <div className={`nav-item ${adminTab==="profile"?"active":""}`} onClick={()=>{setAdminTab("profile");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="profile" ? "var(--gold)" : undefined }}>
                 <span className="nav-icon">👤</span> My Profile
+              </div>
+              <div style={{ flexGrow: 1 }} />
+              <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)", marginTop: 8 }}>
+                <span className="nav-icon">🚪</span> Sign Out
               </div>
             </>
           )}
