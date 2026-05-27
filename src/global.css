@@ -218,3 +218,195 @@ body {
 .rank-2 { background: rgba(176,184,200,0.15); color: var(--silver); }
 .rank-3 { background: rgba(205,127,50,0.15); color: #cd7f32; }
 .rank-other { background: var(--surface2); color: var(--muted); }
+
+/* ── COLLAPSIBLE SIDEBAR ── */
+.sidebar-toggle {
+  display: none;
+  width: 36px;
+  height: 36px;
+  background: rgba(240,192,64,0.15);
+  border: 1px solid rgba(240,192,64,0.4);
+  border-radius: 8px;
+  cursor: pointer;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-shrink: 0;
+  transition: all .2s;
+  padding: 0;
+}
+.sidebar-toggle:hover { background: rgba(240,192,64,0.28); }
+.sidebar-toggle span {
+  display: block;
+  width: 16px;
+  height: 2px;
+  background: #f0c040;
+  border-radius: 2px;
+  transition: all .25s;
+}
+.sidebar-toggle.is-open span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+.sidebar-toggle.is-open span:nth-child(2) { opacity: 0; }
+.sidebar-toggle.is-open span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+.sidebar-overlay { display: none; }
+
+@media (max-width: 767px) {
+  .sidebar-toggle { display: flex; }
+
+  /* Bigger workout cards */
+  .workout-card { border-radius: 16px; }
+  .workout-card .card-inner { padding: 16px 14px; }
+
+  /* Full-width bigger Log Score button on mobile */
+  .workout-log-btn {
+    width: 100% !important;
+    padding: 12px !important;
+    font-size: 14px !important;
+    border-radius: 10px !important;
+    margin-top: 10px !important;
+  }
+
+  /* Larger score input */
+  .score-input-wrap input {
+    padding: 14px 12px;
+    font-size: 20px;
+    text-align: center;
+    font-weight: 600;
+    border-radius: 10px;
+  }
+  .score-input-wrap label {
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 60px;
+    left: 0;
+    bottom: 0;
+    z-index: 200;
+    width: 220px;
+    transform: translateX(0);
+    transition: transform 0.25s ease;
+    overflow-y: auto;
+  }
+
+  .sidebar.sidebar-collapsed {
+    transform: translateX(-100%);
+  }
+
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 60px 0 0 0;
+    z-index: 199;
+    background: rgba(0,0,0,0.45);
+  }
+
+  .sidebar.sidebar-collapsed + * + .sidebar-overlay,
+  .sidebar.sidebar-collapsed ~ .sidebar-overlay {
+    display: none;
+  }
+
+  .main-content {
+    width: 100%;
+    padding: 18px 14px;
+  }
+}
+
+/* ── BOTTOM TAB BAR (mobile players only) ── */
+.bottom-tab-bar {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .bottom-tab-bar {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 62px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    z-index: 300;
+    align-items: stretch;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .bottom-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--muted);
+    font-family: inherit;
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    padding: 0;
+    position: relative;
+    transition: color .15s;
+  }
+
+  .bottom-tab.active {
+    color: #93b4ff;
+  }
+
+  .bottom-tab.active::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 20%;
+    right: 20%;
+    height: 2px;
+    background: #93b4ff;
+    border-radius: 0 0 3px 3px;
+  }
+
+  .bottom-tab-icon {
+    font-size: 22px;
+    line-height: 1;
+  }
+
+  .bottom-tab .tab-badge {
+    position: absolute;
+    top: 4px;
+    right: calc(50% - 18px);
+    background: #e53935;
+    color: #fff;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    font-size: 9px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Push content up so it's not hidden behind tab bar */
+  .app-body {
+    padding-bottom: 62px;
+  }
+
+  /* Hide hamburger when bottom tab bar is shown (players) */
+  .has-bottom-tabs .sidebar-toggle {
+    display: none;
+  }
+
+  /* Hide sidebar entirely when bottom tab bar is shown */
+  .has-bottom-tabs .sidebar {
+    display: none;
+  }
+
+  .has-bottom-tabs .sidebar-overlay {
+    display: none !important;
+  }
+}
