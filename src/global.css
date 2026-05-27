@@ -327,12 +327,13 @@ body {
     bottom: 0;
     left: 0;
     right: 0;
-    height: 62px;
+    height: 56px;
     background: var(--surface);
     border-top: 1px solid var(--border);
     z-index: 300;
     align-items: stretch;
     padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-sizing: content-box;
   }
 
   .bottom-tab {
@@ -341,7 +342,7 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 3px;
+    gap: 2px;
     background: none;
     border: none;
     cursor: pointer;
@@ -350,9 +351,10 @@ body {
     font-size: 9px;
     font-weight: 500;
     letter-spacing: 0.3px;
-    padding: 0;
+    padding: 6px 0 4px;
     position: relative;
     transition: color .15s;
+    overflow: hidden;
   }
 
   .bottom-tab.active {
@@ -371,9 +373,14 @@ body {
   }
 
   .bottom-tab-icon {
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    min-height: 20px;
+    max-width: 20px;
+    max-height: 20px;
     flex-shrink: 0;
+    display: block;
   }
 
   .bottom-tab .tab-badge {
@@ -394,7 +401,7 @@ body {
 
   /* Push content up so it's not hidden behind tab bar */
   .app-body {
-    padding-bottom: 62px;
+    padding-bottom: 56px;
   }
 
   /* Hide hamburger when bottom tab bar is shown (players) */
