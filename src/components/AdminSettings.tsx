@@ -220,7 +220,7 @@ export default function AdminSettings() {
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>{daysLeft} days remaining</div>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 160 }}>
+          <div style={{ flex: 1, minWidth: 140, maxWidth: 200 }}>
             <label style={{ display: "block", fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Period 1 Start Date</label>
             <input type="date" value={anchorDate} onChange={e => setAnchorDate(e.target.value)} style={inputStyle} />
           </div>
