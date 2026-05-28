@@ -48,7 +48,17 @@ export default function App() {
         .eq("opponent_id", user!.id)
         .eq("status", "pending")
         .eq("opponent_seen", false);
-      setPendingChallenges(count ?? 0);
+
+      // Also check if there's a new active team competition (created in last 24h)
+      const { data: newTeam } = await sb
+        .from("team_competitions")
+        .select("id,created_at")
+        .eq("is_active", true)
+        .gte("created_at", new Date(Date.now() - 86400000).toISOString())
+        .single();
+
+      const teamNotif = newTeam ? 1 : 0;
+      setPendingChallenges((count ?? 0) + teamNotif);
     }
     checkChallenges();
     const interval = setInterval(checkChallenges, 30000);
