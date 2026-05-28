@@ -597,7 +597,7 @@ export default function AdminPanel({ allScores, workouts }: Props) {
             <div>
               <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Bonus Points (winner)</label>
               <input type="number" inputMode="numeric" value={bonusPoints} onChange={e => setBonusPoints(Number(e.target.value))} min={1}
-                style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, boxSizing: "border-box" }} />
+                style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, boxSizing: "border-box", MozAppearance: "textfield" } as React.CSSProperties} />
             </div>
           </div>
 
@@ -613,12 +613,12 @@ export default function AdminPanel({ allScores, workouts }: Props) {
             <div>
               <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Start Date</label>
               <input type="date" value={teamStartDate} onChange={e => setTeamStartDate(e.target.value)}
-                style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, boxSizing: "border-box" }} />
+                style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: teamStartDate ? "var(--text)" : "var(--muted)", fontFamily: "inherit", fontSize: 13, boxSizing: "border-box", colorScheme: "dark" } as React.CSSProperties} />
             </div>
             <div>
               <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>End Date</label>
               <input type="date" value={teamEndDate} onChange={e => setTeamEndDate(e.target.value)}
-                style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, boxSizing: "border-box" }} />
+                style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: teamEndDate ? "var(--text)" : "var(--muted)", fontFamily: "inherit", fontSize: 13, boxSizing: "border-box", colorScheme: "dark" } as React.CSSProperties} />
             </div>
           </div>
 
