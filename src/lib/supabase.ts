@@ -697,7 +697,7 @@ export async function getTeams(competitionId: string): Promise<Team[]> {
 export async function saveTeamCompetition(
   numTeams: number,
   teamNames: string[],
-  playerAssignments: Record<string, string>, // teamName -> playerId[]
+  playerAssignments: Record<string, string[]>, // teamName -> playerId[]
   bonusPoints: number,
   startDate: string,
   endDate: string,
@@ -725,7 +725,9 @@ export async function saveTeamCompetition(
     // Assign players to this team
     const playerIds = playerAssignments[name] ?? [];
     if (playerIds.length > 0) {
-      await supabase.from("profiles").update({ team_id: team.id }).in("id", playerIds);
+      if (playerIds.length > 0) {
+        await supabase.from("profiles").update({ team_id: team.id }).in("id", playerIds);
+      }
     }
   }
 }
