@@ -127,7 +127,7 @@ export default function AdminPanel({ allScores, workouts }: Props) {
     setTeamSaving(true);
     try {
       const assignments: Record<string, string[]> = {};
-      previewTeams.forEach(t => { assignments[t.name] = t.players.map((p: any) => p.id); });
+      previewTeams.forEach((t: any) => { assignments[t.name] = t.players.map((p: any) => p.id); });
       await saveTeamCompetition(
         numTeams, previewTeams.map(t => t.name), assignments,
         bonusPoints, teamStartDate, teamEndDate
