@@ -6,7 +6,7 @@ export interface Badge {
   icon: string;
   name: string;
   description: string;
-  trigger_type: "workouts" | "points" | "streak" | "champion" | "top_score" | "challenges_won";
+  trigger_type: "workouts" | "points" | "streak" | "champion" | "top_score" | "challenges_won" | "team_wins";
   trigger_value: number;
   is_active: boolean;
 }
@@ -20,6 +20,7 @@ export interface PlayerStats {
   hasPerfectScore: boolean;
   daysActive: number;
   challengesWon?: number;
+  teamWins?: number;
 }
 
 export async function getActiveBadges(): Promise<Badge[]> {
@@ -40,6 +41,7 @@ export function checkBadge(badge: Badge, stats: PlayerStats): boolean {
     case "champion":        return stats.isGroupChampion;
     case "top_score":       return stats.hasPerfectScore;
     case "challenges_won":  return (stats.challengesWon ?? 0) >= badge.trigger_value;
+    case "team_wins":       return (stats.teamWins ?? 0) >= badge.trigger_value;
     default: return false;
   }
 }
@@ -63,4 +65,6 @@ export const DEFAULT_BADGES = [
   { icon: "💎", name: "Century Club",   description: "Earned 100 total points",     trigger_type: "points",    trigger_value: 100, is_active: true },
   { icon: "👑", name: "Champion",       description: "Won a biweekly period",       trigger_type: "champion",  trigger_value: 1,   is_active: true },
   { icon: "🎯", name: "Sharpshooter",   description: "Scored #1 on any drill",      trigger_type: "top_score", trigger_value: 1,   is_active: true },
+  { icon: "🏆", name: "Team Player",     description: "Won your first team competition", trigger_type: "team_wins", trigger_value: 1,   is_active: true },
+  { icon: "🤝", name: "Team Champion",   description: "Won 3 team competitions",        trigger_type: "team_wins", trigger_value: 3,   is_active: true },
 ];
