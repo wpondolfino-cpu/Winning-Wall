@@ -4,7 +4,9 @@ import { useLeaderboard } from "../hooks/useLeaderboard";
 import {
   supabase, LeaderboardEntry, GRADE_CATEGORIES, GradeCategory,
   Workout, Score, currentPeriodStart, currentPeriodEnd,
+  getActiveTeamCompetition, getTeams,
 } from "../lib/supabase";
+import type { TeamCompetition, Team } from "../lib/supabase";
 
 interface Props { currentUserId?: string; }
 
