@@ -183,11 +183,41 @@ export default function ProgressPanel({ profile, myScores, workouts }: Props) {
   const [view, setView]             = useState<"bests" | "history" | "badges" | "calendar" | "chart">("bests");
   const [allBadges, setAllBadges]   = useState<Badge[]>([]);
   const [champCount, setChampCount] = useState(0);
+  const [teamWinsCount, setTeamWinsCount] = useState(0);
   const { leaderboard }             = useLeaderboard();
 
-  useEffect(() => { loadAttempts(); loadBadges(); loadChampCount(); }, []);
+  useEffect(() => { loadAttempts(); loadBadges(); loadChampCount(); loadTeamWins(); }, []);
 
   async function loadBadges() { setAllBadges(await getActiveBadges()); }
+
+  async function loadTeamWins() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    // Count past team competitions where user's team won
+    const { data: comps } = await supabase.from("team_competitions")
+      .select("id,winning_team_id")
+      .not("winning_team_id","is",null);
+    if (!comps || comps.length === 0) return;
+    const compIds = comps.map((c: any) => c.id);
+    const { data: myTeams } = await supabase.from("teams")
+      .select("id,competition_id")
+      .in("competition_id", compIds);
+    const { data: myProfile } = await supabase.from("profiles")
+      .select("team_id").eq("id", user.id).single();
+    if (!myProfile?.team_id || !myTeams) return;
+    const myTeamIds = new Set((myTeams as any[]).filter(t => {
+      const profs = myTeams.filter((mt: any) => mt.id === myProfile.team_id);
+      return profs.length > 0;
+    }).map((t: any) => t.id));
+    myTeamIds.add(myProfile.team_id);
+    let wins = 0;
+    for (const comp of comps) {
+      const teamsInComp = (myTeams as any[]).filter(t => t.competition_id === comp.id);
+      const myTeamInComp = teamsInComp.find(t => myTeamIds.has(t.id));
+      if (myTeamInComp && myTeamInComp.id === comp.winning_team_id) wins++;
+    }
+    setTeamWinsCount(wins);
+  }
 
   async function loadChampCount() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -394,6 +424,7 @@ export default function ProgressPanel({ profile, myScores, workouts }: Props) {
           hasPerfectScore: myScores.some(s => (s.points ?? 0) >= 5),
           daysActive: attempts.length,
           challengesWon: 0,
+          teamWins: teamWinsCount,
         };
         const earned    = allBadges.filter(b => checkBadge(b, stats));
         const notEarned = allBadges.filter(b => !checkBadge(b, stats));
