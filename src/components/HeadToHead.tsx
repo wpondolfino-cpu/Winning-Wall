@@ -1,6 +1,6 @@
 // src/components/HeadToHead.tsx
 import { useState, useEffect, useCallback } from "react";
-import { supabase, Score, Workout, submitScore } from "../lib/supabase";
+import { supabase, Score, Workout, submitScore, getActiveTeamCompetition, getTeams, TeamCompetition, Team } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
 interface Props {
@@ -49,6 +49,13 @@ function getRivalStats(challenges: Challenge[], myId: string) {
 }
 
 export default function HeadToHead({ currentUserId, currentUserName, workouts, myScores, onScoreLogged }: Props) {
+  // Team competition state
+  const [teamComp, setTeamComp]         = useState<TeamCompetition | null>(null);
+  const [teams, setTeams]               = useState<Team[]>([]);
+  const [teamProfiles, setTeamProfiles] = useState<any[]>([]);
+  const [myTeam, setMyTeam]             = useState<Team | null>(null);
+  const [newTeamNotif, setNewTeamNotif] = useState(false);
+  const [teamRecord, setTeamRecord]     = useState<{wins:number;losses:number} | null>(null);
   const { leaderboard } = useLeaderboard();
   const [challenges, setChallenges]           = useState<Challenge[]>([]);
   const [showNew, setShowNew]                 = useState(false);
@@ -60,7 +67,7 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
   const [responding, setResponding]           = useState<string | null>(null);
   const [myResponse, setMyResponse]           = useState("");
   const [toast, setToast]                     = useState("");
-  const [activeTab, setActiveTab]             = useState<"challenges" | "stats">("challenges");
+  const [activeTab, setActiveTab]             = useState<"h2h" | "stats" | "teams">("h2h");
 
   const activeWorkouts = workouts.filter(w => w.is_active !== false && w.scoring_type === "competitive");
   const opponents = leaderboard.filter(e => e.id !== currentUserId);
@@ -88,6 +95,68 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
   }, [currentUserId]);
 
   useEffect(() => { loadChallenges(); }, [loadChallenges]);
+  useEffect(() => { loadTeamData(); loadTeamRecord(); }, [currentUserId]);
+
+  async function loadTeamRecord() {
+    // Find all past completed competitions (has a winning_team_id)
+    const { data: comps } = await supabase.from("team_competitions")
+      .select("id,winning_team_id")
+      .not("winning_team_id","is",null);
+    if (!comps || comps.length === 0) return;
+
+    // For each completed competition, find what team the player was on
+    const compIds = comps.map((c: any) => c.id);
+    const { data: myTeams } = await supabase.from("teams")
+      .select("id,competition_id")
+      .in("competition_id", compIds);
+    if (!myTeams) return;
+
+    // Check which teams the player belongs to by checking profiles history
+    // We use current team_id but also need past — simplest: check team membership
+    const { data: profs } = await supabase.from("profiles")
+      .select("team_id")
+      .eq("id", currentUserId);
+    const myTeamIds = new Set((profs ?? []).map((p: any) => p.team_id).filter(Boolean));
+
+    // Also check current teamProfiles for historical assignments
+    // For past comps, the player's team_id would have been set to a team in that comp
+    // Cross reference: my team in each comp
+    let wins = 0, losses = 0;
+    for (const comp of comps) {
+      const teamsInComp = (myTeams ?? []).filter((t: any) => t.competition_id === comp.id);
+      const myTeamInComp = teamsInComp.find((t: any) => myTeamIds.has(t.id));
+      if (!myTeamInComp) continue;
+      if (myTeamInComp.id === comp.winning_team_id) wins++;
+      else losses++;
+    }
+    if (wins + losses > 0) setTeamRecord({ wins, losses });
+  }
+
+  async function loadTeamData() {
+    const comp = await getActiveTeamCompetition();
+    setTeamComp(comp);
+    if (!comp) return;
+    const t = await getTeams(comp.id);
+    setTeams(t);
+    // Load profiles with team assignments
+    const { data: profs } = await supabase.from("profiles")
+      .select("id,name,avatar_url,grade_category,team_id")
+      .eq("role","player")
+      .not("team_id","is",null);
+    setTeamProfiles(profs ?? []);
+    // Find my team
+    const me = (profs ?? []).find((p: any) => p.id === currentUserId);
+    if (me?.team_id) {
+      const mine = t.find(tm => tm.id === me.team_id) ?? null;
+      setMyTeam(mine);
+      // Show notification if teams were created recently (last 24h)
+      const createdAt = (comp as any).created_at;
+      if (createdAt) {
+        const age = Date.now() - new Date(createdAt).getTime();
+        if (age < 86400000) setNewTeamNotif(true);
+      }
+    }
+  }
 
   // Count of unseen challenges (for the red dot in App.tsx via prop)
   const unseenCount = challenges.filter(
@@ -380,33 +449,54 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
         <div>
-          <div className="section-title">Head-to-Head</div>
-          <div className="section-sub">Challenge a teammate on any drill</div>
+          <div className="section-title">Challenges</div>
+          <div className="section-sub">Head-to-Head · Team Competition</div>
         </div>
-        <button onClick={() => setShowNew(s => !s)} style={{
-          background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10,
-          padding: "9px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
-        }}>{showNew ? "✕ Cancel" : "⚔️ New Challenge"}</button>
+
       </div>
 
       {/* Tab switcher */}
+      {/* Team notification banner */}
+      {newTeamNotif && myTeam && (
+        <div style={{ background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 10, padding: "10px 14px", marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <div style={{ fontSize: 13, color: "var(--gold)", fontWeight: 600 }}>
+            🏆 Teams are live! You're on <span style={{ fontWeight: 700 }}>{myTeam.name}</span>
+          </div>
+          <button onClick={() => setNewTeamNotif(false)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 16, padding: 0 }}>✕</button>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 6, marginBottom: 20, background: "var(--surface2)", borderRadius: 10, padding: 4 }}>
-        {(["challenges", "stats"] as const).map(tab => (
-          <button key={tab} onClick={() => setActiveTab(tab)} style={{
-            flex: 1, background: activeTab === tab ? "var(--royal)" : "transparent",
-            color: activeTab === tab ? "#fff" : "var(--muted)",
-            border: "none", borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 600,
-            fontFamily: "inherit", cursor: "pointer", transition: "all 0.15s",
-            textTransform: "capitalize",
-          }}>
-            {tab === "challenges" ? `⚔️ Challenges${myPending.length > 0 ? ` (${myPending.length})` : ""}` : "📊 My Stats"}
-          </button>
-        ))}
+        <button onClick={() => setActiveTab("h2h")} style={{
+          flex: 1, background: activeTab === "h2h" ? "var(--royal)" : "transparent",
+          color: activeTab === "h2h" ? "#fff" : "var(--muted)",
+          border: "none", borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 600,
+          fontFamily: "inherit", cursor: "pointer", transition: "all 0.15s",
+        }}>⚔️ Head to Head{myPending.length > 0 ? ` (${myPending.length})` : ""}</button>
+        <button onClick={() => setActiveTab("teams")} style={{
+          flex: 1, background: activeTab === "teams" ? "var(--royal)" : "transparent",
+          color: activeTab === "teams" ? "#fff" : "var(--muted)",
+          border: "none", borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 600,
+          fontFamily: "inherit", cursor: "pointer", transition: "all 0.15s",
+        }}>🏆 Teams</button>
+        <button onClick={() => setActiveTab("stats")} style={{
+          flex: 1, background: activeTab === "stats" ? "var(--royal)" : "transparent",
+          color: activeTab === "stats" ? "#fff" : "var(--muted)",
+          border: "none", borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 600,
+          fontFamily: "inherit", cursor: "pointer", transition: "all 0.15s",
+        }}>📊 My Stats</button>
       </div>
 
-      {/* ── CHALLENGES TAB ── */}
-      {activeTab === "challenges" && (
+      {/* ── HEAD TO HEAD TAB ── */}
+      {activeTab === "h2h" && (
         <>
+          {/* New Challenge button inside tab */}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
+            <button onClick={() => setShowNew(s => !s)} style={{
+              background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10,
+              padding: "9px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
+            }}>{showNew ? "✕ Cancel" : "⚔️ New Challenge"}</button>
+          </div>
           {/* New challenge form */}
           {showNew && (
             <div className="card" style={{ marginBottom: 20 }}>
@@ -480,6 +570,91 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
         </>
       )}
 
+      {/* ── TEAMS TAB ── */}
+      {activeTab === "teams" && (
+        <div>
+          {!teamComp || !teamComp.is_active ? (
+            <div style={{ textAlign: "center", padding: "60px 20px" }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>👀</div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)", letterSpacing: 1, marginBottom: 10 }}>
+                Keep an eye out for the next team competition!
+              </div>
+              <div style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.7 }}>
+                The coaching staff will announce when the next team challenge begins.
+              </div>
+            </div>
+          ) : (
+            <div>
+              {/* My team highlight */}
+              {myTeam && (
+                <div style={{ background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 12, padding: "12px 16px", marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Your team</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: "50%", background: myTeam.color }} />
+                    <div style={{ fontWeight: 700, fontSize: 18, color: "var(--gold)" }}>{myTeam.name}</div>
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+                    {teamComp.start_date} – {teamComp.end_date} · Winning team earns +{teamComp.bonus_points} pts each
+                  </div>
+                </div>
+              )}
+              {/* Team standings */}
+              {(() => {
+                const teamPoints: Record<string, number> = {};
+                teams.forEach(t => { teamPoints[t.id] = 0; });
+                const sortedTeams = [...teams].sort((a, b) => (teamPoints[b.id] ?? 0) - (teamPoints[a.id] ?? 0));
+                const use2col = sortedTeams.length === 2 || sortedTeams.length === 4;
+                const medals = ["🥇","🥈","🥉","4th"];
+
+                const renderCard = (team: Team, rank: number) => {
+                  const members = teamProfiles.filter((p: any) => p.team_id === team.id);
+                  const pts = teamPoints[team.id] ?? 0;
+                  const isFirst = rank === 0;
+                  const isMyTeam = myTeam?.id === team.id;
+                  return (
+                    <div key={team.id} style={{ background: isFirst ? "rgba(240,192,64,0.05)" : "var(--surface2)", border: `${isFirst || isMyTeam ? "1.5px" : "1px"} solid ${isFirst ? "var(--gold)" : isMyTeam ? team.color : "var(--border)"}`, borderRadius: 12, overflow: "hidden" }}>
+                      <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                            <div style={{ width: 9, height: 9, borderRadius: "50%", background: team.color }} />
+                            <span style={{ fontWeight: 700, fontSize: 13, color: isFirst ? "var(--gold)" : "var(--text)" }}>{team.name}</span>
+                            <span style={{ fontSize: 10, padding: "1px 5px", borderRadius: 20, background: "var(--surface)", color: "var(--muted)" }}>{medals[rank] ?? `${rank+1}th`}</span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
+                            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: isFirst ? "var(--gold)" : "#93b4ff", lineHeight: 1 }}>{pts}</span>
+                            <span style={{ fontSize: 10, color: "var(--muted)" }}>pts</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 4 }}>
+                        {members.map((p: any) => {
+                          const initials = p.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase();
+                          const isMe = p.id === currentUserId;
+                          return (
+                            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 4px", borderRadius: 6, background: isMe ? "rgba(26,63,168,0.15)" : "transparent" }}>
+                              <div style={{ width: 20, height: 20, borderRadius: "50%", overflow: "hidden", border: `1.5px solid ${isMe ? team.color : "var(--border)"}`, background: "rgba(26,63,168,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                {p.avatar_url ? <img src={p.avatar_url} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 7, fontWeight: 700, color: team.color }}>{initials}</span>}
+                              </div>
+                              <span style={{ flex: 1, fontSize: 11, color: "var(--text)", fontWeight: isMe ? 700 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name.split(" ")[0]}{isMe && <span style={{ color: "#93b4ff", marginLeft: 4 }}>(you)</span>}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                };
+
+                return use2col ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{sortedTeams.map((t, r) => renderCard(t, r))}</div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{sortedTeams.map((t, r) => renderCard(t, r))}</div>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── STATS TAB ── */}
       {activeTab === "stats" && (
         <div>
@@ -487,11 +662,29 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--muted)", letterSpacing: 1, marginBottom: 10, textTransform: "uppercase" }}>
             All-Time Record
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 24 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
             <StatTile label="Wins"   value={totalWins}   color="var(--gold)" />
             <StatTile label="Losses" value={totalLosses} color="#ff7b7b" />
             <StatTile label="Ties"   value={totalTies}   color="var(--muted)" />
           </div>
+          {teamRecord && (
+            <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 16px", marginBottom: 24 }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Team Competition Record</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div style={{ textAlign: "center", background: "var(--surface)", borderRadius: 8, padding: "10px" }}>
+                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "var(--gold)", lineHeight: 1 }}>{teamRecord.wins}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Wins</div>
+                </div>
+                <div style={{ textAlign: "center", background: "var(--surface)", borderRadius: 8, padding: "10px" }}>
+                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "#ff7b7b", lineHeight: 1 }}>{teamRecord.losses}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Losses</div>
+                </div>
+              </div>
+              <div style={{ textAlign: "center", fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
+                {teamRecord.wins + teamRecord.losses} team competition{teamRecord.wins + teamRecord.losses !== 1 ? "s" : ""} played
+              </div>
+            </div>
+          )}
 
           {/* Win rate */}
           {completedChallenges.length > 0 && (
