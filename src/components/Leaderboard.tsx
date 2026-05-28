@@ -10,7 +10,7 @@ interface Props { currentUserId?: string; }
 
 const ALL = "All Players";
 type GradeTab = typeof ALL | GradeCategory;
-type TimeMode = "alltime" | "period";
+type TimeMode = "alltime" | "period" | "teams";
 type BoardView = "overall" | string; // string = workout id
 
 const SHORT: Record<string, string> = {
@@ -42,14 +42,32 @@ export default function Leaderboard({ currentUserId }: Props) {
   const [profiles, setProfiles]     = useState<{id:string;name:string;grade_category?:string;avatar_url?:string}[]>([]);
   const [periodEntries, setPeriodEntries] = useState<PeriodEntry[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  const [teamComp, setTeamComp]           = useState<TeamCompetition | null>(null);
+  const [teams, setTeams]                 = useState<Team[]>([]);
+  const [teamProfiles, setTeamProfiles]   = useState<any[]>([]);
 
 
   const periodStart = currentPeriodStart();
   const periodEnd   = currentPeriodEnd();
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); loadTeams(); }, []);
   useEffect(() => { if (periodScores.length > 0) buildPeriodBoard(); }, [periodScores, profiles]);
 
+
+  async function loadTeams() {
+    const comp = await getActiveTeamCompetition();
+    setTeamComp(comp);
+    if (comp) {
+      const t = await getTeams(comp.id);
+      setTeams(t);
+      // Load profiles with team_id
+      const { data } = await supabase.from("profiles")
+        .select("id,name,avatar_url,grade_category,team_id")
+        .eq("role", "player")
+        .not("team_id", "is", null);
+      setTeamProfiles(data ?? []);
+    }
+  }
 
   async function loadData() {
     const [{ data: ws }, { data: sc }, { data: pr }, { data: psc }] = await Promise.all([
@@ -214,6 +232,12 @@ export default function Leaderboard({ currentUserId }: Props) {
           background: timeMode === "period" ? "var(--royal)" : "transparent",
           color: timeMode === "period" ? "#fff" : "var(--muted)", transition: "all .2s",
         }}>📅 Current Period</button>
+        <button onClick={() => { setTimeMode("teams"); setView("overall"); }} style={{
+          flex: 1, padding: "10px", borderRadius: 9, border: "none", cursor: "pointer",
+          fontFamily: "inherit", fontSize: 13, fontWeight: 600,
+          background: timeMode === "teams" ? "var(--royal)" : "transparent",
+          color: timeMode === "teams" ? "#fff" : "var(--muted)", transition: "all .2s",
+        }}>🏆 Teams</button>
 
 
       </div>
@@ -406,6 +430,104 @@ export default function Leaderboard({ currentUserId }: Props) {
           {periodRanked.length === 0 && (
             <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", fontSize: 14 }}>
               No activity yet this period. Start logging! 🏀
+            </div>
+          )}
+        </div>
+      )}
+
+
+      {/* ══ TEAMS ══ */}
+      {timeMode === "teams" && (
+        <div>
+          {!teamComp || !teamComp.is_active ? (
+            <div style={{ textAlign: "center", padding: "60px 20px" }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>👀</div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: "var(--gold)", letterSpacing: 1, marginBottom: 12 }}>
+                Keep an eye out for the next team competition!
+              </div>
+              <div style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.7 }}>
+                The coaching staff will announce when the next team challenge begins.
+                Train hard and be ready!
+              </div>
+            </div>
+          ) : (
+            <div>
+              {/* Competition info banner */}
+              <div style={{ background: "rgba(26,63,168,0.1)", border: "1px solid rgba(26,63,168,0.3)", borderRadius: 12, padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: "#93b4ff" }}>🏆 Team Competition Active</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                    {teamComp.start_date} – {teamComp.end_date} · Winning team earns +{teamComp.bonus_points} pts each
+                  </div>
+                </div>
+              </div>
+
+              {/* Team standings + rosters */}
+              {(() => {
+                // Calculate team points from current period scores
+                const teamPoints: Record<string, number> = {};
+                teams.forEach(t => { teamPoints[t.id] = 0; });
+                teamProfiles.forEach((p: any) => {
+                  if (!p.team_id) return;
+                  const periodEntry = periodEntries.find(e => e.player_id === p.id);
+                  if (periodEntry) teamPoints[p.team_id] = (teamPoints[p.team_id] ?? 0) + periodEntry.period_points;
+                });
+                const sortedTeams = [...teams].sort((a, b) => (teamPoints[b.id] ?? 0) - (teamPoints[a.id] ?? 0));
+
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    {sortedTeams.map((team, rank) => {
+                      const members = teamProfiles.filter((p: any) => p.team_id === team.id);
+                      const pts = teamPoints[team.id] ?? 0;
+                      return (
+                        <div key={team.id} style={{ background: "var(--surface2)", border: `1px solid ${rank === 0 ? team.color : "var(--border)"}`, borderRadius: 14, overflow: "hidden" }}>
+                          {/* Team header */}
+                          <div style={{ background: rank === 0 ? team.color + "22" : "transparent", padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border)" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <div style={{ width: 12, height: 12, borderRadius: "50%", background: team.color, flexShrink: 0 }} />
+                              <div style={{ fontWeight: 700, fontSize: 16, color: rank === 0 ? team.color : "var(--text)" }}>
+                                {rank === 0 && "🥇 "}{team.name}
+                              </div>
+                            </div>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: rank === 0 ? team.color : "#93b4ff", lineHeight: 1 }}>{pts}</div>
+                              <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase" }}>team pts</div>
+                            </div>
+                          </div>
+
+                          {/* Members */}
+                          <div style={{ padding: "10px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+                            {members
+                              .map((p: any) => ({ ...p, pts: periodEntries.find(e => e.player_id === p.id)?.period_points ?? 0 }))
+                              .sort((a: any, b: any) => b.pts - a.pts)
+                              .map((p: any) => {
+                                const initials = p.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase();
+                                const isMe = p.id === currentUserId;
+                                return (
+                                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", borderRadius: 8, background: isMe ? "rgba(26,63,168,0.15)" : "transparent" }}>
+                                    <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", border: `2px solid ${isMe ? team.color : "var(--border)"}`, background: "rgba(26,63,168,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                      {p.avatar_url
+                                        ? <img src={p.avatar_url} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                        : <span style={{ fontSize: 10, fontWeight: 700, color: team.color }}>{initials}</span>
+                                      }
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                      <div style={{ fontSize: 13, color: "var(--text)", fontWeight: isMe ? 700 : 400 }}>
+                                        {p.name}{isMe && <span style={{ fontSize: 11, color: "#93b4ff", marginLeft: 6 }}>(you)</span>}
+                                      </div>
+                                      <div style={{ fontSize: 10, color: "var(--muted)" }}>{SHORT[p.grade_category] ?? p.grade_category}</div>
+                                    </div>
+                                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: p.pts > 0 ? "#93b4ff" : "var(--muted)" }}>{p.pts} pts</div>
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>
