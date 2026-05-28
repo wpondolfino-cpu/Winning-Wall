@@ -55,7 +55,7 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
   const [teamProfiles, setTeamProfiles] = useState<any[]>([]);
   const [myTeam, setMyTeam]             = useState<Team | null>(null);
   const [newTeamNotif, setNewTeamNotif] = useState(false);
-  const [teamRecord, setTeamRecord]     = useState<{wins:number;losses:number} | null>(null);
+  const [teamRecord, setTeamRecord]     = useState<{wins:number;losses:number}>({wins:0,losses:0});
   const { leaderboard } = useLeaderboard();
   const [challenges, setChallenges]           = useState<Challenge[]>([]);
   const [showNew, setShowNew]                 = useState(false);
@@ -129,7 +129,7 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
       if (myTeamInComp.id === comp.winning_team_id) wins++;
       else losses++;
     }
-    if (wins + losses > 0) setTeamRecord({ wins, losses });
+    setTeamRecord({ wins, losses });
   }
 
   async function loadTeamData() {
@@ -667,8 +667,7 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
             <StatTile label="Losses" value={totalLosses} color="#ff7b7b" />
             <StatTile label="Ties"   value={totalTies}   color="var(--muted)" />
           </div>
-          {teamRecord && (
-            <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 16px", marginBottom: 24 }}>
+          <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 16px", marginBottom: 24 }}>
               <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Team Competition Record</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div style={{ textAlign: "center", background: "var(--surface)", borderRadius: 8, padding: "10px" }}>
@@ -681,10 +680,9 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
                 </div>
               </div>
               <div style={{ textAlign: "center", fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
-                {teamRecord.wins + teamRecord.losses} team competition{teamRecord.wins + teamRecord.losses !== 1 ? "s" : ""} played
+                {teamRecord.wins + teamRecord.losses > 0 ? `${teamRecord.wins + teamRecord.losses} team competition${teamRecord.wins + teamRecord.losses !== 1 ? "s" : ""} played` : "No team competitions completed yet"}
               </div>
             </div>
-          )}
 
           {/* Win rate */}
           {completedChallenges.length > 0 && (
