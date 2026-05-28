@@ -485,10 +485,9 @@ export default function Leaderboard({ currentUserId }: Props) {
                   const isFirst = rank === 0;
                   return (
                     <div key={team.id} style={{
-                      background: "var(--surface2)",
+                      background: isFirst ? "rgba(240,192,64,0.05)" : "var(--surface2)",
                       border: `${isFirst ? "1.5px" : "1px"} solid ${isFirst ? "var(--gold)" : "var(--border)"}`,
                       borderRadius: 12, overflow: "hidden",
-                      background: isFirst ? "rgba(240,192,64,0.05)" : "var(--surface2)",
                     }}>
                       {/* Header */}
                       <div style={{ padding: compact ? "10px 12px" : "12px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
