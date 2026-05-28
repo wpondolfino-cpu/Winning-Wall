@@ -79,6 +79,7 @@ export interface Profile {
   is_period_champion?: boolean;
   champion_since?: string;
   must_change_password?: boolean;
+  team_id?: string;
   created_at: string;
 }
 
@@ -651,6 +652,86 @@ export async function getBestScoreRecords() {
     .eq("record_type", "best_score")
     .order("workout_title");
   return data ?? [];
+}
+
+
+// ── Teams ─────────────────────────────────────────────────────
+
+export interface Team {
+  id: string;
+  name: string;
+  color: string;
+  competition_id: string;
+}
+
+export interface TeamCompetition {
+  id: string;
+  is_active: boolean;
+  bonus_points: number;
+  start_date: string | null;
+  end_date: string | null;
+  winning_team_id: string | null;
+}
+
+export const TEAM_CATEGORIES: Record<string, string[]> = {
+  "🏀 Basketball": ["The Buckets","The Ballers","The Bombers","The Handles","The Swishes","The Bricks","The Dunkers","The Drainers"],
+  "🐾 Animals":    ["The Wolves","The Hawks","The Bulls","The Bears","The Falcons","The Lions","The Vipers","The Sharks"],
+  "🍕 Food":       ["The Hotdogs","The Wings","The Slices","The Tacos","The Nuggets","The Subs","The Cookies","The Nachos"],
+  "🎨 Colors":     ["The Crimsons","The Golds","The Navys","The Scarlets","The Royals","The Silvers","The Blacks","The Whites"],
+  "🌊 Elements":   ["The Storms","The Flames","The Frosts","The Bolts","The Tides","The Shadows","The Blaze","The Thunder"],
+  "🎯 Attitude":   ["The Grinders","The Dawgs","The Hoopers","The Warriors","The Underdogs","The Elites","The Hungry","The Relentless"],
+};
+
+export const TEAM_COLORS = ["#1a5fd4","#e53935","#43a047","#f57c00","#8e24aa","#00838f","#d81b60","#546e7a"];
+
+export async function getActiveTeamCompetition(): Promise<TeamCompetition | null> {
+  const { data } = await supabase.from("team_competitions").select("*").eq("is_active", true).single();
+  return data;
+}
+
+export async function getTeams(competitionId: string): Promise<Team[]> {
+  const { data } = await supabase.from("teams").select("*").eq("competition_id", competitionId);
+  return data ?? [];
+}
+
+export async function saveTeamCompetition(
+  numTeams: number,
+  teamNames: string[],
+  playerAssignments: Record<string, string>, // teamName -> playerId[]
+  bonusPoints: number,
+  startDate: string,
+  endDate: string,
+): Promise<void> {
+  // Deactivate any existing competition
+  await supabase.from("team_competitions").update({ is_active: false }).eq("is_active", true);
+
+  // Create new competition
+  const { data: comp, error: compErr } = await supabase.from("team_competitions").insert({
+    is_active: true,
+    bonus_points: bonusPoints,
+    start_date: startDate,
+    end_date: endDate,
+  }).select().single();
+  if (compErr) throw compErr;
+
+  // Create teams and assign players
+  for (let i = 0; i < numTeams; i++) {
+    const name = teamNames[i];
+    const color = TEAM_COLORS[i % TEAM_COLORS.length];
+    const { data: team } = await supabase.from("teams").insert({
+      name, color, competition_id: comp.id,
+    }).select().single();
+    if (!team) continue;
+    // Assign players to this team
+    const playerIds = playerAssignments[name] ?? [];
+    if (playerIds.length > 0) {
+      await supabase.from("profiles").update({ team_id: team.id }).in("id", playerIds);
+    }
+  }
+}
+
+export async function toggleTeamCompetition(active: boolean): Promise<void> {
+  await supabase.from("team_competitions").update({ is_active: active }).eq("is_active", !active);
 }
 
 // ── YouTube helpers ───────────────────────────────────────────
