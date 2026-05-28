@@ -4,15 +4,13 @@ import { useLeaderboard } from "../hooks/useLeaderboard";
 import {
   supabase, LeaderboardEntry, GRADE_CATEGORIES, GradeCategory,
   Workout, Score, currentPeriodStart, currentPeriodEnd,
-  getActiveTeamCompetition, getTeams,
 } from "../lib/supabase";
-import type { TeamCompetition, Team } from "../lib/supabase";
 
 interface Props { currentUserId?: string; }
 
 const ALL = "All Players";
 type GradeTab = typeof ALL | GradeCategory;
-type TimeMode = "alltime" | "period" | "teams";
+type TimeMode = "alltime" | "period";
 type BoardView = "overall" | string; // string = workout id
 
 const SHORT: Record<string, string> = {
@@ -44,32 +42,15 @@ export default function Leaderboard({ currentUserId }: Props) {
   const [profiles, setProfiles]     = useState<{id:string;name:string;grade_category?:string;avatar_url?:string}[]>([]);
   const [periodEntries, setPeriodEntries] = useState<PeriodEntry[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
-  const [teamComp, setTeamComp]           = useState<TeamCompetition | null>(null);
-  const [teams, setTeams]                 = useState<Team[]>([]);
-  const [teamProfiles, setTeamProfiles]   = useState<any[]>([]);
+
 
 
   const periodStart = currentPeriodStart();
   const periodEnd   = currentPeriodEnd();
 
-  useEffect(() => { loadData(); loadTeams(); }, []);
+  useEffect(() => { loadData(); }, []);
   useEffect(() => { if (periodScores.length > 0) buildPeriodBoard(); }, [periodScores, profiles]);
 
-
-  async function loadTeams() {
-    const comp = await getActiveTeamCompetition();
-    setTeamComp(comp);
-    if (comp) {
-      const t = await getTeams(comp.id);
-      setTeams(t);
-      // Load profiles with team_id
-      const { data } = await supabase.from("profiles")
-        .select("id,name,avatar_url,grade_category,team_id")
-        .eq("role", "player")
-        .not("team_id", "is", null);
-      setTeamProfiles(data ?? []);
-    }
-  }
 
   async function loadData() {
     const [{ data: ws }, { data: sc }, { data: pr }, { data: psc }] = await Promise.all([
@@ -234,12 +215,7 @@ export default function Leaderboard({ currentUserId }: Props) {
           background: timeMode === "period" ? "var(--royal)" : "transparent",
           color: timeMode === "period" ? "#fff" : "var(--muted)", transition: "all .2s",
         }}>📅 Current Period</button>
-        <button onClick={() => { setTimeMode("teams"); setView("overall"); }} style={{
-          flex: 1, padding: "10px", borderRadius: 9, border: "none", cursor: "pointer",
-          fontFamily: "inherit", fontSize: 13, fontWeight: 600,
-          background: timeMode === "teams" ? "var(--royal)" : "transparent",
-          color: timeMode === "teams" ? "#fff" : "var(--muted)", transition: "all .2s",
-        }}>🏆 Teams</button>
+
 
 
       </div>
@@ -437,117 +413,6 @@ export default function Leaderboard({ currentUserId }: Props) {
         </div>
       )}
 
-
-      {/* ══ TEAMS ══ */}
-      {timeMode === "teams" && (
-        <div>
-          {!teamComp || !teamComp.is_active ? (
-            <div style={{ textAlign: "center", padding: "60px 20px" }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>👀</div>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: "var(--gold)", letterSpacing: 1, marginBottom: 12 }}>
-                Keep an eye out for the next team competition!
-              </div>
-              <div style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.7 }}>
-                The coaching staff will announce when the next team challenge begins.
-                Train hard and be ready!
-              </div>
-            </div>
-          ) : (
-            <div>
-              {/* Competition info banner */}
-              <div style={{ background: "rgba(26,63,168,0.1)", border: "1px solid rgba(26,63,168,0.3)", borderRadius: 12, padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: "#93b4ff" }}>🏆 Team Competition Active</div>
-                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-                    {teamComp.start_date} – {teamComp.end_date} · Winning team earns +{teamComp.bonus_points} pts each
-                  </div>
-                </div>
-              </div>
-
-              {/* Team standings + rosters */}
-              {(() => {
-                // Calculate team points from current period scores
-                const teamPoints: Record<string, number> = {};
-                teams.forEach(t => { teamPoints[t.id] = 0; });
-                teamProfiles.forEach((p: any) => {
-                  if (!p.team_id) return;
-                  const periodEntry = periodEntries.find(e => e.player_id === p.id);
-                  if (periodEntry) teamPoints[p.team_id] = (teamPoints[p.team_id] ?? 0) + periodEntry.period_points;
-                });
-                const sortedTeams = [...teams].sort((a, b) => (teamPoints[b.id] ?? 0) - (teamPoints[a.id] ?? 0));
-
-                const rankMedal = (r: number) => r === 0 ? "🥇" : r === 1 ? "🥈" : r === 2 ? "🥉" : `${r+1}th`;
-                const use2col = sortedTeams.length === 2 || sortedTeams.length === 4;
-
-                const renderTeamCard = (team: Team, rank: number, compact: boolean) => {
-                  const members = teamProfiles.filter((p: any) => p.team_id === team.id);
-                  const pts = teamPoints[team.id] ?? 0;
-                  const isFirst = rank === 0;
-                  return (
-                    <div key={team.id} style={{
-                      background: isFirst ? "rgba(240,192,64,0.05)" : "var(--surface2)",
-                      border: `${isFirst ? "1.5px" : "1px"} solid ${isFirst ? "var(--gold)" : "var(--border)"}`,
-                      borderRadius: 12, overflow: "hidden",
-                    }}>
-                      {/* Header */}
-                      <div style={{ padding: compact ? "10px 12px" : "12px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                            <div style={{ width: 9, height: 9, borderRadius: "50%", background: team.color, flexShrink: 0 }} />
-                            <span style={{ fontWeight: 700, fontSize: compact ? 12 : 14, color: isFirst ? "var(--gold)" : "var(--text)" }}>{team.name}</span>
-                            <span style={{ fontSize: 10, padding: "1px 5px", borderRadius: 20, background: isFirst ? "rgba(240,192,64,0.15)" : "var(--surface)", color: isFirst ? "var(--gold)" : "var(--muted)" }}>{rankMedal(rank)}</span>
-                          </div>
-                          <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
-                            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: compact ? 24 : 28, color: isFirst ? "var(--gold)" : "#93b4ff", lineHeight: 1 }}>{pts}</span>
-                            <span style={{ fontSize: 10, color: "var(--muted)" }}>pts</span>
-                          </div>
-                        </div>
-                      </div>
-                      {/* Members */}
-                      <div style={{ padding: compact ? "8px 10px" : "10px 14px", display: "flex", flexDirection: "column", gap: 5 }}>
-                        {members
-                          .map((p: any) => ({ ...p, pts: periodEntries.find(e => e.player_id === p.id)?.period_points ?? 0 }))
-                          .sort((a: any, b: any) => b.pts - a.pts)
-                          .map((p: any) => {
-                            const initials = p.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase();
-                            const isMe = p.id === currentUserId;
-                            const avSize = compact ? 20 : 28;
-                            return (
-                              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: compact ? 6 : 8, padding: "4px 6px", borderRadius: 7, background: isMe ? "rgba(26,63,168,0.15)" : "transparent" }}>
-                                <div style={{ width: avSize, height: avSize, borderRadius: "50%", overflow: "hidden", border: `1.5px solid ${isMe ? team.color : "var(--border)"}`, background: "rgba(26,63,168,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                                  {p.avatar_url
-                                    ? <img src={p.avatar_url} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                                    : <span style={{ fontSize: compact ? 7 : 9, fontWeight: 700, color: team.color }}>{initials}</span>
-                                  }
-                                </div>
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontSize: compact ? 11 : 12, color: "var(--text)", fontWeight: isMe ? 700 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                    {p.name.split(" ")[0]}{isMe && <span style={{ fontSize: 10, color: "#93b4ff", marginLeft: 4 }}>(you)</span>}
-                                  </div>
-                                </div>
-                                <div style={{ fontSize: compact ? 10 : 11, color: p.pts > 0 ? "#93b4ff" : "var(--muted)", flexShrink: 0, fontWeight: 600 }}>{p.pts}</div>
-                              </div>
-                            );
-                          })}
-                      </div>
-                    </div>
-                  );
-                };
-
-                return use2col ? (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    {sortedTeams.map((team, rank) => renderTeamCard(team, rank, true))}
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    {sortedTeams.map((team, rank) => renderTeamCard(team, rank, false))}
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ══ PER-WORKOUT LEADERBOARD ══ */}
       {view !== "overall" && selectedWorkout && (
