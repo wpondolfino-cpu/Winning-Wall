@@ -1,6 +1,6 @@
 // src/components/AdminPanel.tsx
 import { useState, useEffect } from "react";
-import { supabase, approveUser, rejectUser, GRADE_CATEGORIES, GradeCategory, Profile, Score, Workout } from "../lib/supabase";
+import { supabase, approveUser, rejectUser, GRADE_CATEGORIES, GradeCategory, Profile, Score, Workout, TEAM_CATEGORIES, TEAM_COLORS, saveTeamCompetition, getActiveTeamCompetition, TeamCompetition, getTeams, Team, toggleTeamCompetition } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
 interface Props {
@@ -50,6 +50,18 @@ export default function AdminPanel({ allScores, workouts }: Props) {
   const [resetRequests, setResetRequests] = useState<any[]>([]);
   const [resettingPw, setResettingPw] = useState<string | null>(null);
 
+  // ── Team competition state ──
+  const [teamComp, setTeamComp]           = useState<TeamCompetition | null>(null);
+  const [activeTeams, setActiveTeams]     = useState<Team[]>([]);
+  const [numTeams, setNumTeams]           = useState(2);
+  const [teamCategory, setTeamCategory]   = useState("🏀 Basketball");
+  const [bonusPoints, setBonusPoints]     = useState(10);
+  const [teamStartDate, setTeamStartDate] = useState("");
+  const [teamEndDate, setTeamEndDate]     = useState("");
+  const [previewTeams, setPreviewTeams]   = useState<{name:string;color:string;players:Profile[]}[]>([]);
+  const [teamSaving, setTeamSaving]       = useState(false);
+  const [teamTogglingOff, setTeamTogglingOff] = useState(false);
+
   // ── edit scores ──
   const [editScoresFor, setEditScoresFor] = useState<string | null>(null);
   const [playerScores, setPlayerScores]   = useState<EditScore[]>([]);
@@ -63,8 +75,80 @@ export default function AdminPanel({ allScores, workouts }: Props) {
   useEffect(() => {
     loadPendingCoaches();
     loadResetRequests();
+    loadTeamData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function loadTeamData() {
+    const comp = await getActiveTeamCompetition();
+    setTeamComp(comp);
+    if (comp) {
+      const teams = await getTeams(comp.id);
+      setActiveTeams(teams);
+    }
+  }
+
+  async function randomizeTeams() {
+    // Get all active players
+    const { data: players } = await supabase.from("profiles")
+      .select("id,name,grade_category,avatar_url")
+      .eq("role", "player")
+      .order("name");
+    if (!players) return;
+
+    // Split by grade
+    const upper = players.filter((p:any) => p.grade_category?.includes("11") || p.grade_category?.includes("12") || p.grade_category?.includes("Upper"));
+    const lower = players.filter((p:any) => !upper.includes(p));
+
+    // Shuffle both groups
+    const shuffle = (arr: any[]) => [...arr].sort(() => Math.random() - 0.5);
+    const shuffledUpper = shuffle(upper);
+    const shuffledLower = shuffle(lower);
+
+    // Pick random names from category
+    const names = [...TEAM_CATEGORIES[teamCategory]];
+    const shuffledNames = shuffle(names).slice(0, numTeams);
+
+    // Distribute players evenly across teams with grade balance
+    const teams: {name:string;color:string;players:Profile[]}[] = 
+      shuffledNames.map((name, i) => ({ name, color: TEAM_COLORS[i % TEAM_COLORS.length], players: [] }));
+
+    // Distribute upperclassmen round-robin
+    shuffledUpper.forEach((p, i) => teams[i % numTeams].players.push(p as Profile));
+    // Distribute underclassmen round-robin
+    shuffledLower.forEach((p, i) => teams[i % numTeams].players.push(p as Profile));
+
+    setPreviewTeams(teams);
+  }
+
+  async function confirmTeams() {
+    if (previewTeams.length === 0) return;
+    if (!teamStartDate || !teamEndDate) { showToast("Please set start and end dates."); return; }
+    setTeamSaving(true);
+    try {
+      const assignments: Record<string, string[]> = {};
+      previewTeams.forEach(t => { assignments[t.name] = t.players.map((p: any) => p.id); });
+      await saveTeamCompetition(
+        numTeams, previewTeams.map(t => t.name), assignments,
+        bonusPoints, teamStartDate, teamEndDate
+      );
+      await loadTeamData();
+      setPreviewTeams([]);
+      showToast("✅ Team competition started!");
+    } catch (e: any) { showToast("Error: " + e.message); }
+    finally { setTeamSaving(false); }
+  }
+
+  async function handleToggleTeams(active: boolean) {
+    setTeamTogglingOff(true);
+    try {
+      await supabase.from("team_competitions").update({ is_active: active })
+        .eq("id", teamComp?.id ?? "");
+      await loadTeamData();
+      showToast(active ? "Team competition is now ON 🎯" : "Team competition is now OFF");
+    } catch (e: any) { showToast("Error: " + e.message); }
+    finally { setTeamTogglingOff(false); }
+  }
 
   async function loadResetRequests() {
     const { data } = await supabase
@@ -468,6 +552,110 @@ export default function AdminPanel({ allScores, workouts }: Props) {
           </div>
         </div>
       )}
+
+      {/* ── Team Competition ── */}
+      <div style={{ marginTop: 32 }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1, marginBottom: 16 }}>
+          🏆 Team Competition
+        </div>
+
+        {/* Active competition status */}
+        {teamComp && (
+          <div style={{ background: teamComp.is_active ? "rgba(40,180,80,0.08)" : "rgba(255,107,107,0.08)", border: `1px solid ${teamComp.is_active ? "rgba(40,180,80,0.3)" : "rgba(255,107,107,0.3)"}`, borderRadius: 12, padding: "14px 16px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: teamComp.is_active ? "#5de098" : "#ff7b7b" }}>
+                {teamComp.is_active ? "🟢 Competition Active" : "🔴 Competition Inactive"}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
+                {teamComp.start_date && `${teamComp.start_date} – ${teamComp.end_date} · `}
+                Bonus: +{teamComp.bonus_points} pts · {activeTeams.length} teams
+              </div>
+            </div>
+            <button onClick={() => handleToggleTeams(!teamComp.is_active)} disabled={teamTogglingOff}
+              style={{ background: teamComp.is_active ? "rgba(255,107,107,0.15)" : "rgba(40,180,80,0.15)", color: teamComp.is_active ? "#ff7b7b" : "#5de098", border: `1px solid ${teamComp.is_active ? "rgba(255,107,107,0.3)" : "rgba(40,180,80,0.3)"}`, borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
+              {teamTogglingOff ? "Updating…" : teamComp.is_active ? "Turn Off" : "Turn On"}
+            </button>
+          </div>
+        )}
+
+        {/* Setup form */}
+        <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 14 }}>
+            {teamComp ? "Create New Competition" : "Set Up Team Competition"}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Number of Teams</label>
+              <select value={numTeams} onChange={e => setNumTeams(Number(e.target.value))}
+                style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }}>
+                <option value={2}>2 Teams</option>
+                <option value={3}>3 Teams</option>
+                <option value={4}>4 Teams</option>
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Bonus Points (winner)</label>
+              <input type="number" inputMode="numeric" value={bonusPoints} onChange={e => setBonusPoints(Number(e.target.value))} min={1}
+                style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, boxSizing: "border-box" }} />
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name Category</label>
+            <select value={teamCategory} onChange={e => setTeamCategory(e.target.value)}
+              style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }}>
+              {Object.keys(TEAM_CATEGORIES).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+            </select>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+            <div>
+              <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Start Date</label>
+              <input type="date" value={teamStartDate} onChange={e => setTeamStartDate(e.target.value)}
+                style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>End Date</label>
+              <input type="date" value={teamEndDate} onChange={e => setTeamEndDate(e.target.value)}
+                style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, boxSizing: "border-box" }} />
+            </div>
+          </div>
+
+          <button onClick={randomizeTeams}
+            style={{ width: "100%", background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "10px", fontSize: 14, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", marginBottom: 12 }}>
+            🎲 Randomize Teams
+          </button>
+
+          {/* Preview */}
+          {previewTeams.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10, fontWeight: 600 }}>Preview — re-randomize or confirm:</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {previewTeams.map(team => (
+                  <div key={team.name} style={{ background: "var(--surface)", borderRadius: 10, padding: "12px 14px", borderLeft: `4px solid ${team.color}` }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: team.color, marginBottom: 8 }}>{team.name}</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {team.players.map((p: any) => (
+                        <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 5, background: "var(--surface2)", borderRadius: 20, padding: "3px 10px 3px 4px", fontSize: 11 }}>
+                          <div style={{ width: 20, height: 20, borderRadius: "50%", background: team.color + "33", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, fontWeight: 700, color: team.color }}>
+                            {p.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}
+                          </div>
+                          <span style={{ color: "var(--text)" }}>{p.name.split(" ")[0]}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={confirmTeams} disabled={teamSaving}
+                style={{ width: "100%", marginTop: 12, background: "#5de098", color: "#051a0a", border: "none", borderRadius: 8, padding: "10px", fontSize: 14, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                {teamSaving ? "Saving…" : "✅ Confirm Teams"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* ── Edit Scores Modal ── */}
       {editScoresFor && (
