@@ -476,57 +476,72 @@ export default function Leaderboard({ currentUserId }: Props) {
                 });
                 const sortedTeams = [...teams].sort((a, b) => (teamPoints[b.id] ?? 0) - (teamPoints[a.id] ?? 0));
 
-                return (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    {sortedTeams.map((team, rank) => {
-                      const members = teamProfiles.filter((p: any) => p.team_id === team.id);
-                      const pts = teamPoints[team.id] ?? 0;
-                      return (
-                        <div key={team.id} style={{ background: "var(--surface2)", border: `1px solid ${rank === 0 ? team.color : "var(--border)"}`, borderRadius: 14, overflow: "hidden" }}>
-                          {/* Team header */}
-                          <div style={{ background: rank === 0 ? team.color + "22" : "transparent", padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border)" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              <div style={{ width: 12, height: 12, borderRadius: "50%", background: team.color, flexShrink: 0 }} />
-                              <div style={{ fontWeight: 700, fontSize: 16, color: rank === 0 ? team.color : "var(--text)" }}>
-                                {rank === 0 && "🥇 "}{team.name}
-                              </div>
-                            </div>
-                            <div style={{ textAlign: "right" }}>
-                              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: rank === 0 ? team.color : "#93b4ff", lineHeight: 1 }}>{pts}</div>
-                              <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase" }}>team pts</div>
-                            </div>
-                          </div>
+                const rankMedal = (r: number) => r === 0 ? "🥇" : r === 1 ? "🥈" : r === 2 ? "🥉" : `${r+1}th`;
+                const use2col = sortedTeams.length === 2 || sortedTeams.length === 4;
 
-                          {/* Members */}
-                          <div style={{ padding: "10px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-                            {members
-                              .map((p: any) => ({ ...p, pts: periodEntries.find(e => e.player_id === p.id)?.period_points ?? 0 }))
-                              .sort((a: any, b: any) => b.pts - a.pts)
-                              .map((p: any) => {
-                                const initials = p.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase();
-                                const isMe = p.id === currentUserId;
-                                return (
-                                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", borderRadius: 8, background: isMe ? "rgba(26,63,168,0.15)" : "transparent" }}>
-                                    <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", border: `2px solid ${isMe ? team.color : "var(--border)"}`, background: "rgba(26,63,168,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                                      {p.avatar_url
-                                        ? <img src={p.avatar_url} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                                        : <span style={{ fontSize: 10, fontWeight: 700, color: team.color }}>{initials}</span>
-                                      }
-                                    </div>
-                                    <div style={{ flex: 1 }}>
-                                      <div style={{ fontSize: 13, color: "var(--text)", fontWeight: isMe ? 700 : 400 }}>
-                                        {p.name}{isMe && <span style={{ fontSize: 11, color: "#93b4ff", marginLeft: 6 }}>(you)</span>}
-                                      </div>
-                                      <div style={{ fontSize: 10, color: "var(--muted)" }}>{SHORT[p.grade_category] ?? p.grade_category}</div>
-                                    </div>
-                                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: p.pts > 0 ? "#93b4ff" : "var(--muted)" }}>{p.pts} pts</div>
-                                  </div>
-                                );
-                              })}
+                const renderTeamCard = (team: Team, rank: number, compact: boolean) => {
+                  const members = teamProfiles.filter((p: any) => p.team_id === team.id);
+                  const pts = teamPoints[team.id] ?? 0;
+                  const isFirst = rank === 0;
+                  return (
+                    <div key={team.id} style={{
+                      background: "var(--surface2)",
+                      border: `${isFirst ? "1.5px" : "1px"} solid ${isFirst ? "var(--gold)" : "var(--border)"}`,
+                      borderRadius: 12, overflow: "hidden",
+                      background: isFirst ? "rgba(240,192,64,0.05)" : "var(--surface2)",
+                    }}>
+                      {/* Header */}
+                      <div style={{ padding: compact ? "10px 12px" : "12px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                            <div style={{ width: 9, height: 9, borderRadius: "50%", background: team.color, flexShrink: 0 }} />
+                            <span style={{ fontWeight: 700, fontSize: compact ? 12 : 14, color: isFirst ? "var(--gold)" : "var(--text)" }}>{team.name}</span>
+                            <span style={{ fontSize: 10, padding: "1px 5px", borderRadius: 20, background: isFirst ? "rgba(240,192,64,0.15)" : "var(--surface)", color: isFirst ? "var(--gold)" : "var(--muted)" }}>{rankMedal(rank)}</span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
+                            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: compact ? 24 : 28, color: isFirst ? "var(--gold)" : "#93b4ff", lineHeight: 1 }}>{pts}</span>
+                            <span style={{ fontSize: 10, color: "var(--muted)" }}>pts</span>
                           </div>
                         </div>
-                      );
-                    })}
+                      </div>
+                      {/* Members */}
+                      <div style={{ padding: compact ? "8px 10px" : "10px 14px", display: "flex", flexDirection: "column", gap: 5 }}>
+                        {members
+                          .map((p: any) => ({ ...p, pts: periodEntries.find(e => e.player_id === p.id)?.period_points ?? 0 }))
+                          .sort((a: any, b: any) => b.pts - a.pts)
+                          .map((p: any) => {
+                            const initials = p.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase();
+                            const isMe = p.id === currentUserId;
+                            const avSize = compact ? 20 : 28;
+                            return (
+                              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: compact ? 6 : 8, padding: "4px 6px", borderRadius: 7, background: isMe ? "rgba(26,63,168,0.15)" : "transparent" }}>
+                                <div style={{ width: avSize, height: avSize, borderRadius: "50%", overflow: "hidden", border: `1.5px solid ${isMe ? team.color : "var(--border)"}`, background: "rgba(26,63,168,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                  {p.avatar_url
+                                    ? <img src={p.avatar_url} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                    : <span style={{ fontSize: compact ? 7 : 9, fontWeight: 700, color: team.color }}>{initials}</span>
+                                  }
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: compact ? 11 : 12, color: "var(--text)", fontWeight: isMe ? 700 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {p.name.split(" ")[0]}{isMe && <span style={{ fontSize: 10, color: "#93b4ff", marginLeft: 4 }}>(you)</span>}
+                                  </div>
+                                </div>
+                                <div style={{ fontSize: compact ? 10 : 11, color: p.pts > 0 ? "#93b4ff" : "var(--muted)", flexShrink: 0, fontWeight: 600 }}>{p.pts}</div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  );
+                };
+
+                return use2col ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    {sortedTeams.map((team, rank) => renderTeamCard(team, rank, true))}
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    {sortedTeams.map((team, rank) => renderTeamCard(team, rank, false))}
                   </div>
                 );
               })()}
