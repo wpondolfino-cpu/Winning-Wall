@@ -56,6 +56,7 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
   const [selectedWorkout, setSelectedWorkout]   = useState("");
   const [loading, setLoading]                 = useState(true);
   const [sending, setSending]                 = useState(false);
+  const [rematching, setRematching]           = useState<string | null>(null);
   const [responding, setResponding]           = useState<string | null>(null);
   const [myResponse, setMyResponse]           = useState("");
   const [toast, setToast]                     = useState("");
@@ -121,6 +122,33 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
       loadChallenges();
     }
     setSending(false);
+  }
+
+  async function sendRematch(c: Challenge) {
+    setRematching(c.id);
+    const rivalId   = c.challenger_id === currentUserId ? c.opponent_id   : c.challenger_id;
+    const rivalName = c.challenger_id === currentUserId ? c.opponent_name : c.challenger_name;
+    const myScore   = myScores.find(s => s.workout_id === c.workout_id);
+
+    const { error } = await supabase.from("challenges").insert({
+      challenger_id:    currentUserId,
+      challenger_name:  currentUserName,
+      opponent_id:      rivalId,
+      opponent_name:    rivalName,
+      workout_id:       c.workout_id,
+      workout_title:    c.workout_title,
+      challenger_score: myScore ? (myScore.made + myScore.reps || myScore.self_points) : 0,
+      opponent_score:   null,
+      status:           "pending",
+      opponent_seen:    false,
+      winner_id:        null,
+    });
+
+    if (!error) {
+      showToast(`Rematch sent to ${rivalName}! 🔄`);
+      loadChallenges();
+    }
+    setRematching(null);
   }
 
   async function respondToChallenge(challenge: Challenge, accept: boolean) {
@@ -267,10 +295,30 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
           </div>
         )}
 
-        {/* Result */}
+        {/* Result + Rematch */}
         {c.status === "completed" && (
-          <div style={{ textAlign: "center", fontSize: 14, fontWeight: 700, color: iWon ? "var(--gold)" : theyWon ? "#ff7b7b" : "var(--muted)" }}>
-            {iWon ? "🏆 You Won!" : theyWon ? "💪 Keep grinding!" : "🤝 Tied!"}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: iWon ? "var(--gold)" : theyWon ? "#ff7b7b" : "var(--muted)" }}>
+              {iWon ? "🏆 You Won!" : theyWon ? "💪 Keep grinding!" : "🤝 Tied!"}
+            </div>
+            <button
+              onClick={() => sendRematch(c)}
+              disabled={rematching === c.id}
+              style={{
+                background: "rgba(147,180,255,0.12)",
+                border: "1px solid rgba(147,180,255,0.3)",
+                color: "#93b4ff",
+                borderRadius: 8,
+                padding: "6px 14px",
+                fontSize: 12,
+                fontWeight: 700,
+                fontFamily: "inherit",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {rematching === c.id ? "Sending…" : "🔄 Rematch"}
+            </button>
           </div>
         )}
 
