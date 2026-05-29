@@ -336,11 +336,13 @@ export default function Leaderboard({ currentUserId }: Props) {
             <div style={{ textAlign: "center" }}>PTS</div>
           </div>
           {ranked.map(entry => (
-            <div key={entry.id} style={{
+            <div key={entry.id}>
+            <div style={{
               display: "grid", gridTemplateColumns: "44px 1fr 80px",
               padding: "12px 16px", alignItems: "center",
-              borderBottom: "1px solid rgba(176,184,200,0.05)",
+              borderBottom: expandedPlayer === entry.id ? "none" : "1px solid rgba(176,184,200,0.05)",
               background: entry.id === currentUserId ? "rgba(26,63,168,0.15)" : undefined,
+              cursor: "pointer",
             }}>
               <div className={`lb-rank ${rankClass(entry.rank)}`}>{entry.rank}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }} onClick={() => setExpandedPlayer(expandedPlayer === entry.id ? null : entry.id)}>
@@ -401,7 +403,7 @@ export default function Leaderboard({ currentUserId }: Props) {
                 </div>
               );
             })()}
-          </div>
+            </div>
           ))}
           {ranked.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", fontSize: 14 }}>No players yet. 🏀</div>}
         </div>
@@ -414,11 +416,13 @@ export default function Leaderboard({ currentUserId }: Props) {
             <div>RNK</div><div>PLAYER</div><div style={{ textAlign: "center" }}>PTS</div>
           </div>
           {periodRanked.map((entry, i) => (
-            <div key={entry.player_id} style={{
+            <div key={entry.player_id}>
+            <div style={{
               display: "grid", gridTemplateColumns: "44px 1fr 80px",
               padding: "12px 16px", alignItems: "center",
-              borderBottom: "1px solid rgba(176,184,200,0.05)",
+              borderBottom: expandedPlayer === entry.player_id ? "none" : "1px solid rgba(176,184,200,0.05)",
               background: entry.player_id === currentUserId ? "rgba(26,63,168,0.15)" : undefined,
+              cursor: "pointer",
             }}>
               <div className={`lb-rank ${rankClass(i + 1)}`}>{i + 1}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1 }} onClick={() => setExpandedPlayer(expandedPlayer === entry.player_id ? null : entry.player_id)}>
@@ -476,7 +480,7 @@ export default function Leaderboard({ currentUserId }: Props) {
                 </div>
               );
             })()}
-          </div>
+            </div>
           ))}
           {periodRanked.length === 0 && (
             <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", fontSize: 14 }}>
