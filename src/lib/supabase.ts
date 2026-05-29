@@ -195,6 +195,17 @@ export async function signUp(
   return data;
 }
 
+export async function awardChallengeWinBonus(playerId: string): Promise<void> {
+  // Award +1 point for winning a head-to-head challenge
+  await supabase.from("streak_bonuses").insert({
+    player_id: playerId,
+    points: 1,
+    streak_length: 0,
+    awarded_at: new Date().toISOString(),
+    reason: "challenge_win",
+  });
+}
+
 export async function approveUser(userId: string, role: "player" | "coach"): Promise<void> {
   const { error } = await supabase.from("profiles")
     .update({ role })
@@ -335,6 +346,18 @@ export async function submitScore(
       p_third_pts:  thirdPts,
     });
     if (rankError) console.error("Re-rank error:", rankError);
+  }
+
+  // Award +3 bonus points for beating personal best
+  if (isPersonalBest && previousBest !== null) {
+    // Only award if they actually beat an existing record (not first submission)
+    await supabase.from("streak_bonuses").insert({
+      player_id: score.player_id,
+      points: 3,
+      streak_length: 0,
+      awarded_at: new Date().toISOString(),
+      reason: "personal_best",
+    }).catch(console.error);
   }
 
   // Check and update all-time records (fire and forget — don't block the return)
