@@ -1,6 +1,6 @@
 // src/components/HeadToHead.tsx
 import { useState, useEffect, useCallback } from "react";
-import { supabase, Score, Workout, submitScore, getActiveTeamCompetition, getTeams, TeamCompetition, Team } from "../lib/supabase";
+import { supabase, Score, Workout, submitScore, awardChallengeWinBonus, getActiveTeamCompetition, getTeams, TeamCompetition, Team } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
 interface Props {
@@ -64,6 +64,8 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
   const [loading, setLoading]                 = useState(true);
   const [sending, setSending]                 = useState(false);
   const [rematching, setRematching]           = useState<string | null>(null);
+  const [needsScore, setNeedsScore]           = useState(false);  // challenger has no 24h score
+  const [challengeScore, setChallengeScore]   = useState("");     // score input for challenger
   const [responding, setResponding]           = useState<string | null>(null);
   const [myResponse, setMyResponse]           = useState("");
   const [toast, setToast]                     = useState("");
@@ -166,58 +168,140 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
   async function sendChallenge() {
     if (!selectedOpponent || !selectedWorkout) return;
     setSending(true);
-    const workout  = workouts.find(w => w.id === selectedWorkout);
-    const opponent = leaderboard.find(e => e.id === selectedOpponent);
-    const myScore  = myScores.find(s => s.workout_id === selectedWorkout);
 
+    try {
+      const workout  = workouts.find(w => w.id === selectedWorkout);
+      const opponent = leaderboard.find(e => e.id === selectedOpponent);
+
+      // Check for best score in last 24 hours
+      const since24h = new Date(Date.now() - 86400000).toISOString();
+      const { data: recentAttempts } = await supabase
+        .from("score_attempts")
+        .select("*")
+        .eq("player_id", currentUserId)
+        .eq("workout_id", selectedWorkout)
+        .gte("attempted_at", since24h);
+
+      // If no recent attempts, need to prompt for a score
+      if (!recentAttempts || recentAttempts.length === 0) {
+        setNeedsScore(true);
+        setSending(false);
+        return;
+      }
+
+      // Use best score from last 24 hours
+      const best24h = recentAttempts.reduce((best: any, s: any) => {
+        const score = s.self_points > 0 ? s.self_points : (s.made + s.reps);
+        const bestScore = best ? (best.self_points > 0 ? best.self_points : (best.made + best.reps)) : 0;
+        return score > bestScore ? s : best;
+      }, null);
+      const challengerScore = best24h ? (best24h.self_points > 0 ? best24h.self_points : (best24h.made + best24h.reps)) : 0;
+
+      await createChallenge(selectedOpponent, opponent?.name ?? "Unknown", selectedWorkout, workout?.title ?? "Unknown", challengerScore);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function sendChallengeWithScore() {
+    if (!selectedOpponent || !selectedWorkout) return;
+    const score = parseInt(challengeScore) || 0;
+    if (score <= 0) { showToast("Please enter a valid score."); return; }
+    setSending(true);
+    try {
+      const workout  = workouts.find(w => w.id === selectedWorkout);
+      const opponent = leaderboard.find(e => e.id === selectedOpponent);
+
+      // Submit the score to their workout history first
+      await submitScore({
+        player_id:   currentUserId,
+        workout_id:  selectedWorkout,
+        made:        score,
+        attempts:    0, sprint_secs: 0, reps: 0, self_points: 0,
+      }).catch(console.warn);
+
+      await createChallenge(selectedOpponent, opponent?.name ?? "Unknown", selectedWorkout, workout?.title ?? "Unknown", score);
+      setNeedsScore(false);
+      setChallengeScore("");
+      onScoreLogged?.();
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function createChallenge(opponentId: string, opponentName: string, workoutId: string, workoutTitle: string, challengerScore: number) {
     const { error } = await supabase.from("challenges").insert({
       challenger_id:    currentUserId,
       challenger_name:  currentUserName,
-      opponent_id:      selectedOpponent,
-      opponent_name:    opponent?.name ?? "Unknown",
-      workout_id:       selectedWorkout,
-      workout_title:    workout?.title ?? "Unknown",
-      challenger_score: myScore ? (myScore.made + myScore.reps) : 0,
+      opponent_id:      opponentId,
+      opponent_name:    opponentName,
+      workout_id:       workoutId,
+      workout_title:    workoutTitle,
+      challenger_score: challengerScore,
       opponent_score:   null,
       status:           "pending",
       opponent_seen:    false,
       winner_id:        null,
     });
-
     if (!error) {
       setShowNew(false);
       setSelectedOpponent(""); setSelectedWorkout("");
       showToast("Challenge sent! ⚔️");
       loadChallenges();
     }
-    setSending(false);
   }
 
   async function sendRematch(c: Challenge) {
     setRematching(c.id);
-    const rivalId   = c.challenger_id === currentUserId ? c.opponent_id   : c.challenger_id;
-    const rivalName = c.challenger_id === currentUserId ? c.opponent_name : c.challenger_name;
-    const myScore   = myScores.find(s => s.workout_id === c.workout_id);
+    try {
+      const rivalId   = c.challenger_id === currentUserId ? c.opponent_id   : c.challenger_id;
+      const rivalName = c.challenger_id === currentUserId ? c.opponent_name : c.challenger_name;
 
-    const { error } = await supabase.from("challenges").insert({
-      challenger_id:    currentUserId,
-      challenger_name:  currentUserName,
-      opponent_id:      rivalId,
-      opponent_name:    rivalName,
-      workout_id:       c.workout_id,
-      workout_title:    c.workout_title,
-      challenger_score: myScore ? (myScore.made + myScore.reps || myScore.self_points) : 0,
-      opponent_score:   null,
-      status:           "pending",
-      opponent_seen:    false,
-      winner_id:        null,
-    });
+      // Check 24h score for rematch too
+      const since24h = new Date(Date.now() - 86400000).toISOString();
+      const { data: recentAttempts } = await supabase
+        .from("score_attempts")
+        .select("*")
+        .eq("player_id", currentUserId)
+        .eq("workout_id", c.workout_id)
+        .gte("attempted_at", since24h);
 
-    if (!error) {
-      showToast(`Rematch sent to ${rivalName}! 🔄`);
-      loadChallenges();
+      let rematchScore = 0;
+      if (recentAttempts && recentAttempts.length > 0) {
+        const best = recentAttempts.reduce((b: any, s: any) => {
+          const score = s.self_points > 0 ? s.self_points : (s.made + s.reps);
+          const bScore = b ? (b.self_points > 0 ? b.self_points : (b.made + b.reps)) : 0;
+          return score > bScore ? s : b;
+        }, null);
+        rematchScore = best ? (best.self_points > 0 ? best.self_points : (best.made + best.reps)) : 0;
+      }
+
+      if (rematchScore === 0) {
+        showToast("Log this drill in the last 24 hours before rematching! 🏀");
+        return;
+      }
+
+      const { error } = await supabase.from("challenges").insert({
+        challenger_id:    currentUserId,
+        challenger_name:  currentUserName,
+        opponent_id:      rivalId,
+        opponent_name:    rivalName,
+        workout_id:       c.workout_id,
+        workout_title:    c.workout_title,
+        challenger_score: rematchScore,
+        opponent_score:   null,
+        status:           "pending",
+        opponent_seen:    false,
+        winner_id:        null,
+      });
+
+      if (!error) {
+        showToast(`Rematch sent to ${rivalName}! 🔄`);
+        loadChallenges();
+      }
+    } finally {
+      setRematching(null);
     }
-    setRematching(null);
   }
 
   async function respondToChallenge(challenge: Challenge, accept: boolean) {
@@ -246,6 +330,11 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
       status:         "completed",
       winner_id:      winnerId,
     }).eq("id", challenge.id);
+
+    // Award +1 point to the winner
+    if (winnerId) {
+      await awardChallengeWinBonus(winnerId).catch(console.error);
+    }
 
     // ── Sync to workout scores ──────────────────────────────────
     // If this score is a personal best on the workout, update it
