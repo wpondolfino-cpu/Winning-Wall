@@ -1,5 +1,6 @@
 // src/components/PlayersPanel.tsx  (Coach view — manage players)
 import { useState } from "react";
+import ProgressPanel from "./ProgressPanel";
 import { supabase, Score, Workout, GRADE_CATEGORIES, GradeCategory, approveUser, rejectUser } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
@@ -47,6 +48,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const [editSaving, setEditSaving]   = useState(false);
   const [editError, setEditError]     = useState("");
   const [removing, setRemoving]       = useState<string | null>(null);
+  const [viewingPlayer, setViewingPlayer] = useState<{id:string;name:string} | null>(null);
   const [pendingPlayers, setPendingPlayers] = useState<any[]>([]);
   const [pendingCoaches, setPendingCoaches] = useState<any[]>([]);
   const [approving, setApproving]         = useState<string | null>(null);
@@ -401,7 +403,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
             {playersWithStatus.map(p => (
               <tr key={p.id}>
                 <td>
-                  <strong>{p.name}</strong>
+                  <strong style={{ cursor: "pointer", color: "var(--royal-light)", textDecoration: "underline dotted" }} onClick={() => setViewingPlayer({id: p.id, name: p.name})}>{p.name}</strong>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.grade_category ?? "—"}</div>
                 </td>
                 <td style={{ textAlign: "center" }}>
@@ -501,6 +503,22 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {/* ── Player Progress Modal ── */}
+      {viewingPlayer && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "20px 0" }} onClick={() => setViewingPlayer(null)}>
+          <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(720px, 96vw)", maxHeight: "90vh", overflowY: "auto", position: "relative" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", position: "sticky", top: 0, background: "var(--surface)", zIndex: 1 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1 }}>
+                📈 {viewingPlayer.name}'s Progress
+              </div>
+              <button onClick={() => setViewingPlayer(null)} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 22, cursor: "pointer", padding: 0 }}>✕</button>
+            </div>
+            <div style={{ padding: "0 4px" }}>
+              <ProgressPanel overrideUserId={viewingPlayer.id} />
+            </div>
           </div>
         </div>
       )}
