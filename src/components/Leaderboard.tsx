@@ -42,6 +42,7 @@ export default function Leaderboard({ currentUserId }: Props) {
   const [profiles, setProfiles]     = useState<{id:string;name:string;grade_category?:string;avatar_url?:string}[]>([]);
   const [periodEntries, setPeriodEntries] = useState<PeriodEntry[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  const [expandedPlayer, setExpandedPlayer] = useState<string | null>(null);
 
 
 
@@ -342,7 +343,7 @@ export default function Leaderboard({ currentUserId }: Props) {
               background: entry.id === currentUserId ? "rgba(26,63,168,0.15)" : undefined,
             }}>
               <div className={`lb-rank ${rankClass(entry.rank)}`}>{entry.rank}</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }} onClick={() => setExpandedPlayer(expandedPlayer === entry.id ? null : entry.id)}>
                 <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", flexShrink: 0, background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--border)" }}>
                   {entry.avatar_url
                     ? <img src={entry.avatar_url} alt={entry.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -363,8 +364,44 @@ export default function Leaderboard({ currentUserId }: Props) {
                   </div>
                 </div>
               </div>
-              <div style={{ textAlign: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)" }}>{entry.total_points}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+                <div style={{ textAlign: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)" }}>{entry.total_points}</div>
+                <span style={{ color: "var(--muted)", fontSize: 12 }}>{expandedPlayer === entry.id ? "▲" : "▼"}</span>
+              </div>
             </div>
+            {/* Score breakdown dropdown */}
+            {expandedPlayer === entry.id && (() => {
+              const playerScores = allScores.filter(s => s.player_id === entry.id && (s.points ?? 0) > 0);
+              return (
+                <div style={{ padding: "10px 16px 14px", background: "rgba(26,63,168,0.07)", borderTop: "1px solid var(--border)" }}>
+                  <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, fontWeight: 700 }}>Score Breakdown</div>
+                  {playerScores.length === 0 ? (
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>No scored workouts yet</div>
+                  ) : (
+                    playerScores
+                      .sort((a, b) => (b.points ?? 0) - (a.points ?? 0))
+                      .map(s => {
+                        const w = workouts.find(wk => wk.id === s.workout_id);
+                        const rawScore = s.self_points > 0 ? s.self_points : (s.made + s.reps);
+                        return (
+                          <div key={s.workout_id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
+                            <div style={{ fontSize: 12, color: "var(--silver-light)" }}>{w?.emoji ?? "🏀"} {w?.title ?? "Unknown drill"}</div>
+                            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                              <span style={{ fontSize: 11, color: "var(--muted)" }}>Score: {rawScore}</span>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>+{s.points} pts</span>
+                            </div>
+                          </div>
+                        );
+                      })
+                  )}
+                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
+                    <span style={{ color: "var(--muted)" }}>Total</span>
+                    <span style={{ color: "var(--gold)" }}>{entry.total_points} pts</span>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
           ))}
           {ranked.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", fontSize: 14 }}>No players yet. 🏀</div>}
         </div>
@@ -384,7 +421,7 @@ export default function Leaderboard({ currentUserId }: Props) {
               background: entry.player_id === currentUserId ? "rgba(26,63,168,0.15)" : undefined,
             }}>
               <div className={`lb-rank ${rankClass(i + 1)}`}>{i + 1}</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1 }} onClick={() => setExpandedPlayer(expandedPlayer === entry.player_id ? null : entry.player_id)}>
                 <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", flexShrink: 0, background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--border)" }}>
                   {entry.avatar_url
                     ? <img src={entry.avatar_url} alt={entry.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -402,8 +439,44 @@ export default function Leaderboard({ currentUserId }: Props) {
                   )}
                 </div>
               </div>
-              <div style={{ textAlign: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)" }}>{entry.period_points}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ textAlign: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)" }}>{entry.period_points}</div>
+                <span style={{ color: "var(--muted)", fontSize: 12 }}>{expandedPlayer === entry.player_id ? "▲" : "▼"}</span>
+              </div>
             </div>
+            {/* Period score breakdown dropdown */}
+            {expandedPlayer === entry.player_id && (() => {
+              const playerScores = allScores.filter(s => s.player_id === entry.player_id && (s.points ?? 0) > 0);
+              return (
+                <div style={{ padding: "10px 16px 14px", background: "rgba(26,63,168,0.07)", borderTop: "1px solid var(--border)" }}>
+                  <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, fontWeight: 700 }}>Score Breakdown — This Period</div>
+                  {playerScores.length === 0 ? (
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>No scored workouts this period</div>
+                  ) : (
+                    playerScores
+                      .sort((a, b) => (b.points ?? 0) - (a.points ?? 0))
+                      .map(s => {
+                        const w = workouts.find(wk => wk.id === s.workout_id);
+                        const rawScore = s.self_points > 0 ? s.self_points : (s.made + s.reps);
+                        return (
+                          <div key={s.workout_id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
+                            <div style={{ fontSize: 12, color: "var(--silver-light)" }}>{w?.emoji ?? "🏀"} {w?.title ?? "Unknown drill"}</div>
+                            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                              <span style={{ fontSize: 11, color: "var(--muted)" }}>Score: {rawScore}</span>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>+{s.points} pts</span>
+                            </div>
+                          </div>
+                        );
+                      })
+                  )}
+                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
+                    <span style={{ color: "var(--muted)" }}>Total This Period</span>
+                    <span style={{ color: "var(--gold)" }}>{entry.period_points} pts</span>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
           ))}
           {periodRanked.length === 0 && (
             <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", fontSize: 14 }}>
