@@ -351,13 +351,15 @@ export async function submitScore(
   // Award +3 bonus points for beating personal best
   if (isPersonalBest && previousBest !== null) {
     // Only award if they actually beat an existing record (not first submission)
-    await supabase.from("streak_bonuses").insert({
-      player_id: score.player_id,
-      points: 3,
-      streak_length: 0,
-      awarded_at: new Date().toISOString(),
-      reason: "personal_best",
-    }).catch(console.error);
+    try {
+      await supabase.from("streak_bonuses").insert({
+        player_id: score.player_id,
+        points: 3,
+        streak_length: 0,
+        awarded_at: new Date().toISOString(),
+        reason: "personal_best",
+      });
+    } catch (e) { console.error(e); }
   }
 
   // Check and update all-time records (fire and forget — don't block the return)
