@@ -74,6 +74,30 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
   const activeWorkouts = workouts.filter(w => w.is_active !== false && w.scoring_type === "competitive");
   const opponents = leaderboard.filter(e => e.id !== currentUserId);
 
+  const expireChallenges = useCallback(async () => {
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+    // Find expired pending challenges where current user is challenger
+    const { data: expired } = await supabase
+      .from("challenges")
+      .select("*")
+      .eq("challenger_id", currentUserId)
+      .eq("status", "pending")
+      .lt("created_at", fiveDaysAgo);
+
+    if (expired && expired.length > 0) {
+      for (const c of expired) {
+        // Mark as completed, challenger wins by default (+1 pt)
+        await supabase.from("challenges").update({
+          status: "completed",
+          winner_id: currentUserId,
+          opponent_score: -1, // sentinel = expired
+        }).eq("id", c.id);
+        // Award 1 point to challenger
+        await awardChallengeWinBonus(currentUserId).catch(console.warn);
+      }
+    }
+  }, [currentUserId]);
+
   const loadChallenges = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase
@@ -96,7 +120,7 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
     }
   }, [currentUserId]);
 
-  useEffect(() => { loadChallenges(); }, [loadChallenges]);
+  useEffect(() => { expireChallenges().then(() => loadChallenges()); }, [loadChallenges, expireChallenges]);
   useEffect(() => { loadTeamData(); loadTeamRecord(); }, [currentUserId]);
 
   async function loadTeamRecord() {
@@ -439,6 +463,8 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
               <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: theyWon ? "var(--gold)" : "var(--text)" }}>
                 {theirScore ?? "—"}
               </div>
+            ) : theirScore === -1 ? (
+              <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic" }}>Forfeited</div>
             ) : theirScore !== null ? (
               <div style={{ fontSize: 13, color: "#5de098", fontWeight: 600 }}>🔒 Logged</div>
             ) : (
@@ -457,7 +483,7 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
         {c.status === "completed" && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: iWon ? "var(--gold)" : theyWon ? "#ff7b7b" : "var(--muted)" }}>
-              {iWon ? "🏆 You Won!" : theyWon ? "💪 Keep grinding!" : "🤝 Tied!"}
+  {c.opponent_score === -1 ? "🏆 Won (opponent forfeited)" : iWon ? "🏆 You Won!" : theyWon ? "💪 Keep grinding!" : "🤝 Tied!"}
             </div>
             <button
               onClick={() => sendRematch(c)}
