@@ -377,29 +377,44 @@ export default function Leaderboard({ currentUserId }: Props) {
               return (
                 <div style={{ padding: "10px 16px 14px", background: "rgba(26,63,168,0.07)", borderTop: "1px solid var(--border)" }}>
                   <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, fontWeight: 700 }}>Score Breakdown</div>
-                  {playerScores.length === 0 ? (
-                    <div style={{ fontSize: 12, color: "var(--muted)" }}>No scored workouts yet</div>
-                  ) : (
-                    playerScores
-                      .sort((a, b) => (b.points ?? 0) - (a.points ?? 0))
-                      .map(s => {
-                        const w = workouts.find(wk => wk.id === s.workout_id);
-                        const rawScore = s.self_points > 0 ? s.self_points : (s.made + s.reps);
-                        return (
-                          <div key={s.workout_id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
-                            <div style={{ fontSize: 12, color: "var(--silver-light)" }}>{w?.emoji ?? "🏀"} {w?.title ?? "Unknown drill"}</div>
-                            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                              <span style={{ fontSize: 11, color: "var(--muted)" }}>Score: {rawScore}</span>
-                              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>+{s.points} pts</span>
-                            </div>
+                  {(() => {
+                    const drillScores = allScores.filter(s => s.player_id === entry.id && (s.points ?? 0) > 0);
+                    const drillTotal = drillScores.reduce((sum, s) => sum + (s.points ?? 0), 0);
+                    const bonusTotal = entry.total_points - drillTotal;
+                    return (
+                      <>
+                        {drillScores.length === 0 ? (
+                          <div style={{ fontSize: 12, color: "var(--muted)" }}>No scored workouts yet</div>
+                        ) : (
+                          drillScores
+                            .sort((a, b) => (b.points ?? 0) - (a.points ?? 0))
+                            .map(s => {
+                              const w = workouts.find(wk => wk.id === s.workout_id);
+                              const rawScore = s.self_points > 0 ? s.self_points : (s.made + s.reps);
+                              return (
+                                <div key={s.workout_id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
+                                  <div style={{ fontSize: 12, color: "var(--silver-light)" }}>{w?.emoji ?? "🏀"} {w?.title ?? "Unknown drill"}</div>
+                                  <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                                    <span style={{ fontSize: 11, color: "var(--muted)" }}>Score: {rawScore}</span>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>+{s.points} pts</span>
+                                  </div>
+                                </div>
+                              );
+                            })
+                        )}
+                        {bonusTotal > 0 && (
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
+                            <div style={{ fontSize: 12, color: "#ff8c42" }}>🔥 Streak / Bonus Points</div>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "#ff8c42" }}>+{bonusTotal} pts</span>
                           </div>
-                        );
-                      })
-                  )}
-                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
-                    <span style={{ color: "var(--muted)" }}>Total</span>
-                    <span style={{ color: "var(--gold)" }}>{entry.total_points} pts</span>
-                  </div>
+                        )}
+                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
+                          <span style={{ color: "var(--muted)" }}>Total</span>
+                          <span style={{ color: "var(--gold)" }}>{entry.total_points} pts</span>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               );
             })()}
@@ -454,29 +469,50 @@ export default function Leaderboard({ currentUserId }: Props) {
               return (
                 <div style={{ padding: "10px 16px 14px", background: "rgba(26,63,168,0.07)", borderTop: "1px solid var(--border)" }}>
                   <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, fontWeight: 700 }}>Score Breakdown — This Period</div>
-                  {playerScores.length === 0 ? (
-                    <div style={{ fontSize: 12, color: "var(--muted)" }}>No scored workouts this period</div>
-                  ) : (
-                    playerScores
-                      .sort((a, b) => (b.points ?? 0) - (a.points ?? 0))
-                      .map(s => {
-                        const w = workouts.find(wk => wk.id === s.workout_id);
-                        const rawScore = s.self_points > 0 ? s.self_points : (s.made + s.reps);
-                        return (
-                          <div key={s.workout_id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
-                            <div style={{ fontSize: 12, color: "var(--silver-light)" }}>{w?.emoji ?? "🏀"} {w?.title ?? "Unknown drill"}</div>
-                            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                              <span style={{ fontSize: 11, color: "var(--muted)" }}>Score: {rawScore}</span>
-                              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>+{s.points} pts</span>
-                            </div>
+                  {(() => {
+                    // Get workouts this player attempted this period
+                    const periodWorkoutIds = new Set(
+                      periodScores.filter(s => s.player_id === entry.player_id).map(s => s.workout_id)
+                    );
+                    const drillScores = allScores.filter(s =>
+                      s.player_id === entry.player_id && periodWorkoutIds.has(s.workout_id) && (s.points ?? 0) > 0
+                    );
+                    const drillTotal = drillScores.reduce((sum, s) => sum + (s.points ?? 0), 0);
+                    const bonusTotal = entry.period_points - drillTotal;
+                    return (
+                      <>
+                        {drillScores.length === 0 ? (
+                          <div style={{ fontSize: 12, color: "var(--muted)" }}>No scored workouts this period</div>
+                        ) : (
+                          drillScores
+                            .sort((a, b) => (b.points ?? 0) - (a.points ?? 0))
+                            .map(s => {
+                              const w = workouts.find(wk => wk.id === s.workout_id);
+                              const rawScore = s.self_points > 0 ? s.self_points : (s.made + s.reps);
+                              return (
+                                <div key={s.workout_id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
+                                  <div style={{ fontSize: 12, color: "var(--silver-light)" }}>{w?.emoji ?? "🏀"} {w?.title ?? "Unknown drill"}</div>
+                                  <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                                    <span style={{ fontSize: 11, color: "var(--muted)" }}>Score: {rawScore}</span>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>+{s.points} pts</span>
+                                  </div>
+                                </div>
+                              );
+                            })
+                        )}
+                        {bonusTotal > 0 && (
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
+                            <div style={{ fontSize: 12, color: "#ff8c42" }}>🔥 Streak / Bonus Points</div>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "#ff8c42" }}>+{bonusTotal} pts</span>
                           </div>
-                        );
-                      })
-                  )}
-                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
-                    <span style={{ color: "var(--muted)" }}>Total This Period</span>
-                    <span style={{ color: "var(--gold)" }}>{entry.period_points} pts</span>
-                  </div>
+                        )}
+                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
+                          <span style={{ color: "var(--muted)" }}>Total This Period</span>
+                          <span style={{ color: "var(--gold)" }}>{entry.period_points} pts</span>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               );
             })()}
