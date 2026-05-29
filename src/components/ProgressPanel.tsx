@@ -191,8 +191,8 @@ export default function ProgressPanel({ profile, myScores, workouts }: Props) {
   async function loadBadges() { setAllBadges(await getActiveBadges()); }
 
   async function loadTeamWins() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const uid = overrideUserId ?? (await supabase.auth.getUser()).data.user?.id;
+    if (!uid) return;
     // Count past team competitions where user's team won
     const { data: comps } = await supabase.from("team_competitions")
       .select("id,winning_team_id")
@@ -203,7 +203,7 @@ export default function ProgressPanel({ profile, myScores, workouts }: Props) {
       .select("id,competition_id")
       .in("competition_id", compIds);
     const { data: myProfile } = await supabase.from("profiles")
-      .select("team_id").eq("id", user.id).single();
+      .select("team_id").eq("id", uid).single();
     if (!myProfile?.team_id || !myTeams) return;
     const myTeamIds = new Set((myTeams as any[]).filter(t => {
       const profs = myTeams.filter((mt: any) => mt.id === myProfile.team_id);
@@ -220,12 +220,12 @@ export default function ProgressPanel({ profile, myScores, workouts }: Props) {
   }
 
   async function loadChampCount() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const uid = overrideUserId ?? (await supabase.auth.getUser()).data.user?.id;
+    if (!uid) return;
     const { count } = await supabase
       .from("biweekly_champions")
       .select("id", { count: "exact", head: true })
-      .eq("player_id", user.id);
+      .eq("player_id", uid);
     setChampCount(count ?? 0);
   }
 
