@@ -33,6 +33,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [playerXp, setPlayerXp]       = useState(0);
   const [xpPerks, setXpPerks]         = useState<any[]>([]);
+  const [xpEnabled, setXpEnabled]     = useState(true);
   const [localProfile, setLocalProfile] = useState<Profile | null>(null);
 
   useEffect(() => {
@@ -69,10 +70,14 @@ export default function App() {
     // Load player XP and perks
     if (user && profile?.role === "player") {
       (async () => {
-        const { getPlayerXp: gxp, getXpPerks: gperks } = await import("./lib/supabase");
+  const { getPlayerXp: gxp, getXpPerks: gperks } = await import("./lib/supabase");
         const [xp, perks] = await Promise.all([gxp(user.id), gperks()]);
         setPlayerXp(xp);
         setXpPerks(perks);
+        // Check if XP system is enabled
+        const xpEnabledPerk = perks.find((p: any) => p.perk_key === "_xp_enabled");
+        const stored = localStorage.getItem("xp_enabled");
+        setXpEnabled(stored !== "false" && xpEnabledPerk?.xp_required !== 0);
       })();
     }
 
@@ -235,11 +240,13 @@ export default function App() {
             <ProgressPanel profile={displayProfile} myScores={myScores} workouts={workouts} />
           )}
           {isPlayer && playerTab === "profile" && (
-            <div className="panel active">
-              <div className="section-title">My Profile</div>
-              <div className="section-sub" style={{ marginBottom: 20 }}>Update your name, photo and grade</div>
-              <ProfileEditor profile={displayProfile} onUpdated={handleProfileUpdated} />
-            </div>
+            <ProfilePage
+              profile={displayProfile}
+              onUpdated={handleProfileUpdated}
+              myScores={allScores.filter((s: any) => s.player_id === user?.id)}
+              workouts={workouts}
+              xpEnabled={xpEnabled}
+            />
           )}
           {isPlayer && playerTab === "hof" && <HallOfFame />}
           {isPlayer && playerTab === "more" && (
@@ -262,7 +269,7 @@ export default function App() {
               </div>
             </div>
           )}
-          {isPlayer && playerTab === "h2h" && xpPerks.length > 0 && playerXp < (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) ? (
+          {isPlayer && playerTab === "h2h" && xpEnabled && xpPerks.length > 0 && playerXp < (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) ? (
             <div className="panel active" style={{ textAlign: "center", padding: "60px 20px" }}>
               <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
               <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--muted)", letterSpacing: 1, marginBottom: 12 }}>Challenges Locked</div>
