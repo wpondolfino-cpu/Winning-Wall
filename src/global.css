@@ -167,11 +167,16 @@ body {
 .score-badge { margin-top: 7px; padding: 5px 9px; background: rgba(26,63,168,0.15); border-radius: 6px; font-size: 11px; color: #93b4ff; }
 
 /* ── MODALS ── */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 200; backdrop-filter: blur(5px); }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: flex-end; justify-content: center; z-index: 400; backdrop-filter: blur(5px); padding-bottom: env(safe-area-inset-bottom, 0px); }
 .modal-overlay.open { display: flex; }
-.log-modal { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 28px; width: 400px; max-width: 95vw; position: relative; }
+.log-modal { background: var(--surface); border: 1px solid var(--border); border-radius: 20px 20px 0 0; padding: 28px 28px calc(28px + 62px); width: 100%; max-width: 500px; position: relative; max-height: 92vh; overflow-y: auto; }
 .modal-title { font-family: 'Bebas Neue', sans-serif; font-size: 24px; margin-bottom: 18px; }
 .modal-close { position: absolute; top: 14px; right: 16px; background: none; border: none; color: var(--muted); font-size: 18px; cursor: pointer; }
+
+@media (min-width: 768px) {
+  .modal-overlay { align-items: center; padding-bottom: 0; }
+  .log-modal { border-radius: 20px; padding: 28px; max-width: 440px; }
+}
 .score-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
 .score-input-wrap label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
 .score-input-wrap input { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; color: var(--text); font-size: 14px; font-family: inherit; outline: none; }
