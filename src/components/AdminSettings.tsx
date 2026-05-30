@@ -14,11 +14,13 @@ interface Badge {
 }
 
 const TRIGGER_LABELS: Record<string, string> = {
-  workouts:  "Workouts logged",
-  points:    "Total points earned",
-  streak:    "Day logging streak",
-  champion:  "Won a biweekly period",
-  top_score: "Scored #1 on any drill",
+  workouts:        "Workouts logged",
+  points:          "Total points earned",
+  streak:          "Day logging streak",
+  champion:        "Won a biweekly period",
+  top_score:       "Scored #1 on any drill",
+  challenges_won:  "Challenges won",
+  team_wins:       "Team competition wins",
 };
 
 const DEFAULT_BADGES: Omit<Badge, "id">[] = [
@@ -332,10 +334,10 @@ export default function AdminSettings() {
                 <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Description</label>
                 <input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="e.g. Logged 30 workouts" style={inputStyle} />
               </div>
-              {(newTrigger === "workouts" || newTrigger === "points" || newTrigger === "streak") && (
+              {(newTrigger === "workouts" || newTrigger === "points" || newTrigger === "streak" || newTrigger === "challenges_won" || newTrigger === "team_wins") && (
                 <div>
                   <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>
-                    {newTrigger === "workouts" ? "# of workouts" : newTrigger === "points" ? "# of points" : "# of days"}
+                    {newTrigger === "workouts" ? "# of workouts" : newTrigger === "points" ? "# of points" : newTrigger === "streak" ? "# of days" : newTrigger === "challenges_won" ? "# of wins" : "# of team wins"}
                   </label>
                   <input type="number" value={newValue} onChange={e => setNewValue(e.target.value)} min="1" style={inputStyle} />
                 </div>
