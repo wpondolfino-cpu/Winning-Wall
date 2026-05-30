@@ -1,6 +1,6 @@
 // src/components/HeadToHead.tsx
 import { useState, useEffect, useCallback } from "react";
-import { supabase, Score, Workout, submitScore, awardChallengeWinBonus, getActiveTeamCompetition, getTeams, TeamCompetition, Team } from "../lib/supabase";
+import { supabase, Score, Workout, submitScore, awardChallengeWinBonus, awardXp, XP_CHALLENGE_SENT, XP_CHALLENGE_DONE, getActiveTeamCompetition, getTeams, TeamCompetition, Team } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
 interface Props {
@@ -271,6 +271,7 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
       setShowNew(false);
       setSelectedOpponent(""); setSelectedWorkout("");
       showToast("Challenge sent! ⚔️");
+      awardXp(currentUserId, XP_CHALLENGE_SENT, "challenge_sent").catch(console.error);
       loadChallenges();
     }
   }
@@ -355,10 +356,11 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
       winner_id:      winnerId,
     }).eq("id", challenge.id);
 
-    // Award +1 point to the winner
+    // Award +1 point to the winner and XP for completion
     if (winnerId) {
       await awardChallengeWinBonus(winnerId).catch(console.error);
     }
+    awardXp(currentUserId, XP_CHALLENGE_DONE, "challenge_completed").catch(console.error);
 
     // ── Sync to workout scores ──────────────────────────────────
     // If this score is a personal best on the workout, update it
