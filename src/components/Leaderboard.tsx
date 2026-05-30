@@ -346,7 +346,7 @@ export default function Leaderboard({ currentUserId }: Props) {
             }}>
               <div className={`lb-rank ${rankClass(entry.rank)}`}>{entry.rank}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }} onClick={() => setExpandedPlayer(expandedPlayer === entry.id ? null : entry.id)}>
-                <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", flexShrink: 0, background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--border)" }}>
+                <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", flexShrink: 0, background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${getAvatarOutline(entry.id)}` }}>
                   {entry.avatar_url
                     ? <img src={entry.avatar_url} alt={entry.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     : <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)" }}>{entry.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}</span>
@@ -441,7 +441,7 @@ export default function Leaderboard({ currentUserId }: Props) {
             }}>
               <div className={`lb-rank ${rankClass(i + 1)}`}>{i + 1}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1 }} onClick={() => setExpandedPlayer(expandedPlayer === entry.player_id ? null : entry.player_id)}>
-                <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", flexShrink: 0, background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--border)" }}>
+                <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", flexShrink: 0, background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${getAvatarOutline(entry.player_id)}` }}>
                   {entry.avatar_url
                     ? <img src={entry.avatar_url} alt={entry.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     : <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)" }}>{entry.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}</span>
