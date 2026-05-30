@@ -7,14 +7,15 @@ import ProfileEditor from "./ProfileEditor";
 
 interface Props {
   profile: Profile;
-  onUpdated: () => void;
+  onUpdated: (updates?: any) => void;
   myScores: any[];
   workouts: any[];
+  xpEnabled?: boolean;
 }
 
 const TIER_NAMES = ["Rookie", "Challenger", "Varsity", "Elite", "Legend"];
 
-export default function ProfilePage({ profile, onUpdated, myScores, workouts }: Props) {
+export default function ProfilePage({ profile, onUpdated, myScores, workouts, xpEnabled = true }: Props) {
   const [xp, setXp]             = useState(0);
   const [perks, setPerks]       = useState<XpPerk[]>([]);
   const [allBadges, setAllBadges] = useState<Badge[]>([]);
@@ -159,7 +160,12 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts }: 
       </div>
 
       {/* ── XP Progress ── */}
-      <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px", marginBottom: 20 }}>
+      {!xpEnabled && (
+        <div style={{ background: "rgba(40,180,80,0.08)", border: "1px solid rgba(40,180,80,0.2)", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#5de098" }}>
+          ⚡ XP system is off — all perks are unlocked for everyone.
+        </div>
+      )}
+      {xpEnabled && <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px", marginBottom: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>XP Progress</div>
           {nextPerk ? (
@@ -174,7 +180,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts }: 
         <div style={{ fontSize: 11, color: "var(--muted)" }}>
           10 XP per workout attempt · 2 XP per challenge sent · 3 XP per challenge completed
         </div>
-      </div>
+      </div>}
 
       {/* ── Perks ── */}
       <div style={{ marginBottom: 20 }}>
@@ -183,7 +189,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts }: 
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {perks.map((p, i) => {
-            const unlocked = xp >= p.xp_required;
+            const unlocked = !xpEnabled || xp >= p.xp_required;
             const isShield = p.perk_key === "streak_shield";
             const isBoost  = p.perk_key === "score_boost";
             const outlines = ["var(--border)", "#9ca3af", "#c0c0c0", "#2550d4", "#f0c040"];
