@@ -187,6 +187,7 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
   const [allBadges, setAllBadges]   = useState<Badge[]>([]);
   const [champCount, setChampCount] = useState(0);
   const [teamWinsCount, setTeamWinsCount] = useState(0);
+  const [myStreak, setMyStreak] = useState(0);
   const { leaderboard }             = useLeaderboard();
 
   useEffect(() => {
@@ -194,8 +195,16 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
     loadBadges();
     loadChampCount();
     loadTeamWins();
+    loadStreak();
     if (overrideUserId) loadOverrideData();
   }, [overrideUserId]);
+
+  async function loadStreak() {
+    const uid = overrideUserId ?? (await supabase.auth.getUser()).data.user?.id;
+    if (!uid) return;
+    const { data } = await supabase.from("streaks").select("current_streak").eq("player_id", uid).single();
+    setMyStreak(data?.current_streak ?? 0);
+  }
 
   async function loadOverrideData() {
     const { data: prof } = await supabase.from("profiles").select("*").eq("id", overrideUserId!).single();
