@@ -103,11 +103,13 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts }: 
   const totalPoints   = myScores.reduce((s: number, sc: any) => s + (sc.points ?? 0), 0);
   const activeWorkouts = workouts.filter((w: any) => w.is_active !== false);
   const stats: PlayerStats = {
-    workoutsCompleted: myScores.length,
+    totalWorkouts: myScores.length,
     totalPoints,
     currentStreak: 0,
+    longestStreak: 0,
     isGroupChampion: profile.is_period_champion ?? false,
     hasPerfectScore: false,
+    daysActive: 0,
     challengesWon,
     teamWins: 0,
   };
