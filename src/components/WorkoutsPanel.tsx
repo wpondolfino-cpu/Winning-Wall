@@ -68,13 +68,15 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
 
     // Award bonus if all completed and not yet awarded
     if (completed >= total && total > 0 && !bonusEarned) {
-      await supabase.from("streak_bonuses").insert({
-        player_id: user.id,
-        points: 1,
-        streak_length: 0,
-        awarded_at: new Date().toISOString(),
-        reason: "daily_completion",
-      }).catch(console.warn);
+      try {
+        await supabase.from("streak_bonuses").insert({
+          player_id: user.id,
+          points: 1,
+          streak_length: 0,
+          awarded_at: new Date().toISOString(),
+          reason: "daily_completion",
+        });
+      } catch (e) { console.warn(e); }
     }
 
     setRankedCompletion({ completed, total, bonusEarned: bonusEarned || (completed >= total && total > 0) });
