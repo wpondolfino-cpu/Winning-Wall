@@ -59,6 +59,8 @@ export default function AdminSettings() {
   const [exporting, setExporting]   = useState(false);
   const [xpPerks, setXpPerks]         = useState<XpPerk[]>([]);
   const [xpSaving, setXpSaving]       = useState(false);
+  const [xpEnabled, setXpEnabled]     = useState(true);
+  const [xpToggling, setXpToggling]   = useState(false);
   const [resetting, setResetting]   = useState(false);
   const [resetStep, setResetStep]   = useState(0);
 
@@ -66,7 +68,26 @@ export default function AdminSettings() {
   const periodEnd   = currentPeriodEnd();
   const daysLeft    = Math.ceil((periodEnd.getTime() - Date.now()) / 86400000);
 
-  useEffect(() => { getXpPerks().then(setXpPerks); }, []);
+  useEffect(() => {
+    getXpPerks().then(setXpPerks);
+    const stored = localStorage.getItem("xp_enabled");
+    if (stored !== null) setXpEnabled(stored !== "false");
+  }, []);
+
+  async function toggleXpSystem() {
+    setXpToggling(true);
+    const newVal = !xpEnabled;
+    setXpEnabled(newVal);
+    localStorage.setItem("xp_enabled", String(newVal));
+    // Also store in supabase for cross-device consistency
+    await supabase.from("xp_settings").upsert({
+      perk_key: "_xp_enabled", perk_name: "XP System Enabled",
+      xp_required: newVal ? 1 : 0, description: "Master toggle",
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "perk_key" });
+    setXpToggling(false);
+    showToast(newVal ? "✅ XP system is now ON" : "⏸️ XP system is now OFF — all perks unlocked for everyone");
+  }
   useEffect(() => { loadBadges(); }, []);
 
   async function loadBadges() {
@@ -433,9 +454,25 @@ export default function AdminSettings() {
       {toast && <div className="toast show">{toast}</div>}
       {/* ── XP Perk Thresholds ── */}
       <div style={{ marginTop: 32, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: "20px 24px", marginBottom: 24 }}>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1, marginBottom: 8 }}>
-          ⚡ XP Perk Thresholds
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 8 }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1 }}>
+            ⚡ XP System
+          </div>
+          <button onClick={toggleXpSystem} disabled={xpToggling} style={{
+            background: xpEnabled ? "rgba(40,180,80,0.15)" : "rgba(255,107,107,0.15)",
+            color: xpEnabled ? "#5de098" : "#ff7b7b",
+            border: `1px solid ${xpEnabled ? "rgba(40,180,80,0.3)" : "rgba(255,107,107,0.3)"}`,
+            borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 700,
+            fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap",
+          }}>
+            {xpToggling ? "Updating…" : xpEnabled ? "🟢 XP ON — Turn Off" : "🔴 XP OFF — Turn On"}
+          </button>
         </div>
+        {!xpEnabled && (
+          <div style={{ fontSize: 12, color: "#ff7b7b", background: "rgba(255,107,107,0.08)", border: "1px solid rgba(255,107,107,0.2)", borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
+            XP system is off — all perks and challenges are unlocked for all players regardless of XP.
+          </div>
+        )}
         <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
           Adjust how much XP players need to unlock each perk. Changes take effect immediately.
         </div>
