@@ -319,25 +319,40 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
         </div>
       )}
 
-      {/* ── Workout Completion Bar ── */}
-      <div style={{ marginBottom: 16, padding: "12px 16px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Workout Completion</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: completionPct === 100 ? "var(--gold)" : "#93b4ff" }}>
-            {completedCount}/{activeWorkouts.length} · {completionPct}%
-          </div>
-        </div>
-        <div style={{ height: 10, background: "var(--surface)", borderRadius: 5, overflow: "hidden" }}>
+      {/* ── Streak Banner ── */}
+      {(() => {
+        const daysIntoCurrentCycle = myStreak % 7;
+        const daysToNext = daysIntoCurrentCycle === 0 ? 7 : 7 - daysIntoCurrentCycle;
+        const nextMilestone = myStreak + daysToNext;
+        const totalBonuses = Math.floor(myStreak / 7);
+        return (
           <div style={{
-            height: "100%", borderRadius: 5, transition: "width 0.5s ease",
-            width: `${completionPct}%`,
-            background: completionPct === 100 ? "var(--gold)" : "linear-gradient(90deg, var(--royal), #93b4ff)",
-          }} />
-        </div>
-        {completionPct === 100 && (
-          <div style={{ fontSize: 11, color: "var(--gold)", marginTop: 6, fontWeight: 600 }}>🏆 You've completed every drill!</div>
-        )}
-      </div>
+            marginBottom: 16, padding: "12px 16px",
+            background: myStreak >= 7 ? "rgba(240,192,64,0.10)" : "rgba(26,63,168,0.08)",
+            border: `1px solid ${myStreak >= 7 ? "rgba(240,192,64,0.3)" : "var(--border)"}`,
+            borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+          }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: myStreak >= 7 ? "var(--gold)" : "var(--text)" }}>
+                🔥 {myStreak > 0 ? `${myStreak}-Day Streak!` : "Start your streak!"}
+                {totalBonuses > 0 && <span style={{ marginLeft: 8, fontSize: 11, color: "var(--gold)" }}>+{totalBonuses * 3} bonus pts earned</span>}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
+                {myStreak === 0
+                  ? "Log a workout today to start a streak. Every 7 consecutive days earns +3 bonus points!"
+                  : daysToNext === 1
+                  ? `🏆 Log tomorrow to hit ${nextMilestone} days and earn +3 bonus points!`
+                  : `${daysToNext} more day${daysToNext !== 1 ? "s" : ""} until ${nextMilestone}-day milestone (+3 pts)`
+                }
+              </div>
+            </div>
+            <div style={{ textAlign: "center", flexShrink: 0 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: myStreak >= 7 ? "var(--gold)" : "#93b4ff", lineHeight: 1 }}>{daysIntoCurrentCycle === 0 && myStreak > 0 ? 7 : daysIntoCurrentCycle}/{7}</div>
+              <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>cycle</div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Stats Row ── */}
       <div className="stats-row" style={{ marginBottom: 16 }}>
