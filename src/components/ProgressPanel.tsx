@@ -5,9 +5,10 @@ import { Badge, getActiveBadges, checkBadge, PlayerStats } from "../lib/badges";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
 interface Props {
-  profile: Profile;
-  myScores: Score[];
-  workouts: Workout[];
+  profile?: Profile;
+  myScores?: Score[];
+  workouts?: Workout[];
+  overrideUserId?: string;
 }
 
 // ── Streak calendar helpers ───────────────────────────────────
@@ -178,7 +179,7 @@ function ProgressChart({ attempts, workouts }: { attempts: ScoreAttempt[]; worko
   );
 }
 
-export default function ProgressPanel({ profile, myScores, workouts }: Props) {
+export default function ProgressPanel({ profile, myScores, workouts, overrideUserId }: Props) {
   const [attempts, setAttempts]     = useState<ScoreAttempt[]>([]);
   const [view, setView]             = useState<"bests" | "history" | "badges" | "calendar" | "chart">("bests");
   const [allBadges, setAllBadges]   = useState<Badge[]>([]);
