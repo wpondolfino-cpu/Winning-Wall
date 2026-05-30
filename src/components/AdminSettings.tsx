@@ -1,6 +1,6 @@
 // src/components/AdminSettings.tsx
 import { useState, useEffect } from "react";
-import { supabase, setPeriodAnchor, getPeriodAnchor, currentPeriodStart, currentPeriodEnd } from "../lib/supabase";
+import { supabase, setPeriodAnchor, getPeriodAnchor, currentPeriodStart, currentPeriodEnd, getXpPerks, XpPerk } from "../lib/supabase";
 
 // ── Badge stored in Supabase ──────────────────────────────────
 interface Badge {
@@ -57,6 +57,8 @@ export default function AdminSettings() {
   const [anchorDate, setAnchorDate] = useState(() => getPeriodAnchor().toISOString().split("T")[0]);
   const [anchorSaved, setAnchorSaved] = useState(false);
   const [exporting, setExporting]   = useState(false);
+  const [xpPerks, setXpPerks]         = useState<XpPerk[]>([]);
+  const [xpSaving, setXpSaving]       = useState(false);
   const [resetting, setResetting]   = useState(false);
   const [resetStep, setResetStep]   = useState(0);
 
@@ -64,6 +66,7 @@ export default function AdminSettings() {
   const periodEnd   = currentPeriodEnd();
   const daysLeft    = Math.ceil((periodEnd.getTime() - Date.now()) / 86400000);
 
+  useEffect(() => { getXpPerks().then(setXpPerks); }, []);
   useEffect(() => { loadBadges(); }, []);
 
   async function loadBadges() {
@@ -166,6 +169,19 @@ export default function AdminSettings() {
       a.click();
       URL.revokeObjectURL(url);
     } finally { setExporting(false); }
+  }
+
+  async function saveXpPerk(perk: XpPerk, newXp: number) {
+    setXpSaving(true);
+    await supabase.from("xp_settings").upsert({
+      perk_key: perk.perk_key, perk_name: perk.perk_name,
+      xp_required: newXp, description: perk.description,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "perk_key" });
+    const updated = await getXpPerks();
+    setXpPerks(updated);
+    setXpSaving(false);
+    showToast("✅ XP threshold saved!");
   }
 
   async function handleSeasonReset() {
@@ -415,6 +431,38 @@ export default function AdminSettings() {
       )}
 
       {toast && <div className="toast show">{toast}</div>}
+      {/* ── XP Perk Thresholds ── */}
+      <div style={{ marginTop: 32, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: "20px 24px", marginBottom: 24 }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1, marginBottom: 8 }}>
+          ⚡ XP Perk Thresholds
+        </div>
+        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
+          Adjust how much XP players need to unlock each perk. Changes take effect immediately.
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {xpPerks.map((perk, i) => (
+            <div key={perk.perk_key} style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
+                  {["⚔️","🤝","🛡️","💪","⚡"][i]} {perk.perk_name}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--muted)" }}>{perk.description}</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="number" inputMode="numeric"
+                  defaultValue={perk.xp_required}
+                  onBlur={e => saveXpPerk(perk, parseInt(e.target.value) || perk.xp_required)}
+                  style={{ width: 80, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, textAlign: "center" }}
+                />
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>XP</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        {xpSaving && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 10 }}>Saving…</div>}
+      </div>
+
       {/* ── Season Reset ── */}
       <div style={{ marginTop: 32, background: "rgba(255,60,60,0.05)", border: "2px solid rgba(255,60,60,0.2)", borderRadius: 14, padding: "20px 24px" }}>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "#ff7b7b", letterSpacing: 1, marginBottom: 8 }}>
