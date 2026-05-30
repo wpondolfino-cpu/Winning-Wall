@@ -24,6 +24,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
   const [streakShieldUsed, setStreakShieldUsed] = useState(false);
   const [scoreBoostUsed, setScoreBoostUsed]   = useState(false);
   const [usingShield, setUsingShield]         = useState(false);
+  const [editing, setEditing]                 = useState(false);
   const [usingBoost, setUsingBoost]           = useState(false);
   const [toast, setToast]       = useState("");
 
@@ -130,33 +131,51 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
       )}
 
       {/* ── Profile Card ── */}
-      <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: "20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16 }}>
-        <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", border: `3px solid ${avatarOutline}`, background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          {profile.avatar_url
-            ? <img src={profile.avatar_url} alt={profile.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-            : <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "var(--gold)" }}>{initials}</span>
-          }
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 700, fontSize: 18, color: "var(--text)" }}>{profile.name}</div>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{profile.grade_category}</div>
-          <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, padding: "2px 10px", borderRadius: 20,
-              background: tier === 0 ? "var(--surface)" :
-                          tier === 1 ? "rgba(156,163,175,0.15)" :
-                          tier === 2 ? "rgba(192,192,192,0.15)" :
-                          tier === 3 ? "rgba(37,80,212,0.15)" : "rgba(240,192,64,0.15)",
-              color: tier === 0 ? "var(--muted)" :
-                     tier === 1 ? "#9ca3af" :
-                     tier === 2 ? "#c0c0c0" :
-                     tier === 3 ? "#2550d4" : "var(--gold)",
-              border: `1px solid ${avatarOutline}`,
-            }}>
-              {tier === 0 ? "🏀 Rookie" : tier === 1 ? "⚔️ Challenger" : tier === 2 ? "🏆 Varsity" : tier === 3 ? "💎 Elite" : "👑 Legend"}
-            </span>
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>{xp} XP</span>
+      <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: "20px", marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", border: `3px solid ${avatarOutline}`, background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            {profile.avatar_url
+              ? <img src={profile.avatar_url} alt={profile.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              : <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "var(--gold)" }}>{initials}</span>
+            }
           </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 18, color: "var(--text)" }}>{profile.name}</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{profile.grade_category}</div>
+            <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, padding: "2px 10px", borderRadius: 20,
+                background: tier === 0 ? "var(--surface)" :
+                            tier === 1 ? "rgba(156,163,175,0.15)" :
+                            tier === 2 ? "rgba(192,192,192,0.15)" :
+                            tier === 3 ? "rgba(37,80,212,0.15)" : "rgba(240,192,64,0.15)",
+                color: tier === 0 ? "var(--muted)" :
+                       tier === 1 ? "#9ca3af" :
+                       tier === 2 ? "#c0c0c0" :
+                       tier === 3 ? "#2550d4" : "var(--gold)",
+                border: `1px solid ${avatarOutline}`,
+              }}>
+                {tier === 0 ? "🏀 Rookie" : tier === 1 ? "⚔️ Challenger" : tier === 2 ? "🏆 Varsity" : tier === 3 ? "💎 Elite" : "👑 Legend"}
+              </span>
+              {xpEnabled && <span style={{ fontSize: 12, color: "var(--muted)" }}>{xp} XP</span>}
+            </div>
+          </div>
+          <button onClick={() => setEditing(e => !e)} style={{
+            background: editing ? "var(--surface)" : "rgba(26,63,168,0.15)",
+            border: `1px solid ${editing ? "var(--border)" : "rgba(26,63,168,0.4)"}`,
+            color: editing ? "var(--muted)" : "#93b4ff",
+            borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600,
+            fontFamily: "inherit", cursor: "pointer", flexShrink: 0,
+          }}>
+            {editing ? "✕ Close" : "✏️ Edit"}
+          </button>
         </div>
+
+        {/* Inline edit form */}
+        {editing && (
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+            <ProfileEditor profile={profile} onUpdated={(u) => { onUpdated(u); setEditing(false); }} />
+          </div>
+        )}
       </div>
 
       {/* ── XP Progress ── */}
@@ -250,13 +269,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
         )}
       </div>
 
-      {/* ── Edit Profile ── */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 12 }}>
-          ✏️ Edit Profile
-        </div>
-        <ProfileEditor profile={profile} onUpdated={onUpdated} />
-      </div>
+
 
     </div>
   );
