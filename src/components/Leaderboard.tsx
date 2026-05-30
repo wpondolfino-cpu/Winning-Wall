@@ -43,13 +43,40 @@ export default function Leaderboard({ currentUserId }: Props) {
   const [periodEntries, setPeriodEntries] = useState<PeriodEntry[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [expandedPlayer, setExpandedPlayer] = useState<string | null>(null);
+  const [xpData, setXpData]               = useState<Record<string,number>>({});
+  const [xpPerks, setXpPerks]             = useState<XpPerk[]>([]);
 
-
+  function getAvatarOutline(playerId: string): string {
+    const xp = xpData[playerId] ?? 0;
+    const sorted = [...xpPerks].sort((a, b) => a.xp_required - b.xp_required);
+    const outlines: Record<string, string> = {
+      "team_eligible":  "#9ca3af",
+      "streak_shield":  "#c0c0c0",
+      "team_bonus":     "#2550d4",
+      "score_boost":    "#f0c040",
+    };
+    let outline = "var(--border)";
+    for (const p of sorted) {
+      if (xp >= p.xp_required && outlines[p.perk_key]) outline = outlines[p.perk_key];
+    }
+    return outline;
+  }
 
   const periodStart = currentPeriodStart();
   const periodEnd   = currentPeriodEnd();
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); loadXpData(); }, []);
+
+  async function loadXpData() {
+    const [perks, { data: profs }] = await Promise.all([
+      getXpPerks(),
+      supabase.from("profiles").select("id,total_xp").eq("role","player"),
+    ]);
+    setXpPerks(perks);
+    const map: Record<string,number> = {};
+    (profs ?? []).forEach((p: any) => { map[p.id] = p.total_xp ?? 0; });
+    setXpData(map);
+  }
   useEffect(() => { if (periodScores.length > 0) buildPeriodBoard(); }, [periodScores, profiles]);
 
 
