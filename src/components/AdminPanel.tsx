@@ -89,11 +89,17 @@ export default function AdminPanel({ allScores, workouts }: Props) {
   }
 
   async function randomizeTeams() {
-    // Get all active players
-    const { data: players } = await supabase.from("profiles")
-      .select("id,name,grade_category,avatar_url")
+    // Get all active players — only those with enough XP for team eligibility (300 XP)
+    const { data: allPlayers } = await supabase.from("profiles")
+      .select("id,name,grade_category,avatar_url,total_xp")
       .eq("role", "player")
       .order("name");
+    // Filter to team-eligible players (>= 300 XP)
+    const players = (allPlayers ?? []).filter((p: any) => (p.total_xp ?? 0) >= 300);
+    if (players.length < numTeams) {
+      showToast(`Not enough eligible players (need ${numTeams}, have ${players.length} with 300+ XP)`);
+      return;
+    }
     if (!players) return;
 
     // Split by grade
