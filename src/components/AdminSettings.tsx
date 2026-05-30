@@ -8,7 +8,7 @@ interface Badge {
   icon: string;
   name: string;
   description: string;
-  trigger_type: "workouts" | "points" | "streak" | "champion" | "top_score";
+  trigger_type: "workouts" | "points" | "streak" | "champion" | "top_score" | "challenges_won" | "team_wins";
   trigger_value: number;
   is_active: boolean;
 }
