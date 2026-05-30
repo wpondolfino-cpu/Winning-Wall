@@ -517,7 +517,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
               <button onClick={() => setViewingPlayer(null)} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 22, cursor: "pointer", padding: 0 }}>✕</button>
             </div>
             <div style={{ padding: "0 4px" }}>
-              <ProgressPanel overrideUserId={viewingPlayer.id} />
+              <ProgressPanel overrideUserId={viewingPlayer.id} profile={{} as any} myScores={[]} workouts={workouts} />
             </div>
           </div>
         </div>
