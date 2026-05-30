@@ -459,55 +459,7 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
       )}
 
       {/* ── BADGES ── */}
-      {view === "badges" && (() => {
-        const stats: PlayerStats = {
-          totalPoints,
-          totalWorkouts: effectiveScores.length,
-          currentStreak: 0,
-          longestStreak: 0,
-          isGroupChampion: (profile as any).is_period_champion ?? false,
-          hasPerfectScore: myScores.some(s => (s.points ?? 0) >= 5),
-          daysActive: attempts.length,
-          challengesWon: 0,
-          teamWins: teamWinsCount,
-        };
-        const earned    = allBadges.filter(b => checkBadge(b, stats));
-        const notEarned = allBadges.filter(b => !checkBadge(b, stats));
-        return (
-          <div className="card">
-            <div className="card-title">Your Badges — {earned.length}/{allBadges.length} earned</div>
-            {allBadges.length === 0 && (
-              <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 14, padding: 24 }}>No badges created yet. Ask your coach! 🏅</div>
-            )}
-            {earned.length > 0 && (
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 12, color: "#5de098", fontWeight: 600, marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>✅ Earned</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  {earned.map(b => (
-                    <div key={b.id} style={{ background: "rgba(40,180,80,0.1)", border: "1px solid rgba(40,180,80,0.25)", borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ fontSize: 24 }}>{b.icon}</div>
-                      <div><div style={{ fontWeight: 600, fontSize: 13, color: "var(--text)" }}>{b.name}</div><div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>{b.description}</div></div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {notEarned.length > 0 && (
-              <div>
-                <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600, marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>🔒 Not Yet Earned</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  {notEarned.map(b => (
-                    <div key={b.id} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, opacity: 0.5 }}>
-                      <div style={{ fontSize: 24, filter: "grayscale(1)" }}>{b.icon}</div>
-                      <div><div style={{ fontWeight: 600, fontSize: 13, color: "var(--text)" }}>{b.name}</div><div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>{b.description}</div></div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })()}
+}
 
 
     </div>
