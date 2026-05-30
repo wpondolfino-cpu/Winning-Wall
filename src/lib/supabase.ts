@@ -348,6 +348,9 @@ export async function submitScore(
     if (rankError) console.error("Re-rank error:", rankError);
   }
 
+  // Award XP for this attempt
+  awardXp(score.player_id, XP_PER_ATTEMPT, "workout_attempt").catch(console.error);
+
   // Award +3 bonus points for beating personal best
   if (isPersonalBest && previousBest !== null) {
     // Only award if they actually beat an existing record (not first submission)
@@ -759,6 +762,89 @@ export async function saveTeamCompetition(
 
 export async function toggleTeamCompetition(active: boolean): Promise<void> {
   await supabase.from("team_competitions").update({ is_active: active }).eq("is_active", !active);
+}
+
+
+// ── XP System ─────────────────────────────────────────────────
+
+export const XP_PER_ATTEMPT    = 10;
+export const XP_CHALLENGE_SENT = 2;
+export const XP_CHALLENGE_DONE = 3;
+
+export interface XpPerk {
+  perk_key:    string;
+  perk_name:   string;
+  xp_required: number;
+  description: string;
+}
+
+export const DEFAULT_PERKS: XpPerk[] = [
+  { perk_key: "challenges_unlocked", perk_name: "Challenges Unlocked",  xp_required: 150,  description: "Head-to-head challenges & avatar on leaderboard." },
+  { perk_key: "team_eligible",       perk_name: "Team Eligible",         xp_required: 300,  description: "Can be picked for team competitions. Light gray avatar outline." },
+  { perk_key: "streak_shield",       perk_name: "Streak Shield",         xp_required: 750,  description: "One missed-day streak save per biweekly period. Silver avatar outline." },
+  { perk_key: "team_bonus",          perk_name: "Team Boost",            xp_required: 1250, description: "Your team starts with +3 pts. Blue avatar outline." },
+  { perk_key: "score_boost",         perk_name: "Score Boost",           xp_required: 2000, description: "+5 to one workout score per period. Gold avatar outline." },
+];
+
+export async function getXpPerks(): Promise<XpPerk[]> {
+  const { data } = await supabase.from("xp_settings").select("*").order("xp_required");
+  return data && data.length > 0 ? data : DEFAULT_PERKS;
+}
+
+export async function getPlayerXp(playerId: string): Promise<number> {
+  const { data } = await supabase.from("profiles").select("total_xp").eq("id", playerId).single();
+  return data?.total_xp ?? 0;
+}
+
+export async function awardXp(playerId: string, amount: number, reason: string): Promise<void> {
+  await supabase.from("xp_log").insert({ player_id: playerId, xp_amount: amount, reason });
+  await supabase.from("profiles").update({ total_xp: supabase.rpc as any }).eq("id", playerId);
+  // Use increment via RPC-less approach
+  const { data: prof } = await supabase.from("profiles").select("total_xp").eq("id", playerId).single();
+  const current = prof?.total_xp ?? 0;
+  await supabase.from("profiles").update({ total_xp: current + amount }).eq("id", playerId);
+}
+
+export function getPlayerTier(xp: number, perks: XpPerk[]): { tier: number; perk: XpPerk | null; nextPerk: XpPerk | null; avatarOutline: string } {
+  const sorted = [...perks].sort((a, b) => a.xp_required - b.xp_required);
+  let currentPerk: XpPerk | null = null;
+  let nextPerk: XpPerk | null = null;
+
+  for (let i = 0; i < sorted.length; i++) {
+    if (xp >= sorted[i].xp_required) {
+      currentPerk = sorted[i];
+    } else {
+      nextPerk = sorted[i];
+      break;
+    }
+  }
+
+  const tier = currentPerk ? sorted.indexOf(currentPerk) + 1 : 0;
+
+  const outlineColors: Record<string, string> = {
+    "team_eligible":  "#9ca3af",  // light gray
+    "streak_shield":  "#c0c0c0",  // silver
+    "team_bonus":     "#2550d4",  // royal blue
+    "score_boost":    "#f0c040",  // gold
+  };
+  const avatarOutline = currentPerk ? (outlineColors[currentPerk.perk_key] ?? "var(--border)") : "var(--border)";
+
+  return { tier, perk: currentPerk, nextPerk, avatarOutline };
+}
+
+export async function hasPerkUsedThisPeriod(playerId: string, perkKey: string): Promise<boolean> {
+  const periodStart = currentPeriodStart().toISOString().split("T")[0];
+  const { data } = await supabase.from("perk_usage")
+    .select("id").eq("player_id", playerId).eq("perk_key", perkKey).eq("period_start", periodStart).single();
+  return !!data;
+}
+
+export async function usePerk(playerId: string, perkKey: string): Promise<boolean> {
+  const periodStart = currentPeriodStart().toISOString().split("T")[0];
+  const { error } = await supabase.from("perk_usage").insert({
+    player_id: playerId, perk_key: perkKey, period_start: periodStart,
+  });
+  return !error;
 }
 
 // ── YouTube helpers ───────────────────────────────────────────
