@@ -12,18 +12,11 @@ interface Props {
 export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLogged }: Props) {
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
   const [announcements, setAnnouncements] = useState<any[]>([]);
-  const [myStreak, setMyStreak] = useState(0);
   const [rankedCompletion, setRankedCompletion] = useState({ completed: 0, total: 0, bonusEarned: false });
 
-  useEffect(() => { loadAnnouncements(); loadStreak(); }, []);
+  useEffect(() => { loadAnnouncements(); }, []);
   useEffect(() => { if (workouts.length > 0) loadRankedCompletion(); }, [workouts]);
 
-  async function loadStreak() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    const { data } = await supabase.from("streaks").select("current_streak").eq("player_id", user.id).single();
-    setMyStreak(data?.current_streak ?? 0);
-  }
 
   async function loadRankedCompletion() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -359,41 +352,6 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
             </div>
           </div>
         )}
-
-        {/* ── Streak Info Banner ── */}
-        {(() => {
-          const daysIntoCurrentCycle = myStreak % 7;
-          const daysToNext = daysIntoCurrentCycle === 0 ? 7 : 7 - daysIntoCurrentCycle;
-          const nextMilestone = myStreak + daysToNext;
-          const totalBonuses = Math.floor(myStreak / 7);
-          return (
-            <div style={{
-              marginBottom: 16, padding: "12px 16px",
-              background: myStreak >= 7 ? "rgba(240,192,64,0.10)" : "rgba(26,63,168,0.08)",
-              border: `1px solid ${myStreak >= 7 ? "rgba(240,192,64,0.3)" : "var(--border)"}`,
-              borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-            }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: myStreak >= 7 ? "var(--gold)" : "var(--text)" }}>
-                  🔥 {myStreak > 0 ? `${myStreak}-Day Streak!` : "Start your streak!"}
-                  {totalBonuses > 0 && <span style={{ marginLeft: 8, fontSize: 11, color: "var(--gold)" }}>+{totalBonuses * 3} bonus pts earned</span>}
-                </div>
-                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
-                  {myStreak === 0
-                    ? "Log a workout today to start a streak. Every 7 consecutive days earns +3 bonus points!"
-                    : daysToNext === 1
-                    ? `🏆 Log tomorrow to hit ${nextMilestone} days and earn +3 bonus points!`
-                    : `${daysToNext} more day${daysToNext !== 1 ? "s" : ""} until ${nextMilestone}-day milestone (+3 pts)`
-                  }
-                </div>
-              </div>
-              <div style={{ textAlign: "center", flexShrink: 0 }}>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: myStreak >= 7 ? "var(--gold)" : "#93b4ff", lineHeight: 1 }}>{daysIntoCurrentCycle === 0 && myStreak > 0 ? 7 : daysIntoCurrentCycle}/{7}</div>
-                <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>cycle</div>
-              </div>
-            </div>
-          );
-        })()}
 
         <div className="workout-grid">
           {/* Competitive workouts first, then others */}
