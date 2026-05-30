@@ -68,10 +68,12 @@ export default function App() {
 
     // Load player XP and perks
     if (user && profile?.role === "player") {
-      const { getPlayerXp: gxp, getXpPerks: gperks } = await import("./lib/supabase");
-      const [xp, perks] = await Promise.all([gxp(user.id), gperks()]);
-      setPlayerXp(xp);
-      setXpPerks(perks);
+      (async () => {
+        const { getPlayerXp: gxp, getXpPerks: gperks } = await import("./lib/supabase");
+        const [xp, perks] = await Promise.all([gxp(user.id), gperks()]);
+        setPlayerXp(xp);
+        setXpPerks(perks);
+      })();
     }
 
     return () => clearInterval(interval);
