@@ -13,14 +13,71 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [myStreak, setMyStreak] = useState(0);
+  const [rankedCompletion, setRankedCompletion] = useState({ completed: 0, total: 0, bonusEarned: false });
 
   useEffect(() => { loadAnnouncements(); loadStreak(); }, []);
+  useEffect(() => { if (workouts.length > 0) loadRankedCompletion(); }, [workouts]);
 
   async function loadStreak() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const { data } = await supabase.from("streaks").select("current_streak").eq("player_id", user.id).single();
     setMyStreak(data?.current_streak ?? 0);
+  }
+
+  async function loadRankedCompletion() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // Get active competitive workouts in the current group
+    const activeWorkouts = workouts.filter(w => w.is_active !== false);
+    const groupNames = Array.from(new Set(activeWorkouts.map(w => w.group_name).filter(Boolean)));
+    const currentGroup = groupNames.length === 1 ? groupNames[0] : null;
+
+    const rankedWorkouts = activeWorkouts.filter(w =>
+      w.scoring_type === "competitive" &&
+      w.leaderboard_active !== false &&
+      (currentGroup ? w.group_name === currentGroup : true)
+    );
+
+    if (rankedWorkouts.length === 0) { setRankedCompletion({ completed: 0, total: 0, bonusEarned: false }); return; }
+
+    // Check which ones were logged today
+    const today = new Date().toISOString().split("T")[0];
+    const { data: todayAttempts } = await supabase
+      .from("score_attempts")
+      .select("workout_id")
+      .eq("player_id", user.id)
+      .gte("attempted_at", today + "T00:00:00.000Z")
+      .lte("attempted_at", today + "T23:59:59.999Z");
+
+    const loggedToday = new Set((todayAttempts ?? []).map((a: any) => a.workout_id));
+    const completed = rankedWorkouts.filter(w => loggedToday.has(w.id)).length;
+    const total = rankedWorkouts.length;
+
+    // Check if bonus already awarded today
+    const { data: bonusToday } = await supabase
+      .from("streak_bonuses")
+      .select("id")
+      .eq("player_id", user.id)
+      .eq("reason", "daily_completion")
+      .gte("awarded_at", today + "T00:00:00.000Z")
+      .single();
+
+    const bonusEarned = !!bonusToday;
+
+    // Award bonus if all completed and not yet awarded
+    if (completed >= total && total > 0 && !bonusEarned) {
+      await supabase.from("streak_bonuses").insert({
+        player_id: user.id,
+        points: 1,
+        streak_length: 0,
+        awarded_at: new Date().toISOString(),
+        reason: "daily_completion",
+      }).catch(console.warn);
+    }
+
+    setRankedCompletion({ completed, total, bonusEarned: bonusEarned || (completed >= total && total > 0) });
   }
 
   async function loadAnnouncements() {
@@ -268,6 +325,39 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
           </div>
         )}
 
+        {/* ── Ranked Workout Completion Bar ── */}
+        {rankedCompletion.total > 0 && (
+          <div style={{
+            marginBottom: 16, padding: "12px 16px",
+            background: rankedCompletion.bonusEarned ? "rgba(40,180,80,0.08)" : "rgba(26,63,168,0.1)",
+            border: `1px solid ${rankedCompletion.bonusEarned ? "rgba(40,180,80,0.3)" : "rgba(26,63,168,0.35)"}`,
+            borderRadius: 12,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: rankedCompletion.bonusEarned ? "#5de098" : "var(--gold)" }}>
+                {rankedCompletion.bonusEarned
+                  ? "✅ Bonus point earned today!"
+                  : `🏆 Ranked Workouts: ${rankedCompletion.completed}/${rankedCompletion.total}`}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                {rankedCompletion.bonusEarned
+                  ? "+1 pt"
+                  : rankedCompletion.completed === rankedCompletion.total - 1
+                  ? "1 more to earn +1 pt!"
+                  : `${rankedCompletion.total - rankedCompletion.completed} more to earn +1 pt`}
+              </div>
+            </div>
+            <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 6, height: 8, overflow: "hidden" }}>
+              <div style={{
+                height: "100%", borderRadius: 6,
+                background: rankedCompletion.bonusEarned ? "#5de098" : "var(--royal)",
+                width: `${Math.min(100, (rankedCompletion.completed / rankedCompletion.total) * 100)}%`,
+                transition: "width 0.4s ease",
+              }} />
+            </div>
+          </div>
+        )}
+
         {/* ── Streak Info Banner ── */}
         {(() => {
           const daysIntoCurrentCycle = myStreak % 7;
@@ -304,7 +394,12 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
         })()}
 
         <div className="workout-grid">
-          {workouts.filter(w => w.is_active !== false).map(w => {
+          {/* Competitive workouts first, then others */}
+          {[...workouts.filter(w => w.is_active !== false)].sort((a, b) => {
+            if (a.scoring_type === "competitive" && b.scoring_type !== "competitive") return -1;
+            if (a.scoring_type !== "competitive" && b.scoring_type === "competitive") return 1;
+            return 0;
+          }).map(w => {
             const vid = getVideoId(w.video_url);
             const logged = scoreFor(w.id);
             const scoringLabel =
