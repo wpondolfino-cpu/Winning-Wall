@@ -458,10 +458,6 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
         </div>
       )}
 
-      {/* ── BADGES ── */}
-}
-
-
     </div>
   );
 }
