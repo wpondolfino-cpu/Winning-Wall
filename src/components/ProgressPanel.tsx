@@ -5,9 +5,9 @@ import { Badge, getActiveBadges, checkBadge, PlayerStats } from "../lib/badges";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
 interface Props {
-  profile?: Profile;
-  myScores?: Score[];
-  workouts?: Workout[];
+  profile: Profile;
+  myScores: Score[];
+  workouts: Workout[];
   overrideUserId?: string;
 }
 
@@ -181,13 +181,30 @@ function ProgressChart({ attempts, workouts }: { attempts: ScoreAttempt[]; worko
 
 export default function ProgressPanel({ profile, myScores, workouts, overrideUserId }: Props) {
   const [attempts, setAttempts]     = useState<ScoreAttempt[]>([]);
+  const [overrideProfile, setOverrideProfile]   = useState<Profile | null>(null);
+  const [overrideScores, setOverrideScores]     = useState<Score[] | null>(null);
   const [view, setView]             = useState<"bests" | "history" | "badges" | "calendar" | "chart">("bests");
   const [allBadges, setAllBadges]   = useState<Badge[]>([]);
   const [champCount, setChampCount] = useState(0);
   const [teamWinsCount, setTeamWinsCount] = useState(0);
   const { leaderboard }             = useLeaderboard();
 
-  useEffect(() => { loadAttempts(); loadBadges(); loadChampCount(); loadTeamWins(); }, []);
+  useEffect(() => {
+    loadAttempts();
+    loadBadges();
+    loadChampCount();
+    loadTeamWins();
+    if (overrideUserId) loadOverrideData();
+  }, [overrideUserId]);
+
+  async function loadOverrideData() {
+    const { data: prof } = await supabase.from("profiles").select("*").eq("id", overrideUserId!).single();
+    setOverrideProfile(prof);
+    const { data: scores } = await supabase.from("scores").select("*").eq("player_id", overrideUserId!);
+    setOverrideScores(scores ?? []);
+    const { data: att } = await supabase.from("score_attempts").select("*").eq("player_id", overrideUserId!).order("attempted_at", { ascending: false });
+    setAttempts(att ?? []);
+  }
 
   async function loadBadges() { setAllBadges(await getActiveBadges()); }
 
@@ -231,20 +248,24 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
   }
 
   async function loadAttempts() {
+    if (overrideUserId) return; // handled by loadOverrideData
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setAttempts(await getMyAttempts(user.id));
   }
 
-  const totalPoints   = myScores.reduce((sum, s) => sum + (s.points ?? 0), 0);
-  const totalMade     = myScores.reduce((sum, s) => sum + s.made, 0);
-  const totalAtt      = myScores.reduce((sum, s) => sum + s.attempts, 0);
+  const effectiveProfile = overrideProfile ?? profile;
+  const effectiveScores  = overrideScores ?? myScores;
+
+  const totalPoints   = effectiveScores.reduce((sum, s) => sum + (s.points ?? 0), 0);
+  const totalMade     = effectiveScores.reduce((sum, s) => sum + s.made, 0);
+  const totalAtt      = effectiveScores.reduce((sum, s) => sum + s.attempts, 0);
   const activeWorkouts = workouts.filter(w => w.is_active !== false);
-  const completedCount = myScores.length;
+  const completedCount = effectiveScores.length;
   const completionPct  = activeWorkouts.length > 0 ? Math.round((completedCount / activeWorkouts.length) * 100) : 0;
 
-  // My rank from leaderboard
-  const myEntry = leaderboard.find(e => e.id === profile.id);
+  // Rank from leaderboard
+  const myEntry = leaderboard.find(e => e.id === effectiveProfile?.id);
   const myRank  = myEntry?.rank ?? null;
   const totalPlayers = leaderboard.length;
 
@@ -267,7 +288,7 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
           </span>
         )}
       </div>
-      <div className="section-sub">Track your growth, {profile.name.split(" ")[0]} 🏀</div>
+      <div className="section-sub">Track your growth, {effectiveProfile?.name.split(" ")[0]} 🏀</div>
 
       {/* ── Rank Banner ── */}
       {myRank && (
@@ -312,7 +333,7 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
       {/* ── Stats Row ── */}
       <div className="stats-row" style={{ marginBottom: 16 }}>
         <div className="stat-card"><div className="stat-label">Total Points</div><div className="stat-value gold">{totalPoints}</div></div>
-        <div className="stat-card"><div className="stat-label">Workouts Done</div><div className="stat-value blue">{myScores.length}</div></div>
+        <div className="stat-card"><div className="stat-label">Workouts Done</div><div className="stat-value blue">{effectiveScores.length}</div></div>
         <div className="stat-card"><div className="stat-label">Total Attempts</div><div className="stat-value">{attempts.length}</div></div>
       </div>
 
@@ -329,7 +350,7 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
       {view === "bests" && (
         <div className="card">
           <div className="card-title">Your Best Score Per Workout</div>
-          {myScores.length === 0 ? (
+          {effectiveScores.length === 0 ? (
             <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 14, padding: 24 }}>
               No workouts logged yet. Head to Workouts to get started! 🏀
             </div>
@@ -338,7 +359,7 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
               <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 80px", padding: "6px 0", fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "1px", borderBottom: "1px solid var(--border)", marginBottom: 4 }}>
                 <div>Workout</div><div style={{ textAlign: "center" }}>Best Score</div><div style={{ textAlign: "center" }}>Points</div>
               </div>
-              {myScores.map(s => {
+              {effectiveScores.map(s => {
                 const w = workouts.find(x => x.id === s.workout_id);
                 const bestDisplay = s.self_points > 0 ? `${s.self_points} pts`
                   : s.sprint_secs > 0 ? `${s.sprint_secs}s`
@@ -418,7 +439,7 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
       {view === "badges" && (() => {
         const stats: PlayerStats = {
           totalPoints,
-          totalWorkouts: myScores.length,
+          totalWorkouts: effectiveScores.length,
           currentStreak: 0,
           longestStreak: 0,
           isGroupChampion: (profile as any).is_period_champion ?? false,
