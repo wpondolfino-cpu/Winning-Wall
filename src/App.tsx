@@ -3,6 +3,7 @@ import { useAuth } from "./hooks/useAuth";
 import { useWorkouts } from "./hooks/useWorkouts";
 import { getMyScores, getAllScores, signOut, Score, Profile } from "./lib/supabase";
 import ProfileEditor from "./components/ProfileEditor";
+import ProfilePage from "./components/ProfilePage";
 import LoginPage from "./pages/LoginPage";
 import WorkoutsPanel from "./components/WorkoutsPanel";
 import CoachPanel from "./components/CoachPanel";
@@ -30,6 +31,8 @@ export default function App() {
   const [adminTab, setAdminTab]     = useState<AdminTab>("workouts");
   const [pendingChallenges, setPendingChallenges] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [playerXp, setPlayerXp]       = useState(0);
+  const [xpPerks, setXpPerks]         = useState<any[]>([]);
   const [localProfile, setLocalProfile] = useState<Profile | null>(null);
 
   useEffect(() => {
@@ -62,6 +65,15 @@ export default function App() {
     }
     checkChallenges();
     const interval = setInterval(checkChallenges, 30000);
+
+    // Load player XP and perks
+    if (user && profile?.role === "player") {
+      const { getPlayerXp: gxp, getXpPerks: gperks } = await import("./lib/supabase");
+      const [xp, perks] = await Promise.all([gxp(user.id), gperks()]);
+      setPlayerXp(xp);
+      setXpPerks(perks);
+    }
+
     return () => clearInterval(interval);
   }, [user, profile]);
 
@@ -248,7 +260,16 @@ export default function App() {
               </div>
             </div>
           )}
-          {isPlayer && playerTab === "h2h" && (
+          {isPlayer && playerTab === "h2h" && xpPerks.length > 0 && playerXp < (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) ? (
+            <div className="panel active" style={{ textAlign: "center", padding: "60px 20px" }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--muted)", letterSpacing: 1, marginBottom: 12 }}>Challenges Locked</div>
+              <div style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.7 }}>
+                Earn <strong style={{ color: "var(--gold)" }}>{(xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) - playerXp} more XP</strong> to unlock head-to-head challenges.
+                <br/>Log workouts to earn XP!
+              </div>
+            </div>
+          ) : isPlayer && playerTab === "h2h" && (
             <HeadToHead currentUserId={user.id} currentUserName={displayProfile.name} workouts={workouts} myScores={myScores} onScoreLogged={loadMyScores} />
           )}
           {isCoach && coachTab === "workouts" && (
