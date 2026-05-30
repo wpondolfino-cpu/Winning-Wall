@@ -183,7 +183,7 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
   const [attempts, setAttempts]     = useState<ScoreAttempt[]>([]);
   const [overrideProfile, setOverrideProfile]   = useState<Profile | null>(null);
   const [overrideScores, setOverrideScores]     = useState<Score[] | null>(null);
-  const [view, setView]             = useState<"bests" | "history" | "badges" | "calendar" | "chart">("bests");
+  const [view, setView]             = useState<"bests" | "history" | "calendar" | "chart">("bests");
   const [allBadges, setAllBadges]   = useState<Badge[]>([]);
   const [champCount, setChampCount] = useState(0);
   const [teamWinsCount, setTeamWinsCount] = useState(0);
@@ -367,7 +367,6 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
         {tabBtn("history",  "📋 History")}
         {tabBtn("calendar", "📅 Calendar")}
         {tabBtn("chart",    "📈 Chart")}
-        {tabBtn("badges",   "🏅 Badges")}
       </div>
 
       {/* ── PERSONAL BESTS ── */}
