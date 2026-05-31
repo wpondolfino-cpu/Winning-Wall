@@ -1,491 +1,698 @@
-// src/components/ProgressPanel.tsx
-import { useState, useEffect } from "react";
-import { supabase, Profile, Score, Workout, ScoreAttempt, getMyAttempts } from "../lib/supabase";
-import { Badge, getActiveBadges, checkBadge, PlayerStats } from "../lib/badges";
+// src/components/PlayersPanel.tsx  (Coach view — manage players)
+import { useState } from "react";
+// ProgressPanel removed - using inline player view
+import { supabase, Score, Workout, GRADE_CATEGORIES, GradeCategory, approveUser, rejectUser } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
 interface Props {
-  profile: Profile;
-  myScores: Score[];
+  allScores: Score[];
   workouts: Workout[];
-  overrideUserId?: string;
 }
 
-// ── Streak calendar helpers ───────────────────────────────────
-function getCalendarDays(year: number, month: number) {
-  const firstDay = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  return { firstDay, daysInMonth };
+interface EditPlayer {
+  id: string;
+  name: string;
+  grade_category: string;
 }
 
-function StreakCalendar({ attempts }: { attempts: ScoreAttempt[] }) {
-  const now = new Date();
-  const [calMonth, setCalMonth] = useState(now.getMonth());
-  const [calYear, setCalYear]   = useState(now.getFullYear());
-
-  const loggedDays = new Set(
-    attempts.map(a => {
-      const d = new Date(a.attempted_at);
-      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    })
-  );
-
-  function isLogged(day: number) {
-    return loggedDays.has(`${calYear}-${calMonth}-${day}`);
-  }
-
-  function isToday(day: number) {
-    return calYear === now.getFullYear() && calMonth === now.getMonth() && day === now.getDate();
-  }
-
-  const { firstDay, daysInMonth } = getCalendarDays(calYear, calMonth);
-  const monthName = new Date(calYear, calMonth).toLocaleString("default", { month: "long", year: "numeric" });
-
-  function prevMonth() {
-    if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); }
-    else setCalMonth(m => m - 1);
-  }
-  function nextMonth() {
-    const isCurrentMonth = calYear === now.getFullYear() && calMonth === now.getMonth();
-    if (isCurrentMonth) return;
-    if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); }
-    else setCalMonth(m => m + 1);
-  }
-
-  const loggedCount = Array.from({ length: daysInMonth }, (_, i) => i + 1).filter(isLogged).length;
-
-  return (
-    <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px", marginBottom: 20 }}>
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <button onClick={prevMonth} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 18, cursor: "pointer", padding: "0 6px" }}>‹</button>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--text)", letterSpacing: 1 }}>{monthName}</div>
-          <div style={{ fontSize: 11, color: loggedCount > 0 ? "#5de098" : "var(--muted)" }}>
-            {loggedCount} day{loggedCount !== 1 ? "s" : ""} logged
-          </div>
-        </div>
-        <button onClick={nextMonth} style={{ background: "none", border: "none", color: calYear === now.getFullYear() && calMonth === now.getMonth() ? "var(--border)" : "var(--muted)", fontSize: 18, cursor: "pointer", padding: "0 6px" }}>›</button>
-      </div>
-      {/* Day labels */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3, marginBottom: 4 }}>
-        {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d => (
-          <div key={d} style={{ textAlign: "center", fontSize: 10, color: "var(--muted)", fontWeight: 600 }}>{d}</div>
-        ))}
-      </div>
-      {/* Day cells */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3 }}>
-        {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
-        {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => (
-          <div key={day} style={{
-            aspectRatio: "1", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 11, fontWeight: isToday(day) ? 700 : 400,
-            background: isLogged(day) ? "var(--royal)" : isToday(day) ? "rgba(26,63,168,0.2)" : "var(--surface)",
-            color: isLogged(day) ? "#fff" : isToday(day) ? "#93b4ff" : "var(--muted)",
-            border: isToday(day) ? "1px solid var(--royal)" : "1px solid transparent",
-            position: "relative",
-          }}>
-            {day}
-            {isLogged(day) && (
-              <div style={{ position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%)", width: 4, height: 4, borderRadius: "50%", background: "var(--gold)" }} />
-            )}
-          </div>
-        ))}
-      </div>
-      {/* Legend */}
-      <div style={{ display: "flex", gap: 14, marginTop: 10, justifyContent: "center" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "var(--muted)" }}>
-          <div style={{ width: 10, height: 10, borderRadius: 2, background: "var(--royal)" }} /> Logged
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "var(--muted)" }}>
-          <div style={{ width: 10, height: 10, borderRadius: 2, background: "rgba(26,63,168,0.2)", border: "1px solid var(--royal)" }} /> Today
-        </div>
-      </div>
-    </div>
-  );
+interface EditScore {
+  id: string;
+  workout_id: string;
+  workout_title: string;
+  made: number;
+  reps: number;
+  sprint_secs: number;
+  self_points: number;
 }
 
-// ── Simple line chart ─────────────────────────────────────────
-function ProgressChart({ attempts, workouts }: { attempts: ScoreAttempt[]; workouts: Workout[] }) {
-  const [selectedWorkout, setSelectedWorkout] = useState<string>("all");
 
-  const workoutIds = Array.from(new Set(attempts.map(a => a.workout_id)));
-  const workoutsWithAttempts = workouts.filter(w => workoutIds.includes(w.id));
-
-  const filtered = (selectedWorkout === "all" ? attempts : attempts.filter(a => a.workout_id === selectedWorkout))
-    .slice().sort((a, b) => new Date(a.attempted_at).getTime() - new Date(b.attempted_at).getTime())
-    .slice(-20); // last 20 attempts
-
-  if (filtered.length < 2) return (
-    <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: "30px 0" }}>
-      Log at least 2 attempts to see your progress chart 📈
-    </div>
-  );
-
-  const scores = filtered.map(a => a.self_points > 0 ? a.self_points : a.sprint_secs > 0 ? a.sprint_secs : a.made + a.reps);
-  const maxScore = Math.max(...scores);
-  const minScore = Math.min(...scores);
-  const range = maxScore - minScore || 1;
-
-  const W = 300, H = 120, PAD = 20;
-  const points = scores.map((s, i) => ({
-    x: PAD + (i / (scores.length - 1)) * (W - PAD * 2),
-    y: PAD + (1 - (s - minScore) / range) * (H - PAD * 2),
-    score: s,
-    date: new Date(filtered[i].attempted_at).toLocaleDateString(),
-  }));
-
-  const polyline = points.map(p => `${p.x},${p.y}`).join(" ");
-  const area = `M${points[0].x},${H} ` + points.map(p => `L${p.x},${p.y}`).join(" ") + ` L${points[points.length-1].x},${H} Z`;
-  const trend = scores[scores.length - 1] > scores[0] ? "#5de098" : scores[scores.length - 1] < scores[0] ? "#ff7b7b" : "var(--gold)";
-
-  return (
-    <div>
-      {workoutsWithAttempts.length > 1 && (
-        <select value={selectedWorkout} onChange={e => setSelectedWorkout(e.target.value)}
-          style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", marginBottom: 14 }}>
-          <option value="all">All Drills Combined</option>
-          {workoutsWithAttempts.map(w => <option key={w.id} value={w.id}>{w.title}</option>)}
-        </select>
-      )}
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", overflow: "visible" }}>
-        {/* Grid lines */}
-        {[0.25, 0.5, 0.75].map(pct => (
-          <line key={pct} x1={PAD} y1={PAD + pct * (H - PAD * 2)} x2={W - PAD} y2={PAD + pct * (H - PAD * 2)}
-            stroke="var(--border)" strokeWidth="0.5" strokeDasharray="3,3" />
-        ))}
-        {/* Area fill */}
-        <path d={area} fill={trend} fillOpacity="0.08" />
-        {/* Line */}
-        <polyline points={polyline} fill="none" stroke={trend} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-        {/* Points */}
-        {points.map((p, i) => (
-          <g key={i}>
-            <circle cx={p.x} cy={p.y} r="4" fill={i === points.length - 1 ? trend : "var(--surface2)"} stroke={trend} strokeWidth="2" />
-          </g>
-        ))}
-        {/* First + last labels */}
-        <text x={points[0].x} y={points[0].y - 8} textAnchor="middle" fontSize="9" fill="var(--muted)">{scores[0]}</text>
-        <text x={points[points.length-1].x} y={points[points.length-1].y - 8} textAnchor="middle" fontSize="9" fill={trend} fontWeight="bold">{scores[scores.length-1]}</text>
-      </svg>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--muted)", marginTop: 4 }}>
-        <span>{new Date(filtered[0].attempted_at).toLocaleDateString()}</span>
-        <span style={{ color: trend, fontWeight: 600 }}>
-          {scores[scores.length - 1] > scores[0] ? "↑ Improving!" : scores[scores.length - 1] < scores[0] ? "↓ Keep grinding" : "→ Consistent"}
-        </span>
-        <span>{new Date(filtered[filtered.length - 1].attempted_at).toLocaleDateString()}</span>
-      </div>
-    </div>
-  );
-}
-
-export default function ProgressPanel({ profile, myScores, workouts, overrideUserId }: Props) {
-  const [attempts, setAttempts]     = useState<ScoreAttempt[]>([]);
-  const [overrideProfile, setOverrideProfile]   = useState<Profile | null>(null);
-  const [overrideScores, setOverrideScores]     = useState<Score[] | null>(null);
-  const [overrideLoading, setOverrideLoading]   = useState(!!overrideUserId);
-  const [view, setView]             = useState<"bests" | "history" | "calendar" | "chart">("bests");
-  const [allBadges, setAllBadges]   = useState<Badge[]>([]);
-  const [champCount, setChampCount] = useState(0);
-  const [teamWinsCount, setTeamWinsCount] = useState(0);
-  const [myStreak, setMyStreak] = useState(0);
-  const { leaderboard }             = useLeaderboard();
+function PlayerProgressModal({ playerId, playerName, workouts, allScores, onClose }: {
+  playerId: string; playerName: string; workouts: any[]; allScores: any[]; onClose: () => void;
+}) {
+  const [profile, setProfile] = useState<any>(null);
+  const [scores, setScores]   = useState<any[]>([]);
+  const [attempts, setAttempts] = useState<any[]>([]);
+  const [loading, setLoading]   = useState(true);
 
   useEffect(() => {
-    loadAttempts();
-    loadBadges();
-    loadChampCount();
-    loadTeamWins();
-    loadStreak();
-    if (overrideUserId) loadOverrideData();
-  }, [overrideUserId]);
-
-  async function loadStreak() {
-    const uid = overrideUserId ?? (await supabase.auth.getUser()).data.user?.id;
-    if (!uid) return;
-    const { data } = await supabase.from("streaks").select("current_streak").eq("player_id", uid).single();
-    setMyStreak(data?.current_streak ?? 0);
-  }
-
-  async function loadOverrideData() {
-    setOverrideLoading(true);
-    try {
+    (async () => {
+      setLoading(true);
       const [profRes, scoresRes, attRes] = await Promise.all([
-        supabase.from("profiles").select("*").eq("id", overrideUserId!).single(),
-        supabase.from("scores").select("*").eq("player_id", overrideUserId!),
-        supabase.from("score_attempts").select("*").eq("player_id", overrideUserId!).order("attempted_at", { ascending: false }),
+        supabase.from("profiles").select("*").eq("id", playerId).single(),
+        supabase.from("scores").select("*").eq("player_id", playerId),
+        supabase.from("score_attempts").select("*").eq("player_id", playerId).order("attempted_at", { ascending: false }).limit(30),
       ]);
-      if (profRes.error) console.error("Profile load error:", profRes.error);
-      setOverrideProfile(profRes.data);
-      setOverrideScores(scoresRes.data ?? []);
+      setProfile(profRes.data);
+      setScores(scoresRes.data ?? []);
       setAttempts(attRes.data ?? []);
-    } catch(e) {
-      console.error("loadOverrideData error:", e);
-    } finally {
-      setOverrideLoading(false);
-    }
-  }
+      setLoading(false);
+    })();
+  }, [playerId]);
 
-  async function loadBadges() { setAllBadges(await getActiveBadges()); }
-
-  async function loadTeamWins() {
-    const uid = overrideUserId ?? (await supabase.auth.getUser()).data.user?.id;
-    if (!uid) return;
-    // Count past team competitions where user's team won
-    const { data: comps } = await supabase.from("team_competitions")
-      .select("id,winning_team_id")
-      .not("winning_team_id","is",null);
-    if (!comps || comps.length === 0) return;
-    const compIds = comps.map((c: any) => c.id);
-    const { data: myTeams } = await supabase.from("teams")
-      .select("id,competition_id")
-      .in("competition_id", compIds);
-    const { data: myProfile } = await supabase.from("profiles")
-      .select("team_id").eq("id", uid).single();
-    if (!myProfile?.team_id || !myTeams) return;
-    const myTeamIds = new Set((myTeams as any[]).filter(t => {
-      const profs = myTeams.filter((mt: any) => mt.id === myProfile.team_id);
-      return profs.length > 0;
-    }).map((t: any) => t.id));
-    myTeamIds.add(myProfile.team_id);
-    let wins = 0;
-    for (const comp of comps) {
-      const teamsInComp = (myTeams as any[]).filter(t => t.competition_id === comp.id);
-      const myTeamInComp = teamsInComp.find(t => myTeamIds.has(t.id));
-      if (myTeamInComp && myTeamInComp.id === comp.winning_team_id) wins++;
-    }
-    setTeamWinsCount(wins);
-  }
-
-  async function loadChampCount() {
-    const uid = overrideUserId ?? (await supabase.auth.getUser()).data.user?.id;
-    if (!uid) return;
-    const { count } = await supabase
-      .from("biweekly_champions")
-      .select("id", { count: "exact", head: true })
-      .eq("player_id", uid);
-    setChampCount(count ?? 0);
-  }
-
-  async function loadAttempts() {
-    if (overrideUserId) return; // handled by loadOverrideData
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    setAttempts(await getMyAttempts(user.id));
-  }
-
-  if (overrideLoading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300, padding: 40 }}>
-        <div style={{ fontSize: 14, color: "var(--muted)" }}>Loading player data…</div>
-      </div>
-    );
-  }
-
-  const effectiveProfile = overrideProfile ?? (overrideUserId ? null : profile);
-  const effectiveScores  = overrideScores ?? myScores;
-
-  // If override was requested but profile didn't load, show error
-  if (overrideUserId && !effectiveProfile) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300, padding: 40 }}>
-        <div style={{ fontSize: 14, color: "var(--muted)" }}>Could not load player data. Check console for errors.</div>
-      </div>
-    );
-  }
-
-  const totalPoints   = effectiveScores.reduce((sum, s) => sum + (s.points ?? 0), 0);
-  const totalMade     = effectiveScores.reduce((sum, s) => sum + s.made, 0);
-  const totalAtt      = effectiveScores.reduce((sum, s) => sum + s.attempts, 0);
-  const activeWorkouts = (workouts ?? []).filter(w => w.is_active !== false);
-  const completedCount = effectiveScores.length;
-  const completionPct  = activeWorkouts.length > 0 ? Math.round((completedCount / activeWorkouts.length) * 100) : 0;
-
-  // Rank from leaderboard
-  const myEntry = leaderboard.find(e => e.id === effectiveProfile?.id);
-  const myRank  = myEntry?.rank ?? null;
-  const totalPlayers = leaderboard.length;
-
-  const tabBtn = (t: typeof view, label: string) => (
-    <button onClick={() => setView(t)} style={{
-      flex: 1, padding: "8px 4px", borderRadius: 8, border: "none", cursor: "pointer",
-      fontFamily: "inherit", fontSize: 11, fontWeight: 600,
-      background: view === t ? "var(--royal)" : "transparent",
-      color: view === t ? "#fff" : "var(--muted)", transition: "all .2s", whiteSpace: "nowrap",
-    }}>{label}</button>
-  );
+  const totalPoints = scores.reduce((s: number, sc: any) => s + (sc.points ?? 0), 0);
+  const initials = playerName.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase();
 
   return (
-    <div className={overrideUserId ? undefined : "panel active"} style={overrideUserId ? { padding: "16px" } : undefined}>
-      <div className="section-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        My Progress
-        {champCount > 0 && (
-          <span style={{ fontSize: 20, letterSpacing: 2 }} title={`${champCount} biweekly championship${champCount !== 1 ? "s" : ""} won`}>
-            {"👑".repeat(champCount)}
-          </span>
-        )}
-      </div>
-      <div className="section-sub">Track your growth, {effectiveProfile?.name.split(" ")[0]} 🏀</div>
-
-      {/* ── Rank Banner ── */}
-      {myRank && (
-        <div style={{
-          padding: "14px 18px", marginBottom: 16, borderRadius: 12,
-          background: myRank <= 3 ? "rgba(240,192,64,0.12)" : "rgba(26,63,168,0.12)",
-          border: `1px solid ${myRank <= 3 ? "rgba(240,192,64,0.3)" : "rgba(26,63,168,0.3)"}`,
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-        }}>
-          <div>
-            <div style={{ fontSize: 12, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>Your Current Rank</div>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: myRank <= 3 ? "var(--gold)" : "#93b4ff", lineHeight: 1 }}>
-              #{myRank} <span style={{ fontSize: 14, color: "var(--muted)", fontFamily: "inherit" }}>of {totalPlayers}</span>
-            </div>
-          </div>
-          <div style={{ fontSize: 32 }}>
-            {myRank === 1 ? "👑" : myRank === 2 ? "🥈" : myRank === 3 ? "🥉" : "🔥"}
-          </div>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "20px 0" }} onClick={onClose}>
+      <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(640px, 96vw)", position: "relative" }} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", position: "sticky", top: 0, background: "var(--surface)", zIndex: 1, borderRadius: "16px 16px 0 0" }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1 }}>📈 {playerName}'s Progress</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 22, cursor: "pointer", padding: 0 }}>✕</button>
         </div>
-      )}
 
-      {/* ── Streak Banner ── */}
-      {(() => {
-        const daysIntoCurrentCycle = myStreak % 7;
-        const daysToNext = daysIntoCurrentCycle === 0 ? 7 : 7 - daysIntoCurrentCycle;
-        const nextMilestone = myStreak + daysToNext;
-        const totalBonuses = Math.floor(myStreak / 7);
-        return (
-          <div style={{
-            marginBottom: 16, padding: "12px 16px",
-            background: myStreak >= 7 ? "rgba(240,192,64,0.10)" : "rgba(26,63,168,0.08)",
-            border: `1px solid ${myStreak >= 7 ? "rgba(240,192,64,0.3)" : "var(--border)"}`,
-            borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-          }}>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: myStreak >= 7 ? "var(--gold)" : "var(--text)" }}>
-                🔥 {myStreak > 0 ? `${myStreak}-Day Streak!` : "Start your streak!"}
-                {totalBonuses > 0 && <span style={{ marginLeft: 8, fontSize: 11, color: "var(--gold)" }}>+{totalBonuses * 3} bonus pts earned</span>}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
-                {myStreak === 0
-                  ? "Log a workout today to start a streak. Every 7 consecutive days earns +3 bonus points!"
-                  : daysToNext === 1
-                  ? `🏆 Log tomorrow to hit ${nextMilestone} days and earn +3 bonus points!`
-                  : `${daysToNext} more day${daysToNext !== 1 ? "s" : ""} until ${nextMilestone}-day milestone (+3 pts)`
-                }
-              </div>
-            </div>
-            <div style={{ textAlign: "center", flexShrink: 0 }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: myStreak >= 7 ? "var(--gold)" : "#93b4ff", lineHeight: 1 }}>{daysIntoCurrentCycle === 0 && myStreak > 0 ? 7 : daysIntoCurrentCycle}/{7}</div>
-              <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>cycle</div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── Stats Row ── */}
-      <div className="stats-row" style={{ marginBottom: 16 }}>
-        <div className="stat-card"><div className="stat-label">Total Points</div><div className="stat-value gold">{totalPoints}</div></div>
-        <div className="stat-card"><div className="stat-label">Workouts Done</div><div className="stat-value blue">{effectiveScores.length}</div></div>
-        <div className="stat-card"><div className="stat-label">Total Attempts</div><div className="stat-value">{attempts.length}</div></div>
-      </div>
-
-      {/* ── Tab bar ── */}
-      <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 10, padding: 4, marginBottom: 20, border: "1px solid var(--border)", gap: 2 }}>
-        {tabBtn("bests",    "🏆 Bests")}
-        {tabBtn("history",  "📋 History")}
-        {tabBtn("calendar", "📅 Calendar")}
-        {tabBtn("chart",    "📈 Chart")}
-      </div>
-
-      {/* ── PERSONAL BESTS ── */}
-      {view === "bests" && (
-        <div className="card">
-          <div className="card-title">Your Best Score Per Workout</div>
-          {effectiveScores.length === 0 ? (
-            <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 14, padding: 24 }}>
-              No workouts logged yet. Head to Workouts to get started! 🏀
-            </div>
+        <div style={{ padding: 20 }}>
+          {loading ? (
+            <div style={{ textAlign: "center", padding: 60, color: "var(--muted)" }}>Loading…</div>
           ) : (
             <>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 80px", padding: "6px 0", fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "1px", borderBottom: "1px solid var(--border)", marginBottom: 4 }}>
-                <div>Workout</div><div style={{ textAlign: "center" }}>Best Score</div><div style={{ textAlign: "center" }}>Points</div>
+              {/* Profile card */}
+              <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 20, padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, border: "1px solid var(--border)" }}>
+                <div style={{ width: 52, height: 52, borderRadius: "50%", overflow: "hidden", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {profile?.avatar_url ? <img src={profile.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)" }}>{initials}</span>}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16, color: "var(--text)" }}>{profile?.name ?? playerName}</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{profile?.grade_category ?? "—"}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--gold)", lineHeight: 1 }}>{totalPoints}</div>
+                  <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase" }}>total pts</div>
+                </div>
               </div>
-              {effectiveScores.map(s => {
-                const w = workouts.find(x => x.id === s.workout_id);
-                const bestDisplay = s.self_points > 0 ? `${s.self_points} pts`
-                  : s.sprint_secs > 0 ? `${s.sprint_secs}s`
-                  : `${s.made + s.reps}`;
-                const attemptCount = attempts.filter(a => a.workout_id === s.workout_id).length;
-                return (
-                  <div key={s.id} style={{ display: "grid", gridTemplateColumns: "1fr 100px 80px", padding: "12px 0", borderBottom: "1px solid var(--border)", alignItems: "center" }}>
-                    <div>
-                      <div style={{ fontWeight: 600, color: "var(--text)", fontSize: 13 }}>{w?.title ?? "Unknown"}</div>
-                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{w?.category} · {attemptCount} attempt{attemptCount !== 1 ? "s" : ""}</div>
-                    </div>
-                    <div style={{ textAlign: "center", fontWeight: 700, color: "var(--gold)", fontSize: 16 }}>{bestDisplay}</div>
-                    <div style={{ textAlign: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "#93b4ff" }}>{s.points}</div>
+
+              {/* Score breakdown */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Score Breakdown</div>
+                {scores.length === 0 ? (
+                  <div style={{ fontSize: 13, color: "var(--muted)" }}>No scores logged yet.</div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {scores.sort((a: any, b: any) => (b.points ?? 0) - (a.points ?? 0)).map((s: any) => {
+                      const w = workouts.find((wk: any) => wk.id === s.workout_id);
+                      const raw = s.self_points > 0 ? s.self_points : (s.made + s.reps);
+                      return (
+                        <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "var(--surface2)", borderRadius: 8 }}>
+                          <div style={{ fontSize: 13, color: "var(--text)" }}>{w?.emoji ?? "🏀"} {w?.title ?? "Unknown drill"}</div>
+                          <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                            <span style={{ fontSize: 11, color: "var(--muted)" }}>Score: {raw}</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>+{s.points} pts</span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                )}
+              </div>
+
+              {/* Recent attempts */}
+              {attempts.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Recent Attempts</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {attempts.slice(0, 10).map((a: any) => {
+                      const w = workouts.find((wk: any) => wk.id === a.workout_id);
+                      const raw = a.self_points > 0 ? a.self_points : (a.made + a.reps);
+                      const date = new Date(a.attempted_at).toLocaleDateString();
+                      return (
+                        <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 12px", background: "var(--surface2)", borderRadius: 8 }}>
+                          <div style={{ fontSize: 12, color: "var(--text)" }}>{w?.title ?? "Unknown"}</div>
+                          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                            <span style={{ fontSize: 11, color: "var(--muted)" }}>{date}</span>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: "#93b4ff" }}>{raw}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
-      )}
+      </div>
+    </div>
+  );
+}
 
-      {/* ── ALL ATTEMPTS ── */}
-      {view === "history" && (
-        <div className="card">
-          <div className="card-title">Every Attempt — Full History</div>
-          {attempts.length === 0 ? (
-            <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 14, padding: 24 }}>No attempts yet. Log a workout to start tracking! 🏀</div>
-          ) : (
-            <>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 80px", padding: "6px 0", fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "1px", borderBottom: "1px solid var(--border)", marginBottom: 4 }}>
-                <div>Workout</div><div style={{ textAlign: "center" }}>Score</div><div style={{ textAlign: "center" }}>Date</div><div style={{ textAlign: "center" }}>PB?</div>
+export default function PlayersPanel({ allScores, workouts }: Props) {
+  const { leaderboard, loading, refresh } = useLeaderboard();
+
+  // ── Add player manually ──
+  const [showAdd, setShowAdd]         = useState(false);
+  const [addName, setAddName]         = useState("");
+  const [addEmail, setAddEmail]       = useState("");
+  const [addPass, setAddPass]         = useState("");
+  const [addGrade, setAddGrade]       = useState<GradeCategory>(GRADE_CATEGORIES[0]);
+  const [addSaving, setAddSaving]     = useState(false);
+  const [addError, setAddError]       = useState("");
+
+  // ── Invite by email ──
+  const [activeTab, setActiveTab]     = useState<"players"|"coaches">("players");
+  const [showInvite, setShowInvite]   = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteSending, setInviteSending] = useState(false);
+  const [inviteMsg, setInviteMsg]     = useState("");
+
+  // ── Edit player ──
+  const [editPlayer, setEditPlayer]   = useState<EditPlayer | null>(null);
+  const [editSaving, setEditSaving]   = useState(false);
+  const [editError, setEditError]     = useState("");
+  const [removing, setRemoving]         = useState<string | null>(null);
+  const [pendingCoaches, setPendingCoaches] = useState<any[]>([]);
+  const [approvingCoach, setApprovingCoach] = useState<string | null>(null);
+  const [coaches, setCoaches]               = useState<any[]>([]);
+  const [inactiveTab, setInactiveTab]       = useState(false);
+  const [addCoachName, setAddCoachName]     = useState("");
+  const [addCoachEmail, setAddCoachEmail]   = useState("");
+  const [addCoachPass, setAddCoachPass]     = useState("");
+  const [addCoachSaving, setAddCoachSaving] = useState(false);
+  const [showAddCoach, setShowAddCoach]     = useState(false);
+  const [inviteCoachEmail, setInviteCoachEmail] = useState("");
+  const [showInviteCoach, setShowInviteCoach]   = useState(false);
+  const [editCoach, setEditCoach]               = useState<{id:string;name:string;role:string} | null>(null);
+  const [editCoachSaving, setEditCoachSaving]   = useState(false);
+  const [removingCoach, setRemovingCoach]       = useState<string | null>(null);
+  const [viewingPlayer, setViewingPlayer] = useState<{id:string;name:string} | null>(null);
+  const [pendingPlayers, setPendingPlayers] = useState<any[]>([]);
+  const [approving, setApproving]         = useState<string | null>(null);
+
+  // ── Remove / delete player ──
+  async function removePlayer(id: string, name: string) {
+    if (!window.confirm(
+      `Remove access for "${name}"?\n\nTheir scores will stay on the leaderboard but they will no longer be able to log in. You can restore them later by editing their account.`
+    )) return;
+    setRemoving(id);
+    try {
+      const { error } = await supabase.from("profiles").update({ role: "inactive" as any }).eq("id", id);
+      if (error) throw error;
+      refresh();
+    } catch (e: any) { alert("Error: " + e.message); }
+    finally { setRemoving(null); }
+  }
+
+  async function deletePlayer(id: string, name: string) {
+    if (!window.confirm(
+      `PERMANENTLY DELETE "${name}"?\n\nThis removes them AND all their scores. This cannot be undone.`
+    )) return;
+    setRemoving(id);
+    try {
+      await supabase.from("scores").delete().eq("player_id", id);
+      const { error } = await supabase.from("profiles").delete().eq("id", id);
+      if (error) throw error;
+      refresh();
+    } catch (e: any) { alert("Error: " + e.message); }
+    finally { setRemoving(null); }
+  }
+
+  // ── Edit scores ──
+  const [editScoresFor, setEditScoresFor] = useState<string | null>(null); // player id
+  const [playerScores, setPlayerScores]   = useState<EditScore[]>([]);
+  const [scoreSaving, setScoreSaving]     = useState(false);
+
+  const now = Date.now();
+  const FOURTEEN_DAYS = 14 * 24 * 60 * 60 * 1000;
+
+  const playersWithStatus = leaderboard.map(entry => {
+    const lastLog = entry.last_logged_at ? new Date(entry.last_logged_at).getTime() : 0;
+    const daysInactive = lastLog > 0 ? Math.round((now - lastLog) / 86400000) : null;
+    const isInactive = !lastLog || (now - lastLog) > FOURTEEN_DAYS;
+    const workoutsLogged = allScores.filter(s => s.player_id === entry.id).length;
+    return { ...entry, daysInactive, isInactive, workoutsLogged };
+  });
+
+  const inactiveCount = playersWithStatus.filter(p => p.isInactive).length;
+
+  // ── Load pending users ──
+  useState(() => { loadPending(); loadCoaches(); });
+
+  async function loadPending() {
+    const { data } = await supabase.from("profiles")
+      .select("id,name,role,grade_category,created_at,email")
+      .in("role", ["pending_player", "pending_coach"])
+      .order("created_at", { ascending: true });
+    const all = data ?? [];
+    setPendingPlayers(all.filter(p => p.role === "pending_player"));
+    setPendingCoaches(all.filter(p => p.role === "pending_coach"));
+  }
+
+  async function handleApprove(id: string, role: "player" | "coach") {
+    setApproving(id);
+    try {
+      await approveUser(id, role);
+      await loadPending();
+      refresh();
+    } catch (e: any) {
+      alert("Approval failed: " + e.message + "\n\nMake sure you ran 013_approval_rls.sql in Supabase.");
+    } finally { setApproving(null); }
+  }
+
+  async function handleReject(id: string, name: string) {
+    if (!window.confirm(`Reject "${name}"? This will delete their account.`)) return;
+    setApproving(id);
+    try {
+      await rejectUser(id);
+      await loadPending();
+    } catch (e: any) {
+      alert("Rejection failed: " + e.message + "\n\nMake sure you ran 013_approval_rls.sql in Supabase.");
+    } finally { setApproving(null); }
+  }
+
+  // ── Add player manually ──
+  async function addPlayer() {
+    if (!addName.trim() || !addEmail.trim() || !addPass.trim()) {
+      setAddError("Please fill in name, email, and password."); return;
+    }
+    setAddSaving(true); setAddError("");
+    try {
+      // Create auth user via admin API (uses service role via edge function in prod;
+      // for now uses signUp which works on free tier)
+      const { data, error } = await supabase.auth.signUp({
+        email: addEmail,
+        password: addPass,
+        options: { data: { name: addName, role: "player", grade_category: addGrade, must_change_password: true } },
+      });
+      // Coach-added players are pre-approved — must change their temp password on first login
+      if (error) throw error;
+      setShowAdd(false); setAddName(""); setAddEmail(""); setAddPass("");
+      setAddGrade(GRADE_CATEGORIES[0]);
+      refresh();
+    } catch (e: any) { setAddError(e.message); }
+    finally { setAddSaving(false); }
+  }
+
+  // ── Invite player by email ──
+  async function invitePlayer() {
+    if (!inviteEmail.trim()) return;
+    setInviteSending(true); setInviteMsg("");
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(inviteEmail, {
+        redirectTo: window.location.origin,
+      });
+      // We use resetPasswordForEmail as a proxy — in production wire up
+      // supabase.auth.admin.inviteUserByEmail via an Edge Function
+      if (error) throw error;
+      setInviteMsg(`✓ Invite sent to ${inviteEmail}`);
+      setInviteEmail("");
+    } catch (e: any) { setInviteMsg("Error: " + e.message); }
+    finally { setInviteSending(false); }
+  }
+
+  // ── Open edit player ──
+  function openEditPlayer(p: typeof playersWithStatus[0]) {
+    setEditPlayer({ id: p.id, name: p.name, grade_category: p.grade_category ?? GRADE_CATEGORIES[0] });
+    setEditError("");
+  }
+
+  // ── Save player edits ──
+  async function savePlayerEdit() {
+    if (!editPlayer) return;
+    setEditSaving(true); setEditError("");
+    try {
+      const { error } = await supabase.from("profiles").update({
+        name: editPlayer.name,
+        grade_category: editPlayer.grade_category,
+      }).eq("id", editPlayer.id);
+      if (error) throw error;
+      setEditPlayer(null);
+      refresh();
+    } catch (e: any) { setEditError(e.message); }
+    finally { setEditSaving(false); }
+  }
+
+  // ── Open score editor for a player ──
+  async function openEditScores(playerId: string) {
+    const scores = allScores.filter(s => s.player_id === playerId);
+    const mapped: EditScore[] = scores.map(s => ({
+      id: s.id,
+      workout_id: s.workout_id,
+      workout_title: workouts.find(w => w.id === s.workout_id)?.title ?? "Unknown",
+      made: s.made,
+      reps: s.reps,
+      sprint_secs: s.sprint_secs,
+      self_points: s.self_points,
+    }));
+    setPlayerScores(mapped);
+    setEditScoresFor(playerId);
+  }
+
+  // ── Save score edits ──
+  async function saveScore(sc: EditScore) {
+    setScoreSaving(true);
+    try {
+      const { error } = await supabase.from("scores").update({
+        made: sc.made, reps: sc.reps,
+        sprint_secs: sc.sprint_secs, self_points: sc.self_points,
+      }).eq("id", sc.id);
+      if (error) throw error;
+    } catch (e: any) { alert("Error saving score: " + e.message); }
+    finally { setScoreSaving(false); }
+  }
+
+  async function deleteScore(scoreId: string) {
+    if (!window.confirm("Delete this score entry?")) return;
+    const { error } = await supabase.from("scores").delete().eq("id", scoreId);
+    if (error) { alert("Error: " + error.message); return; }
+    setPlayerScores(ps => ps.filter(s => s.id !== scoreId));
+  }
+
+
+  async function removeCoach(id: string, name: string) {
+    if (!window.confirm(`Remove coach access for "${name}"? They will be set to inactive.`)) return;
+    setRemovingCoach(id);
+    try {
+      await supabase.from("profiles").update({ role: "inactive" as any }).eq("id", id);
+      await loadCoaches();
+    } catch(e: any) { alert("Error: " + e.message); }
+    finally { setRemovingCoach(null); }
+  }
+
+  async function deleteCoach(id: string, name: string) {
+    if (!window.confirm(`PERMANENTLY DELETE coach "${name}"? This cannot be undone.`)) return;
+    setRemovingCoach(id);
+    try {
+      await supabase.from("profiles").delete().eq("id", id);
+      await loadCoaches();
+    } catch(e: any) { alert("Error: " + e.message); }
+    finally { setRemovingCoach(null); }
+  }
+
+  async function saveCoachEdit() {
+    if (!editCoach) return;
+    setEditCoachSaving(true);
+    try {
+      await supabase.from("profiles").update({ name: editCoach.name, role: editCoach.role }).eq("id", editCoach.id);
+      setEditCoach(null);
+      await loadCoaches();
+    } catch(e: any) { alert("Error: " + e.message); }
+    finally { setEditCoachSaving(false); }
+  }
+
+  async function reactivatePlayer(id: string) {
+    await supabase.from("profiles").update({ role: "player" }).eq("id", id);
+    loadPending();
+  }
+
+  async function approvePlayer(id: string) { await handleApprove(id, "player"); }
+  async function rejectPlayer(id: string) { await handleReject(id, ""); }
+
+  async function sendInvite() { await invitePlayer(); }
+
+  async function loadCoaches() {
+    const { data } = await supabase.from("profiles")
+      .select("id,name,email,role,avatar_url")
+      .in("role", ["coach","admin"])
+      .order("name");
+    setCoaches(data ?? []);
+  }
+
+  async function addCoach() {
+    if (!addCoachName.trim() || !addCoachEmail.trim() || !addCoachPass.trim()) {
+      alert("Please fill in name, email and password."); return;
+    }
+    setAddCoachSaving(true);
+    try {
+      const { error } = await supabase.auth.signUp({
+        email: addCoachEmail, password: addCoachPass,
+        options: { data: { name: addCoachName, role: "coach" } },
+      });
+      if (error) throw error;
+      setShowAddCoach(false); setAddCoachName(""); setAddCoachEmail(""); setAddCoachPass("");
+      await loadCoaches();
+    } catch (e: any) { alert(e.message); }
+    finally { setAddCoachSaving(false); }
+  }
+
+  async function handleApproveCoach(id: string) {
+    setApprovingCoach(id);
+    await supabase.from("profiles").update({ role: "coach" }).eq("id", id);
+    loadPending();
+    setApprovingCoach(null);
+  }
+
+  async function handleRejectCoach(id: string) {
+    if (!window.confirm("Reject and delete this coach request?")) return;
+    await supabase.from("profiles").delete().eq("id", id);
+    loadPending();
+  }
+
+  if (loading) return <div className="loading">Loading player data…</div>;
+
+  return (
+    <div className="panel active">
+      <div className="section-title">Players & Coaches</div>
+
+      {/* ── Tabs ── */}
+      <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 10, padding: 4, marginBottom: 16, border: "1px solid var(--border)", width: "fit-content" }}>
+        <button onClick={() => setActiveTab("players")} style={{ padding: "7px 18px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "players" ? "var(--royal)" : "transparent", color: activeTab === "players" ? "#fff" : "var(--muted)" }}>👥 Players</button>
+        <button onClick={() => setActiveTab("coaches")} style={{ padding: "7px 18px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "coaches" ? "var(--royal)" : "transparent", color: activeTab === "coaches" ? "#fff" : "var(--muted)" }}>🏀 Coaches</button>
+      </div>
+
+      {/* ══ PLAYERS TAB ══ */}
+      {activeTab === "players" && (
+        <div>
+          <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+            <button onClick={() => { setShowAdd(a => !a); setShowInvite(false); }} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>➕ Add Player</button>
+            <button onClick={() => { setShowInvite(a => !a); setShowAdd(false); }} style={{ background: "var(--surface2)", color: "var(--silver-light)", border: "1px solid var(--border)", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✉️ Invite by Email</button>
+          </div>
+
+          {showAdd && (
+            <div className="card" style={{ marginBottom: 20 }}>
+              <div className="card-title">Add Player Manually</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label>
+                  <input value={addName} onChange={e => setAddName(e.target.value)} placeholder="Player name" style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Grade</label>
+                  <select value={addGrade} onChange={e => setAddGrade(e.target.value as any)} style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }}>
+                    {GRADE_CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}
+                  </select></div>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Email</label>
+                  <input type="email" value={addEmail} onChange={e => setAddEmail(e.target.value)} placeholder="player@school.edu" style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Temp Password</label>
+                  <input type="password" value={addPass} onChange={e => setAddPass(e.target.value)} placeholder="••••••••" style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
               </div>
-              {attempts.map(a => {
-                const w = workouts.find(x => x.id === a.workout_id);
-                const scoreDisplay = a.self_points > 0 ? `${a.self_points} pts` : a.sprint_secs > 0 ? `${a.sprint_secs}s` : `${a.made + a.reps}`;
-                return (
-                  <div key={a.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 80px", padding: "11px 0", borderBottom: "1px solid rgba(176,184,200,0.06)", alignItems: "center" }}>
-                    <div>
-                      <div style={{ fontWeight: 600, color: "var(--text)", fontSize: 13 }}>{w?.title ?? "Unknown"}</div>
-                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>{w?.category}</div>
-                    </div>
-                    <div style={{ textAlign: "center", fontWeight: 600, color: a.is_personal_best ? "var(--gold)" : "var(--silver-light)", fontSize: 14 }}>{scoreDisplay}</div>
-                    <div style={{ textAlign: "center", fontSize: 12, color: "var(--muted)" }}>{new Date(a.attempted_at).toLocaleDateString()}</div>
-                    <div style={{ textAlign: "center" }}>
-                      {a.is_personal_best
-                        ? <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 6, background: "rgba(240,192,64,0.2)", color: "var(--gold)" }}>🏆 PB</span>
-                        : <span style={{ fontSize: 11, color: "var(--muted)" }}>—</span>
-                      }
-                    </div>
-                  </div>
-                );
-              })}
-            </>
+              {addError && <div style={{ color: "#ff7b7b", fontSize: 12, marginBottom: 10 }}>{addError}</div>}
+              <button onClick={addPlayer} disabled={addSaving} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                {addSaving ? "Adding…" : "Add Player"}
+              </button>
+            </div>
           )}
+
+          {showInvite && (
+            <div className="card" style={{ marginBottom: 20 }}>
+              <div className="card-title">Invite by Email</div>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+                <input type="email" value={inviteEmail || ""} onChange={e => setInviteEmail(e.target.value)} placeholder="player@school.edu" style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} />
+                <button onClick={sendInvite} disabled={inviteSending} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{inviteSending ? "Sending…" : "Send Invite"}</button>
+              </div>
+              {inviteMsg && <div style={{ marginTop: 10, fontSize: 13, color: inviteMsg.startsWith("✓") ? "#5de098" : "#ff7b7b" }}>{inviteMsg}</div>}
+            </div>
+          )}
+
+          {/* Pending Approvals */}
+          {(pendingPlayers.length > 0 || pendingCoaches.length > 0) && (
+            <div style={{ background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 14, padding: "16px 20px", marginBottom: 20 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 14 }}>
+                ⏳ Pending Approvals ({pendingPlayers.length + pendingCoaches.length})
+              </div>
+              {pendingPlayers.map(p => (
+                <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: "var(--surface2)", borderRadius: 10, marginBottom: 8, border: "1px solid var(--border)", flexWrap: "wrap", gap: 8 }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{p.email} · {p.grade_category}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => approvePlayer(p.id)} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✅ Approve</button>
+                    <button onClick={() => rejectPlayer(p.id)} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✕ Reject</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Active Players */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 16, borderBottom: "1px solid var(--border)", paddingBottom: 12 }}>
+            <button onClick={() => setInactiveTab(false)} style={{ background: !inactiveTab ? "var(--royal)" : "var(--surface2)", color: !inactiveTab ? "#fff" : "var(--muted)", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Active</button>
+            <button onClick={() => setInactiveTab(true)} style={{ background: inactiveTab ? "var(--royal)" : "var(--surface2)", color: inactiveTab ? "#fff" : "var(--muted)", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Inactive</button>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {playersWithStatus.filter(p => inactiveTab ? p.isInactive : !p.isInactive).map(p => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "var(--surface2)", borderRadius: 12, border: "1px solid var(--border)", flexWrap: "wrap" }}>
+                <div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {p.avatar_url ? <img src={p.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>{p.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}</span>}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, color: "#93b4ff", textDecoration: "underline dotted", cursor: "pointer" }} onClick={() => setViewingPlayer({ id: p.id, name: p.name })}>{p.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.grade_category}{p.daysInactive ? ` · ${p.daysInactive}d ago` : ""}</div>
+                </div>
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <button onClick={() => openEditPlayer(p)} style={{ background: "rgba(26,63,168,0.15)", border: "1px solid rgba(26,63,168,0.3)", color: "#93b4ff", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
+                  <button onClick={() => openEditScores(p.id)} style={{ background: "rgba(147,92,255,0.1)", border: "1px solid rgba(147,92,255,0.3)", color: "#b07aff", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>📊 Scores</button>
+                  {inactiveTab ? (
+                    <button onClick={() => reactivatePlayer(p.id)} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>↩️ Restore</button>
+                  ) : (
+                    <button onClick={() => removePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🚫 Remove</button>
+                  )}
+                  <button onClick={() => deletePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗑 Delete</button>
+                </div>
+              </div>
+            ))}
+            {playersWithStatus.filter(p => inactiveTab ? p.isInactive : !p.isInactive).length === 0 && (
+              <div style={{ fontSize: 13, color: "var(--muted)", padding: "20px 0" }}>{inactiveTab ? "No inactive players." : "No active players."}</div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* ── STREAK CALENDAR ── */}
-      {view === "calendar" && (
-        <div className="card">
-          <div className="card-title">📅 Logging Calendar</div>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Days you logged at least one workout this month</div>
-          <StreakCalendar attempts={attempts} />
+      {/* ══ COACHES TAB ══ */}
+      {activeTab === "coaches" && (
+        <div>
+          <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+            <button onClick={() => { setShowAddCoach(a => !a); setShowInviteCoach(false); }} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>➕ Add Coach</button>
+            <button onClick={() => { setShowInviteCoach(a => !a); setShowAddCoach(false); }} style={{ background: "var(--surface2)", color: "var(--silver-light)", border: "1px solid var(--border)", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✉️ Invite by Email</button>
+          </div>
+
+          {showAddCoach && (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div className="card-title">Add Coach Manually</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label>
+                  <input value={addCoachName} onChange={e => setAddCoachName(e.target.value)} placeholder="Coach name" style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Email</label>
+                  <input type="email" value={addCoachEmail} onChange={e => setAddCoachEmail(e.target.value)} placeholder="coach@school.edu" style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Temp Password</label>
+                  <input type="password" value={addCoachPass} onChange={e => setAddCoachPass(e.target.value)} placeholder="••••••••" style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
+              </div>
+              <button onClick={addCoach} disabled={addCoachSaving} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                {addCoachSaving ? "Adding…" : "Add Coach"}
+              </button>
+            </div>
+          )}
+
+          {showInviteCoach && (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div className="card-title">Invite Coach by Email</div>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+                <input type="email" value={inviteCoachEmail} onChange={e => setInviteCoachEmail(e.target.value)} placeholder="coach@school.edu" style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} />
+                <button onClick={async () => { await supabase.auth.resetPasswordForEmail(inviteCoachEmail); setInviteCoachEmail(""); setShowInviteCoach(false); alert("Invite sent!"); }} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Send Invite</button>
+              </div>
+            </div>
+          )}
+
+          {/* Pending Coach Approvals */}
+          {pendingCoaches.length > 0 && (
+            <div style={{ background: "rgba(147,92,255,0.08)", border: "1px solid rgba(147,92,255,0.3)", borderRadius: 14, padding: "16px 20px", marginBottom: 16 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#b07aff", letterSpacing: 1, marginBottom: 14 }}>
+                🏀 Pending Coach Approvals ({pendingCoaches.length})
+              </div>
+              {pendingCoaches.map(c => (
+                <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: "var(--surface2)", borderRadius: 10, marginBottom: 8, border: "1px solid var(--border)", flexWrap: "wrap", gap: 8 }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{c.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{c.email}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => handleApproveCoach(c.id)} disabled={approvingCoach === c.id} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                      {approvingCoach === c.id ? "Approving…" : "✅ Approve"}
+                    </button>
+                    <button onClick={() => handleRejectCoach(c.id)} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✕ Reject</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {coaches.map(c => {
+              const isEditing = editCoach?.id === c.id;
+              return (
+              <div key={c.id} style={{ marginBottom: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "var(--surface2)", borderRadius: 12, border: "1px solid var(--border)" }}>
+                <div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {c.avatar_url ? <img src={c.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>{c.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}</span>}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{c.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{c.email} · <span style={{ color: c.role === "admin" ? "var(--gold)" : "#93b4ff" }}>{c.role}</span></div>
+                </div>
+                <div style={{ display: "flex", gap: 5 }}>
+                  <button onClick={() => setEditCoach({ id: c.id, name: c.name, role: c.role })} style={{ background: "rgba(26,63,168,0.15)", border: "1px solid rgba(26,63,168,0.3)", color: "#93b4ff", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
+                  <button onClick={() => removeCoach(c.id, c.name)} disabled={removingCoach === c.id} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🚫 Remove</button>
+                  <button onClick={() => deleteCoach(c.id, c.name)} disabled={removingCoach === c.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗑 Delete</button>
+                </div>
+              </div>
+              {editCoach?.id === c.id && (
+                <div style={{ marginTop: 10, padding: "12px 14px", background: "var(--surface)", borderRadius: 10, border: "1px solid var(--border)" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                    <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label>
+                      <input value={editCoach?.name ?? ""} onChange={e => setEditCoach(prev => prev ? { ...prev, name: e.target.value } : null)}
+                        style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
+                    <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Role</label>
+                      <select value={editCoach?.role ?? "coach"} onChange={e => setEditCoach(prev => prev ? { ...prev, role: e.target.value } : null)}
+                        style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }}>
+                        <option value="coach">Coach</option>
+                        <option value="admin">Admin</option>
+                      </select></div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={saveCoachEdit} disabled={editCoachSaving} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{editCoachSaving ? "Saving…" : "Save"}</button>
+                    <button onClick={() => setEditCoach(null)} style={{ background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 16px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+            );
+            })}
+            {coaches.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)", padding: "20px 0" }}>No coaches yet.</div>}
+          </div>
         </div>
       )}
 
-      {/* ── PROGRESS CHART ── */}
-      {view === "chart" && (
-        <div className="card">
-          <div className="card-title">📈 Score Progress Over Time</div>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Your last 20 attempts — see how you're improving</div>
-          <ProgressChart attempts={attempts} workouts={workouts} />
+      {/* ── Edit Player Modal ── */}
+      {editPlayer && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setEditPlayer(null)}>
+          <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(400px, 96vw)", padding: 24 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", marginBottom: 16 }}>✏️ Edit Player</div>
+            <div style={{ marginBottom: 12 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label>
+              <input value={editPlayer.name} onChange={e => setEditPlayer({ ...editPlayer, name: e.target.value })}
+                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" as const }} /></div>
+            <div style={{ marginBottom: 16 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Grade</label>
+              <select value={editPlayer.grade_category} onChange={e => setEditPlayer({ ...editPlayer, grade_category: e.target.value })}
+                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }}>
+                {GRADE_CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}
+              </select></div>
+            {editError && <div style={{ color: "#ff7b7b", fontSize: 12, marginBottom: 10 }}>{editError}</div>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={savePlayerEdit} disabled={editSaving} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{editSaving ? "Saving…" : "Save"}</button>
+              <button onClick={() => setEditPlayer(null)} style={{ background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>Cancel</button>
+            </div>
+          </div>
         </div>
       )}
 
+      {/* ── Edit Scores Modal ── */}
+      {editScoresFor && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "20px 0" }} onClick={() => setEditScoresFor(null)}>
+          <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(560px, 96vw)", padding: 24 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", marginBottom: 16 }}>📊 Edit Scores</div>
+            {playerScores.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13 }}>No scores to edit.</div>}
+            {playerScores.map(sc => (
+              <div key={sc.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
+                <div style={{ flex: 1, fontSize: 13, color: "var(--text)" }}>{sc.workout_title}</div>
+                <input type="number" value={sc.made} onChange={e => setPlayerScores(ps => ps.map(s => s.id === sc.id ? { ...s, made: +e.target.value } : s))}
+                  onBlur={() => saveScore(sc)} placeholder="Score"
+                  style={{ width: 70, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, textAlign: "center" }} />
+                <button onClick={() => deleteScore(sc.id)} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>🗑</button>
+              </div>
+            ))}
+            <button onClick={() => setEditScoresFor(null)} style={{ marginTop: 16, background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Player Progress Modal ── */}
+      {viewingPlayer && <PlayerProgressModal playerId={viewingPlayer.id} playerName={viewingPlayer.name} workouts={workouts} allScores={allScores} onClose={() => setViewingPlayer(null)} />}
     </div>
   );
 }
