@@ -52,7 +52,6 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const [approvingCoach, setApprovingCoach] = useState<string | null>(null);
   const [viewingPlayer, setViewingPlayer] = useState<{id:string;name:string} | null>(null);
   const [pendingPlayers, setPendingPlayers] = useState<any[]>([]);
-  const [pendingCoaches, setPendingCoaches] = useState<any[]>([]);
   const [approving, setApproving]         = useState<string | null>(null);
 
   // ── Remove / delete player ──
