@@ -210,7 +210,7 @@ export default function App() {
             <>
               <div className={`nav-item ${adminTab==="workouts"?"active":""}`} onClick={()=>{setAdminTab("workouts");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">➕</span> Manage Workouts</div>
               <div className={`nav-item ${adminTab==="leaderboard"?"active":""}`} onClick={()=>{setAdminTab("leaderboard");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏆</span> Leaderboard</div>
-              <div className={`nav-item ${adminTab==="players"?"active":""}`} onClick={()=>{setAdminTab("players");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Player Data</div>
+              <div className={`nav-item ${adminTab==="players"?"active":""}`} onClick={()=>{setAdminTab("players");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Players & Coaches</div>
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
               <div className={`nav-item ${adminTab==="hof"?"active":""}`} onClick={()=>{setAdminTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="hof" ? "var(--gold)" : undefined }}><span className="nav-icon">👑</span> Hall of Fame</div>
               <div className={`nav-item ${adminTab==="admin"?"active":""}`} onClick={()=>{setAdminTab("admin");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="admin" ? "var(--gold)" : undefined }}>
