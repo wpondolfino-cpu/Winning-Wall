@@ -9,6 +9,17 @@ interface Props {
 
 interface Badge { id?: string; icon: string; name: string; description: string; trigger_type: "workouts"|"points"|"streak"|"champion"|"top_score"|"challenges_won"|"team_wins"; trigger_value: number; is_active: boolean; }
 const TRIGGER_LABELS: Record<string,string> = { workouts:"Workouts logged", points:"Total points earned", streak:"Day logging streak", champion:"Won a biweekly period", top_score:"Scored #1 on any drill", challenges_won:"Challenges won", team_wins:"Team competition wins" };
+const EMOJI_GROUPS = [
+  { label: "Basketball & Competition", emojis: ["🏀","⛹️","🏅","🥇","🥈","🥉","🎯","🏆","🥊","⚡"] },
+  { label: "Achievement & Awards",     emojis: ["👑","💎","⭐","🌟","✨","🔥","💫","🎖️","🏵️","🎗️"] },
+  { label: "Fitness & Strength",       emojis: ["💪","🦾","🏋️","🤸","🧠","❤️","🫀","💯","🔋","⚙️"] },
+  { label: "Attitude & Character",     emojis: ["⚔️","🛡️","🤝","👊","🙌","👏","😤","🫡","🧊","🦿"] },
+  { label: "Animals",                  emojis: ["🦁","🐺","🦅","🐉","🐆","🦊","🐻","🦈","🐯","🦏"] },
+  { label: "Money & Grind",            emojis: ["💰","💵","💸","🤑","💳","🏦","📈","💹","🪙","💲"] },
+  { label: "Food",                     emojis: ["🍕","🍗","🥩","🍔","🌮","🍜","🥗","🍱","🧆","🧃"] },
+  { label: "Numbers & Milestones",     emojis: ["1️⃣","2️⃣","3️⃣","5️⃣","🔟","💯","📊","🗓️","⏱️","🔑"] },
+];
+
 const inputStyle = { width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, boxSizing: "border-box" as const };
 
 export default function AdminPanel({}: Props) {
@@ -31,9 +42,12 @@ export default function AdminPanel({}: Props) {
   const [approvingCoach, setApprovingCoach] = useState<string | null>(null);
   const [resetRequests, setResetRequests] = useState<any[]>([]);
   const [resettingPw, setResettingPw] = useState<string | null>(null);
+  const [adminTab, setAdminTab]     = useState<"badges"|"xp"|"teams">("badges");
+
   // Badge state
   const [badges, setBadges]         = useState<Badge[]>([]);
   const [editBadge, setEditBadge]   = useState<Badge | null>(null);
+  const [showNewBadge, setShowNewBadge] = useState(false);
   const [newIcon, setNewIcon]       = useState("🏆");
   const [newName, setNewName]       = useState("");
   const [newDesc, setNewDesc]       = useState("");
@@ -42,6 +56,7 @@ export default function AdminPanel({}: Props) {
   // XP state
   const [xpPerks, setXpPerks]       = useState<XpPerk[]>([]);
   const [xpSaving, setXpSaving]     = useState(false);
+  const [xpValues, setXpValues]     = useState({ workout: 10, challenge_sent: 2, challenge_done: 3 });
   const [xpEnabled, setXpEnabled]   = useState(true);
   const [xpToggling, setXpToggling] = useState(false);
 
@@ -88,10 +103,37 @@ export default function AdminPanel({}: Props) {
   }
   async function loadXpSettings() {
     const perks = await getXpPerks();
-    setXpPerks(perks.filter(p => p.perk_key !== "_xp_enabled"));
+    setXpPerks(perks.filter(p => !p.perk_key.startsWith("_")));
     const { data: toggle } = await supabase.from("xp_settings").select("xp_required").eq("perk_key","_xp_enabled").single();
     const stored = localStorage.getItem("xp_enabled");
     setXpEnabled(stored !== "false" && toggle?.xp_required !== 0);
+    // Load XP action values
+    const { data: vals } = await supabase.from("xp_settings")
+      .select("perk_key,xp_required")
+      .in("perk_key", ["_xp_workout","_xp_challenge_sent","_xp_challenge_done"]);
+    if (vals && vals.length > 0) {
+      const v: any = {};
+      vals.forEach((r: any) => { v[r.perk_key] = r.xp_required; });
+      setXpValues({
+        workout:        v["_xp_workout"]        ?? 10,
+        challenge_sent: v["_xp_challenge_sent"] ?? 2,
+        challenge_done: v["_xp_challenge_done"] ?? 3,
+      });
+    }
+  }
+
+  async function saveXpValue(key: string, val: number) {
+    const names: Record<string,string> = {
+      "_xp_workout": "XP per workout attempt",
+      "_xp_challenge_sent": "XP per challenge sent",
+      "_xp_challenge_done": "XP per challenge completed",
+    };
+    await supabase.from("xp_settings").upsert({
+      perk_key: key, perk_name: names[key], xp_required: val,
+      description: "XP action value", updated_at: new Date().toISOString(),
+    }, { onConflict: "perk_key" });
+    await loadXpSettings();
+    showToast("✅ XP value saved!");
   }
   async function saveBadge() {
     if (!newName || !newIcon) { showToast("Please fill in icon and name."); return; }
@@ -280,153 +322,206 @@ export default function AdminPanel({}: Props) {
       </div>
       <div className="section-sub">Full control — manage players, coaches, and accounts</div>
 
-      {/* ── Badge Manager ── */}
-      <div className="card">
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-          <div className="card-title" style={{ margin: 0 }}>🏅 Badge Manager</div>
-        </div>
+      {/* ── Admin Tabs ── */}
+      <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 10, padding: 4, marginBottom: 20, border: "1px solid var(--border)" }}>
+        {([["badges","🏅 Badges"],["xp","⚡ XP"],["teams","🏆 Teams"]] as const).map(([tab, label]) => (
+          <button key={tab} onClick={() => setAdminTab(tab)} style={{
+            flex: 1, padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer",
+            fontFamily: "inherit", fontSize: 13, fontWeight: 600,
+            background: adminTab === tab ? "var(--royal)" : "transparent",
+            color: adminTab === tab ? "#fff" : "var(--muted)",
+            transition: "all 0.15s",
+          }}>{label}</button>
+        ))}
+      </div>
 
-        {/* Existing badges */}
-        {badges.length === 0 ? (
-          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>No badges yet. Add one below.</div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-            {badges.map(b => (
-              <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "var(--surface)", borderRadius: 10, border: "1px solid var(--border)" }}>
-                <span style={{ fontSize: 22 }}>{b.icon}</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text)" }}>{b.name}</div>
-                  <div style={{ fontSize: 11, color: "var(--muted)" }}>{b.description} · {TRIGGER_LABELS[b.trigger_type]} ≥ {b.trigger_value}</div>
+      {/* ══ BADGES TAB ══ */}
+      {adminTab === "badges" && (
+        <div>
+          {/* Header + New Badge button */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1 }}>🏅 Badge Manager</div>
+            <button onClick={() => { setShowNewBadge(s => !s); setEditBadge(null); }} style={{
+              background: showNewBadge ? "var(--surface)" : "var(--royal)", color: showNewBadge ? "var(--muted)" : "#fff",
+              border: `1px solid ${showNewBadge ? "var(--border)" : "var(--royal)"}`,
+              borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
+            }}>{showNewBadge ? "✕ Cancel" : "➕ New Badge"}</button>
+          </div>
+
+          {/* New badge form - slides open */}
+          {showNewBadge && (
+            <div className="card" style={{ marginBottom: 20, border: "1px solid rgba(26,63,168,0.4)", background: "rgba(26,63,168,0.05)" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 14, textTransform: "uppercase", letterSpacing: 0.5 }}>New Badge</div>
+
+              {/* Emoji picker */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 6 }}>Icon — click to select or type your own</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <div style={{ fontSize: 36, width: 52, height: 52, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10 }}>{newIcon || "🏆"}</div>
+                  <input value={newIcon} onChange={e => setNewIcon(e.target.value)} placeholder="🏆"
+                    style={{ ...inputStyle, width: 80, fontSize: 20, textAlign: "center", padding: "8px" }} />
                 </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button onClick={() => setEditBadge(b)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "var(--muted)" }}>✏️</button>
-                  <button onClick={() => deleteBadge(b.id!)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#ff7b7b" }}>🗑</button>
-                  <button onClick={() => toggleBadgeActive(b)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: b.is_active ? "#5de098" : "var(--muted)" }}>
-                    {b.is_active ? "ON" : "OFF"}
-                  </button>
+                {EMOJI_GROUPS.map(group => (
+                  <div key={group.label} style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{group.label}</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                      {group.emojis.map(e => (
+                        <button key={e} onClick={() => setNewIcon(e)} style={{
+                          fontSize: 20, padding: "5px 7px", borderRadius: 7, border: `1px solid ${newIcon === e ? "var(--royal)" : "var(--border)"}`,
+                          background: newIcon === e ? "rgba(26,63,168,0.15)" : "var(--surface)",
+                          cursor: "pointer", lineHeight: 1,
+                        }}>{e}</button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginBottom: 12 }}>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Badge Name</label>
+                  <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Grinder" style={inputStyle} /></div>
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Trigger Type</label>
+                <select value={newTrigger} onChange={e => setNewTrigger(e.target.value as Badge["trigger_type"])} style={inputStyle}>
+                  {Object.entries(TRIGGER_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Description</label>
+                  <input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="e.g. Logged 30 workouts" style={inputStyle} /></div>
+                {(newTrigger === "workouts" || newTrigger === "points" || newTrigger === "streak" || newTrigger === "challenges_won" || newTrigger === "team_wins") && (
+                  <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>
+                    {newTrigger === "workouts" ? "# of workouts" : newTrigger === "points" ? "# of points" : newTrigger === "streak" ? "# of days" : newTrigger === "challenges_won" ? "# of wins" : "# of team wins"}
+                  </label>
+                  <input type="number" value={newValue} onChange={e => setNewValue(e.target.value)} min="1" style={inputStyle} /></div>
+                )}
+              </div>
+              <button onClick={async () => { await saveBadge(); setShowNewBadge(false); }} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                ➕ Add Badge
+              </button>
+            </div>
+          )}
+
+          {/* Badge list */}
+          {badges.length === 0 ? (
+            <div style={{ fontSize: 13, color: "var(--muted)", padding: "20px 0" }}>No badges yet. Click "New Badge" to create one.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {badges.map(b => (
+                <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)" }}>
+                  <span style={{ fontSize: 22 }}>{b.icon}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text)" }}>{b.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{b.description} · {TRIGGER_LABELS[b.trigger_type]} ≥ {b.trigger_value}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <button onClick={() => { setEditBadge(b); setShowNewBadge(false); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>✏️</button>
+                    <button onClick={() => deleteBadge(b.id!)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#ff7b7b" }}>🗑</button>
+                    <button onClick={() => toggleBadgeActive(b)} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, border: "none", cursor: "pointer", fontWeight: 700, background: b.is_active ? "rgba(40,180,80,0.15)" : "var(--surface)", color: b.is_active ? "#5de098" : "var(--muted)" }}>
+                      {b.is_active ? "ON" : "OFF"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Edit badge form */}
+          {editBadge && (
+            <div style={{ marginTop: 16, background: "var(--surface2)", borderRadius: 10, padding: "14px", border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", marginBottom: 12, textTransform: "uppercase" }}>Edit Badge</div>
+              <div style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: 10, marginBottom: 10 }}>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Icon</label>
+                  <input value={editBadge.icon} onChange={e => setEditBadge({ ...editBadge, icon: e.target.value })} style={inputStyle} /></div>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label>
+                  <input value={editBadge.name} onChange={e => setEditBadge({ ...editBadge, name: e.target.value })} style={inputStyle} /></div>
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Trigger Type</label>
+                <select value={editBadge.trigger_type} onChange={e => setEditBadge({ ...editBadge, trigger_type: e.target.value as Badge["trigger_type"] })} style={inputStyle}>
+                  {Object.entries(TRIGGER_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Description</label>
+                  <input value={editBadge.description} onChange={e => setEditBadge({ ...editBadge, description: e.target.value })} style={inputStyle} /></div>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Value</label>
+                  <input type="number" value={editBadge.trigger_value} onChange={e => setEditBadge({ ...editBadge, trigger_value: parseInt(e.target.value) })} style={inputStyle} /></div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => updateBadge(editBadge)} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Save</button>
+                <button onClick={() => setEditBadge(null)} style={{ background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══ XP TAB ══ */}
+      {adminTab === "xp" && (
+        <div>
+          {/* XP on/off toggle */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 16, padding: "12px 16px", background: "var(--surface2)", borderRadius: 12, border: "1px solid var(--border)" }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>⚡ XP System</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>When off, all perks and challenges are unlocked for everyone</div>
+            </div>
+            <button onClick={toggleXpSystem} disabled={xpToggling} style={{
+              background: xpEnabled ? "rgba(40,180,80,0.15)" : "rgba(255,107,107,0.15)",
+              color: xpEnabled ? "#5de098" : "#ff7b7b",
+              border: `1px solid ${xpEnabled ? "rgba(40,180,80,0.3)" : "rgba(255,107,107,0.3)"}`,
+              borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 700,
+              fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap",
+            }}>{xpToggling ? "Updating…" : xpEnabled ? "🟢 ON — Turn Off" : "🔴 OFF — Turn On"}</button>
+          </div>
+
+          {/* XP per action */}
+          <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px", marginBottom: 16 }}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 14 }}>XP Per Action</div>
+            {[
+              { key: "_xp_workout",        label: "🏀 Workout attempt",     field: "workout" as const },
+              { key: "_xp_challenge_sent", label: "⚔️ Challenge sent",      field: "challenge_sent" as const },
+              { key: "_xp_challenge_done", label: "✅ Challenge completed",  field: "challenge_done" as const },
+            ].map(({ key, label, field }) => (
+              <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
+                <div style={{ fontSize: 13, color: "var(--text)" }}>{label}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input type="number" inputMode="numeric" defaultValue={xpValues[field]}
+                    onBlur={e => { const v = parseInt(e.target.value); if (v > 0) { setXpValues(prev => ({ ...prev, [field]: v })); saveXpValue(key, v); } }}
+                    style={{ width: 64, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, textAlign: "center" }} />
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>XP</span>
                 </div>
               </div>
             ))}
           </div>
-        )}
 
-        {/* Add new badge */}
-        <div style={{ background: "var(--surface2)", borderRadius: 10, padding: "14px", border: "1px solid var(--border)" }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.5 }}>Add New Badge</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-            <div>
-              <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Icon (emoji)</label>
-              <input value={newIcon} onChange={e => setNewIcon(e.target.value)} placeholder="🏆" style={inputStyle} />
-            </div>
-            <div>
-              <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Badge Name</label>
-              <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Grinder" style={inputStyle} />
-            </div>
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Trigger Type</label>
-            <select value={newTrigger} onChange={e => setNewTrigger(e.target.value as Badge["trigger_type"])} style={inputStyle}>
-              {Object.entries(TRIGGER_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-            <div>
-              <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Description</label>
-              <input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="e.g. Logged 30 workouts" style={inputStyle} />
-            </div>
-            {(newTrigger === "workouts" || newTrigger === "points" || newTrigger === "streak" || newTrigger === "challenges_won" || newTrigger === "team_wins") && (
-              <div>
-                <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>
-                  {newTrigger === "workouts" ? "# of workouts" : newTrigger === "points" ? "# of points" : newTrigger === "streak" ? "# of days" : newTrigger === "challenges_won" ? "# of wins" : "# of team wins"}
-                </label>
-                <input type="number" value={newValue} onChange={e => setNewValue(e.target.value)} min="1" style={inputStyle} />
-              </div>
-            )}
-          </div>
-          <button onClick={saveBadge} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
-            ➕ Add Badge
-          </button>
-        </div>
-
-        {/* Edit badge modal */}
-        {editBadge && (
-          <div style={{ marginTop: 16, background: "var(--surface2)", borderRadius: 10, padding: "14px", border: "1px solid var(--border)" }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", marginBottom: 12, textTransform: "uppercase" }}>Edit Badge</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-              <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Icon</label>
-                <input value={editBadge.icon} onChange={e => setEditBadge({ ...editBadge, icon: e.target.value })} style={inputStyle} /></div>
-              <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label>
-                <input value={editBadge.name} onChange={e => setEditBadge({ ...editBadge, name: e.target.value })} style={inputStyle} /></div>
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Trigger Type</label>
-              <select value={editBadge.trigger_type} onChange={e => setEditBadge({ ...editBadge, trigger_type: e.target.value as Badge["trigger_type"] })} style={inputStyle}>
-                {Object.entries(TRIGGER_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-              <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Description</label>
-                <input value={editBadge.description} onChange={e => setEditBadge({ ...editBadge, description: e.target.value })} style={inputStyle} /></div>
-              <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Value</label>
-                <input type="number" value={editBadge.trigger_value} onChange={e => setEditBadge({ ...editBadge, trigger_value: parseInt(e.target.value) })} style={inputStyle} /></div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => updateBadge(editBadge)} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Save</button>
-              <button onClick={() => setEditBadge(null)} style={{ background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>Cancel</button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ── XP Perk Thresholds ── */}
-      <div style={{ marginTop: 32, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: "20px 24px", marginBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 8 }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1 }}>
-            ⚡ XP System
-          </div>
-          <button onClick={toggleXpSystem} disabled={xpToggling} style={{
-            background: xpEnabled ? "rgba(40,180,80,0.15)" : "rgba(255,107,107,0.15)",
-            color: xpEnabled ? "#5de098" : "#ff7b7b",
-            border: `1px solid ${xpEnabled ? "rgba(40,180,80,0.3)" : "rgba(255,107,107,0.3)"}`,
-            borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 700,
-            fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap",
-          }}>
-            {xpToggling ? "Updating…" : xpEnabled ? "🟢 XP ON — Turn Off" : "🔴 XP OFF — Turn On"}
-          </button>
-        </div>
-        {!xpEnabled && (
-          <div style={{ fontSize: 12, color: "#ff7b7b", background: "rgba(255,107,107,0.08)", border: "1px solid rgba(255,107,107,0.2)", borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
-            XP system is off — all perks and challenges are unlocked for all players regardless of XP.
-          </div>
-        )}
-        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
-          Adjust how much XP players need to unlock each perk. Changes take effect immediately.
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {xpPerks.map((perk, i) => (
-            <div key={perk.perk_key} style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <div style={{ flex: 1, minWidth: 160 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
-                  {["⚔️","🤝","🛡️","💪","⚡"][i]} {perk.perk_name}
+          {/* Perk thresholds */}
+          <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px" }}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 14 }}>Perk Unlock Thresholds</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {xpPerks.map((perk, i) => (
+                <div key={perk.perk_key} style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 160 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{["⚔️","🤝","🛡️","💪","⚡"][i]} {perk.perk_name}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{perk.description}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input type="number" inputMode="numeric" defaultValue={perk.xp_required}
+                      onBlur={e => saveXpPerk(perk, parseInt(e.target.value) || perk.xp_required)}
+                      style={{ width: 80, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, textAlign: "center" }} />
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>XP</span>
+                  </div>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--muted)" }}>{perk.description}</div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="number" inputMode="numeric"
-                  defaultValue={perk.xp_required}
-                  onBlur={e => saveXpPerk(perk, parseInt(e.target.value) || perk.xp_required)}
-                  style={{ width: 80, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, textAlign: "center" }}
-                />
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>XP</span>
-              </div>
+              ))}
             </div>
-          ))}
+            {xpSaving && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 10 }}>Saving…</div>}
+          </div>
         </div>
-        {xpSaving && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 10 }}>Saving…</div>}
-      </div>
+      )}
 
-      {/* ── Team Competition ── */}
+      {adminTab === "teams" && (
+        <div>
       <div style={{ marginTop: 32 }}>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1, marginBottom: 16 }}>
           🏆 Team Competition
@@ -529,6 +624,9 @@ export default function AdminPanel({}: Props) {
           )}
         </div>
       </div>
+
+        </div>
+      )}
 
     </div>
   );
