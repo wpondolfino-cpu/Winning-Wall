@@ -197,7 +197,7 @@ export default function App() {
             <>
               <div className={`nav-item ${coachTab==="workouts"?"active":""}`} onClick={()=>{setCoachTab("workouts");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">➕</span> Manage Workouts</div>
               <div className={`nav-item ${coachTab==="leaderboard"?"active":""}`} onClick={()=>{setCoachTab("leaderboard");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏆</span> Leaderboard</div>
-              <div className={`nav-item ${coachTab==="players"?"active":""}`} onClick={()=>{setCoachTab("players");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Player Data</div>
+              <div className={`nav-item ${coachTab==="players"?"active":""}`} onClick={()=>{setCoachTab("players");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Players & Coaches</div>
               <div className={`nav-item ${coachTab==="hof"?"active":""}`} onClick={()=>{setCoachTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👑</span> Hall of Fame</div>
               <div className={`nav-item ${coachTab==="profile"?"active":""}`} onClick={()=>{setCoachTab("profile");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👤</span> My Profile</div>
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
