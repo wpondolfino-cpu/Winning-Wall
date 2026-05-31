@@ -348,8 +348,10 @@ export async function submitScore(
     if (rankError) console.error("Re-rank error:", rankError);
   }
 
-  // Award XP for this attempt
-  awardXp(score.player_id, XP_PER_ATTEMPT, "workout_attempt").catch(console.error);
+  // Award XP for this attempt (use admin-configured value)
+  getXpActionValue("_xp_workout", XP_PER_ATTEMPT).then(xp =>
+    awardXp(score.player_id, xp, "workout_attempt").catch(console.error)
+  );
 
   // Award +3 bonus points for beating personal best
   if (isPersonalBest && previousBest !== null) {
@@ -767,9 +769,14 @@ export async function toggleTeamCompetition(active: boolean): Promise<void> {
 
 // ── XP System ─────────────────────────────────────────────────
 
-export const XP_PER_ATTEMPT    = 10;
-export const XP_CHALLENGE_SENT = 2;
-export const XP_CHALLENGE_DONE = 3;
+export const XP_PER_ATTEMPT    = 10; // default fallback
+export const XP_CHALLENGE_SENT = 2;  // default fallback
+export const XP_CHALLENGE_DONE = 3;  // default fallback
+
+async function getXpActionValue(key: string, fallback: number): Promise<number> {
+  const { data } = await supabase.from("xp_settings").select("xp_required").eq("perk_key", key).single();
+  return data?.xp_required ?? fallback;
+}
 
 export interface XpPerk {
   perk_key:    string;
