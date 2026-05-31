@@ -27,6 +27,20 @@ export default function App() {
   const [myScores, setMyScores]     = useState<Score[]>([]);
   const [allScores, setAllScores]   = useState<Score[]>([]);
   const [playerTab, setPlayerTab]   = useState<PlayerTab>("workouts");
+  const swipeTabs: PlayerTab[]        = ["workouts", "leaderboard", "h2h", "progress", "profile"];
+  const touchStartX                   = useRef(0);
+
+  function handleSwipeStart(e: React.TouchEvent) {
+    touchStartX.current = e.touches[0].clientX;
+  }
+  function handleSwipeEnd(e: React.TouchEvent) {
+    const diff = touchStartX.current - e.changedTouches[0].clientX;
+    if (Math.abs(diff) < 60) return;
+    const idx = swipeTabs.indexOf(playerTab);
+    if (idx === -1) return;
+    if (diff > 0 && idx < swipeTabs.length - 1) setPlayerTab(swipeTabs[idx + 1]);
+    if (diff < 0 && idx > 0) setPlayerTab(swipeTabs[idx - 1]);
+  }
   const [coachTab, setCoachTab]     = useState<CoachTab>("workouts");
   const [adminTab, setAdminTab]     = useState<AdminTab>("workouts");
   const [pendingChallenges, setPendingChallenges] = useState(0);
@@ -231,7 +245,7 @@ export default function App() {
         </div>
 
         {/* ── Main Content ── */}
-        <div className="main-content">
+        <div className="main-content" onTouchStart={isPlayer ? handleSwipeStart : undefined} onTouchEnd={isPlayer ? handleSwipeEnd : undefined}>
           {isPlayer && playerTab === "workouts" && (
             <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} />
           )}
