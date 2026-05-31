@@ -276,7 +276,7 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
 
   if (overrideLoading) {
     return (
-      <div className="panel active" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300, padding: 40 }}>
         <div style={{ fontSize: 14, color: "var(--muted)" }}>Loading player data…</div>
       </div>
     );
@@ -288,8 +288,8 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
   // If override was requested but profile didn't load, show error
   if (overrideUserId && !effectiveProfile) {
     return (
-      <div className="panel active" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300 }}>
-        <div style={{ fontSize: 14, color: "var(--muted)" }}>Could not load player data.</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300, padding: 40 }}>
+        <div style={{ fontSize: 14, color: "var(--muted)" }}>Could not load player data. Check console for errors.</div>
       </div>
     );
   }
@@ -316,7 +316,7 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
   );
 
   return (
-    <div className="panel active">
+    <div className={overrideUserId ? undefined : "panel active"} style={overrideUserId ? { padding: "16px" } : undefined}>
       <div className="section-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
         My Progress
         {champCount > 0 && (
