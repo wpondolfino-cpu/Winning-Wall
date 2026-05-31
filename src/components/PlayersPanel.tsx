@@ -494,8 +494,10 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
           )}
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {coaches.map(c => (
-              <div key={c.id}>
+            {coaches.map(c => {
+              const isEditing = editCoach?.id === c.id;
+              return (
+              <div key={c.id} style={{ marginBottom: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "var(--surface2)", borderRadius: 12, border: "1px solid var(--border)" }}>
                 <div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   {c.avatar_url ? <img src={c.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>{c.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}</span>}
@@ -530,8 +532,8 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 </div>
               )}
             </div>
-            </div>
-            ))}
+            );
+            })}
             {coaches.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)", padding: "20px 0" }}>No coaches yet.</div>}
           </div>
         </div>
