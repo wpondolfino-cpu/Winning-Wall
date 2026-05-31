@@ -41,52 +41,20 @@ const DEFAULT_BADGES: Omit<Badge, "id">[] = [
 
 export default function AdminSettings() {
   const [exporting, setExporting]   = useState(false);
-  const [xpPerks, setXpPerks]         = useState<XpPerk[]>([]);
-  const [xpSaving, setXpSaving]       = useState(false);
-  const [xpEnabled, setXpEnabled]     = useState(true);
-  const [xpToggling, setXpToggling]   = useState(false);
   const [resetting, setResetting]   = useState(false);
   const [resetStep, setResetStep]   = useState(0);
+  const [anchorDate, setAnchorDate] = useState(() => {
+    const d = getPeriodAnchor(); return d.toISOString().split("T")[0];
+  });
+  const [anchorSaved, setAnchorSaved] = useState(false);
+  const [toast, setToast]             = useState("");
 
   const periodStart = currentPeriodStart();
   const periodEnd   = currentPeriodEnd();
   const daysLeft    = Math.ceil((periodEnd.getTime() - Date.now()) / 86400000);
 
-  useEffect(() => {
-    getXpPerks().then(setXpPerks);
-    const stored = localStorage.getItem("xp_enabled");
-    if (stored !== null) setXpEnabled(stored !== "false");
-  }, []);
 
 
-  async function seedDefaultBadges() {
-    const { data } = await supabase.from("badges").insert(DEFAULT_BADGES).select();
-    setBadges(data ?? []);
-  }
-
-
-  async function addBadge() {
-    if (!newName.trim()) return;
-    setSaving(true);
-    const { error } = await supabase.from("badges").insert({
-      icon: newIcon, name: newName, description: newDesc,
-      trigger_type: newTrigger, trigger_value: parseInt(newValue) || 1,
-      is_active: true,
-    });
-    if (!error) {
-      setShowAdd(false);
-      setNewIcon("🏅"); setNewName(""); setNewDesc(""); setNewValue("1");
-      showToast("Badge created! 🏅");
-      loadBadges();
-    }
-    setSaving(false);
-  }
-
-
-  async function toggleBadge(b: Badge) {
-    await supabase.from("badges").update({ is_active: !b.is_active }).eq("id", b.id);
-    loadBadges();
-  }
 
   function saveAnchor() {
     setPeriodAnchor(new Date(anchorDate));
