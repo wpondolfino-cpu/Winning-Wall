@@ -52,7 +52,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const [pendingCoaches, setPendingCoaches] = useState<any[]>([]);
   const [approvingCoach, setApprovingCoach] = useState<string | null>(null);
   const [coaches, setCoaches]               = useState<any[]>([]);
-  const [coaches, setCoaches]               = useState<any[]>([]);
+  const [inactiveTab, setInactiveTab]       = useState(false);
   const [addCoachName, setAddCoachName]     = useState("");
   const [addCoachEmail, setAddCoachEmail]   = useState("");
   const [addCoachPass, setAddCoachPass]     = useState("");
@@ -111,7 +111,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const inactiveCount = playersWithStatus.filter(p => p.isInactive).length;
 
   // ── Load pending users ──
-  useState(() => { loadPending(); });
+  useState(() => { loadPending(); loadCoaches(); });
 
   async function loadPending() {
     const { data } = await supabase.from("profiles")
@@ -246,7 +246,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
 
   async function reactivatePlayer(id: string) {
     await supabase.from("profiles").update({ role: "player" }).eq("id", id);
-    await loadPlayers();
+    loadPending();
   }
 
   async function approvePlayer(id: string) { await handleApprove(id, "player"); }
@@ -282,14 +282,14 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   async function handleApproveCoach(id: string) {
     setApprovingCoach(id);
     await supabase.from("profiles").update({ role: "coach" }).eq("id", id);
-    await loadPendingCoaches();
+    loadPending();
     setApprovingCoach(null);
   }
 
   async function handleRejectCoach(id: string) {
     if (!window.confirm("Reject and delete this coach request?")) return;
     await supabase.from("profiles").delete().eq("id", id);
-    await loadPendingCoaches();
+    loadPending();
   }
 
   if (loading) return <div className="loading">Loading player data…</div>;
@@ -373,7 +373,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {(inactiveTab ? inactive : active).map(p => (
+            {playersWithStatus.filter(p => inactiveTab ? p.isInactive : !p.isInactive).map(p => (
               <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "var(--surface2)", borderRadius: 12, border: "1px solid var(--border)", flexWrap: "wrap" }}>
                 <div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   {p.avatar_url ? <img src={p.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>{p.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}</span>}
@@ -392,7 +392,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 </div>
               </div>
             ))}
-            {(inactiveTab ? inactive : active).length === 0 && (
+            {playersWithStatus.filter(p => inactiveTab ? p.isInactive : !p.isInactive).length === 0 && (
               <div style={{ fontSize: 13, color: "var(--muted)", padding: "20px 0" }}>{inactiveTab ? "No inactive players." : "No active players."}</div>
             )}
           </div>
@@ -493,4 +493,3 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     </div>
   );
 }
-
