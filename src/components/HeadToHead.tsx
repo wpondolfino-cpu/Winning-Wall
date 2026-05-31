@@ -271,9 +271,7 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
       setShowNew(false);
       setSelectedOpponent(""); setSelectedWorkout("");
       showToast("Challenge sent! ⚔️");
-      supabase.from("xp_settings").select("xp_required").eq("perk_key","_xp_challenge_sent").single()
-        .then(({ data }) => awardXp(currentUserId, data?.xp_required ?? XP_CHALLENGE_SENT, "challenge_sent"))
-        .catch(console.error);
+      (async () => { try { const { data } = await supabase.from("xp_settings").select("xp_required").eq("perk_key","_xp_challenge_sent").single(); await awardXp(currentUserId, data?.xp_required ?? XP_CHALLENGE_SENT, "challenge_sent"); } catch(e) { console.error(e); } })();
       loadChallenges();
     }
   }
@@ -362,9 +360,7 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
     if (winnerId) {
       await awardChallengeWinBonus(winnerId).catch(console.error);
     }
-    supabase.from("xp_settings").select("xp_required").eq("perk_key","_xp_challenge_done").single()
-      .then(({ data }) => awardXp(currentUserId, data?.xp_required ?? XP_CHALLENGE_DONE, "challenge_completed"))
-      .catch(console.error);
+    (async () => { try { const { data } = await supabase.from("xp_settings").select("xp_required").eq("perk_key","_xp_challenge_done").single(); await awardXp(currentUserId, data?.xp_required ?? XP_CHALLENGE_DONE, "challenge_completed"); } catch(e) { console.error(e); } })();
 
     // ── Sync to workout scores ──────────────────────────────────
     // If this score is a personal best on the workout, update it
