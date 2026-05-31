@@ -52,6 +52,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const [pendingCoaches, setPendingCoaches] = useState<any[]>([]);
   const [approvingCoach, setApprovingCoach] = useState<string | null>(null);
   const [coaches, setCoaches]               = useState<any[]>([]);
+  const [coaches, setCoaches]               = useState<any[]>([]);
   const [addCoachName, setAddCoachName]     = useState("");
   const [addCoachEmail, setAddCoachEmail]   = useState("");
   const [addCoachPass, setAddCoachPass]     = useState("");
@@ -242,299 +243,168 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     setPlayerScores(ps => ps.filter(s => s.id !== scoreId));
   }
 
+
+  async function reactivatePlayer(id: string) {
+    await supabase.from("profiles").update({ role: "player" }).eq("id", id);
+    await loadPlayers();
+  }
+
+  async function approvePlayer(id: string) { await handleApprove(id, "player"); }
+  async function rejectPlayer(id: string) { await handleReject(id, ""); }
+
+  async function sendInvite() { await invitePlayer(); }
+
+  async function loadCoaches() {
+    const { data } = await supabase.from("profiles")
+      .select("id,name,email,role,avatar_url")
+      .in("role", ["coach","admin"])
+      .order("name");
+    setCoaches(data ?? []);
+  }
+
+  async function addCoach() {
+    if (!addCoachName.trim() || !addCoachEmail.trim() || !addCoachPass.trim()) {
+      alert("Please fill in name, email and password."); return;
+    }
+    setAddCoachSaving(true);
+    try {
+      const { error } = await supabase.auth.signUp({
+        email: addCoachEmail, password: addCoachPass,
+        options: { data: { name: addCoachName, role: "coach" } },
+      });
+      if (error) throw error;
+      setShowAddCoach(false); setAddCoachName(""); setAddCoachEmail(""); setAddCoachPass("");
+      await loadCoaches();
+    } catch (e: any) { alert(e.message); }
+    finally { setAddCoachSaving(false); }
+  }
+
+  async function handleApproveCoach(id: string) {
+    setApprovingCoach(id);
+    await supabase.from("profiles").update({ role: "coach" }).eq("id", id);
+    await loadPendingCoaches();
+    setApprovingCoach(null);
+  }
+
+  async function handleRejectCoach(id: string) {
+    if (!window.confirm("Reject and delete this coach request?")) return;
+    await supabase.from("profiles").delete().eq("id", id);
+    await loadPendingCoaches();
+  }
+
   if (loading) return <div className="loading">Loading player data…</div>;
 
   return (
     <div className="panel active">
       <div className="section-title">Players & Coaches</div>
+
       {/* ── Tabs ── */}
       <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 10, padding: 4, marginBottom: 16, border: "1px solid var(--border)", width: "fit-content" }}>
         <button onClick={() => setActiveTab("players")} style={{ padding: "7px 18px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "players" ? "var(--royal)" : "transparent", color: activeTab === "players" ? "#fff" : "var(--muted)" }}>👥 Players</button>
         <button onClick={() => setActiveTab("coaches")} style={{ padding: "7px 18px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "coaches" ? "var(--royal)" : "transparent", color: activeTab === "coaches" ? "#fff" : "var(--muted)" }}>🏀 Coaches</button>
       </div>
-      <div className="section-sub">Manage your roster — add, edit, and invite players</div>
 
-      {/* ── Action buttons ── */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
-        <button onClick={() => { setShowAdd(a => !a); setShowInvite(false); }} style={{
-          background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10,
-          padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
-        }}>➕ Add Player</button>
-        <button onClick={() => { setShowInvite(a => !a); setShowAdd(false); }} style={{
-          background: "var(--surface2)", color: "var(--silver-light)", border: "1px solid var(--border)",
-          borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
-        }}>✉️ Invite by Email</button>
-      </div>
-
-      {/* ── Add Player Form ── */}
-      {showAdd && (
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div className="card-title">Add Player Manually</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div>
-                <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>Full Name</label>
-                <input value={addName} onChange={e => setAddName(e.target.value)} placeholder="e.g. Marcus Johnson"
-                  style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>Grade / Level</label>
-                <select value={addGrade} onChange={e => setAddGrade(e.target.value as GradeCategory)}
-                  style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
-                  {GRADE_CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}
-                </select>
-              </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div>
-                <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>Email</label>
-                <input type="email" value={addEmail} onChange={e => setAddEmail(e.target.value)} placeholder="player@email.com"
-                  style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>Temporary Password</label>
-                <input type="text" value={addPass} onChange={e => setAddPass(e.target.value)} placeholder="Min 6 characters"
-                  style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
-              </div>
-            </div>
-            <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>
-              💡 Share the email and temporary password with the player. They can change their password after signing in.
-            </div>
-            {addError && <div className="error-msg">{addError}</div>}
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={addPlayer} disabled={addSaving} className="btn-primary" style={{ flex: 1 }}>
-                {addSaving ? "Adding…" : "Add Player"}
-              </button>
-              <button onClick={() => setShowAdd(false)} style={{ background: "var(--surface2)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 20px", fontFamily: "inherit", fontSize: 13, cursor: "pointer" }}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Invite by Email ── */}
-      {showInvite && (
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div className="card-title">Invite Player by Email</div>
-          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12, lineHeight: 1.6 }}>
-            Enter the player's email address. They'll receive a link to set up their account on AHS Winning Wall.
-          </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
-              placeholder="player@email.com"
-              style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
-            <button onClick={invitePlayer} disabled={inviteSending} style={{
-              background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8,
-              padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
-            }}>{inviteSending ? "Sending…" : "Send Invite"}</button>
-          </div>
-          {inviteMsg && <div style={{ marginTop: 10, fontSize: 13, color: inviteMsg.startsWith("✓") ? "#5de098" : "#ff7b7b" }}>{inviteMsg}</div>}
-        </div>
-      )}
-
+      {/* ══ PLAYERS TAB ══ */}
       {activeTab === "players" && (
         <div>
-
-      {/* ── Pending Approvals ── */}
-      {(pendingPlayers.length > 0 || pendingCoaches.length > 0) && (
-        <div style={{ background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 14, padding: "16px 20px", marginBottom: 20 }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 14 }}>
-            ⏳ Pending Approvals ({pendingPlayers.length + pendingCoaches.length})
+          <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+            <button onClick={() => { setShowAdd(a => !a); setShowInvite(false); }} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>➕ Add Player</button>
+            <button onClick={() => { setShowInvite(a => !a); setShowAdd(false); }} style={{ background: "var(--surface2)", color: "var(--silver-light)", border: "1px solid var(--border)", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✉️ Invite by Email</button>
           </div>
 
-          {pendingCoaches.length > 0 && (
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, fontWeight: 700 }}>
-                🏀 Coach Requests — Admin Approval Required
+          {showAdd && (
+            <div className="card" style={{ marginBottom: 20 }}>
+              <div className="card-title">Add Player Manually</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label>
+                  <input value={addName} onChange={e => setAddName(e.target.value)} placeholder="Player name" style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Grade</label>
+                  <select value={addGrade} onChange={e => setAddGrade(e.target.value as any)} style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }}>
+                    {GRADE_CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}
+                  </select></div>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Email</label>
+                  <input type="email" value={addEmail} onChange={e => setAddEmail(e.target.value)} placeholder="player@school.edu" style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Temp Password</label>
+                  <input type="password" value={addPass} onChange={e => setAddPass(e.target.value)} placeholder="••••••••" style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
               </div>
-              {pendingCoaches.map(p => (
-                <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "var(--surface2)", borderRadius: 10, marginBottom: 6, border: "1px solid var(--border)" }}>
-                  <div>
-                    <div style={{ fontWeight: 600, color: "var(--text)", fontSize: 14 }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.email} · Requested coach access · {new Date(p.created_at).toLocaleDateString()}</div>
-                  </div>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <div style={{ fontSize: 11, color: "#ff7b7b", fontStyle: "italic" }}>Admin only</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {pendingPlayers.length > 0 && (
-            <div>
-              <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, fontWeight: 700 }}>
-                ⚡ Player Requests
-              </div>
-              {pendingPlayers.map(p => (
-                <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "var(--surface2)", borderRadius: 10, marginBottom: 6, border: "1px solid var(--border)" }}>
-                  <div>
-                    <div style={{ fontWeight: 600, color: "var(--text)", fontSize: 14 }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.email} · {p.grade_category} · Requested {new Date(p.created_at).toLocaleDateString()}</div>
-                  </div>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={() => handleApprove(p.id, "player")} disabled={approving === p.id}
-                      style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 7, padding: "5px 12px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
-                      ✓ Approve
-                    </button>
-                    <button onClick={() => handleReject(p.id, p.name)} disabled={approving === p.id}
-                      style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 7, padding: "5px 12px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
-                      ✕ Reject
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Stats ── */}
-      {inactiveCount > 0 && (
-        <div className="notif-banner">
-          <span style={{ fontSize: 20 }}>🔔</span>
-          <div><strong style={{ color: "var(--gold)" }}>{inactiveCount} player{inactiveCount > 1 ? "s have" : " has"}</strong> not logged in 14+ days.</div>
-        </div>
-      )}
-
-      <div className="stats-row">
-        <div className="stat-card"><div className="stat-label">Total Players</div><div className="stat-value">{playersWithStatus.length}</div></div>
-        <div className="stat-card"><div className="stat-label">Active (7d)</div><div className="stat-value" style={{ color: "#5de098" }}>{playersWithStatus.filter(p => !p.isInactive).length}</div></div>
-        <div className="stat-card"><div className="stat-label">Needs Nudge</div><div className="stat-value" style={{ color: "#ff7b7b" }}>{inactiveCount}</div></div>
-      </div>
-
-      {/* ── Player Table ── */}
-      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-        <table className="player-table">
-          <thead>
-            <tr>
-              <th>Player</th>
-              <th style={{ textAlign: "center" }}>Rank</th>
-              <th style={{ textAlign: "center" }}>Points</th>
-              <th style={{ textAlign: "center" }}>Logged</th>
-              <th>Last Active</th>
-              <th style={{ textAlign: "center" }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {playersWithStatus.map(p => (
-              <tr key={p.id}>
-                <td>
-                  <strong style={{ cursor: "pointer", color: "var(--royal-light)", textDecoration: "underline dotted" }} onClick={() => setViewingPlayer({id: p.id, name: p.name})}>{p.name}</strong>
-                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.grade_category ?? "—"}</div>
-                </td>
-                <td style={{ textAlign: "center" }}>
-                  <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)" }}>#{p.rank}</span>
-                </td>
-                <td style={{ textAlign: "center", fontWeight: 600, color: "var(--silver-light)" }}>{p.total_points}</td>
-                <td style={{ textAlign: "center" }}>{p.workoutsLogged}/{workouts.length}</td>
-                <td>
-                  <span className={`status-dot ${p.isInactive ? "status-inactive" : p.daysInactive !== null && p.daysInactive > 7 ? "status-warn" : "status-active"}`} />
-                  <span style={{ fontSize: 12, color: "var(--muted)" }}>
-                    {p.daysInactive === null ? "Never" : p.daysInactive === 0 ? "Today" : `${p.daysInactive}d ago`}
-                  </span>
-                </td>
-                <td style={{ textAlign: "center" }}>
-                  <div style={{ display: "flex", gap: 5, justifyContent: "center", flexWrap: "wrap" }}>
-                    <button onClick={() => openEditPlayer(p)} style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--silver-light)", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
-                    <button onClick={() => openEditScores(p.id)} style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "#93b4ff", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>📊 Scores</button>
-                    <button onClick={() => removePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", color: "var(--gold)", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🚫 Remove</button>
-                    <button onClick={() => deletePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗑 Delete</button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* ── Edit Player Modal ── */}
-      {editPlayer && (
-        <div className="modal-overlay open" onClick={() => setEditPlayer(null)}>
-          <div className="log-modal" onClick={e => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setEditPlayer(null)}>✕</button>
-            <div className="modal-title">Edit Player</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div>
-                <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label>
-                <input value={editPlayer.name} onChange={e => setEditPlayer({ ...editPlayer, name: e.target.value })}
-                  style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 14, fontFamily: "inherit", outline: "none" }} />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>Grade / Level</label>
-                <select value={editPlayer.grade_category} onChange={e => setEditPlayer({ ...editPlayer, grade_category: e.target.value })}
-                  style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 14, fontFamily: "inherit", outline: "none" }}>
-                  {GRADE_CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}
-                </select>
-              </div>
-              {editError && <div className="error-msg">{editError}</div>}
-              <button className="btn-primary" onClick={savePlayerEdit} disabled={editSaving}>
-                {editSaving ? "Saving…" : "Save Changes"}
+              {addError && <div style={{ color: "#ff7b7b", fontSize: 12, marginBottom: 10 }}>{addError}</div>}
+              <button onClick={addPlayer} disabled={addSaving} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                {addSaving ? "Adding…" : "Add Player"}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
-      {/* ── Edit Scores Modal ── */}
-      {editScoresFor && (
-        <div className="modal-overlay open" onClick={() => setEditScoresFor(null)}>
-          <div className="log-modal" style={{ width: 560, maxHeight: "80vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setEditScoresFor(null)}>✕</button>
-            <div className="modal-title">Edit Scores</div>
-            {playerScores.length === 0 ? (
-              <div style={{ color: "var(--muted)", fontSize: 14, padding: "20px 0" }}>No scores logged yet.</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                {playerScores.map((sc, i) => (
-                  <div key={sc.id} style={{ background: "var(--surface2)", borderRadius: 10, padding: "14px", border: "1px solid var(--border)" }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10, color: "var(--text)" }}>{sc.workout_title}</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
-                      {[
-                        { label: "Made", field: "made" as keyof EditScore },
-                        { label: "Reps", field: "reps" as keyof EditScore },
-                        { label: "Sprint (s)", field: "sprint_secs" as keyof EditScore },
-                        { label: "Self Pts", field: "self_points" as keyof EditScore },
-                      ].map(({ label, field }) => (
-                        <div key={field}>
-                          <label style={{ fontSize: 10, color: "var(--muted)", display: "block", marginBottom: 3 }}>{label}</label>
-                          <input type="number" value={(sc[field] as number) ?? 0}
-                            onChange={e => {
-                              const updated = [...playerScores];
-                              (updated[i] as any)[field] = parseFloat(e.target.value) || 0;
-                              setPlayerScores(updated);
-                            }}
-                            style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 8px", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={() => saveScore(sc)} disabled={scoreSaving} style={{ flex: 1, background: "var(--royal)", color: "#fff", border: "none", borderRadius: 7, padding: "7px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
-                        {scoreSaving ? "…" : "Save"}
-                      </button>
-                      <button onClick={() => deleteScore(sc.id)} style={{ background: "rgba(255,107,107,0.15)", color: "#ff7b7b", border: "1px solid rgba(255,107,107,0.3)", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
+          {showInvite && (
+            <div className="card" style={{ marginBottom: 20 }}>
+              <div className="card-title">Invite by Email</div>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+                <input type="email" value={inviteEmail || ""} onChange={e => setInviteEmail(e.target.value)} placeholder="player@school.edu" style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} />
+                <button onClick={sendInvite} disabled={inviteSending} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{inviteSending ? "Sending…" : "Send Invite"}</button>
               </div>
+              {inviteMsg && <div style={{ marginTop: 10, fontSize: 13, color: inviteMsg.startsWith("✓") ? "#5de098" : "#ff7b7b" }}>{inviteMsg}</div>}
+            </div>
+          )}
+
+          {/* Pending Approvals */}
+          {(pendingPlayers.length > 0 || pendingCoaches.length > 0) && (
+            <div style={{ background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 14, padding: "16px 20px", marginBottom: 20 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 14 }}>
+                ⏳ Pending Approvals ({pendingPlayers.length + pendingCoaches.length})
+              </div>
+              {pendingPlayers.map(p => (
+                <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: "var(--surface2)", borderRadius: 10, marginBottom: 8, border: "1px solid var(--border)", flexWrap: "wrap", gap: 8 }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{p.email} · {p.grade_category}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => approvePlayer(p.id)} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✅ Approve</button>
+                    <button onClick={() => rejectPlayer(p.id)} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✕ Reject</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Active Players */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 16, borderBottom: "1px solid var(--border)", paddingBottom: 12 }}>
+            <button onClick={() => setInactiveTab(false)} style={{ background: !inactiveTab ? "var(--royal)" : "var(--surface2)", color: !inactiveTab ? "#fff" : "var(--muted)", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Active</button>
+            <button onClick={() => setInactiveTab(true)} style={{ background: inactiveTab ? "var(--royal)" : "var(--surface2)", color: inactiveTab ? "#fff" : "var(--muted)", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Inactive</button>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {(inactiveTab ? inactive : active).map(p => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "var(--surface2)", borderRadius: 12, border: "1px solid var(--border)", flexWrap: "wrap" }}>
+                <div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {p.avatar_url ? <img src={p.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>{p.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}</span>}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, color: "var(--royal-light)", textDecoration: "underline dotted", cursor: "pointer" }} onClick={() => setViewingPlayer({ id: p.id, name: p.name })}>{p.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.grade_category} · {p.email}</div>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {inactiveTab ? (
+                    <button onClick={() => reactivatePlayer(p.id)} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Reactivate</button>
+                  ) : (
+                    <button onClick={() => removePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Remove</button>
+                  )}
+                  <button onClick={() => deletePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Delete</button>
+                </div>
+              </div>
+            ))}
+            {(inactiveTab ? inactive : active).length === 0 && (
+              <div style={{ fontSize: 13, color: "var(--muted)", padding: "20px 0" }}>{inactiveTab ? "No inactive players." : "No active players."}</div>
             )}
           </div>
         </div>
       )}
 
-      {/* ── COACHES TAB ── */}
+      {/* ══ COACHES TAB ══ */}
       {activeTab === "coaches" && (
         <div>
           <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-            <button onClick={() => { setShowAddCoach(a => !a); setShowInviteCoach(false); }} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
-              ➕ Add Coach
-            </button>
-            <button onClick={() => { setShowInviteCoach(a => !a); setShowAddCoach(false); }} style={{ background: "var(--surface2)", color: "var(--silver-light)", border: "1px solid var(--border)", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
-              ✉️ Invite by Email
-            </button>
+            <button onClick={() => { setShowAddCoach(a => !a); setShowInviteCoach(false); }} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>➕ Add Coach</button>
+            <button onClick={() => { setShowInviteCoach(a => !a); setShowAddCoach(false); }} style={{ background: "var(--surface2)", color: "var(--silver-light)", border: "1px solid var(--border)", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✉️ Invite by Email</button>
           </div>
 
           {showAddCoach && (
@@ -558,13 +428,32 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
             <div className="card" style={{ marginBottom: 16 }}>
               <div className="card-title">Invite Coach by Email</div>
               <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
-                <input type="email" value={inviteCoachEmail} onChange={e => setInviteCoachEmail(e.target.value)} placeholder="coach@school.edu"
-                  style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} />
-                <button onClick={async () => {
-                  await supabase.auth.resetPasswordForEmail(inviteCoachEmail);
-                  setInviteCoachEmail(""); setShowInviteCoach(false); alert("Invite sent!");
-                }} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Send Invite</button>
+                <input type="email" value={inviteCoachEmail} onChange={e => setInviteCoachEmail(e.target.value)} placeholder="coach@school.edu" style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} />
+                <button onClick={async () => { await supabase.auth.resetPasswordForEmail(inviteCoachEmail); setInviteCoachEmail(""); setShowInviteCoach(false); alert("Invite sent!"); }} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Send Invite</button>
               </div>
+            </div>
+          )}
+
+          {/* Pending Coach Approvals */}
+          {pendingCoaches.length > 0 && (
+            <div style={{ background: "rgba(147,92,255,0.08)", border: "1px solid rgba(147,92,255,0.3)", borderRadius: 14, padding: "16px 20px", marginBottom: 16 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#b07aff", letterSpacing: 1, marginBottom: 14 }}>
+                🏀 Pending Coach Approvals ({pendingCoaches.length})
+              </div>
+              {pendingCoaches.map(c => (
+                <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: "var(--surface2)", borderRadius: 10, marginBottom: 8, border: "1px solid var(--border)", flexWrap: "wrap", gap: 8 }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{c.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{c.email}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => handleApproveCoach(c.id)} disabled={approvingCoach === c.id} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                      {approvingCoach === c.id ? "Approving…" : "✅ Approve"}
+                    </button>
+                    <button onClick={() => handleRejectCoach(c.id)} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✕ Reject</button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
@@ -604,3 +493,4 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     </div>
   );
 }
+
