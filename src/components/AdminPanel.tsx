@@ -1,11 +1,9 @@
 // src/components/AdminPanel.tsx
 import { useState, useEffect } from "react";
-import { supabase, TEAM_CATEGORIES, TEAM_COLORS, saveTeamCompetition, getActiveTeamCompetition, TeamCompetition, getTeams, Team, getXpPerks, XpPerk } from "../lib/supabase";
+import { supabase, approveUser, rejectUser, TEAM_CATEGORIES, TEAM_COLORS, saveTeamCompetition, getActiveTeamCompetition, TeamCompetition, getTeams, Team, getXpPerks, XpPerk } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
 interface Props {
-  allScores: Score[];
-  workouts: Workout[];
 }
 
 interface EditScore {
@@ -22,7 +20,7 @@ interface Badge { id?: string; icon: string; name: string; description: string; 
 const TRIGGER_LABELS: Record<string,string> = { workouts:"Workouts logged", points:"Total points earned", streak:"Day logging streak", champion:"Won a biweekly period", top_score:"Scored #1 on any drill", challenges_won:"Challenges won", team_wins:"Team competition wins" };
 const inputStyle = { width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, boxSizing: "border-box" as const };
 
-export default function AdminPanel({ allScores, workouts }: Props) {
+export default function AdminPanel({}: Props) {
   const { leaderboard, loading: lbLoading, refresh: refreshLb } = useLeaderboard();
   const [loadingCoaches, setLoadingCoaches] = useState(true);
 
@@ -279,28 +277,8 @@ export default function AdminPanel({ allScores, workouts }: Props) {
     finally { setApprovingCoach(null); }
   }
 
-  useEffect(() => { loadCoaches(); }, []);
 
-  async function addPerson() {
-    if (!addName.trim() || !addEmail.trim() || !addPass.trim()) {
-      setAddError("Please fill in name, email, and password."); return;
-    }
-    setAddSaving(true); setAddError("");
-    try {
-      const role = activeTab === "coaches" ? "coach" : "player";
-      const { error } = await supabase.auth.signUp({
-        email: addEmail, password: addPass,
-        options: { data: { name: addName, role, grade_category: activeTab === "players" ? addGrade : undefined } },
-      });
-      if (error) throw error;
-      setShowAdd(false); setAddName(""); setAddEmail(""); setAddPass("");
-      if (activeTab === "coaches") loadCoaches();
-      else refreshLb();
-    } catch (e: any) { setAddError(e.message); }
-    finally { setAddSaving(false); }
-  }
 
-  // ── Invite ──
   async function saveEdit() {
     if (!editPerson) return;
     setEditSaving(true); setEditError("");
@@ -316,7 +294,7 @@ export default function AdminPanel({ allScores, workouts }: Props) {
     finally { setEditSaving(false); }
   }
 
-  // ── Remove / Delete ──
+
   async function removePerson(id: string, name: string) {
     if (!window.confirm(`Remove access for "${name}"?\n\nTheir scores stay on the leaderboard but they cannot log in. You can restore them by editing their account.`)) return;
     setRemoving(id);
@@ -327,41 +305,13 @@ export default function AdminPanel({ allScores, workouts }: Props) {
     finally { setRemoving(null); }
   }
 
-  async function deletePerson(id: string, name: string) {
-    if (!window.confirm(`PERMANENTLY DELETE "${name}"?\n\nThis removes them AND all their scores. This cannot be undone.`)) return;
-    setRemoving(id);
-    try {
-      await supabase.from("scores").delete().eq("player_id", id);
-      await supabase.from("profiles").delete().eq("id", id);
-      loadCoaches(); refreshLb();
-    } catch (e: any) { alert("Error: " + e.message); }
-    finally { setRemoving(null); }
-  }
 
-  // ── Edit scores ──
+
   async function openEditScores(playerId: string) {
-    const scores = allScores.filter(s => s.player_id === playerId);
-    setPlayerScores(scores.map(s => ({
-      id: s.id, workout_id: s.workout_id,
-      workout_title: workouts.find(w => w.id === s.workout_id)?.title ?? "Unknown",
-      made: s.made, reps: s.reps, sprint_secs: s.sprint_secs, self_points: s.self_points,
-    })));
     setEditScoresFor(playerId);
   }
 
-  async function saveScore(sc: EditScore) {
-    setScoreSaving(true);
-    try {
-      await supabase.from("scores").update({ made: sc.made, reps: sc.reps, sprint_secs: sc.sprint_secs, self_points: sc.self_points }).eq("id", sc.id);
-    } catch (e: any) { alert("Error: " + e.message); }
-    finally { setScoreSaving(false); }
-  }
 
-  async function deleteScore(scoreId: string) {
-    if (!window.confirm("Delete this score?")) return;
-    await supabase.from("scores").delete().eq("id", scoreId);
-    setPlayerScores(ps => ps.filter(s => s.id !== scoreId));
-  }
 
   // ── Helpers ──
   const inputStyle = {
@@ -376,8 +326,7 @@ export default function AdminPanel({ allScores, workouts }: Props) {
     const lastLog = entry.last_logged_at ? new Date(entry.last_logged_at).getTime() : 0;
     const daysInactive = lastLog > 0 ? Math.round((now - lastLog) / 86400000) : null;
     const isInactive = !lastLog || (now - lastLog) > FOURTEEN_DAYS;
-    const workoutsLogged = allScores.filter(s => s.player_id === entry.id).length;
-    return { ...entry, daysInactive, isInactive, workoutsLogged };
+    return { ...entry, daysInactive, isInactive };
   });
 
   return (
@@ -639,45 +588,6 @@ export default function AdminPanel({ allScores, workouts }: Props) {
         </div>
       </div>
 
-      {/* ── Edit Scores Modal ── */}
-      {editScoresFor && (
-        <div className="modal-overlay open" onClick={() => setEditScoresFor(null)}>
-          <div className="log-modal" style={{ width: 560, maxHeight: "80vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setEditScoresFor(null)}>✕</button>
-            <div className="modal-title">Edit Scores</div>
-            {playerScores.length === 0
-              ? <div style={{ color: "var(--muted)", fontSize: 14, padding: "20px 0" }}>No scores logged yet.</div>
-              : <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                  {playerScores.map((sc, i) => (
-                    <div key={sc.id} style={{ background: "var(--surface2)", borderRadius: 10, padding: 14, border: "1px solid var(--border)" }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10, color: "var(--text)" }}>{sc.workout_title}</div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
-                        {([["Made", "made"], ["Reps", "reps"], ["Sprint (s)", "sprint_secs"], ["Self Pts", "self_points"]] as [string, keyof EditScore][]).map(([label, field]) => (
-                          <div key={field}>
-                            <label style={{ fontSize: 10, color: "var(--muted)", display: "block", marginBottom: 3 }}>{label}</label>
-                            <input type="number" value={(sc[field] as number) ?? 0}
-                              onChange={e => { const u = [...playerScores]; (u[i] as any)[field] = parseFloat(e.target.value) || 0; setPlayerScores(u); }}
-                              style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 8px", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
-                          </div>
-                        ))}
-                      </div>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button onClick={() => saveScore(sc)} disabled={scoreSaving}
-                          style={{ flex: 1, background: "var(--royal)", color: "#fff", border: "none", borderRadius: 7, padding: 7, fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
-                          {scoreSaving ? "…" : "Save"}
-                        </button>
-                        <button onClick={() => deleteScore(sc.id)}
-                          style={{ background: "rgba(255,107,107,0.15)", color: "#ff7b7b", border: "1px solid rgba(255,107,107,0.3)", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-            }
-          </div>
-        </div>
-      )}
     </div>
   );
 }
