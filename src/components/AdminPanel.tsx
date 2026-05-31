@@ -1,20 +1,11 @@
 // src/components/AdminPanel.tsx
 import { useState, useEffect } from "react";
-import { supabase, approveUser, rejectUser, TEAM_CATEGORIES, TEAM_COLORS, saveTeamCompetition, getActiveTeamCompetition, TeamCompetition, getTeams, Team, getXpPerks, XpPerk } from "../lib/supabase";
+import { supabase, approveUser, rejectUser, Profile, TEAM_CATEGORIES, TEAM_COLORS, saveTeamCompetition, getActiveTeamCompetition, TeamCompetition, getTeams, Team, getXpPerks, XpPerk } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
 interface Props {
 }
 
-interface EditScore {
-  id: string;
-  workout_id: string;
-  workout_title: string;
-  made: number;
-  reps: number;
-  sprint_secs: number;
-  self_points: number;
-}
 
 interface Badge { id?: string; icon: string; name: string; description: string; trigger_type: "workouts"|"points"|"streak"|"champion"|"top_score"|"challenges_won"|"team_wins"; trigger_value: number; is_active: boolean; }
 const TRIGGER_LABELS: Record<string,string> = { workouts:"Workouts logged", points:"Total points earned", streak:"Day logging streak", champion:"Won a biweekly period", top_score:"Scored #1 on any drill", challenges_won:"Challenges won", team_wins:"Team competition wins" };
@@ -67,8 +58,6 @@ export default function AdminPanel({}: Props) {
   const [teamTogglingOff, setTeamTogglingOff] = useState(false);
 
   // ── edit scores ──
-  const [playerScores, setPlayerScores]   = useState<EditScore[]>([]);
-  const [scoreSaving, setScoreSaving]     = useState(false);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -279,55 +268,8 @@ export default function AdminPanel({}: Props) {
 
 
 
-  async function saveEdit() {
-    if (!editPerson) return;
-    setEditSaving(true); setEditError("");
-    try {
-      const { error } = await supabase.from("profiles").update({
-        name: editPerson.name, role: editPerson.role,
-        grade_category: editPerson.grade_category,
-      }).eq("id", editPerson.id);
-      if (error) throw error;
-      setEditPerson(null);
-      loadCoaches(); refreshLb();
-    } catch (e: any) { setEditError(e.message); }
-    finally { setEditSaving(false); }
-  }
 
 
-  async function removePerson(id: string, name: string) {
-    if (!window.confirm(`Remove access for "${name}"?\n\nTheir scores stay on the leaderboard but they cannot log in. You can restore them by editing their account.`)) return;
-    setRemoving(id);
-    try {
-      await supabase.from("profiles").update({ role: "inactive" as any }).eq("id", id);
-      loadCoaches(); refreshLb();
-    } catch (e: any) { alert("Error: " + e.message); }
-    finally { setRemoving(null); }
-  }
-
-
-
-  async function openEditScores(playerId: string) {
-    setEditScoresFor(playerId);
-  }
-
-
-
-  // ── Helpers ──
-  const inputStyle = {
-    width: "100%", background: "var(--surface2)", border: "1px solid var(--border)",
-    borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13,
-    fontFamily: "inherit", outline: "none",
-  } as const;
-
-  const now = Date.now();
-  const FOURTEEN_DAYS = 14 * 24 * 60 * 60 * 1000;
-  const players = leaderboard.map(entry => {
-    const lastLog = entry.last_logged_at ? new Date(entry.last_logged_at).getTime() : 0;
-    const daysInactive = lastLog > 0 ? Math.round((now - lastLog) / 86400000) : null;
-    const isInactive = !lastLog || (now - lastLog) > FOURTEEN_DAYS;
-    return { ...entry, daysInactive, isInactive };
-  });
 
   return (
     <div className="panel active">
