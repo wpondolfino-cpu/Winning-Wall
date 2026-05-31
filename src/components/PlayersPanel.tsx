@@ -38,6 +38,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const [addError, setAddError]       = useState("");
 
   // ── Invite by email ──
+  const [activeTab, setActiveTab]     = useState<"players"|"coaches">("players");
   const [showInvite, setShowInvite]   = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
@@ -50,6 +51,14 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const [removing, setRemoving]         = useState<string | null>(null);
   const [pendingCoaches, setPendingCoaches] = useState<any[]>([]);
   const [approvingCoach, setApprovingCoach] = useState<string | null>(null);
+  const [coaches, setCoaches]               = useState<any[]>([]);
+  const [addCoachName, setAddCoachName]     = useState("");
+  const [addCoachEmail, setAddCoachEmail]   = useState("");
+  const [addCoachPass, setAddCoachPass]     = useState("");
+  const [addCoachSaving, setAddCoachSaving] = useState(false);
+  const [showAddCoach, setShowAddCoach]     = useState(false);
+  const [inviteCoachEmail, setInviteCoachEmail] = useState("");
+  const [showInviteCoach, setShowInviteCoach]   = useState(false);
   const [viewingPlayer, setViewingPlayer] = useState<{id:string;name:string} | null>(null);
   const [pendingPlayers, setPendingPlayers] = useState<any[]>([]);
   const [approving, setApproving]         = useState<string | null>(null);
@@ -238,6 +247,11 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   return (
     <div className="panel active">
       <div className="section-title">Players & Coaches</div>
+      {/* ── Tabs ── */}
+      <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 10, padding: 4, marginBottom: 16, border: "1px solid var(--border)", width: "fit-content" }}>
+        <button onClick={() => setActiveTab("players")} style={{ padding: "7px 18px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "players" ? "var(--royal)" : "transparent", color: activeTab === "players" ? "#fff" : "var(--muted)" }}>👥 Players</button>
+        <button onClick={() => setActiveTab("coaches")} style={{ padding: "7px 18px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "coaches" ? "var(--royal)" : "transparent", color: activeTab === "coaches" ? "#fff" : "var(--muted)" }}>🏀 Coaches</button>
+      </div>
       <div className="section-sub">Manage your roster — add, edit, and invite players</div>
 
       {/* ── Action buttons ── */}
@@ -507,6 +521,68 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
           </div>
         </div>
       )}
+      </> }
+
+      {/* ── COACHES TAB ── */}
+      {activeTab === "coaches" && (
+        <div>
+          <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+            <button onClick={() => { setShowAddCoach(a => !a); setShowInviteCoach(false); }} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+              ➕ Add Coach
+            </button>
+            <button onClick={() => { setShowInviteCoach(a => !a); setShowAddCoach(false); }} style={{ background: "var(--surface2)", color: "var(--silver-light)", border: "1px solid var(--border)", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+              ✉️ Invite by Email
+            </button>
+          </div>
+
+          {showAddCoach && (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div className="card-title">Add Coach Manually</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label>
+                  <input value={addCoachName} onChange={e => setAddCoachName(e.target.value)} placeholder="Coach name" style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Email</label>
+                  <input type="email" value={addCoachEmail} onChange={e => setAddCoachEmail(e.target.value)} placeholder="coach@school.edu" style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Temp Password</label>
+                  <input type="password" value={addCoachPass} onChange={e => setAddCoachPass(e.target.value)} placeholder="••••••••" style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
+              </div>
+              <button onClick={addCoach} disabled={addCoachSaving} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                {addCoachSaving ? "Adding…" : "Add Coach"}
+              </button>
+            </div>
+          )}
+
+          {showInviteCoach && (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div className="card-title">Invite Coach by Email</div>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+                <input type="email" value={inviteCoachEmail} onChange={e => setInviteCoachEmail(e.target.value)} placeholder="coach@school.edu"
+                  style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} />
+                <button onClick={async () => {
+                  await supabase.auth.resetPasswordForEmail(inviteCoachEmail);
+                  setInviteCoachEmail(""); setShowInviteCoach(false); alert("Invite sent!");
+                }} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Send Invite</button>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {coaches.map(c => (
+              <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "var(--surface2)", borderRadius: 12, border: "1px solid var(--border)" }}>
+                <div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {c.avatar_url ? <img src={c.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>{c.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}</span>}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{c.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{c.email} · <span style={{ color: c.role === "admin" ? "var(--gold)" : "#93b4ff" }}>{c.role}</span></div>
+                </div>
+              </div>
+            ))}
+            {coaches.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)", padding: "20px 0" }}>No coaches yet.</div>}
+          </div>
+        </div>
+      )}
+
       {/* ── Player Progress Modal ── */}
       {viewingPlayer && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "20px 0" }} onClick={() => setViewingPlayer(null)}>
