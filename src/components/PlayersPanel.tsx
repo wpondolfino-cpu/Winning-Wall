@@ -47,7 +47,9 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const [editPlayer, setEditPlayer]   = useState<EditPlayer | null>(null);
   const [editSaving, setEditSaving]   = useState(false);
   const [editError, setEditError]     = useState("");
-  const [removing, setRemoving]       = useState<string | null>(null);
+  const [removing, setRemoving]         = useState<string | null>(null);
+  const [pendingCoaches, setPendingCoaches] = useState<any[]>([]);
+  const [approvingCoach, setApprovingCoach] = useState<string | null>(null);
   const [viewingPlayer, setViewingPlayer] = useState<{id:string;name:string} | null>(null);
   const [pendingPlayers, setPendingPlayers] = useState<any[]>([]);
   const [pendingCoaches, setPendingCoaches] = useState<any[]>([]);
@@ -236,7 +238,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
 
   return (
     <div className="panel active">
-      <div className="section-title">Player Data</div>
+      <div className="section-title">Players & Coaches</div>
       <div className="section-sub">Manage your roster — add, edit, and invite players</div>
 
       {/* ── Action buttons ── */}
