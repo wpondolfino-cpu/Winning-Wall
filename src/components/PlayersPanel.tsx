@@ -60,6 +60,9 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const [showAddCoach, setShowAddCoach]     = useState(false);
   const [inviteCoachEmail, setInviteCoachEmail] = useState("");
   const [showInviteCoach, setShowInviteCoach]   = useState(false);
+  const [editCoach, setEditCoach]               = useState<{id:string;name:string;role:string} | null>(null);
+  const [editCoachSaving, setEditCoachSaving]   = useState(false);
+  const [removingCoach, setRemovingCoach]       = useState<string | null>(null);
   const [viewingPlayer, setViewingPlayer] = useState<{id:string;name:string} | null>(null);
   const [pendingPlayers, setPendingPlayers] = useState<any[]>([]);
   const [approving, setApproving]         = useState<string | null>(null);
@@ -244,6 +247,37 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   }
 
 
+  async function removeCoach(id: string, name: string) {
+    if (!window.confirm(`Remove coach access for "${name}"? They will be set to inactive.`)) return;
+    setRemovingCoach(id);
+    try {
+      await supabase.from("profiles").update({ role: "inactive" as any }).eq("id", id);
+      await loadCoaches();
+    } catch(e: any) { alert("Error: " + e.message); }
+    finally { setRemovingCoach(null); }
+  }
+
+  async function deleteCoach(id: string, name: string) {
+    if (!window.confirm(`PERMANENTLY DELETE coach "${name}"? This cannot be undone.`)) return;
+    setRemovingCoach(id);
+    try {
+      await supabase.from("profiles").delete().eq("id", id);
+      await loadCoaches();
+    } catch(e: any) { alert("Error: " + e.message); }
+    finally { setRemovingCoach(null); }
+  }
+
+  async function saveCoachEdit() {
+    if (!editCoach) return;
+    setEditCoachSaving(true);
+    try {
+      await supabase.from("profiles").update({ name: editCoach.name, role: editCoach.role }).eq("id", editCoach.id);
+      setEditCoach(null);
+      await loadCoaches();
+    } catch(e: any) { alert("Error: " + e.message); }
+    finally { setEditCoachSaving(false); }
+  }
+
   async function reactivatePlayer(id: string) {
     await supabase.from("profiles").update({ role: "player" }).eq("id", id);
     loadPending();
@@ -379,16 +413,18 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                   {p.avatar_url ? <img src={p.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>{p.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}</span>}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14, color: "var(--royal-light)", textDecoration: "underline dotted", cursor: "pointer" }} onClick={() => setViewingPlayer({ id: p.id, name: p.name })}>{p.name}</div>
-                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.grade_category}</div>
+                  <div style={{ fontWeight: 600, fontSize: 14, color: "#93b4ff", textDecoration: "underline dotted", cursor: "pointer" }} onClick={() => setViewingPlayer({ id: p.id, name: p.name })}>{p.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.grade_category}{p.daysInactive ? ` · ${p.daysInactive}d ago` : ""}</div>
                 </div>
-                <div style={{ display: "flex", gap: 6 }}>
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <button onClick={() => openEditPlayer(p)} style={{ background: "rgba(26,63,168,0.15)", border: "1px solid rgba(26,63,168,0.3)", color: "#93b4ff", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
+                  <button onClick={() => openEditScores(p.id)} style={{ background: "rgba(147,92,255,0.1)", border: "1px solid rgba(147,92,255,0.3)", color: "#b07aff", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>📊 Scores</button>
                   {inactiveTab ? (
-                    <button onClick={() => reactivatePlayer(p.id)} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Reactivate</button>
+                    <button onClick={() => reactivatePlayer(p.id)} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>↩️ Restore</button>
                   ) : (
-                    <button onClick={() => removePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Remove</button>
+                    <button onClick={() => removePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🚫 Remove</button>
                   )}
-                  <button onClick={() => deletePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Delete</button>
+                  <button onClick={() => deletePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗑 Delete</button>
                 </div>
               </div>
             ))}
@@ -467,9 +503,76 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                   <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{c.name}</div>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{c.email} · <span style={{ color: c.role === "admin" ? "var(--gold)" : "#93b4ff" }}>{c.role}</span></div>
                 </div>
+                <div style={{ display: "flex", gap: 5 }}>
+                  <button onClick={() => setEditCoach({ id: c.id, name: c.name, role: c.role })} style={{ background: "rgba(26,63,168,0.15)", border: "1px solid rgba(26,63,168,0.3)", color: "#93b4ff", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
+                  <button onClick={() => removeCoach(c.id, c.name)} disabled={removingCoach === c.id} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🚫 Remove</button>
+                  <button onClick={() => deleteCoach(c.id, c.name)} disabled={removingCoach === c.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗑 Delete</button>
+                </div>
               </div>
+              {editCoach?.id === c.id && (
+                <div style={{ marginTop: 10, padding: "12px 14px", background: "var(--surface)", borderRadius: 10, border: "1px solid var(--border)" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                    <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label>
+                      <input value={editCoach.name} onChange={e => setEditCoach({ ...editCoach, name: e.target.value })}
+                        style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
+                    <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Role</label>
+                      <select value={editCoach.role} onChange={e => setEditCoach({ ...editCoach, role: e.target.value })}
+                        style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }}>
+                        <option value="coach">Coach</option>
+                        <option value="admin">Admin</option>
+                      </select></div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={saveCoachEdit} disabled={editCoachSaving} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{editCoachSaving ? "Saving…" : "Save"}</button>
+                    <button onClick={() => setEditCoach(null)} style={{ background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 16px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
             ))}
             {coaches.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)", padding: "20px 0" }}>No coaches yet.</div>}
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Player Modal ── */}
+      {editPlayer && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setEditPlayer(null)}>
+          <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(400px, 96vw)", padding: 24 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", marginBottom: 16 }}>✏️ Edit Player</div>
+            <div style={{ marginBottom: 12 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label>
+              <input value={editPlayer.name} onChange={e => setEditPlayer({ ...editPlayer, name: e.target.value })}
+                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" as const }} /></div>
+            <div style={{ marginBottom: 16 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Grade</label>
+              <select value={editPlayer.grade_category} onChange={e => setEditPlayer({ ...editPlayer, grade_category: e.target.value })}
+                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }}>
+                {GRADE_CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}
+              </select></div>
+            {editError && <div style={{ color: "#ff7b7b", fontSize: 12, marginBottom: 10 }}>{editError}</div>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={savePlayerEdit} disabled={editSaving} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{editSaving ? "Saving…" : "Save"}</button>
+              <button onClick={() => setEditPlayer(null)} style={{ background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Scores Modal ── */}
+      {editScoresFor && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "20px 0" }} onClick={() => setEditScoresFor(null)}>
+          <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(560px, 96vw)", padding: 24 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", marginBottom: 16 }}>📊 Edit Scores</div>
+            {playerScores.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13 }}>No scores to edit.</div>}
+            {playerScores.map(sc => (
+              <div key={sc.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
+                <div style={{ flex: 1, fontSize: 13, color: "var(--text)" }}>{sc.workout_title}</div>
+                <input type="number" value={sc.made} onChange={e => setPlayerScores(ps => ps.map(s => s.id === sc.id ? { ...s, made: +e.target.value } : s))}
+                  onBlur={() => saveScore(sc)} placeholder="Score"
+                  style={{ width: 70, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, textAlign: "center" }} />
+                <button onClick={() => deleteScore(sc.id)} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>🗑</button>
+              </div>
+            ))}
+            <button onClick={() => setEditScoresFor(null)} style={{ marginTop: 16, background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>Close</button>
           </div>
         </div>
       )}
@@ -485,7 +588,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
               <button onClick={() => setViewingPlayer(null)} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 22, cursor: "pointer", padding: 0 }}>✕</button>
             </div>
             <div style={{ padding: "0 4px" }}>
-              <ProgressPanel overrideUserId={viewingPlayer.id} profile={{} as any} myScores={[]} workouts={workouts} />
+              <ProgressPanel overrideUserId={viewingPlayer.id} profile={{ id: viewingPlayer.id, name: viewingPlayer.name, role: "player", grade_category: undefined, avatar_url: undefined } as any} myScores={[]} workouts={workouts} />
             </div>
           </div>
         </div>
