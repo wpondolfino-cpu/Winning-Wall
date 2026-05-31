@@ -372,9 +372,9 @@ export default function Leaderboard({ currentUserId }: Props) {
               borderBottom: expandedPlayer === entry.id ? "none" : "1px solid rgba(176,184,200,0.05)",
               background: entry.id === currentUserId ? "rgba(26,63,168,0.15)" : undefined,
               cursor: "pointer",
-            }}>
+            }} onClick={() => setExpandedPlayer(expandedPlayer === entry.id ? null : entry.id)}>
               <div className={`lb-rank ${rankClass(entry.rank)}`}>{entry.rank}</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }} onClick={() => setExpandedPlayer(expandedPlayer === entry.id ? null : entry.id)}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", flexShrink: 0, background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${getAvatarOutline(entry.id)}` }}>
                   {entry.avatar_url
                     ? <img src={entry.avatar_url} alt={entry.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -467,9 +467,9 @@ export default function Leaderboard({ currentUserId }: Props) {
               borderBottom: expandedPlayer === entry.player_id ? "none" : "1px solid rgba(176,184,200,0.05)",
               background: entry.player_id === currentUserId ? "rgba(26,63,168,0.15)" : undefined,
               cursor: "pointer",
-            }}>
+            }} onClick={() => setExpandedPlayer(expandedPlayer === entry.player_id ? null : entry.player_id)}>
               <div className={`lb-rank ${rankClass(i + 1)}`}>{i + 1}</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1 }} onClick={() => setExpandedPlayer(expandedPlayer === entry.player_id ? null : entry.player_id)}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
                 <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", flexShrink: 0, background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${getAvatarOutline(entry.player_id)}` }}>
                   {entry.avatar_url
                     ? <img src={entry.avatar_url} alt={entry.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
