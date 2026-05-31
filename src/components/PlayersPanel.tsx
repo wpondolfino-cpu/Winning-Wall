@@ -380,7 +380,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 600, fontSize: 14, color: "var(--royal-light)", textDecoration: "underline dotted", cursor: "pointer" }} onClick={() => setViewingPlayer({ id: p.id, name: p.name })}>{p.name}</div>
-                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.grade_category} · {p.email}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.grade_category}</div>
                 </div>
                 <div style={{ display: "flex", gap: 6 }}>
                   {inactiveTab ? (
