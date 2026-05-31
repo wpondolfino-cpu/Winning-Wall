@@ -1,5 +1,5 @@
 // src/components/PlayersPanel.tsx  (Coach view — manage players)
-import { useState } from "react";
+import { useState, useEffect } from "react";
 // ProgressPanel removed - using inline player view
 import { supabase, Score, Workout, GRADE_CATEGORIES, GradeCategory, approveUser, rejectUser } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
