@@ -209,13 +209,21 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
 
   async function loadOverrideData() {
     setOverrideLoading(true);
-    const { data: prof } = await supabase.from("profiles").select("*").eq("id", overrideUserId!).single();
-    setOverrideProfile(prof);
-    const { data: scores } = await supabase.from("scores").select("*").eq("player_id", overrideUserId!);
-    setOverrideScores(scores ?? []);
-    const { data: att } = await supabase.from("score_attempts").select("*").eq("player_id", overrideUserId!).order("attempted_at", { ascending: false });
-    setAttempts(att ?? []);
-    setOverrideLoading(false);
+    try {
+      const [profRes, scoresRes, attRes] = await Promise.all([
+        supabase.from("profiles").select("*").eq("id", overrideUserId!).single(),
+        supabase.from("scores").select("*").eq("player_id", overrideUserId!),
+        supabase.from("score_attempts").select("*").eq("player_id", overrideUserId!).order("attempted_at", { ascending: false }),
+      ]);
+      if (profRes.error) console.error("Profile load error:", profRes.error);
+      setOverrideProfile(profRes.data);
+      setOverrideScores(scoresRes.data ?? []);
+      setAttempts(attRes.data ?? []);
+    } catch(e) {
+      console.error("loadOverrideData error:", e);
+    } finally {
+      setOverrideLoading(false);
+    }
   }
 
   async function loadBadges() { setAllBadges(await getActiveBadges()); }
@@ -274,13 +282,22 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
     );
   }
 
-  const effectiveProfile = overrideProfile ?? profile;
+  const effectiveProfile = overrideProfile ?? (overrideUserId ? null : profile);
   const effectiveScores  = overrideScores ?? myScores;
+
+  // If override was requested but profile didn't load, show error
+  if (overrideUserId && !effectiveProfile) {
+    return (
+      <div className="panel active" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300 }}>
+        <div style={{ fontSize: 14, color: "var(--muted)" }}>Could not load player data.</div>
+      </div>
+    );
+  }
 
   const totalPoints   = effectiveScores.reduce((sum, s) => sum + (s.points ?? 0), 0);
   const totalMade     = effectiveScores.reduce((sum, s) => sum + s.made, 0);
   const totalAtt      = effectiveScores.reduce((sum, s) => sum + s.attempts, 0);
-  const activeWorkouts = workouts.filter(w => w.is_active !== false);
+  const activeWorkouts = (workouts ?? []).filter(w => w.is_active !== false);
   const completedCount = effectiveScores.length;
   const completionPct  = activeWorkouts.length > 0 ? Math.round((completedCount / activeWorkouts.length) * 100) : 0;
 
