@@ -1,7 +1,7 @@
 // src/components/PlayersPanel.tsx  (Coach view — manage players)
 import { useState, useEffect } from "react";
 // ProgressPanel removed - using inline player view
-import { supabase, Score, Workout, GRADE_CATEGORIES, GradeCategory, approveUser, rejectUser } from "../lib/supabase";
+import { supabase, Score, Workout, ScoreAttempt, GRADE_CATEGORIES, GradeCategory, approveUser, rejectUser } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
 interface Props {
@@ -26,107 +26,194 @@ interface EditScore {
 }
 
 
+function getCalendarDays(year: number, month: number) {
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  return { firstDay, daysInMonth };
+}
+
+function PlayerCalendar({ attempts }: { attempts: ScoreAttempt[] }) {
+  const now = new Date();
+  const [calMonth, setCalMonth] = useState(now.getMonth());
+  const [calYear, setCalYear]   = useState(now.getFullYear());
+
+  const loggedDays = new Set(attempts.map(a => {
+    const d = new Date(a.attempted_at);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  }));
+
+  const isLogged = (day: number) => loggedDays.has(`${calYear}-${calMonth}-${day}`);
+  const isToday  = (day: number) => calYear === now.getFullYear() && calMonth === now.getMonth() && day === now.getDate();
+  const { firstDay, daysInMonth } = getCalendarDays(calYear, calMonth);
+  const monthName = new Date(calYear, calMonth).toLocaleString("default", { month: "long", year: "numeric" });
+  const loggedCount = Array.from({ length: daysInMonth }, (_, i) => i + 1).filter(isLogged).length;
+
+  function prevMonth() { if (calMonth === 0) { setCalMonth(11); setCalYear(y => y-1); } else setCalMonth(m => m-1); }
+  function nextMonth() {
+    if (calYear === now.getFullYear() && calMonth === now.getMonth()) return;
+    if (calMonth === 11) { setCalMonth(0); setCalYear(y => y+1); } else setCalMonth(m => m+1);
+  }
+
+  return (
+    <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <button onClick={prevMonth} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 18, cursor: "pointer" }}>‹</button>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--text)", letterSpacing: 1 }}>{monthName}</div>
+          <div style={{ fontSize: 11, color: loggedCount > 0 ? "#5de098" : "var(--muted)" }}>{loggedCount} day{loggedCount !== 1 ? "s" : ""} logged</div>
+        </div>
+        <button onClick={nextMonth} style={{ background: "none", border: "none", color: calYear === now.getFullYear() && calMonth === now.getMonth() ? "var(--border)" : "var(--muted)", fontSize: 18, cursor: "pointer" }}>›</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3, marginBottom: 4 }}>
+        {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d => (
+          <div key={d} style={{ textAlign: "center", fontSize: 10, color: "var(--muted)", fontWeight: 600 }}>{d}</div>
+        ))}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3 }}>
+        {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
+        {Array.from({ length: daysInMonth }, (_, i) => i+1).map(day => (
+          <div key={day} style={{
+            aspectRatio: "1", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 11, fontWeight: isToday(day) ? 700 : 400,
+            background: isLogged(day) ? "var(--royal)" : isToday(day) ? "rgba(26,63,168,0.2)" : "var(--surface)",
+            color: isLogged(day) ? "#fff" : isToday(day) ? "#93b4ff" : "var(--muted)",
+            border: isToday(day) ? "1px solid var(--royal)" : "1px solid transparent",
+          }}>{day}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PlayerChart({ attempts, workouts }: { attempts: ScoreAttempt[]; workouts: Workout[] }) {
+  const [sel, setSel] = useState("all");
+  const workoutIds = Array.from(new Set(attempts.map(a => a.workout_id)));
+  const withAttempts = workouts.filter(w => workoutIds.includes(w.id));
+  const filtered = (sel === "all" ? attempts : attempts.filter(a => a.workout_id === sel))
+    .slice().sort((a, b) => new Date(a.attempted_at).getTime() - new Date(b.attempted_at).getTime()).slice(-20);
+  if (filtered.length < 2) return <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: "20px 0" }}>Log at least 2 attempts to see the chart 📈</div>;
+  const scores = filtered.map(a => a.self_points > 0 ? a.self_points : a.made + a.reps);
+  const maxScore = Math.max(...scores), minScore = Math.min(...scores), range = maxScore - minScore || 1;
+  const W = 300, H = 100, PAD = 16;
+  const pts = scores.map((s, i) => ({ x: PAD + (i/(scores.length-1))*(W-PAD*2), y: PAD + (1-(s-minScore)/range)*(H-PAD*2) }));
+  const polyline = pts.map(p => `${p.x},${p.y}`).join(" ");
+  const area = `M${pts[0].x},${H} ` + pts.map(p => `L${p.x},${p.y}`).join(" ") + ` L${pts[pts.length-1].x},${H} Z`;
+  const trend = scores[scores.length-1] > scores[0] ? "#5de098" : scores[scores.length-1] < scores[0] ? "#ff7b7b" : "var(--gold)";
+  return (
+    <div>
+      {withAttempts.length > 1 && (
+        <select value={sel} onChange={e => setSel(e.target.value)} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 10px", color: "var(--text)", fontSize: 12, fontFamily: "inherit", marginBottom: 10 }}>
+          <option value="all">All Drills</option>
+          {withAttempts.map(w => <option key={w.id} value={w.id}>{w.title}</option>)}
+        </select>
+      )}
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", overflow: "visible" }}>
+        <path d={area} fill={trend} fillOpacity="0.08" />
+        <polyline points={polyline} fill="none" stroke={trend} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="3" fill={i === pts.length-1 ? trend : "var(--surface2)"} stroke={trend} strokeWidth="1.5" />)}
+        <text x={pts[0].x} y={pts[0].y-7} textAnchor="middle" fontSize="9" fill="var(--muted)">{scores[0]}</text>
+        <text x={pts[pts.length-1].x} y={pts[pts.length-1].y-7} textAnchor="middle" fontSize="9" fill={trend} fontWeight="bold">{scores[scores.length-1]}</text>
+      </svg>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--muted)", marginTop: 4 }}>
+        <span>{new Date(filtered[0].attempted_at).toLocaleDateString()}</span>
+        <span style={{ color: trend, fontWeight: 600 }}>{scores[scores.length-1] > scores[0] ? "↑ Improving!" : scores[scores.length-1] < scores[0] ? "↓ Keep grinding" : "→ Consistent"}</span>
+        <span>{new Date(filtered[filtered.length-1].attempted_at).toLocaleDateString()}</span>
+      </div>
+    </div>
+  );
+}
+
 function PlayerProgressModal({ playerId, playerName, workouts, allScores, onClose }: {
-  playerId: string; playerName: string; workouts: any[]; allScores: any[]; onClose: () => void;
+  playerId: string; playerName: string; workouts: Workout[]; allScores: Score[]; onClose: () => void;
 }) {
-  const [profile, setProfile] = useState<any>(null);
-  const [scores, setScores]   = useState<any[]>([]);
-  const [attempts, setAttempts] = useState<any[]>([]);
-  const [loading, setLoading]   = useState(true);
+  const [profile, setProfile]     = useState<any>(null);
+  const [attempts, setAttempts]   = useState<ScoreAttempt[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [view, setView]           = useState<"calendar"|"history"|"chart">("calendar");
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [profRes, scoresRes, attRes] = await Promise.all([
+      const [profRes, attRes] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", playerId).single(),
-        supabase.from("scores").select("*").eq("player_id", playerId),
-        supabase.from("score_attempts").select("*").eq("player_id", playerId).order("attempted_at", { ascending: false }).limit(30),
+        supabase.from("score_attempts").select("*").eq("player_id", playerId).order("attempted_at", { ascending: false }),
       ]);
       setProfile(profRes.data);
-      setScores(scoresRes.data ?? []);
       setAttempts(attRes.data ?? []);
       setLoading(false);
     })();
   }, [playerId]);
 
-  const totalPoints = scores.reduce((s: number, sc: any) => s + (sc.points ?? 0), 0);
+  const totalPoints = allScores.filter(s => s.player_id === playerId).reduce((sum, s) => sum + (s.points ?? 0), 0);
   const initials = playerName.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase();
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "20px 0" }} onClick={onClose}>
       <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(640px, 96vw)", position: "relative" }} onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border)", position: "sticky", top: 0, background: "var(--surface)", zIndex: 1, borderRadius: "16px 16px 0 0" }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1 }}>📈 {playerName}'s Progress</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid var(--border)", position: "sticky", top: 0, background: "var(--surface)", zIndex: 1, borderRadius: "16px 16px 0 0" }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1 }}>📈 {playerName}</div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 22, cursor: "pointer", padding: 0 }}>✕</button>
         </div>
 
-        <div style={{ padding: 20 }}>
+        <div style={{ padding: 18 }}>
           {loading ? (
             <div style={{ textAlign: "center", padding: 60, color: "var(--muted)" }}>Loading…</div>
           ) : (
             <>
-              {/* Profile card */}
-              <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 20, padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, border: "1px solid var(--border)" }}>
-                <div style={{ width: 52, height: 52, borderRadius: "50%", overflow: "hidden", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  {profile?.avatar_url ? <img src={profile.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)" }}>{initials}</span>}
+              {/* Profile summary */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, padding: "12px 14px", background: "var(--surface2)", borderRadius: 12, border: "1px solid var(--border)" }}>
+                <div style={{ width: 44, height: 44, borderRadius: "50%", overflow: "hidden", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {profile?.avatar_url ? <img src={profile.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--gold)" }}>{initials}</span>}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 16, color: "var(--text)" }}>{profile?.name ?? playerName}</div>
-                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{profile?.grade_category ?? "—"}</div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text)" }}>{profile?.name ?? playerName}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>{profile?.grade_category ?? "—"} · {attempts.length} attempts</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--gold)", lineHeight: 1 }}>{totalPoints}</div>
-                  <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase" }}>total pts</div>
+                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "var(--gold)", lineHeight: 1 }}>{totalPoints}</div>
+                  <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase" }}>pts</div>
                 </div>
               </div>
 
-              {/* Score breakdown */}
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Score Breakdown</div>
-                {scores.length === 0 ? (
-                  <div style={{ fontSize: 13, color: "var(--muted)" }}>No scores logged yet.</div>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {scores.sort((a: any, b: any) => (b.points ?? 0) - (a.points ?? 0)).map((s: any) => {
-                      const w = workouts.find((wk: any) => wk.id === s.workout_id);
-                      const raw = s.self_points > 0 ? s.self_points : (s.made + s.reps);
-                      return (
-                        <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "var(--surface2)", borderRadius: 8 }}>
-                          <div style={{ fontSize: 13, color: "var(--text)" }}>{w?.emoji ?? "🏀"} {w?.title ?? "Unknown drill"}</div>
-                          <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-                            <span style={{ fontSize: 11, color: "var(--muted)" }}>Score: {raw}</span>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>+{s.points} pts</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+              {/* Sub-tabs */}
+              <div style={{ display: "flex", gap: 6, marginBottom: 14, background: "var(--surface2)", borderRadius: 10, padding: 4, border: "1px solid var(--border)" }}>
+                {(["calendar","history","chart"] as const).map(t => (
+                  <button key={t} onClick={() => setView(t)} style={{
+                    flex: 1, padding: "7px 0", borderRadius: 8, border: "none", cursor: "pointer",
+                    fontFamily: "inherit", fontSize: 12, fontWeight: 600,
+                    background: view === t ? "var(--royal)" : "transparent",
+                    color: view === t ? "#fff" : "var(--muted)",
+                  }}>
+                    {t === "calendar" ? "📅 Calendar" : t === "history" ? "📋 History" : "📈 Chart"}
+                  </button>
+                ))}
               </div>
 
-              {/* Recent attempts */}
-              {attempts.length > 0 && (
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Recent Attempts</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    {attempts.slice(0, 10).map((a: any) => {
-                      const w = workouts.find((wk: any) => wk.id === a.workout_id);
-                      const raw = a.self_points > 0 ? a.self_points : (a.made + a.reps);
-                      const date = new Date(a.attempted_at).toLocaleDateString();
-                      return (
-                        <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 12px", background: "var(--surface2)", borderRadius: 8 }}>
-                          <div style={{ fontSize: 12, color: "var(--text)" }}>{w?.title ?? "Unknown"}</div>
-                          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                            <span style={{ fontSize: 11, color: "var(--muted)" }}>{date}</span>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: "#93b4ff" }}>{raw}</span>
-                          </div>
+              {view === "calendar" && <PlayerCalendar attempts={attempts} />}
+
+              {view === "history" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {attempts.length === 0 ? (
+                    <div style={{ fontSize: 13, color: "var(--muted)", textAlign: "center", padding: "20px 0" }}>No attempts yet.</div>
+                  ) : attempts.slice(0, 30).map(a => {
+                    const w = workouts.find(wk => wk.id === a.workout_id);
+                    const raw = a.self_points > 0 ? a.self_points : (a.made + a.reps);
+                    const date = new Date(a.attempted_at).toLocaleDateString();
+                    return (
+                      <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "var(--surface2)", borderRadius: 8 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, color: "var(--text)" }}>{w?.emoji ?? "🏀"} {w?.title ?? "Unknown drill"}</div>
+                          <div style={{ fontSize: 10, color: "var(--muted)" }}>{date}</div>
                         </div>
-                      );
-                    })}
-                  </div>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#93b4ff" }}>{raw}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
+
+              {view === "chart" && <PlayerChart attempts={attempts} workouts={workouts} />}
             </>
           )}
         </div>
@@ -134,6 +221,7 @@ function PlayerProgressModal({ playerId, playerName, workouts, allScores, onClos
     </div>
   );
 }
+
 
 export default function PlayersPanel({ allScores, workouts }: Props) {
   const { leaderboard, loading, refresh } = useLeaderboard();
