@@ -333,6 +333,9 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
         </div>
       )}
 
+      {activeTab === "players" && (
+        <div>
+
       {/* ── Pending Approvals ── */}
       {(pendingPlayers.length > 0 || pendingCoaches.length > 0) && (
         <div style={{ background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 14, padding: "16px 20px", marginBottom: 20 }}>
@@ -520,7 +523,6 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
             )}
           </div>
         </div>
-      )}
         </div>
       )}
 
