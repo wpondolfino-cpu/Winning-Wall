@@ -521,7 +521,8 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
           </div>
         </div>
       )}
-      </> }
+        </div>
+      )}
 
       {/* ── COACHES TAB ── */}
       {activeTab === "coaches" && (
