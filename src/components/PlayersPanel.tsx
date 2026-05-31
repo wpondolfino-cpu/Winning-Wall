@@ -516,10 +516,10 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 <div style={{ marginTop: 10, padding: "12px 14px", background: "var(--surface)", borderRadius: 10, border: "1px solid var(--border)" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
                     <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label>
-                      <input value={editCoach.name} onChange={e => setEditCoach(prev => prev ? { ...prev, name: e.target.value } : null)}
+                      <input value={editCoach?.name ?? ""} onChange={e => setEditCoach(prev => prev ? { ...prev, name: e.target.value } : null)}
                         style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
                     <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Role</label>
-                      <select value={editCoach.role} onChange={e => setEditCoach(prev => prev ? { ...prev, role: e.target.value } : null)}
+                      <select value={editCoach?.role ?? "coach"} onChange={e => setEditCoach(prev => prev ? { ...prev, role: e.target.value } : null)}
                         style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }}>
                         <option value="coach">Coach</option>
                         <option value="admin">Admin</option>
