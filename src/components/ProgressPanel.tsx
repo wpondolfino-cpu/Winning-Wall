@@ -183,6 +183,7 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
   const [attempts, setAttempts]     = useState<ScoreAttempt[]>([]);
   const [overrideProfile, setOverrideProfile]   = useState<Profile | null>(null);
   const [overrideScores, setOverrideScores]     = useState<Score[] | null>(null);
+  const [overrideLoading, setOverrideLoading]   = useState(!!overrideUserId);
   const [view, setView]             = useState<"bests" | "history" | "calendar" | "chart">("bests");
   const [allBadges, setAllBadges]   = useState<Badge[]>([]);
   const [champCount, setChampCount] = useState(0);
@@ -207,12 +208,14 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
   }
 
   async function loadOverrideData() {
+    setOverrideLoading(true);
     const { data: prof } = await supabase.from("profiles").select("*").eq("id", overrideUserId!).single();
     setOverrideProfile(prof);
     const { data: scores } = await supabase.from("scores").select("*").eq("player_id", overrideUserId!);
     setOverrideScores(scores ?? []);
     const { data: att } = await supabase.from("score_attempts").select("*").eq("player_id", overrideUserId!).order("attempted_at", { ascending: false });
     setAttempts(att ?? []);
+    setOverrideLoading(false);
   }
 
   async function loadBadges() { setAllBadges(await getActiveBadges()); }
@@ -261,6 +264,14 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setAttempts(await getMyAttempts(user.id));
+  }
+
+  if (overrideLoading) {
+    return (
+      <div className="panel active" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300 }}>
+        <div style={{ fontSize: 14, color: "var(--muted)" }}>Loading player data…</div>
+      </div>
+    );
   }
 
   const effectiveProfile = overrideProfile ?? profile;
