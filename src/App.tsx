@@ -305,7 +305,7 @@ export default function App() {
             <PlayersPanel allScores={allScores} workouts={workouts} />
           )}
           {isAdmin && adminTab === "admin" && (
-            <AdminPanel allScores={allScores} workouts={workouts} />
+            <AdminPanel />
           )}
           {isAdmin && adminTab === "settings" && (
             <div className="panel active">
