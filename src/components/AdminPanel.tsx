@@ -48,6 +48,7 @@ export default function AdminPanel({}: Props) {
   const [badges, setBadges]         = useState<Badge[]>([]);
   const [editBadge, setEditBadge]   = useState<Badge | null>(null);
   const [showNewBadge, setShowNewBadge] = useState(false);
+  const [emojiCategory, setEmojiCategory] = useState(0);
   const [newIcon, setNewIcon]       = useState("🏆");
   const [newName, setNewName]       = useState("");
   const [newDesc, setNewDesc]       = useState("");
@@ -355,26 +356,46 @@ export default function AdminPanel({}: Props) {
 
               {/* Emoji picker */}
               <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 6 }}>Icon — click to select or type your own</label>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                  <div style={{ fontSize: 36, width: 52, height: 52, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10 }}>{newIcon || "🏆"}</div>
-                  <input value={newIcon} onChange={e => setNewIcon(e.target.value)} placeholder="🏆"
-                    style={{ ...inputStyle, width: 80, fontSize: 20, textAlign: "center", padding: "8px" }} />
+                <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 8 }}>Icon</label>
+
+                {/* Category tabs */}
+                <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8, marginBottom: 8 }}>
+                  {EMOJI_GROUPS.map((group, i) => (
+                    <button key={i} onClick={() => setEmojiCategory(i)} style={{
+                      flexShrink: 0, display: "flex", alignItems: "center", gap: 5,
+                      padding: "6px 12px", borderRadius: 20, border: `1px solid ${emojiCategory === i ? "var(--royal)" : "var(--border)"}`,
+                      background: emojiCategory === i ? "rgba(26,63,168,0.15)" : "var(--surface)",
+                      color: emojiCategory === i ? "#93b4ff" : "var(--muted)",
+                      cursor: "pointer", fontSize: 12, fontWeight: emojiCategory === i ? 700 : 400,
+                      fontFamily: "inherit", whiteSpace: "nowrap",
+                    }}>
+                      <span style={{ fontSize: 16 }}>{group.emojis[0]}</span>
+                      {group.label.split(" ")[0]}
+                    </button>
+                  ))}
                 </div>
-                {EMOJI_GROUPS.map(group => (
-                  <div key={group.label} style={{ marginBottom: 8 }}>
-                    <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{group.label}</div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                      {group.emojis.map(e => (
-                        <button key={e} onClick={() => setNewIcon(e)} style={{
-                          fontSize: 20, padding: "5px 7px", borderRadius: 7, border: `1px solid ${newIcon === e ? "var(--royal)" : "var(--border)"}`,
-                          background: newIcon === e ? "rgba(26,63,168,0.15)" : "var(--surface)",
-                          cursor: "pointer", lineHeight: 1,
-                        }}>{e}</button>
-                      ))}
-                    </div>
+
+                {/* Emoji row for selected category */}
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "10px 12px", background: "var(--surface)", borderRadius: 10, border: "1px solid var(--border)", marginBottom: 10 }}>
+                  {EMOJI_GROUPS[emojiCategory].emojis.map(e => (
+                    <button key={e} onClick={() => setNewIcon(e)} style={{
+                      fontSize: 24, padding: "6px 8px", borderRadius: 8,
+                      border: `1.5px solid ${newIcon === e ? "var(--royal)" : "transparent"}`,
+                      background: newIcon === e ? "rgba(26,63,168,0.15)" : "transparent",
+                      cursor: "pointer", lineHeight: 1, transition: "all 0.1s",
+                    }}>{e}</button>
+                  ))}
+                </div>
+
+                {/* Type your own + preview */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ fontSize: 36, width: 50, height: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, flexShrink: 0 }}>{newIcon || "🏆"}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Or type / paste your own</div>
+                    <input value={newIcon} onChange={e => setNewIcon(e.target.value)} placeholder="🏆"
+                      style={{ ...inputStyle, fontSize: 20, textAlign: "center" }} />
                   </div>
-                ))}
+                </div>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginBottom: 12 }}>
