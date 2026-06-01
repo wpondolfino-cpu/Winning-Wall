@@ -292,8 +292,8 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
 
 
 
+      </> }
+
     </div>
   );
-}      </> }
-
-
+}
