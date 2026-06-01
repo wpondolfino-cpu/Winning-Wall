@@ -13,6 +13,8 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [rankedCompletion, setRankedCompletion] = useState({ completed: 0, total: 0, bonusEarned: false });
+  const modalDragY   = useRef(0);
+  const [modalOffset, setModalOffset] = useState(0);
 
   useEffect(() => { loadAnnouncements(); }, []);
   useEffect(() => { if (workouts.length > 0) loadRankedCompletion(); }, [workouts]);
@@ -442,7 +444,19 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
       {/* Log Score Modal */}
       {activeWorkout && (
         <div className="modal-overlay open" onClick={() => setActiveWorkout(null)}>
-          <div className="log-modal" onClick={e => e.stopPropagation()} style={{ maxHeight: "90vh", overflowY: "auto" }}>
+          <div className="log-modal" onClick={e => e.stopPropagation()}
+              style={{ transform: `translateY(${modalOffset}px)`, transition: modalOffset === 0 ? "transform 0.2s ease" : "none" }}
+              onTouchStart={e => { modalDragY.current = e.touches[0].clientY; }}
+              onTouchMove={e => {
+                const dy = e.touches[0].clientY - modalDragY.current;
+                if (dy > 0) setModalOffset(dy);
+              }}
+              onTouchEnd={e => {
+                const dy = e.changedTouches[0].clientY - modalDragY.current;
+                if (dy > 100) { setModalOffset(0); setActiveWorkout(null); }
+                else setModalOffset(0);
+              }} style={{ maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ width: 40, height: 4, background: "var(--border)", borderRadius: 2, margin: "-12px auto 16px", opacity: 0.6 }} />
             <button className="modal-close" onClick={() => setActiveWorkout(null)}>✕</button>
 
             {/* Title + category tag */}
