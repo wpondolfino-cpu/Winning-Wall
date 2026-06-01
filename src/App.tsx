@@ -44,6 +44,7 @@ export default function App() {
   const [coachTab, setCoachTab]     = useState<CoachTab>("workouts");
   const [adminTab, setAdminTab]     = useState<AdminTab>("workouts");
   const [pendingChallenges, setPendingChallenges] = useState(0);
+  const [pendingApprovals, setPendingApprovals]   = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [playerXp, setPlayerXp]       = useState(0);
   const [xpPerks, setXpPerks]         = useState<any[]>([]);
@@ -58,6 +59,14 @@ export default function App() {
   // Poll for unseen challenges every 30s
   useEffect(() => {
     if (!user || profile?.role !== "player") return;
+    async function checkPendingApprovals() {
+      const { supabase: sb } = await import("./lib/supabase");
+      const { count } = await sb.from("profiles")
+        .select("id", { count: "exact", head: true })
+        .in("role", ["pending_player", "pending_coach"]);
+      setPendingApprovals(count ?? 0);
+    }
+
     async function checkChallenges() {
       const { supabase: sb } = await import("./lib/supabase");
       const { count } = await sb
@@ -79,7 +88,9 @@ export default function App() {
       setPendingChallenges((count ?? 0) + teamNotif);
     }
     checkChallenges();
+    checkPendingApprovals();
     const interval = setInterval(checkChallenges, 30000);
+    const approvalInterval = setInterval(checkPendingApprovals, 60000);
 
     // Load player XP and perks
     if (user && profile?.role === "player") {
@@ -95,7 +106,7 @@ export default function App() {
       })();
     }
 
-    return () => clearInterval(interval);
+    return () => { clearInterval(interval); clearInterval(approvalInterval); };
   }, [user, profile]);
 
   async function loadMyScores() {
@@ -211,7 +222,9 @@ export default function App() {
             <>
               <div className={`nav-item ${coachTab==="workouts"?"active":""}`} onClick={()=>{setCoachTab("workouts");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">➕</span> Manage Workouts</div>
               <div className={`nav-item ${coachTab==="leaderboard"?"active":""}`} onClick={()=>{setCoachTab("leaderboard");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏆</span> Leaderboard</div>
-              <div className={`nav-item ${coachTab==="players"?"active":""}`} onClick={()=>{setCoachTab("players");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Players & Coaches</div>
+              <div className={`nav-item ${coachTab==="players"?"active":""}`} onClick={()=>{setCoachTab("players");setPendingApprovals(0);if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Players & Coaches
+                {pendingApprovals > 0 && <span style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{pendingApprovals}</span>}
+              </div>
               <div className={`nav-item ${coachTab==="hof"?"active":""}`} onClick={()=>{setCoachTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👑</span> Hall of Fame</div>
               <div className={`nav-item ${coachTab==="profile"?"active":""}`} onClick={()=>{setCoachTab("profile");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👤</span> My Profile</div>
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
@@ -224,7 +237,7 @@ export default function App() {
             <>
               <div className={`nav-item ${adminTab==="workouts"?"active":""}`} onClick={()=>{setAdminTab("workouts");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">➕</span> Manage Workouts</div>
               <div className={`nav-item ${adminTab==="leaderboard"?"active":""}`} onClick={()=>{setAdminTab("leaderboard");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏆</span> Leaderboard</div>
-              <div className={`nav-item ${adminTab==="players"?"active":""}`} onClick={()=>{setAdminTab("players");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Players & Coaches</div>
+              <div className={`nav-item ${adminTab==="players"?"active":""}`} onClick={()=>{setAdminTab("players");setPendingApprovals(0);if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Players & Coaches</div>
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
               <div className={`nav-item ${adminTab==="hof"?"active":""}`} onClick={()=>{setAdminTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="hof" ? "var(--gold)" : undefined }}><span className="nav-icon">👑</span> Hall of Fame</div>
               <div className={`nav-item ${adminTab==="admin"?"active":""}`} onClick={()=>{setAdminTab("admin");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="admin" ? "var(--gold)" : undefined }}>
