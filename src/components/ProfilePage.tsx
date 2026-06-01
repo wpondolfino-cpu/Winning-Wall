@@ -27,6 +27,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
   const [editing, setEditing]                 = useState(false);
   const [profileTab, setProfileTab]           = useState<"xp"|"badges">("xp");
   const [xpValues, setXpValues]               = useState({ workout: 10, challenge_sent: 2, challenge_done: 3 });
+  const [seasonHistory, setSeasonHistory]     = useState<any[]>([]);
   const [usingBoost, setUsingBoost]           = useState(false);
   const [toast, setToast]       = useState("");
 
@@ -50,6 +51,9 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
       challenge_sent: xpSent.data?.xp_required ?? 2,
       challenge_done: xpDone.data?.xp_required ?? 3,
     });
+    const { data: hist } = await supabase.from("season_history")
+      .select("*").eq("player_id", profile.id).order("created_at", { ascending: false });
+    setSeasonHistory(hist ?? []);
     setXp(xpVal);
     setPerks(perksVal);
     setAllBadges(badges);
@@ -302,6 +306,37 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
 
 
       </> }
+
+      {/* ── Season History ── */}
+      {seasonHistory.length > 0 && (
+        <div style={{ marginTop: 20 }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 12 }}>
+            🏆 Season History
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {seasonHistory.map((s, i) => (
+              <div key={i} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px" }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: "var(--gold)", marginBottom: 10 }}>{s.season_label}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  {[
+                    { label: "Overall Rank", value: s.overall_rank ? `#${s.overall_rank}` : "—", color: "var(--gold)" },
+                    { label: "Group Rank",   value: s.group_rank   ? `#${s.group_rank}`   : "—", color: "#93b4ff" },
+                    { label: "Total Points", value: s.total_points ?? 0,                          color: "var(--text)" },
+                    { label: "Drill #1s",    value: s.drill_wins   ?? 0,                          color: "#5de098" },
+                    { label: "H2H Wins",     value: s.h2h_wins     ?? 0,                          color: "#ff8c42" },
+                    { label: "Team Wins",    value: s.team_wins    ?? 0,                          color: "#c0c0c0" },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} style={{ textAlign: "center", background: "var(--surface)", borderRadius: 8, padding: "8px 4px" }}>
+                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color, lineHeight: 1 }}>{value}</div>
+                      <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 3, textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
     </div>
   );
