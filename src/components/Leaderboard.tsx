@@ -16,8 +16,8 @@ type TimeMode = "alltime" | "period";
 type BoardView = "overall" | string; // string = workout id
 
 const SHORT: Record<string, string> = {
-  "Underclassman (9th-10th Grade)": "JV",
-  "Upperclassman (11th-12th Grade)": "Varsity",
+  "Underclassman (9th-10th Grade)": "Underclassmen",
+  "Upperclassman (11th-12th Grade)": "Upperclassmen",
   "Alumni": "Alumni",
   "All Players": "All",
 };
