@@ -25,6 +25,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
   const [scoreBoostUsed, setScoreBoostUsed]   = useState(false);
   const [usingShield, setUsingShield]         = useState(false);
   const [editing, setEditing]                 = useState(false);
+  const [profileTab, setProfileTab]           = useState<"xp"|"badges">("xp");
   const [usingBoost, setUsingBoost]           = useState(false);
   const [toast, setToast]       = useState("");
 
@@ -178,6 +179,23 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
         )}
       </div>
 
+      {/* ── XP / Badges Tabs ── */}
+      <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 10, padding: 4, marginBottom: 16, border: "1px solid var(--border)" }}>
+        <button onClick={() => setProfileTab("xp")} style={{
+          flex: 1, padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer",
+          fontFamily: "inherit", fontSize: 13, fontWeight: 600,
+          background: profileTab === "xp" ? "var(--royal)" : "transparent",
+          color: profileTab === "xp" ? "#fff" : "var(--muted)",
+        }}>⚡ XP & Perks</button>
+        <button onClick={() => setProfileTab("badges")} style={{
+          flex: 1, padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer",
+          fontFamily: "inherit", fontSize: 13, fontWeight: 600,
+          background: profileTab === "badges" ? "var(--royal)" : "transparent",
+          color: profileTab === "badges" ? "#fff" : "var(--muted)",
+        }}>🏅 Badges {earned.length > 0 ? `(${earned.length}/${allBadges.length})` : ""}</button>
+      </div>
+
+      {profileTab === "xp" && <>
       {/* ── XP Progress ── */}
       {!xpEnabled && (
         <div style={{ background: "rgba(40,180,80,0.08)", border: "1px solid rgba(40,180,80,0.2)", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#5de098" }}>
@@ -244,6 +262,9 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
         </div>
       </div>
 
+      </> }
+
+      {profileTab === "badges" && <>
       {/* ── Badges ── */}
       <div style={{ marginBottom: 20 }}>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 12 }}>
@@ -273,4 +294,6 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
 
     </div>
   );
-}
+}      </> }
+
+
