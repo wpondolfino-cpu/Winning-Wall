@@ -263,6 +263,9 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const [editCoachSaving, setEditCoachSaving]   = useState(false);
   const [removingCoach, setRemovingCoach]       = useState<string | null>(null);
   const [viewingPlayer, setViewingPlayer] = useState<{id:string;name:string} | null>(null);
+  const [selectedIds, setSelectedIds]     = useState<Set<string>>(new Set());
+  const [bulkResetting, setBulkResetting] = useState(false);
+  const [showBulkReset, setShowBulkReset] = useState(false);
   const [pendingPlayers, setPendingPlayers] = useState<any[]>([]);
   const [approving, setApproving]         = useState<string | null>(null);
 
@@ -477,6 +480,24 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     finally { setEditCoachSaving(false); }
   }
 
+  async function bulkResetScores() {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`Reset scores for ${selectedIds.size} player${selectedIds.size > 1 ? "s" : ""}? This cannot be undone.`)) return;
+    setBulkResetting(true);
+    try {
+      const ids = Array.from(selectedIds);
+      await supabase.from("scores").update({ points: 0, made: 0, reps: 0, self_points: 0 }).in("player_id", ids);
+      await supabase.from("score_attempts").delete().in("player_id", ids);
+      await supabase.from("streak_bonuses").delete().in("player_id", ids);
+      await supabase.from("streaks").delete().in("player_id", ids);
+      setSelectedIds(new Set());
+      setShowBulkReset(false);
+      alert(`✅ Scores reset for ${ids.length} player${ids.length > 1 ? "s" : ""}.`);
+      loadPending();
+    } catch(e: any) { alert("Error: " + e.message); }
+    finally { setBulkResetting(false); }
+  }
+
   async function reactivatePlayer(id: string) {
     await supabase.from("profiles").update({ role: "player" }).eq("id", id);
     loadPending();
@@ -603,6 +624,22 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
             </div>
           )}
 
+          {/* Bulk Reset Bar */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              {selectedIds.size > 0 && (
+                <button onClick={bulkResetScores} disabled={bulkResetting} style={{ background: "rgba(255,107,107,0.15)", border: "1px solid rgba(255,107,107,0.4)", color: "#ff7b7b", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                  {bulkResetting ? "Resetting…" : `🗑 Reset ${selectedIds.size} player${selectedIds.size > 1 ? "s" : ""}`}
+                </button>
+              )}
+              {selectedIds.size > 0 && (
+                <button onClick={() => setSelectedIds(new Set())} style={{ background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Active Players */}
           <div style={{ display: "flex", gap: 8, marginBottom: 16, borderBottom: "1px solid var(--border)", paddingBottom: 12 }}>
             <button onClick={() => setInactiveTab(false)} style={{ background: !inactiveTab ? "var(--royal)" : "var(--surface2)", color: !inactiveTab ? "#fff" : "var(--muted)", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Active</button>
@@ -612,6 +649,13 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {playersWithStatus.filter(p => inactiveTab ? p.isInactive : !p.isInactive).map(p => (
               <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "var(--surface2)", borderRadius: 12, border: "1px solid var(--border)", flexWrap: "wrap" }}>
+                <input type="checkbox" checked={selectedIds.has(p.id)}
+                  onChange={e => {
+                    const next = new Set(selectedIds);
+                    e.target.checked ? next.add(p.id) : next.delete(p.id);
+                    setSelectedIds(next);
+                  }}
+                  style={{ width: 16, height: 16, cursor: "pointer", flexShrink: 0 }} />
                 <div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   {p.avatar_url ? <img src={p.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>{p.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}</span>}
                 </div>
