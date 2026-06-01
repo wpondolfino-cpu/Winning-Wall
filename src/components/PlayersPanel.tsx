@@ -320,11 +320,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       .select("id,name,role,grade_category,created_at,email")
       .in("role", ["pending_player", "pending_coach"])
       .order("created_at", { ascending: true });
-    const all = (data ?? []).map((p: any) => ({
-      ...p,
-      // Show email if stored, otherwise show "email not available"
-      email: p.email || p.name || "—",
-    }));
+    const all = data ?? [];
     setPendingPlayers(all.filter((p: any) => p.role === "pending_player"));
     setPendingCoaches(all.filter((p: any) => p.role === "pending_coach"));
   }
@@ -593,8 +589,9 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{p.name || "Unknown"}</div>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                      {p.grade_category && <span>{p.grade_category} · </span>}
-                      Requested {p.created_at ? new Date(p.created_at).toLocaleDateString() : ""}
+                      {p.email && <span style={{ color: "#93b4ff" }}>{p.email}</span>}
+                      {p.grade_category && <span> · {p.grade_category}</span>}
+                      <span> · {p.created_at ? new Date(p.created_at).toLocaleDateString() : ""}</span>
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
