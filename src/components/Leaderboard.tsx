@@ -43,6 +43,7 @@ export default function Leaderboard({ currentUserId }: Props) {
   const [periodScores, setPeriodScores] = useState<Score[]>([]);
   const [profiles, setProfiles]     = useState<{id:string;name:string;grade_category?:string;avatar_url?:string}[]>([]);
   const [periodEntries, setPeriodEntries] = useState<PeriodEntry[]>([]);
+  const [periodBonuses, setPeriodBonuses]   = useState<any[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [expandedPlayer, setExpandedPlayer] = useState<string | null>(null);
   const [xpData, setXpData]               = useState<Record<string,number>>({});
@@ -79,19 +80,20 @@ export default function Leaderboard({ currentUserId }: Props) {
     (profs ?? []).forEach((p: any) => { map[p.id] = p.total_xp ?? 0; });
     setXpData(map);
   }
-  useEffect(() => { if (periodScores.length > 0) buildPeriodBoard(); }, [periodScores, profiles]);
+  useEffect(() => { if (periodScores.length > 0) buildPeriodBoard(); }, [periodScores, profiles, periodBonuses]);
 
 
   async function loadData() {
-    const [{ data: ws }, { data: sc }, { data: pr }, { data: psc }] = await Promise.all([
+    const [{ data: ws }, { data: sc }, { data: pr }, { data: psc }, { data: bon }] = await Promise.all([
       supabase.from("workouts").select("*").eq("is_active", true).order("created_at", { ascending: false }),
-      // Note: leaderboard_active filtering handled client-side below
       supabase.from("scores").select("*"),
       supabase.from("profiles").select("id,name,grade_category,is_period_champion,avatar_url").eq("role", "player"),
-      // Period scores: attempts logged within the current 2-week window
       supabase.from("score_attempts").select("*")
         .gte("attempted_at", periodStart.toISOString())
         .lte("attempted_at", periodEnd.toISOString()),
+      supabase.from("streak_bonuses").select("*")
+        .gte("awarded_at", periodStart.toISOString())
+        .lte("awarded_at", periodEnd.toISOString()),
     ]);
     const allWorkouts = ws ?? [];
     setWorkouts(allWorkouts);
@@ -100,6 +102,7 @@ export default function Leaderboard({ currentUserId }: Props) {
     setAllScores((sc ?? []).filter((s: any) => lbActiveIds.has(s.workout_id)));
     setProfiles(pr ?? []);
     setPeriodScores(psc ?? []);
+    setPeriodBonuses(bon ?? []);
   }
 
   function buildPeriodBoard() {
@@ -125,7 +128,9 @@ export default function Leaderboard({ currentUserId }: Props) {
       const playerScores = allScores.filter(
         s => s.player_id === playerId && workoutIds.includes(s.workout_id)
       );
-      const periodPoints = playerScores.reduce((sum, s) => sum + (s.points ?? 0), 0);
+      const drillPoints  = playerScores.reduce((sum, s) => sum + (s.points ?? 0), 0);
+      const bonusPoints  = periodBonuses.filter(b => b.player_id === playerId).reduce((sum, b) => sum + (b.points ?? 0), 0);
+      const periodPoints = drillPoints + bonusPoints;
 
       map[playerId] = {
         player_id: playerId,
@@ -499,12 +504,9 @@ export default function Leaderboard({ currentUserId }: Props) {
                 <div style={{ padding: "10px 16px 14px", background: "rgba(26,63,168,0.07)", borderTop: "1px solid var(--border)" }}>
                   <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, fontWeight: 700 }}>Score Breakdown — This Period</div>
                   {(() => {
-                    // Get workouts this player attempted this period
-                    const periodWorkoutIds = new Set(
-                      periodScores.filter(s => s.player_id === entry.player_id).map(s => s.workout_id)
-                    );
+                    // Use current scores table for drill points (reflects current ranking)
                     const drillScores = allScores.filter(s =>
-                      s.player_id === entry.player_id && periodWorkoutIds.has(s.workout_id) && (s.points ?? 0) > 0
+                      s.player_id === entry.player_id && (s.points ?? 0) > 0
                     );
                     const drillTotal = drillScores.reduce((sum, s) => sum + (s.points ?? 0), 0);
                     const bonusTotal = entry.period_points - drillTotal;
