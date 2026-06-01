@@ -29,17 +29,44 @@ export default function App() {
   const [playerTab, setPlayerTab]   = useState<PlayerTab>("workouts");
   const swipeTabs: PlayerTab[]        = ["workouts", "leaderboard", "h2h", "progress", "profile"];
   const touchStartX                   = useRef(0);
+  const pullStartY                    = useRef(0);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [refreshing, setRefreshing]   = useState(false);
 
   function handleSwipeStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX;
+    pullStartY.current  = e.touches[0].clientY;
   }
-  function handleSwipeEnd(e: React.TouchEvent) {
-    const diff = touchStartX.current - e.changedTouches[0].clientX;
-    if (Math.abs(diff) < 60) return;
+  function handleSwipeMove(e: React.TouchEvent) {
+    if (refreshing) return;
+    const dy = e.touches[0].clientY - pullStartY.current;
+    const dx = Math.abs(touchStartX.current - e.touches[0].clientX);
+    // Only trigger pull if pulling down and mostly vertical
+    if (dy > 0 && dx < 30 && (e.currentTarget as HTMLElement).scrollTop === 0) {
+      setPullDistance(Math.min(dy * 0.4, 70));
+    }
+  }
+
+  async function handleSwipeEnd(e: React.TouchEvent) {
+    const diffX = touchStartX.current - e.changedTouches[0].clientX;
+    const diffY = e.changedTouches[0].clientY - pullStartY.current;
+
+    // Pull to refresh — vertical pull down > 60px
+    if (diffY > 60 && Math.abs(diffX) < 30 && pullDistance > 40) {
+      setPullDistance(0);
+      setRefreshing(true);
+      await loadMyScores();
+      setTimeout(() => setRefreshing(false), 600);
+      return;
+    }
+    setPullDistance(0);
+
+    // Horizontal swipe navigation
+    if (Math.abs(diffX) < 60) return;
     const idx = swipeTabs.indexOf(playerTab);
     if (idx === -1) return;
-    if (diff > 0 && idx < swipeTabs.length - 1) setPlayerTab(swipeTabs[idx + 1]);
-    if (diff < 0 && idx > 0) setPlayerTab(swipeTabs[idx - 1]);
+    if (diffX > 0 && idx < swipeTabs.length - 1) setPlayerTab(swipeTabs[idx + 1]);
+    if (diffX < 0 && idx > 0) setPlayerTab(swipeTabs[idx - 1]);
   }
   const [coachTab, setCoachTab]     = useState<CoachTab>("workouts");
   const [adminTab, setAdminTab]     = useState<AdminTab>("workouts");
@@ -258,7 +285,26 @@ export default function App() {
         </div>
 
         {/* ── Main Content ── */}
-        <div className="main-content" onTouchStart={isPlayer ? handleSwipeStart : undefined} onTouchEnd={isPlayer ? handleSwipeEnd : undefined}>
+        <div className="main-content"
+          onTouchStart={isPlayer ? handleSwipeStart : undefined}
+          onTouchMove={isPlayer ? handleSwipeMove : undefined}
+          onTouchEnd={isPlayer ? handleSwipeEnd : undefined}
+        >
+          {/* Pull to refresh indicator */}
+          {isPlayer && (pullDistance > 0 || refreshing) && (
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              height: refreshing ? 48 : pullDistance,
+              transition: refreshing ? "none" : "height 0.1s",
+              overflow: "hidden", color: "var(--muted)", fontSize: 13,
+              gap: 8,
+            }}>
+              {refreshing
+                ? <><span style={{ display: "inline-block", animation: "spin 0.8s linear infinite" }}>🔄</span> Refreshing…</>
+                : pullDistance > 40 ? "↑ Release to refresh" : "↓ Pull to refresh"
+              }
+            </div>
+          )}
           {isPlayer && playerTab === "workouts" && (
             <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} />
           )}
