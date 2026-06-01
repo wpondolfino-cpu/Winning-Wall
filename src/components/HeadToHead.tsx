@@ -341,8 +341,7 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
 
   async function submitResponse(challenge: Challenge) {
     const score = parseInt(myResponse) || 0;
-    const myBest = myScores.find(s => s.workout_id === challenge.workout_id);
-    const finalScore = myBest ? Math.max(score, myBest.made + myBest.reps) : score;
+    const finalScore = score; // Use exactly what was entered for the challenge
 
     // Determine winner
     const winnerId =
