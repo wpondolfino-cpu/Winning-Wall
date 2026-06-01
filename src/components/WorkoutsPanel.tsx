@@ -1,5 +1,5 @@
 // src/components/WorkoutsPanel.tsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase, Workout, Score, submitScore as _submitScore, getVideoId, updateStreak, STREAK_BONUS_DAYS, STREAK_BONUS_PTS } from "../lib/supabase";
 
 interface Props {
@@ -455,7 +455,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
                 const dy = e.changedTouches[0].clientY - modalDragY.current;
                 if (dy > 100) { setModalOffset(0); setActiveWorkout(null); }
                 else setModalOffset(0);
-              }} style={{ maxHeight: "90vh", overflowY: "auto" }}>
+              }}>
             <div style={{ width: 40, height: 4, background: "var(--border)", borderRadius: 2, margin: "-12px auto 16px", opacity: 0.6 }} />
             <button className="modal-close" onClick={() => setActiveWorkout(null)}>✕</button>
 
