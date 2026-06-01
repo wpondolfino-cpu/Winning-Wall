@@ -180,14 +180,12 @@ export default function App() {
     <div id="app-screen" className={`screen active${isPlayer ? " has-bottom-tabs" : ""}`}>
       {/* Header */}
       <div className="app-header">
-        <button
-          className="sidebar-toggle"
+        <img
+          src="/logo.png"
+          alt="Open menu"
           onClick={() => setSidebarOpen(o => !o)}
-          aria-label={sidebarOpen ? "Close menu" : "Open menu"}
-        >
-          <span /><span /><span />
-        </button>
-        <img src="/logo.png" alt="Bombardiers" style={{ height: 36, objectFit: "contain", flexShrink: 0 }} />
+          style={{ height: 36, objectFit: "contain", flexShrink: 0, cursor: "pointer" }}
+        />
         <div className="header-logo">Winning <span>Wall</span></div>
         <div className="header-role">{roleLabel}</div>
         <div className="header-user">{displayProfile.name}</div>
@@ -237,7 +235,9 @@ export default function App() {
             <>
               <div className={`nav-item ${adminTab==="workouts"?"active":""}`} onClick={()=>{setAdminTab("workouts");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">➕</span> Manage Workouts</div>
               <div className={`nav-item ${adminTab==="leaderboard"?"active":""}`} onClick={()=>{setAdminTab("leaderboard");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏆</span> Leaderboard</div>
-              <div className={`nav-item ${adminTab==="players"?"active":""}`} onClick={()=>{setAdminTab("players");setPendingApprovals(0);if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Players & Coaches</div>
+              <div className={`nav-item ${adminTab==="players"?"active":""}`} onClick={()=>{setAdminTab("players");setPendingApprovals(0);if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Players & Coaches
+                {pendingApprovals > 0 && <span style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{pendingApprovals}</span>}
+              </div>
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
               <div className={`nav-item ${adminTab==="hof"?"active":""}`} onClick={()=>{setAdminTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="hof" ? "var(--gold)" : undefined }}><span className="nav-icon">👑</span> Hall of Fame</div>
               <div className={`nav-item ${adminTab==="admin"?"active":""}`} onClick={()=>{setAdminTab("admin");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="admin" ? "var(--gold)" : undefined }}>
