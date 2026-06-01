@@ -131,6 +131,7 @@ function PlayerProgressModal({ playerId, playerName, workouts, allScores, onClos
   const [loading, setLoading]     = useState(true);
   const [view, setView]           = useState<"calendar"|"history"|"chart">("calendar");
 
+
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -319,9 +320,13 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       .select("id,name,role,grade_category,created_at,email")
       .in("role", ["pending_player", "pending_coach"])
       .order("created_at", { ascending: true });
-    const all = data ?? [];
-    setPendingPlayers(all.filter(p => p.role === "pending_player"));
-    setPendingCoaches(all.filter(p => p.role === "pending_coach"));
+    const all = (data ?? []).map((p: any) => ({
+      ...p,
+      // Show email if stored, otherwise show "email not available"
+      email: p.email || p.name || "—",
+    }));
+    setPendingPlayers(all.filter((p: any) => p.role === "pending_player"));
+    setPendingCoaches(all.filter((p: any) => p.role === "pending_coach"));
   }
 
   async function handleApprove(id: string, role: "player" | "coach") {
@@ -586,8 +591,11 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
               {pendingPlayers.map(p => (
                 <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: "var(--surface2)", borderRadius: 10, marginBottom: 8, border: "1px solid var(--border)", flexWrap: "wrap", gap: 8 }}>
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{p.email} · {p.grade_category}</div>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{p.name || "Unknown"}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                      {p.grade_category && <span>{p.grade_category} · </span>}
+                      Requested {p.created_at ? new Date(p.created_at).toLocaleDateString() : ""}
+                    </div>
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button onClick={() => approvePlayer(p.id)} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✅ Approve</button>
