@@ -149,7 +149,10 @@ function PlayerProgressModal({ playerId, playerName, workouts, allScores, onClos
   const initials = playerName.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase();
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "20px 0" }} onClick={onClose}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "20px 0" }} onClick={onClose}
+      onTouchStart={e => { (e.currentTarget as any)._ty = e.touches[0].clientY; }}
+      onTouchEnd={e => { const dy = e.changedTouches[0].clientY - ((e.currentTarget as any)._ty||0); if (dy > 80) onClose(); }}
+    >
       <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(640px, 96vw)", position: "relative" }} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid var(--border)", position: "sticky", top: 0, background: "var(--surface)", zIndex: 1, borderRadius: "16px 16px 0 0" }}>
