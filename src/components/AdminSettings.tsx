@@ -43,6 +43,9 @@ export default function AdminSettings() {
   const [exporting, setExporting]   = useState(false);
   const [resetting, setResetting]   = useState(false);
   const [resetStep, setResetStep]   = useState(0);
+  const [seasonLabel, setSeasonLabel] = useState(() => {
+    const y = new Date().getFullYear(); return `${y-1}-${String(y).slice(2)} Season`;
+  });
   const [anchorDate, setAnchorDate] = useState(() => {
     const d = getPeriodAnchor(); return d.toISOString().split("T")[0];
   });
@@ -97,6 +100,54 @@ export default function AdminSettings() {
     if (resetStep === 1) { setResetStep(2); return; }
     setResetting(true);
     try {
+      // ── Snapshot season stats before reset ──
+      const { data: profiles } = await supabase.from("profiles").select("id,grade_category").eq("role","player");
+      const { data: allScores } = await supabase.from("scores").select("player_id,points");
+      const { data: chalWins } = await supabase.from("challenges").select("winner_id").eq("status","completed").not("winner_id","is",null);
+      const { data: drillBests } = await supabase.from("scores").select("player_id,workout_id,points");
+
+      if (profiles && allScores) {
+        // Calculate totals per player
+        const ptMap: Record<string,number> = {};
+        allScores.forEach((s:any) => { ptMap[s.player_id] = (ptMap[s.player_id]||0) + (s.points||0); });
+        // Sort for overall rank
+        const sorted = Object.entries(ptMap).sort((a,b) => b[1]-a[1]);
+        // Drill wins (#1 on any drill)
+        const drillWinMap: Record<string,number> = {};
+        const workoutIds = [...new Set((drillBests??[]).map((s:any) => s.workout_id))];
+        workoutIds.forEach(wid => {
+          const top = (drillBests??[]).filter((s:any) => s.workout_id === wid).sort((a:any,b:any) => b.points-a.points)[0];
+          if (top) drillWinMap[top.player_id] = (drillWinMap[top.player_id]||0) + 1;
+        });
+        // H2H wins
+        const h2hMap: Record<string,number> = {};
+        (chalWins??[]).forEach((c:any) => { h2hMap[c.winner_id] = (h2hMap[c.winner_id]||0) + 1; });
+        // Build group ranks
+        const gradeGroups: Record<string,string[]> = {};
+        profiles.forEach((p:any) => {
+          if (!gradeGroups[p.grade_category]) gradeGroups[p.grade_category] = [];
+          gradeGroups[p.grade_category].push(p.id);
+        });
+        const gradeRankMap: Record<string,number> = {};
+        Object.entries(gradeGroups).forEach(([grade, ids]) => {
+          const sortedGrade = ids.sort((a,b) => (ptMap[b]||0) - (ptMap[a]||0));
+          sortedGrade.forEach((id,i) => { gradeRankMap[id] = i+1; });
+        });
+        // Insert snapshot records
+        const snapshots = profiles.map((p:any) => ({
+          player_id: p.id,
+          season_label: seasonLabel,
+          overall_rank: sorted.findIndex(([id]) => id === p.id) + 1 || null,
+          group_rank: gradeRankMap[p.id] || null,
+          grade_category: p.grade_category,
+          total_points: ptMap[p.id] || 0,
+          drill_wins: drillWinMap[p.id] || 0,
+          h2h_wins: h2hMap[p.id] || 0,
+          team_wins: 0,
+        }));
+        await supabase.from("season_history").insert(snapshots);
+      }
+
       // Records table preserved (all-time records survive resets)
       // Personal bests preserved — zero out points only so leaderboard resets
       // but players can still see and beat their best scores year to year
@@ -172,6 +223,12 @@ export default function AdminSettings() {
       </div>
 
       {/* ── Season Reset ── */}
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 6 }}>Season Label (for history)</label>
+        <input value={seasonLabel} onChange={e => setSeasonLabel(e.target.value)}
+          placeholder="e.g. 2024-25 Season"
+          style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, boxSizing: "border-box" as const }} />
+      </div>
       <div style={{ marginTop: 32, background: "rgba(255,60,60,0.05)", border: "2px solid rgba(255,60,60,0.2)", borderRadius: 14, padding: "20px 24px" }}>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "#ff7b7b", letterSpacing: 1, marginBottom: 8 }}>
           🔄 Season / All-Time Reset
