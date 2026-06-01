@@ -302,17 +302,20 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
 
         {/* ── Announcements ── */}
         {announcements.length > 0 && (
-          <div style={{ marginBottom: 20, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
             {announcements.map(ann => (
               <div key={ann.id} style={{
                 padding: "12px 16px", borderRadius: 12,
-                background: ann.is_pinned ? "rgba(26,63,168,0.15)" : "var(--surface2)",
-                border: `1px solid ${ann.is_pinned ? "rgba(26,63,168,0.4)" : "var(--border)"}`,
+                background: ann.is_pinned
+                  ? "linear-gradient(135deg, rgba(240,192,64,0.15), rgba(240,100,50,0.1))"
+                  : "rgba(147,92,255,0.1)",
+                border: `1px solid ${ann.is_pinned ? "rgba(240,192,64,0.5)" : "rgba(147,92,255,0.4)"}`,
                 display: "flex", gap: 10, alignItems: "flex-start",
+                boxShadow: ann.is_pinned ? "0 0 12px rgba(240,192,64,0.1)" : "none",
               }}>
-                <div style={{ fontSize: 18 }}>{ann.is_pinned ? "📌" : "📢"}</div>
-                <div>
-                  <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.5 }}>{ann.message}</div>
+                <div style={{ fontSize: 20, flexShrink: 0 }}>{ann.is_pinned ? "📌" : "📣"}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: ann.is_pinned ? 600 : 400, color: ann.is_pinned ? "var(--gold)" : "#d4b4ff", lineHeight: 1.5 }}>{ann.message}</div>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>{ann.coach_name} · {new Date(ann.created_at).toLocaleDateString()}</div>
                 </div>
               </div>
