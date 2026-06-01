@@ -308,23 +308,42 @@ export async function submitScore(
   let saved: Score;
 
   if (scoringType === "flat") {
-    // ── Flat: accumulate points each time they log ──
+    // ── Flat: accumulate points each time they log, but only once per day ──
     const flatPts = workout?.flat_points ?? 0;
-    // Check existing score
-    const { data: existing } = await supabase.from("scores")
-      .select("id,points").eq("player_id", score.player_id).eq("workout_id", score.workout_id).single();
-    let data, error;
-    if (existing) {
-      // Increment points
-      ({ data, error } = await supabase.from("scores")
-        .update({ points: (existing.points ?? 0) + flatPts, made: score.made, attempted_at: new Date().toISOString() })
-        .eq("id", existing.id).select().single());
+    const today = new Date().toISOString().split("T")[0];
+
+    // Check if already logged today
+    const { data: todayAttempt } = await supabase.from("score_attempts")
+      .select("id")
+      .eq("player_id", score.player_id)
+      .eq("workout_id", score.workout_id)
+      .gte("attempted_at", today + "T00:00:00.000Z")
+      .lte("attempted_at", today + "T23:59:59.999Z")
+      .limit(1)
+      .single();
+
+    if (todayAttempt) {
+      // Already logged today — return existing score without adding points
+      const { data: existing } = await supabase.from("scores")
+        .select("*").eq("player_id", score.player_id).eq("workout_id", score.workout_id).single();
+      if (!existing) throw new Error("Score not found");
+      saved = existing as Score;
     } else {
-      ({ data, error } = await supabase.from("scores")
-        .insert({ ...score, points: flatPts }).select().single());
+      // First log today — accumulate points
+      const { data: existing } = await supabase.from("scores")
+        .select("id,points").eq("player_id", score.player_id).eq("workout_id", score.workout_id).single();
+      let data, error;
+      if (existing) {
+        ({ data, error } = await supabase.from("scores")
+          .update({ points: (existing.points ?? 0) + flatPts, made: score.made, attempted_at: new Date().toISOString() })
+          .eq("id", existing.id).select().single());
+      } else {
+        ({ data, error } = await supabase.from("scores")
+          .insert({ ...score, points: flatPts }).select().single());
+      }
+      if (error) throw error;
+      saved = data as Score;
     }
-    if (error) throw error;
-    saved = data as Score;
 
   } else if (scoringType === "self_reported") {
     // ── Self-reported: points = exactly what the player typed in ──
