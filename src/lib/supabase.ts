@@ -308,12 +308,21 @@ export async function submitScore(
   let saved: Score;
 
   if (scoringType === "flat") {
-    // ── Flat: everyone who logs gets exactly flat_points ──
+    // ── Flat: accumulate points each time they log ──
     const flatPts = workout?.flat_points ?? 0;
-    const { data, error } = await supabase
-      .from("scores")
-      .upsert({ ...score, points: flatPts }, { onConflict: "player_id,workout_id" })
-      .select().single();
+    // Check existing score
+    const { data: existing } = await supabase.from("scores")
+      .select("id,points").eq("player_id", score.player_id).eq("workout_id", score.workout_id).single();
+    let data, error;
+    if (existing) {
+      // Increment points
+      ({ data, error } = await supabase.from("scores")
+        .update({ points: (existing.points ?? 0) + flatPts, made: score.made, attempted_at: new Date().toISOString() })
+        .eq("id", existing.id).select().single());
+    } else {
+      ({ data, error } = await supabase.from("scores")
+        .insert({ ...score, points: flatPts }).select().single());
+    }
     if (error) throw error;
     saved = data as Score;
 
