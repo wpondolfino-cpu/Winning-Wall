@@ -26,13 +26,14 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
   const [usingShield, setUsingShield]         = useState(false);
   const [editing, setEditing]                 = useState(false);
   const [profileTab, setProfileTab]           = useState<"xp"|"badges">("xp");
+  const [xpValues, setXpValues]               = useState({ workout: 10, challenge_sent: 2, challenge_done: 3 });
   const [usingBoost, setUsingBoost]           = useState(false);
   const [toast, setToast]       = useState("");
 
   useEffect(() => { loadAll(); }, [profile.id]);
 
   async function loadAll() {
-    const [xpVal, perksVal, badges, champ, chalWon, shieldUsed, boostUsed] = await Promise.all([
+    const [xpVal, perksVal, badges, champ, chalWon, shieldUsed, boostUsed, xpWorkout, xpSent, xpDone] = await Promise.all([
       getPlayerXp(profile.id),
       getXpPerks(),
       getActiveBadges(),
@@ -40,7 +41,15 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
       supabase.from("challenges").select("id", { count: "exact", head: true }).eq("winner_id", profile.id).eq("status", "completed"),
       hasPerkUsedThisPeriod(profile.id, "streak_shield"),
       hasPerkUsedThisPeriod(profile.id, "score_boost"),
+      supabase.from("xp_settings").select("xp_required").eq("perk_key","_xp_workout").single(),
+      supabase.from("xp_settings").select("xp_required").eq("perk_key","_xp_challenge_sent").single(),
+      supabase.from("xp_settings").select("xp_required").eq("perk_key","_xp_challenge_done").single(),
     ]);
+    setXpValues({
+      workout:        xpWorkout.data?.xp_required ?? 10,
+      challenge_sent: xpSent.data?.xp_required ?? 2,
+      challenge_done: xpDone.data?.xp_required ?? 3,
+    });
     setXp(xpVal);
     setPerks(perksVal);
     setAllBadges(badges);
@@ -215,7 +224,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
           <div style={{ height: "100%", borderRadius: 6, background: tier >= 4 ? "var(--gold)" : tier >= 3 ? "#2550d4" : tier >= 2 ? "#c0c0c0" : tier >= 1 ? "#9ca3af" : "var(--royal)", width: `${xpPct}%`, transition: "width 0.5s ease" }} />
         </div>
         <div style={{ fontSize: 11, color: "var(--muted)" }}>
-          10 XP per workout attempt · 2 XP per challenge sent · 3 XP per challenge completed
+          {xpValues.workout} XP per workout · {xpValues.challenge_sent} XP per challenge sent · {xpValues.challenge_done} XP per challenge completed
         </div>
       </div>}
 
@@ -225,7 +234,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
           🎁 Perks
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {perks.map((p, i) => {
+          {perks.filter(p => !p.perk_key.startsWith("_")).map((p, i) => {
             const unlocked = !xpEnabled || xp >= p.xp_required;
             const isShield = p.perk_key === "streak_shield";
             const isBoost  = p.perk_key === "score_boost";
