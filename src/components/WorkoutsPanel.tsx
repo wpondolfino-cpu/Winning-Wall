@@ -289,17 +289,6 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
         <div className="section-title">Workouts</div>
         <div className="section-sub">Tap a card to log your score</div>
 
-        {/* Group label — show current group name if all workouts share one */}
-        {(() => {
-          const activeWorkouts = workouts.filter(w => w.is_active !== false);
-          const groupNames = Array.from(new Set(activeWorkouts.map(w => w.group_name).filter(Boolean)));
-          return groupNames.length === 1 ? (
-            <div style={{ marginBottom: 16, padding: "8px 14px", background: "rgba(26,63,168,0.15)", borderRadius: 8, fontSize: 13, color: "#93b4ff", fontWeight: 600, border: "1px solid rgba(26,63,168,0.25)" }}>
-              📁 {groupNames[0]}
-            </div>
-          ) : null;
-        })()}
-
         {/* ── Announcements ── */}
         {announcements.length > 0 && (
           <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -322,6 +311,17 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
             ))}
           </div>
         )}
+
+        {/* Group label — show current group name if all workouts share one */}
+        {(() => {
+          const activeWorkouts = workouts.filter(w => w.is_active !== false);
+          const groupNames = Array.from(new Set(activeWorkouts.map(w => w.group_name).filter(Boolean)));
+          return groupNames.length === 1 ? (
+            <div style={{ marginBottom: 16, padding: "8px 14px", background: "rgba(26,63,168,0.15)", borderRadius: 8, fontSize: 13, color: "#93b4ff", fontWeight: 600, border: "1px solid rgba(26,63,168,0.25)" }}>
+              📁 {groupNames[0]}
+            </div>
+          ) : null;
+        })()}
 
         {/* ── Ranked Workout Completion Bar ── */}
         {rankedCompletion.total > 0 && (
