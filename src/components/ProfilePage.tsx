@@ -292,6 +292,8 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
             streak:          { label: "Streaks",             icon: "🔥" },
             challenges_won:  { label: "Head to Head",        icon: "⚔️" },
             team_wins:       { label: "Team Competition",    icon: "🏆" },
+            champion:        { label: "Period Champion",     icon: "👑" },
+            top_score:       { label: "Top Score",           icon: "🥇" },
           };
           // Group ALL badges by trigger_type in fixed category order
           const CATEGORY_ORDER = ["workouts","points","streak","challenges_won","team_wins"];
