@@ -312,17 +312,17 @@ export async function submitScore(
     const flatPts = workout?.flat_points ?? 0;
     const today = new Date().toISOString().split("T")[0];
 
-    // Check if already logged today
-    const { data: todayAttempt } = await supabase.from("score_attempts")
+    // Check if already logged today (excluding the attempt just inserted)
+    const { data: todayAttempts } = await supabase.from("score_attempts")
       .select("id")
       .eq("player_id", score.player_id)
       .eq("workout_id", score.workout_id)
       .gte("attempted_at", today + "T00:00:00.000Z")
-      .lte("attempted_at", today + "T23:59:59.999Z")
-      .limit(1)
-      .single();
+      .lte("attempted_at", today + "T23:59:59.999Z");
 
-    if (todayAttempt) {
+    const alreadyLoggedToday = todayAttempts && todayAttempts.length > 1; // >1 because current attempt already inserted
+
+    if (alreadyLoggedToday) {
       // Already logged today — return existing score without adding points
       const { data: existing } = await supabase.from("scores")
         .select("*").eq("player_id", score.player_id).eq("workout_id", score.workout_id).single();
