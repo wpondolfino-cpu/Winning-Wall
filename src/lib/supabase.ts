@@ -387,10 +387,7 @@ export async function submitScore(
     try {
       await supabase.from("streak_bonuses").insert({
         player_id: score.player_id,
-        points: 3,
-        streak_length: 0,
-        awarded_at: new Date().toISOString(),
-        reason: "personal_best",
+        points: 1,
       });
     } catch (e) { console.error(e); }
   }
