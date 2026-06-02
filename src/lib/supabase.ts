@@ -307,6 +307,9 @@ export async function submitScore(
   // 4. Save score and assign points based on scoring type
   let saved: Score;
 
+  // Strip client-only fields before saving to DB
+  const { local_date: _ld, ...cleanScore } = score as any;
+
   if (scoringType === "flat") {
     // ── Flat: award points once per calendar day (local timezone) ──
     const flatPts = workout?.flat_points ?? 0;
@@ -335,9 +338,6 @@ export async function submitScore(
       if (error) throw error;
       saved = data as Score;
     }
-
-  // Strip client-only fields before saving to DB
-  const { local_date: _ld, ...cleanScore } = score as any;
 
   } else if (scoringType === "self_reported") {
     // ── Self-reported: points = exactly what the player typed in ──
