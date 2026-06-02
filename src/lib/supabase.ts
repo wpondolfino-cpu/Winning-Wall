@@ -308,41 +308,30 @@ export async function submitScore(
   let saved: Score;
 
   if (scoringType === "flat") {
-    // ── Flat: award points once per day ──
+    // ── Flat: award points once per calendar day (local timezone) ──
     const flatPts = workout?.flat_points ?? 0;
-    const today = new Date().toISOString().split("T")[0];
+    // Use local date passed in score object, fallback to UTC date
+    const localToday = (score as any).local_date ?? new Date().toISOString().split("T")[0];
 
-    // Count attempts today (current one already inserted = at least 1)
-    const { count } = await supabase.from("score_attempts")
-      .select("id", { count: "exact", head: true })
-      .eq("player_id", score.player_id)
-      .eq("workout_id", score.workout_id)
-      .gte("attempted_at", today + "T00:00:00.000Z")
-      .lte("attempted_at", today + "T23:59:59.999Z");
+    const { data: existingRow } = await supabase.from("scores")
+      .select("*").eq("player_id", score.player_id).eq("workout_id", score.workout_id).maybeSingle();
 
-    const alreadyLoggedToday = (count ?? 0) > 1;
-
-    // Get existing score row
-    const { data: existingFlat } = await supabase.from("scores")
-      .select("id,points").eq("player_id", score.player_id).eq("workout_id", score.workout_id).single();
-
-    let data, error;
-    if (alreadyLoggedToday) {
-      // Already logged today — no new points, return existing
-      const { data: noChange } = await supabase.from("scores")
-        .select("*").eq("player_id", score.player_id).eq("workout_id", score.workout_id).single();
-      saved = (noChange ?? existingFlat) as Score;
-    } else if (existingFlat) {
-      // Has previous score — add flat points
-      ({ data, error } = await supabase.from("scores")
-        .update({ points: (existingFlat.points ?? 0) + flatPts, made: score.made, self_points: flatPts })
-        .eq("id", existingFlat.id).select().single());
+    if (existingRow && existingRow.last_logged_date === localToday) {
+      // Already logged today in their timezone — no new points
+      saved = existingRow as Score;
+    } else if (existingRow) {
+      // Different day — add flat points
+      const newPoints = (existingRow.points ?? 0) + flatPts;
+      const { data, error } = await supabase.from("scores")
+        .update({ points: newPoints, self_points: flatPts, last_logged_date: localToday })
+        .eq("player_id", score.player_id).eq("workout_id", score.workout_id)
+        .select().single();
       if (error) throw error;
       saved = data as Score;
     } else {
-      // First ever log — insert new row
-      ({ data, error } = await supabase.from("scores")
-        .insert({ ...score, points: flatPts, self_points: flatPts }).select().single());
+      // First ever log — insert fresh
+      const { data, error } = await supabase.from("scores")
+        .insert({ ...score, points: flatPts, self_points: flatPts, last_logged_date: localToday }).select().single();
       if (error) throw error;
       saved = data as Score;
     }
