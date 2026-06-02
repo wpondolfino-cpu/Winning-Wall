@@ -138,10 +138,14 @@ export default function AdminPanel({}: Props) {
   }
   async function saveBadge() {
     if (!newName || !newIcon) { showToast("Please fill in icon and name."); return; }
-    await supabase.from("badges").insert({ icon: newIcon, name: newName, description: newDesc, trigger_type: newTrigger, trigger_value: parseInt(newValue)||1, is_active: true });
+    const { error } = await supabase.from("badges").insert({
+      icon: newIcon, name: newName, description: newDesc,
+      trigger_type: newTrigger, trigger_value: parseInt(newValue)||1, is_active: true
+    });
+    if (error) { showToast("Error: " + error.message); return; }
     await loadBadges();
     setNewName(""); setNewDesc(""); setNewIcon("🏆"); setNewValue("1");
-    showToast("Badge added!");
+    showToast("✅ Badge added!");
   }
   async function updateBadge(b: Badge) {
     await supabase.from("badges").update({ icon: b.icon, name: b.name, description: b.description, trigger_type: b.trigger_type, trigger_value: b.trigger_value }).eq("id", b.id!);
