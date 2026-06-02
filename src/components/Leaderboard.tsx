@@ -68,7 +68,16 @@ export default function Leaderboard({ currentUserId }: Props) {
   const periodStart = currentPeriodStart();
   const periodEnd   = currentPeriodEnd();
 
-  useEffect(() => { loadData(); loadXpData(); }, []);
+  useEffect(() => {
+    loadData();
+    loadXpData();
+    // Subscribe to score changes so allScores stays fresh after reranking
+    const channel = supabase
+      .channel("scores-sync")
+      .on("postgres_changes", { event: "*", schema: "public", table: "scores" }, () => loadData())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   async function loadXpData() {
     const [perks, { data: profs }] = await Promise.all([
