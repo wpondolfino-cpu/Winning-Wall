@@ -373,8 +373,8 @@ export async function submitScore(
   );
 
   // Award +3 bonus points for beating personal best
-  if (isPersonalBest && previousBest !== null) {
-    // Only award if they actually beat an existing record (not first submission)
+  if (isPersonalBest && previousBest !== null && scoringType === "competitive") {
+    // Only award for competitive workouts — not self-reported or flat
     try {
       await supabase.from("streak_bonuses").insert({
         player_id: score.player_id,
