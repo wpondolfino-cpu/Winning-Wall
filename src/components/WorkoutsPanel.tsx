@@ -110,6 +110,9 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
           ? (activeWorkout.flat_points ?? 0)
           : parseInt(selfPoints) || 0;
 
+      // Get local date in YYYY-MM-DD format for timezone-safe daily limit
+      const localDate = new Date().toLocaleDateString("en-CA"); // en-CA gives YYYY-MM-DD
+
       const result = await _submitScore({
         player_id: playerId,
         workout_id: activeWorkout.id,
@@ -118,7 +121,8 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
         sprint_secs: parseFloat(sprintSecs) || 0,
         reps: parseInt(reps) || 0,
         self_points: finalSelfPoints,
-      });
+        local_date: localDate,
+      } as any);
       const isPersonalBest: boolean = result.isPersonalBest;
       const previousBest: number | null = result.previousBest;
 
