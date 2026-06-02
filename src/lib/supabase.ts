@@ -336,11 +336,14 @@ export async function submitScore(
       saved = data as Score;
     }
 
+  // Strip client-only fields before saving to DB
+  const { local_date: _ld, ...cleanScore } = score as any;
+
   } else if (scoringType === "self_reported") {
     // ── Self-reported: points = exactly what the player typed in ──
     const { data, error } = await supabase
       .from("scores")
-      .upsert({ ...score, points: score.self_points }, { onConflict: "player_id,workout_id" })
+      .upsert({ ...cleanScore, points: score.self_points }, { onConflict: "player_id,workout_id" })
       .select().single();
     if (error) throw error;
     saved = data as Score;
@@ -350,7 +353,7 @@ export async function submitScore(
     if (isPersonalBest) {
       const { data, error } = await supabase
         .from("scores")
-        .upsert({ ...score, points: 0 }, { onConflict: "player_id,workout_id" })
+        .upsert({ ...cleanScore, points: 0 }, { onConflict: "player_id,workout_id" })
         .select().single();
       if (error) throw error;
       saved = data as Score;
