@@ -288,7 +288,7 @@ export async function submitScore(
     .eq("workout_id", score.workout_id)
     .single();
 
-  const previousBest: number | null = existing ? computeRawScore(existing) : null;
+  const previousBest: number | null = (existing && computeRawScore(existing) > 0) ? computeRawScore(existing) : null;
   const isPersonalBest = previousBest === null || newRaw > previousBest;
 
   // 3. Always log this attempt for streak + history
