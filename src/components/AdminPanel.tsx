@@ -145,6 +145,7 @@ export default function AdminPanel({}: Props) {
     if (error) { showToast("Error: " + error.message); return; }
     await loadBadges();
     setNewName(""); setNewDesc(""); setNewIcon("🏆"); setNewValue("1");
+    setShowNewBadge(false);
     showToast("✅ Badge added!");
   }
   async function updateBadge(b: Badge) {
@@ -422,7 +423,7 @@ export default function AdminPanel({}: Props) {
                   <input type="number" value={newValue} onChange={e => setNewValue(e.target.value)} min="1" style={inputStyle} /></div>
                 )}
               </div>
-              <button onClick={async () => { await saveBadge(); setShowNewBadge(false); }} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+              <button onClick={async () => { await saveBadge(); }} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
                 ➕ Add Badge
               </button>
             </div>
@@ -684,6 +685,7 @@ export default function AdminPanel({}: Props) {
         </div>
       )}
 
+      {toast && <div className="toast show">{toast}</div>}
     </div>
   );
 }
