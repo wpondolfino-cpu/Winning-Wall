@@ -434,6 +434,8 @@ export default function AdminPanel({}: Props) {
               streak:         { label: "Streaks",          icon: "🔥" },
               challenges_won: { label: "Head to Head",     icon: "⚔️" },
               team_wins:      { label: "Team Competition", icon: "🏆" },
+              champion:       { label: "Period Champion",  icon: "👑" },
+              top_score:      { label: "Top Score",        icon: "🥇" },
             };
             const groups: Record<string, Badge[]> = {};
             badges.forEach(b => {
