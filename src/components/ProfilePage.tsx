@@ -285,22 +285,68 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
         </div>
         {allBadges.length === 0 ? (
           <div style={{ fontSize: 13, color: "var(--muted)" }}>No badges configured yet.</div>
-        ) : (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-            {[...earned, ...notEarned].map(b => {
-              const isEarned = earned.includes(b);
-              return (
-                <div key={b.id ?? b.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: isEarned ? "rgba(240,192,64,0.1)" : "var(--surface2)", border: `1px solid ${isEarned ? "rgba(240,192,64,0.3)" : "var(--border)"}`, borderRadius: 10, opacity: isEarned ? 1 : 0.45 }}>
-                  <span style={{ fontSize: 20 }}>{b.icon}</span>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: isEarned ? "var(--gold)" : "var(--muted)" }}>{b.name}</div>
-                    <div style={{ fontSize: 10, color: "var(--muted)" }}>{b.description}</div>
+        ) : (() => {
+          const CATEGORY_META: Record<string, { label: string; icon: string }> = {
+            workouts:        { label: "Workouts",            icon: "🏀" },
+            points:          { label: "Points",              icon: "⭐" },
+            streak:          { label: "Streaks",             icon: "🔥" },
+            challenges_won:  { label: "Head to Head",        icon: "⚔️" },
+            team_wins:       { label: "Team Competition",    icon: "🏆" },
+          };
+          // Group ALL badges by trigger_type in fixed category order
+          const CATEGORY_ORDER = ["workouts","points","streak","challenges_won","team_wins"];
+          const groups: Record<string, Badge[]> = {};
+          allBadges.forEach(b => {
+            const key = b.trigger_type ?? "workouts";
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(b);
+          });
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              {CATEGORY_ORDER.filter(type => groups[type]?.length > 0).map(type => {
+                const meta = CATEGORY_META[type] ?? { label: type, icon: "🏅" };
+                const categoryBadges = groups[type];
+                const earnedInGroup = categoryBadges.filter(b => earned.includes(b)).length;
+                return (
+                  <div key={type}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+                      <span style={{ fontSize: 15 }}>{meta.icon}</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", textTransform: "uppercase", letterSpacing: 0.8 }}>{meta.label}</span>
+                      <span style={{ fontSize: 11, color: "var(--muted)", marginLeft: 4 }}>{earnedInGroup}/{categoryBadges.length}</span>
+                      <div style={{ flex: 1, height: 1, background: "var(--border)", marginLeft: 4 }} />
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {categoryBadges.map(b => {
+                        const isEarned = earned.includes(b);
+                        return (
+                          <div key={b.id ?? b.name} style={{
+                            display: "flex", alignItems: "center", gap: 10,
+                            padding: "10px 12px",
+                            background: isEarned ? "rgba(240,192,64,0.08)" : "var(--surface2)",
+                            border: `1px solid ${isEarned ? "rgba(240,192,64,0.3)" : "var(--border)"}`,
+                            borderRadius: 10,
+                            opacity: isEarned ? 1 : 0.4,
+                            transition: "all 0.2s",
+                          }}>
+                            <span style={{ fontSize: 24, flexShrink: 0, filter: isEarned ? "none" : "grayscale(1)" }}>{b.icon}</span>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: isEarned ? "var(--gold)" : "var(--muted)" }}>{b.name}</div>
+                              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{b.description}</div>
+                            </div>
+                            {isEarned
+                              ? <span style={{ fontSize: 16, flexShrink: 0 }}>✅</span>
+                              : <span style={{ fontSize: 11, color: "var(--muted)", flexShrink: 0 }}>🔒</span>
+                            }
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
 
 
