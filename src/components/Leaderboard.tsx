@@ -436,7 +436,7 @@ export default function Leaderboard({ currentUserId }: Props) {
                               );
                             })
                         )}
-                        {periodBonuses.filter(b => b.player_id === entry.player_id).map((b, i) => {
+                        {periodBonuses.filter(b => b.player_id === entry.id).map((b, i) => {
                             const label =
                               b.reason === "personal_best"    ? "🏅 Beat Personal Record" :
                               b.reason === "daily_completion" ? "✅ Daily Completion Bonus" :
