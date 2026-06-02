@@ -436,12 +436,20 @@ export default function Leaderboard({ currentUserId }: Props) {
                               );
                             })
                         )}
-                        {bonusTotal > 0 && (
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
-                            <div style={{ fontSize: 12, color: "#ff8c42" }}>🔥 Streak / Bonus Points</div>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: "#ff8c42" }}>+{bonusTotal} pts</span>
-                          </div>
-                        )}
+                        {periodBonuses.filter(b => b.player_id === entry.player_id).map((b, i) => {
+                            const label =
+                              b.reason === "personal_best"    ? "🏅 Beat Personal Record" :
+                              b.reason === "daily_completion" ? "✅ Daily Completion Bonus" :
+                              b.reason === "challenge_win"    ? "⚔️ Challenge Win" :
+                              b.reason === "streak"           ? "🔥 Streak Bonus" :
+                              "⭐ Bonus";
+                            return (
+                              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
+                                <div style={{ fontSize: 12, color: "#ff8c42" }}>{label}</div>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: "#ff8c42" }}>+{b.points} pts</span>
+                              </div>
+                            );
+                          })}
                         <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
                           <span style={{ color: "var(--muted)" }}>Total</span>
                           <span style={{ color: "var(--gold)" }}>{entry.total_points} pts</span>
@@ -531,12 +539,20 @@ export default function Leaderboard({ currentUserId }: Props) {
                               );
                             })
                         )}
-                        {bonusTotal > 0 && (
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
-                            <div style={{ fontSize: 12, color: "#ff8c42" }}>🔥 Streak / Bonus Points</div>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: "#ff8c42" }}>+{bonusTotal} pts</span>
-                          </div>
-                        )}
+                        {periodBonuses.filter(b => b.player_id === entry.player_id).map((b, i) => {
+                            const label =
+                              b.reason === "personal_best"    ? "🏅 Beat Personal Record" :
+                              b.reason === "daily_completion" ? "✅ Daily Completion Bonus" :
+                              b.reason === "challenge_win"    ? "⚔️ Challenge Win" :
+                              b.reason === "streak"           ? "🔥 Streak Bonus" :
+                              "⭐ Bonus";
+                            return (
+                              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
+                                <div style={{ fontSize: 12, color: "#ff8c42" }}>{label}</div>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: "#ff8c42" }}>+{b.points} pts</span>
+                              </div>
+                            );
+                          })}
                         <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
                           <span style={{ color: "var(--muted)" }}>Total This Period</span>
                           <span style={{ color: "var(--gold)" }}>{entry.period_points} pts</span>
