@@ -177,10 +177,12 @@ export default function AdminPanel({}: Props) {
       .select("id,name,grade_category,avatar_url,total_xp")
       .eq("role", "player")
       .order("name");
-    // Filter to team-eligible players (>= 300 XP)
-    const players = (allPlayers ?? []).filter((p: any) => (p.total_xp ?? 0) >= 300);
+    // Only gate by XP if XP system is enabled
+    const players = xpEnabled
+      ? (allPlayers ?? []).filter((p: any) => (p.total_xp ?? 0) >= 300)
+      : (allPlayers ?? []);
     if (players.length < numTeams) {
-      showToast(`Not enough eligible players (need ${numTeams}, have ${players.length} with 300+ XP)`);
+      showToast(`Not enough ${xpEnabled ? "eligible (300+ XP) " : ""}players (need ${numTeams}, have ${players.length}).`);
       return;
     }
     if (!players) return;
