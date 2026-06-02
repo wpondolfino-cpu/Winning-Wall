@@ -296,7 +296,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
             top_score:       { label: "Top Score",           icon: "🥇" },
           };
           // Group ALL badges by trigger_type in fixed category order
-          const CATEGORY_ORDER = ["workouts","points","streak","challenges_won","team_wins"];
+          const CATEGORY_ORDER = ["workouts","points","streak","challenges_won","team_wins","champion","top_score"];
           const groups: Record<string, Badge[]> = {};
           allBadges.forEach(b => {
             const key = b.trigger_type ?? "workouts";
