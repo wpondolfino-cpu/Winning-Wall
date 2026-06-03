@@ -30,10 +30,19 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
   const [seasonHistory, setSeasonHistory]     = useState<any[]>([]);
   const [usingBoost, setUsingBoost]           = useState(false);
   const [showBoostPicker, setShowBoostPicker] = useState(false);
+  const [myStreak, setMyStreak]               = useState(0);
   const [selectedBoostWorkout, setSelectedBoostWorkout] = useState<string>("");
   const [toast, setToast]       = useState("");
 
-  useEffect(() => { loadAll(); }, [profile.id]);
+  useEffect(() => {
+    loadAll();
+    const channel = supabase.channel("profile-streak-sync")
+      .on("postgres_changes", { event: "*", schema: "public", table: "streaks" }, () => {
+        supabase.from("streaks").select("current_streak").eq("player_id", profile.id).single()
+          .then(({ data }) => setMyStreak(data?.current_streak ?? 0));
+      }).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [profile.id]);
 
   async function loadAll() {
     const [xpVal, perksVal, badges, champ, chalWon, shieldUsed, boostUsed, xpWorkout, xpSent, xpDone] = await Promise.all([
@@ -56,6 +65,9 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
     const { data: hist } = await supabase.from("season_history")
       .select("*").eq("player_id", profile.id).order("created_at", { ascending: false });
     setSeasonHistory(hist ?? []);
+    const { data: streakData } = await supabase.from("streaks")
+      .select("current_streak").eq("player_id", profile.id).single();
+    setMyStreak(streakData?.current_streak ?? 0);
     setXp(xpVal);
     setPerks(perksVal);
     setAllBadges(badges);
@@ -215,6 +227,54 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
           </div>
         )}
       </div>
+
+      {/* ── Streak Bar ── */}
+      {(() => {
+        const daysIntoCurrentCycle = myStreak % 7;
+        const daysToNext = daysIntoCurrentCycle === 0 ? 7 : 7 - daysIntoCurrentCycle;
+        const nextMilestone = myStreak + daysToNext;
+        const totalBonuses = Math.floor(myStreak / 7);
+        return (
+          <div style={{
+            marginBottom: 16, padding: "12px 16px",
+            background: myStreak >= 7 ? "rgba(240,192,64,0.10)" : "rgba(26,63,168,0.08)",
+            border: `1px solid ${myStreak >= 7 ? "rgba(240,192,64,0.3)" : "var(--border)"}`,
+            borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+          }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: myStreak >= 7 ? "var(--gold)" : "var(--text)" }}>
+                🔥 {myStreak > 0 ? `${myStreak}-Day Streak!` : "Start your streak!"}
+                {totalBonuses > 0 && <span style={{ marginLeft: 8, fontSize: 11, color: "var(--gold)" }}>+{totalBonuses * 3} bonus pts earned</span>}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
+                {myStreak === 0
+                  ? "Log a workout today to start a streak. Every 7 days earns bonus points!"
+                  : daysToNext === 1
+                  ? `🏆 Log tomorrow to hit ${nextMilestone} days!`
+                  : `${daysToNext} more day${daysToNext !== 1 ? "s" : ""} until ${nextMilestone}-day milestone`
+                }
+              </div>
+              {myStreak > 0 && (
+                <div style={{ marginTop: 8, display: "flex", gap: 4 }}>
+                  {Array.from({ length: 7 }).map((_, i) => (
+                    <div key={i} style={{ flex: 1, height: 6, borderRadius: 3,
+                      background: i < (daysIntoCurrentCycle === 0 && myStreak > 0 ? 7 : daysIntoCurrentCycle)
+                        ? (myStreak >= 7 ? "var(--gold)" : "var(--royal)")
+                        : "var(--border)" }} />
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ textAlign: "center", flexShrink: 0 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: myStreak >= 7 ? "var(--gold)" : "#93b4ff", lineHeight: 1 }}>
+                {daysIntoCurrentCycle === 0 && myStreak > 0 ? 7 : daysIntoCurrentCycle}/{7}
+              </div>
+              <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>cycle</div>
+            </div>
+          </div>
+        );
+      })()}
+
 
       {/* ── XP / Badges Tabs ── */}
       <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 10, padding: 4, marginBottom: 16, border: "1px solid var(--border)" }}>
