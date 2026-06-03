@@ -753,19 +753,35 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
                           <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
                             <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: isFirst ? "var(--gold)" : "#93b4ff", lineHeight: 1 }}>{pts}</span>
                             <span style={{ fontSize: 10, color: "var(--muted)" }}>pts</span>
+                            {(team as any).hasTeamBoost && <span style={{ fontSize: 10, color: "#93b4ff", marginLeft: 4 }}>⚡+3 boost</span>}
                           </div>
                         </div>
                       </div>
                       <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 4 }}>
-                        {members.map((p: any) => {
+                        {[...members].sort((a: any, b: any) => {
+                            const aPts = (team as any).playerPoints?.[a.id] ?? 0;
+                            const bPts = (team as any).playerPoints?.[b.id] ?? 0;
+                            return bPts - aPts;
+                          }).map((p: any) => {
                           const initials = p.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase();
                           const isMe = p.id === currentUserId;
+                          const playerPts = (team as any).playerPoints?.[p.id] ?? 0;
+                          const maxPts = Math.max(...members.map((m: any) => (team as any).playerPoints?.[m.id] ?? 0), 1);
+                          const pct = Math.round((playerPts / maxPts) * 100);
                           return (
-                            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 4px", borderRadius: 6, background: isMe ? "rgba(26,63,168,0.15)" : "transparent" }}>
-                              <div style={{ width: 20, height: 20, borderRadius: "50%", overflow: "hidden", border: `1.5px solid ${isMe ? team.color : "var(--border)"}`, background: "rgba(26,63,168,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                                {p.avatar_url ? <img src={p.avatar_url} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 7, fontWeight: 700, color: team.color }}>{initials}</span>}
+                            <div key={p.id} style={{ padding: "5px 6px", borderRadius: 6, background: isMe ? "rgba(26,63,168,0.12)" : "transparent" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                                <div style={{ width: 18, height: 18, borderRadius: "50%", overflow: "hidden", border: `1.5px solid ${isMe ? team.color : "var(--border)"}`, background: "rgba(26,63,168,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                  {p.avatar_url ? <img src={p.avatar_url} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 6, fontWeight: 700, color: team.color }}>{initials}</span>}
+                                </div>
+                                <span style={{ flex: 1, fontSize: 11, color: "var(--text)", fontWeight: isMe ? 700 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {p.name.split(" ")[0]}{isMe && <span style={{ color: "#93b4ff", marginLeft: 3 }}>(you)</span>}
+                                </span>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: playerPts > 0 ? "#93b4ff" : "var(--muted)", flexShrink: 0 }}>{playerPts} pts</span>
                               </div>
-                              <span style={{ flex: 1, fontSize: 11, color: "var(--text)", fontWeight: isMe ? 700 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name.split(" ")[0]}{isMe && <span style={{ color: "#93b4ff", marginLeft: 4 }}>(you)</span>}</span>
+                              <div style={{ height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden" }}>
+                                <div style={{ height: "100%", width: `${pct}%`, background: playerPts > 0 ? team.color : "var(--border)", borderRadius: 2, transition: "width 0.3s" }} />
+                              </div>
                             </div>
                           );
                         })}
