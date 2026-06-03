@@ -72,14 +72,18 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
     setUsingShield(true);
     const ok = await usePerk(profile.id, "streak_shield");
     if (ok) {
-      // Extend streak by adding a fake entry for yesterday
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
+      // Add 1 day to current streak (counts as a logged day)
+      const { data: streak } = await supabase.from("streaks")
+        .select("current_streak,longest_streak").eq("player_id", profile.id).single();
+      const current = (streak?.current_streak ?? 0) + 1;
+      const longest = Math.max(current, streak?.longest_streak ?? 0);
       await supabase.from("streaks").upsert({
         player_id: profile.id,
-        last_logged_date: yesterday.toISOString().split("T")[0],
+        current_streak: current,
+        longest_streak: longest,
+        last_logged_at: new Date().toISOString(),
       }, { onConflict: "player_id" });
-      showToast("🛡️ Streak Shield used! Your streak is safe.");
+      showToast(`🛡️ Streak Freeze used! Streak is now ${current} days.`);
       setStreakShieldUsed(true);
     } else {
       showToast("Already used this period.");
