@@ -175,11 +175,12 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
     if (me?.team_id) {
       const mine = t.find(tm => tm.id === me.team_id) ?? null;
       setMyTeam(mine);
-      // Show notification if teams were created recently (last 24h)
+      // Show notification if teams were created recently (last 24h) and not dismissed
       const createdAt = (comp as any).created_at;
       if (createdAt) {
         const age = Date.now() - new Date(createdAt).getTime();
-        if (age < 86400000) setNewTeamNotif(true);
+        const dismissed = localStorage.getItem("dismissed_team_notif");
+        if (age < 86400000 && dismissed !== (comp as any).id) setNewTeamNotif(true);
       }
     }
   }
@@ -578,7 +579,10 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
           <div style={{ fontSize: 13, color: "var(--gold)", fontWeight: 600 }}>
             🏆 Teams are live! You're on <span style={{ fontWeight: 700 }}>{myTeam.name}</span>
           </div>
-          <button onClick={() => setNewTeamNotif(false)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 16, padding: 0 }}>✕</button>
+          <button onClick={() => {
+            setNewTeamNotif(false);
+            if (myTeam) localStorage.setItem("dismissed_team_notif", (myTeam as any).competition_id ?? "dismissed");
+          }} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 16, padding: 0 }}>✕</button>
         </div>
       )}
 
