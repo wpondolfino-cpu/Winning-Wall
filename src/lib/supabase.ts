@@ -755,9 +755,22 @@ export async function getTeams(competitionId: string): Promise<Team[]> {
 
     // Sum their leaderboard points
     const { data: lb } = await supabase.from("leaderboard")
-      .select("id,total_points").in("id", memberIds);
-    const score = (lb ?? []).reduce((sum: number, p: any) => sum + (p.total_points ?? 0), 0);
-    return { ...team, score, memberCount: memberIds.length };
+      .select("id,total_points,rank").in("id", memberIds);
+    const drillScore = (lb ?? []).reduce((sum: number, p: any) => sum + (p.total_points ?? 0), 0);
+    // Map individual points keyed by player id
+    const playerPoints: Record<string, number> = {};
+    (lb ?? []).forEach((p: any) => { playerPoints[p.id] = p.total_points ?? 0; });
+
+    // Check if any member has team_bonus perk unlocked — adds +3 to team starting score
+    const { data: xpSettings } = await supabase.from("xp_settings")
+      .select("xp_required").eq("perk_key", "team_bonus").single();
+    const teamBonusThreshold = xpSettings?.xp_required ?? 1250;
+    const { data: memberXp } = await supabase.from("profiles")
+      .select("total_xp").in("id", memberIds).gte("total_xp", teamBonusThreshold).limit(1);
+    const hasTeamBoost = (memberXp ?? []).length > 0;
+    const score = drillScore + (hasTeamBoost ? 3 : 0);
+
+    return { ...team, score, memberCount: memberIds.length, playerPoints, hasTeamBoost };
   }));
 
   return teamsWithScores;
