@@ -121,7 +121,17 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
   }, [currentUserId]);
 
   useEffect(() => { expireChallenges().then(() => loadChallenges()); }, [loadChallenges, expireChallenges]);
-  useEffect(() => { loadTeamData(); loadTeamRecord(); }, [currentUserId]);
+  useEffect(() => {
+    loadTeamData();
+    loadTeamRecord();
+    // Reload team scores whenever any score or bonus changes
+    const channel = supabase
+      .channel("team-scores-sync")
+      .on("postgres_changes", { event: "*", schema: "public", table: "scores" }, () => loadTeamData())
+      .on("postgres_changes", { event: "*", schema: "public", table: "streak_bonuses" }, () => loadTeamData())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUserId]);
 
   async function loadTeamRecord() {
     // Find all past completed competitions (has a winning_team_id)
