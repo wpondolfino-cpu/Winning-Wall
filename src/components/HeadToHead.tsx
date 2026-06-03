@@ -731,7 +731,7 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
               {/* Team standings */}
               {(() => {
                 const teamPoints: Record<string, number> = {};
-                teams.forEach(t => { teamPoints[t.id] = 0; });
+                teams.forEach(t => { teamPoints[t.id] = (t as any).score ?? 0; });
                 const sortedTeams = [...teams].sort((a, b) => (teamPoints[b.id] ?? 0) - (teamPoints[a.id] ?? 0));
                 const use2col = sortedTeams.length === 2 || sortedTeams.length === 4;
                 const medals = ["🥇","🥈","🥉","4th"];
