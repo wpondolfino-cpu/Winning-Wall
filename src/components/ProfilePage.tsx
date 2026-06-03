@@ -98,6 +98,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
         last_logged_date: new Date().toLocaleDateString("en-CA"),
       }, { onConflict: "player_id" });
       showToast(`🛡️ Streak Freeze used! Streak is now ${current} days.`);
+      setMyStreak(current);
       setStreakShieldUsed(true);
     } else {
       showToast("Already used this period.");
