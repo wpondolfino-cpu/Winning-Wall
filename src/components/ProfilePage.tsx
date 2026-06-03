@@ -29,6 +29,8 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
   const [xpValues, setXpValues]               = useState({ workout: 10, challenge_sent: 2, challenge_done: 3 });
   const [seasonHistory, setSeasonHistory]     = useState<any[]>([]);
   const [usingBoost, setUsingBoost]           = useState(false);
+  const [showBoostPicker, setShowBoostPicker] = useState(false);
+  const [selectedBoostWorkout, setSelectedBoostWorkout] = useState<string>("");
   const [toast, setToast]       = useState("");
 
   useEffect(() => { loadAll(); }, [profile.id]);
@@ -92,22 +94,40 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
   }
 
   async function handleUseScoreBoost() {
-    const drill = prompt("Which drill do you want to boost? Enter the drill name:");
-    if (!drill) return;
-    const workout = workouts.find((w: any) => w.title.toLowerCase().includes(drill.toLowerCase()));
-    if (!workout) { showToast("Drill not found. Try again."); return; }
+    // Open the drill picker modal
+    setShowBoostPicker(true);
+  }
+
+  async function applyScoreBoost() {
+    if (!selectedBoostWorkout) { showToast("Please select a drill."); return; }
+    const workout = workouts.find((w: any) => w.id === selectedBoostWorkout);
+    if (!workout) return;
     setUsingBoost(true);
     const ok = await usePerk(profile.id, "score_boost");
     if (ok) {
       const existing = myScores.find((s: any) => s.workout_id === workout.id);
       if (existing) {
-        await supabase.from("scores").update({
-          self_points: (existing.self_points || 0) + 5,
-          points: (existing.points || 0) + 5,
-        }).eq("id", existing.id);
+        const newMade = (existing.made || 0) + 5;
+        const newReps = existing.reps || 0;
+        // Update raw score
+        await supabase.from("scores").update({ made: newMade }).eq("id", existing.id);
+        // Rerank within group so points update correctly
+        const { data: wk } = await supabase.from("workouts")
+          .select("first_place_pts,second_place_pts,third_place_pts,scoring_type")
+          .eq("id", workout.id).single();
+        if (wk?.scoring_type === "competitive") {
+          await supabase.rpc("rerank_workout", {
+            p_workout_id: workout.id,
+            p_first_pts: wk.first_place_pts ?? 3,
+            p_second_pts: wk.second_place_pts ?? 2,
+            p_third_pts: wk.third_place_pts ?? 1,
+          });
+        }
       }
-      showToast(`⚡ +5 applied to ${workout.title}!`);
+      showToast(`⚡ +5 applied to ${workout.title}! Rankings updated.`);
       setScoreBoostUsed(true);
+      setShowBoostPicker(false);
+      setSelectedBoostWorkout("");
     } else {
       showToast("Already used this period.");
     }
@@ -278,6 +298,46 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
           })}
         </div>
       </div>
+
+      {/* Score Boost Picker Modal */}
+      {showBoostPicker && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setShowBoostPicker(false)}>
+          <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(400px, 96vw)", padding: 24 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1, marginBottom: 6 }}>⚡ Score Boost</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Adds +5 to your raw score on the selected drill and reruns rankings.</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+              {workouts.filter((w: any) => w.is_active !== false && w.scoring_type === "competitive").map((w: any) => {
+                const score = myScores.find((s: any) => s.workout_id === w.id);
+                const raw = score ? (score.made + score.reps) : null;
+                return (
+                  <div key={w.id} onClick={() => setSelectedBoostWorkout(w.id)}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, cursor: "pointer",
+                      background: selectedBoostWorkout === w.id ? "rgba(26,63,168,0.15)" : "var(--surface2)",
+                      border: `1px solid ${selectedBoostWorkout === w.id ? "var(--royal)" : "var(--border)"}` }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{w.emoji} {w.title}</div>
+                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                        {raw !== null ? `Current score: ${raw} → ${raw + 5} after boost` : "No score logged yet"}
+                      </div>
+                    </div>
+                    {selectedBoostWorkout === w.id && <span style={{ color: "var(--royal-light)", fontSize: 16 }}>✓</span>}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={applyScoreBoost} disabled={!selectedBoostWorkout || usingBoost}
+                style={{ flex: 1, background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "10px 0", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                {usingBoost ? "Applying…" : "⚡ Apply Boost"}
+              </button>
+              <button onClick={() => { setShowBoostPicker(false); setSelectedBoostWorkout(""); }}
+                style={{ background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 16px", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       </> }
 
