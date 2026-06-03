@@ -103,7 +103,7 @@ export default function App() {
         .eq("status", "pending")
         .eq("opponent_seen", false);
 
-      // Also check if there's a new active team competition (created in last 24h)
+      // Check if there's a new active team competition (created in last 24h) not yet dismissed
       const { data: newTeam } = await sb
         .from("team_competitions")
         .select("id,created_at")
@@ -111,7 +111,8 @@ export default function App() {
         .gte("created_at", new Date(Date.now() - 86400000).toISOString())
         .single();
 
-      const teamNotif = newTeam ? 1 : 0;
+      const dismissedTeamId = localStorage.getItem("dismissed_team_notif");
+      const teamNotif = (newTeam && newTeam.id !== dismissedTeamId) ? 1 : 0;
       setPendingChallenges((count ?? 0) + teamNotif);
     }
     checkChallenges();
