@@ -742,8 +742,25 @@ export async function getActiveTeamCompetition(): Promise<TeamCompetition | null
 }
 
 export async function getTeams(competitionId: string): Promise<Team[]> {
-  const { data } = await supabase.from("teams").select("*").eq("competition_id", competitionId);
-  return data ?? [];
+  const { data: teams } = await supabase.from("teams").select("*").eq("competition_id", competitionId);
+  if (!teams) return [];
+
+  // Calculate each team's score by summing points of its members
+  const teamsWithScores = await Promise.all(teams.map(async team => {
+    // Get players on this team
+    const { data: members } = await supabase.from("profiles")
+      .select("id").eq("team_id", team.id);
+    const memberIds = (members ?? []).map((m: any) => m.id);
+    if (memberIds.length === 0) return { ...team, score: 0, memberCount: 0 };
+
+    // Sum their leaderboard points
+    const { data: lb } = await supabase.from("leaderboard")
+      .select("id,total_points").in("id", memberIds);
+    const score = (lb ?? []).reduce((sum: number, p: any) => sum + (p.total_points ?? 0), 0);
+    return { ...team, score, memberCount: memberIds.length };
+  }));
+
+  return teamsWithScores;
 }
 
 export async function saveTeamCompetition(
