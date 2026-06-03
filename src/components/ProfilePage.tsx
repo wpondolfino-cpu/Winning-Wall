@@ -120,10 +120,14 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
     if (ok) {
       const existing = myScores.find((s: any) => s.workout_id === workout.id);
       if (existing) {
-        const newMade = (existing.made || 0) + 5;
-        const newReps = existing.reps || 0;
-        // Update raw score
-        await supabase.from("scores").update({ made: newMade }).eq("id", existing.id);
+        // Add +5 to whichever field holds the raw score
+        const updateFields: any = {};
+        if (existing.self_points > 0) {
+          updateFields.self_points = existing.self_points + 5;
+        } else {
+          updateFields.made = (existing.made || 0) + 5;
+        }
+        await supabase.from("scores").update(updateFields).eq("id", existing.id);
         // Rerank within group so points update correctly
         const { data: wk } = await supabase.from("workouts")
           .select("first_place_pts,second_place_pts,third_place_pts,scoring_type")
@@ -369,7 +373,9 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
               {workouts.filter((w: any) => w.is_active !== false && w.scoring_type === "competitive").map((w: any) => {
                 const score = myScores.find((s: any) => s.workout_id === w.id);
-                const raw = score ? (score.made + score.reps) : null;
+                const raw = score
+                  ? (score.self_points > 0 ? score.self_points : score.made + score.reps)
+                  : null;
                 return (
                   <div key={w.id} onClick={() => setSelectedBoostWorkout(w.id)}
                     style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, cursor: "pointer",
@@ -378,7 +384,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{w.emoji} {w.title}</div>
                       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                        {raw !== null ? `Current score: ${raw} → ${raw + 5} after boost` : "No score logged yet"}
+                        {raw !== null ? `Score: ${raw} → ${raw + 5} after boost` : "Log this workout first to boost it"}
                       </div>
                     </div>
                     {selectedBoostWorkout === w.id && <span style={{ color: "var(--royal-light)", fontSize: 16 }}>✓</span>}
