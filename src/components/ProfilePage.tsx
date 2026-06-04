@@ -118,9 +118,10 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
     setUsingBoost(true);
     const ok = await usePerk(profile.id, "score_boost");
     if (ok) {
-      const existing = myScores.find((s: any) => s.workout_id === workout.id);
+      // Query DB directly to avoid stale myScores state
+      const { data: existing } = await supabase.from("scores")
+        .select("*").eq("player_id", profile.id).eq("workout_id", workout.id).single();
       if (existing) {
-        // Add +5 to whichever field holds the raw score
         const updateFields: any = {};
         if (existing.self_points > 0) {
           updateFields.self_points = existing.self_points + 5;
@@ -128,7 +129,6 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
           updateFields.made = (existing.made || 0) + 5;
         }
         await supabase.from("scores").update(updateFields).eq("id", existing.id);
-        // Rerank within group so points update correctly
         const { data: wk } = await supabase.from("workouts")
           .select("first_place_pts,second_place_pts,third_place_pts,scoring_type")
           .eq("id", workout.id).single();
@@ -140,8 +140,10 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
             p_third_pts: wk.third_place_pts ?? 1,
           });
         }
+        showToast(`⚡ +5 applied to ${workout.title}! Rankings updated.`);
+      } else {
+        showToast("No score found for that drill. Log it first.");
       }
-      showToast(`⚡ +5 applied to ${workout.title}! Rankings updated.`);
       setScoreBoostUsed(true);
       setShowBoostPicker(false);
       setSelectedBoostWorkout("");
