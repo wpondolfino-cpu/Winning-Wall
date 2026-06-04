@@ -366,6 +366,7 @@ export default function AdminPanel({}: Props) {
 
 
   return (
+
     <div className="panel active">
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
@@ -389,6 +390,8 @@ export default function AdminPanel({}: Props) {
 
       {/* ══ BADGES TAB ══ */}
       
+      {/* ══ BADGES TAB ══ */}
+
       {/* ══ BADGES TAB ══ */}
       {adminTab === "badges" && (
         <div>
@@ -565,6 +568,8 @@ export default function AdminPanel({}: Props) {
       )}
 
       {/* ══ XP TAB ══ */}
+
+      {/* ══ XP TAB ══ */}
       {adminTab === "xp" && (
         <div>
           {/* XP on/off toggle */}
@@ -625,6 +630,8 @@ export default function AdminPanel({}: Props) {
           </div>
         </div>
       )}
+
+      {/* ══ TEAMS TAB ══ */}
 
       {/* ══ TEAMS TAB ══ */}
       {adminTab === "teams" && (
@@ -747,9 +754,6 @@ export default function AdminPanel({}: Props) {
             </div>
           )}
 
-
-
-
           {/* Competition History */}
           {compHistory.length > 0 && (
             <div style={{ marginTop: 24 }}>
@@ -810,6 +814,11 @@ export default function AdminPanel({}: Props) {
               </div>
             </div>
           )}
+        </div>
+      </div>
+      </div>
+      )}
+
         </div>
       </div>
       </div>
