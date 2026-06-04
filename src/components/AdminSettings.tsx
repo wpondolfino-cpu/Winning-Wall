@@ -146,6 +146,24 @@ export default function AdminSettings() {
           team_wins: 0,
         }));
         await supabase.from("season_history").insert(snapshots);
+
+        // ── Award period champion badges ──
+        // Find the top overall scorer — they become the period champion
+        const topPlayer = sorted[0];
+        if (topPlayer) {
+          const now = new Date().toISOString();
+          // Record in biweekly_champions so the badge checker finds it
+          await supabase.from("biweekly_champions").insert({
+            player_id: topPlayer[0],
+            period_start: periodStart.toISOString(),
+            period_end: periodEnd.toISOString(),
+            points: topPlayer[1],
+          });
+          // Also mark them as period champion on their profile
+          await supabase.from("profiles")
+            .update({ is_period_champion: true, champion_since: now })
+            .eq("id", topPlayer[0]);
+        }
       }
 
       // Records table preserved (all-time records survive resets)
