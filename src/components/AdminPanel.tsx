@@ -819,11 +819,6 @@ export default function AdminPanel({}: Props) {
       </div>
       )}
 
-        </div>
-      </div>
-      </div>
-      )}
-
       {toast && <div className="toast show">{toast}</div>}
     </div>
   );
