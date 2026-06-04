@@ -541,13 +541,13 @@ export default function AdminPanel({}: Props) {
           )}
 
           {/* Competition History */}
-          {compHistory.filter(c => !c.is_active).length > 0 && (
+          {compHistory.length > 0 && (
             <div style={{ marginTop: 24 }}>
               <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 12 }}>
                 📋 Competition History
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {compHistory.filter(c => !c.is_active).map(comp => {
+                {compHistory.map(comp => {
                   const details = compTeamDetails[comp.id];
                   const isExpanded = expandedComp === comp.id;
                   const winner = details ? [...details].sort((a,b) => b.teamScore - a.teamScore)[0] : null;
