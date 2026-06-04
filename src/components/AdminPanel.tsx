@@ -63,7 +63,10 @@ export default function AdminPanel({}: Props) {
 
   // ── Team competition state ──
   const [teamComp, setTeamComp]           = useState<TeamCompetition | null>(null);
-  const [endingComp, setEndingComp]       = useState(false);
+  const [endingComp, setEndingComp]         = useState(false);
+  const [compHistory, setCompHistory]       = useState<any[]>([]);
+  const [expandedComp, setExpandedComp]     = useState<string | null>(null);
+  const [compTeamDetails, setCompTeamDetails] = useState<Record<string, any[]>>({});
   const [activeTeams, setActiveTeams]     = useState<Team[]>([]);
   const [numTeams, setNumTeams]           = useState(2);
   const [teamCategory, setTeamCategory]   = useState("🏀 Basketball");
@@ -97,6 +100,29 @@ export default function AdminPanel({}: Props) {
       const teams = await getTeams(comp.id);
       setActiveTeams(teams);
     }
+    // Load competition history
+    const { data: history } = await supabase.from("team_competitions")
+      .select("*").order("created_at", { ascending: false });
+    setCompHistory(history ?? []);
+  }
+
+  async function loadCompDetails(compId: string) {
+    if (compTeamDetails[compId]) { setExpandedComp(expandedComp === compId ? null : compId); return; }
+    const { data: teams } = await supabase.from("teams").select("*").eq("competition_id", compId);
+    if (!teams) return;
+    const teamsWithPlayers = await Promise.all(teams.map(async (team: any) => {
+      const { data: players } = await supabase.from("profiles")
+        .select("id,name,grade_category").eq("team_id", team.id);
+      // Get each player's leaderboard points
+      const playerIds = (players ?? []).map((p: any) => p.id);
+      const { data: lb } = await supabase.from("leaderboard").select("id,total_points").in("id", playerIds);
+      const ptMap: Record<string,number> = {};
+      (lb ?? []).forEach((e: any) => { ptMap[e.id] = e.total_points ?? 0; });
+      const teamScore = (players ?? []).reduce((s: number, p: any) => s + (ptMap[p.id] ?? 0), 0);
+      return { ...team, players: players ?? [], ptMap, teamScore };
+    }));
+    setCompTeamDetails(prev => ({ ...prev, [compId]: teamsWithPlayers }));
+    setExpandedComp(expandedComp === compId ? null : compId);
   }
 
   async function loadBadges() {
@@ -514,6 +540,58 @@ export default function AdminPanel({}: Props) {
             </div>
           )}
         </div>
+
+
+          {/* Competition History */}
+          {compHistory.filter(c => !c.is_active).length > 0 && (
+            <div style={{ marginTop: 24 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 12 }}>
+                📋 Competition History
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {compHistory.filter(c => !c.is_active).map(comp => {
+                  const details = compTeamDetails[comp.id];
+                  const isExpanded = expandedComp === comp.id;
+                  const winner = details ? [...details].sort((a,b) => b.teamScore - a.teamScore)[0] : null;
+                  return (
+                    <div key={comp.id} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+                      <div onClick={() => loadCompDetails(comp.id)} style={{ padding: "12px 16px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
+                            {comp.start_date} – {comp.end_date}
+                            {winner && <span style={{ marginLeft: 8, fontSize: 11, color: "var(--gold)" }}>🏆 {winner.name}</span>}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                            Bonus: +{comp.bonus_points} pts · Click to {isExpanded ? "collapse" : "expand"}
+                          </div>
+                        </div>
+                        <span style={{ color: "var(--muted)", fontSize: 16 }}>{isExpanded ? "▲" : "▼"}</span>
+                      </div>
+                      {isExpanded && details && (
+                        <div style={{ borderTop: "1px solid var(--border)", padding: "12px 16px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                          {[...details].sort((a,b) => b.teamScore - a.teamScore).map((team: any, ti: number) => (
+                            <div key={team.id} style={{ background: "var(--surface)", borderRadius: 10, padding: "10px 12px", border: `1px solid ${ti === 0 ? "rgba(240,192,64,0.4)" : "var(--border)"}` }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                                <div style={{ width: 10, height: 10, borderRadius: "50%", background: team.color, flexShrink: 0 }} />
+                                <div style={{ fontSize: 13, fontWeight: 700, color: ti === 0 ? "var(--gold)" : "var(--text)" }}>{team.name}</div>
+                                <div style={{ marginLeft: "auto", fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: ti === 0 ? "var(--gold)" : "#93b4ff" }}>{team.teamScore} pts</div>
+                              </div>
+                              {team.players.map((p: any) => (
+                                <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: 11, borderBottom: "1px solid var(--border)" }}>
+                                  <span style={{ color: "var(--text)" }}>{p.name}</span>
+                                  <span style={{ color: "#93b4ff", fontWeight: 600 }}>{team.ptMap[p.id] ?? 0} pts</span>
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
       )}
 
       {/* ══ XP TAB ══ */}
