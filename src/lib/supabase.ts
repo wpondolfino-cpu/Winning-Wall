@@ -850,12 +850,11 @@ export async function endTeamCompetition(competitionId: string): Promise<{ winne
       awarded_at: new Date().toISOString(),
     });
     // Increment team_wins on profile (for season history / badges)
-    await supabase.rpc("increment_team_wins", { p_player_id: player.id }).catch(() => {
-      // Fallback if RPC doesn't exist
-      supabase.from("profiles").select("team_wins").eq("id", player.id).single().then(({ data }) => {
-        supabase.from("profiles").update({ team_wins: ((data as any)?.team_wins ?? 0) + 1 }).eq("id", player.id);
-      });
-    });
+    // Increment team_wins on profile
+    try {
+      const { data: pw } = await supabase.from("profiles").select("team_wins").eq("id", player.id).single();
+      await supabase.from("profiles").update({ team_wins: ((pw as any)?.team_wins ?? 0) + 1 }).eq("id", player.id);
+    } catch(e) { console.error("team_wins update error:", e); }
   }
 
   // Mark competition as inactive
