@@ -560,7 +560,7 @@ export default function AdminPanel({}: Props) {
 
           )}
         </div>
-        </div>
+      </div>
       )}
 
       {adminTab === "xp" && (
@@ -808,6 +808,7 @@ export default function AdminPanel({}: Props) {
             </div>
           )}
         </div>
+      </div>
       </div>
       </div>
       )}
