@@ -562,7 +562,7 @@ export default function AdminPanel({}: Props) {
         </div>
       )}
 
-      adminTab === "xp" && (
+      {adminTab === "xp" && (
         <div>
           {/* XP on/off toggle */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 16, padding: "12px 16px", background: "var(--surface2)", borderRadius: 12, border: "1px solid var(--border)" }}>
@@ -807,9 +807,6 @@ export default function AdminPanel({}: Props) {
             </div>
           )}
         </div>
-
-        </div>
-      </div>
 
         </div>
       )}
