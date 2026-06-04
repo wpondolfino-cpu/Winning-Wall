@@ -539,8 +539,6 @@ export default function AdminPanel({}: Props) {
               </div>
             </div>
           )}
-        </div>
-
 
           {/* Competition History */}
           {compHistory.filter(c => !c.is_active).length > 0 && (
@@ -592,6 +590,7 @@ export default function AdminPanel({}: Props) {
               </div>
             </div>
           )}
+        </div>
       )}
 
       {/* ══ XP TAB ══ */}
