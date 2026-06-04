@@ -824,6 +824,46 @@ export async function saveTeamCompetition(
   }
 }
 
+export async function endTeamCompetition(competitionId: string): Promise<{ winnerName: string; winnerScore: number } | null> {
+  // Get all teams with their scores
+  const teams = await getTeams(competitionId);
+  if (!teams.length) return null;
+
+  // Find winning team (highest score)
+  const winner = teams.reduce((best: any, t: any) => (t.score ?? 0) > (best.score ?? 0) ? t : best, teams[0]);
+
+  // Get all players on winning team
+  const { data: winningPlayers } = await supabase.from("profiles")
+    .select("id,name").eq("team_id", winner.id);
+
+  const { data: comp } = await supabase.from("team_competitions")
+    .select("bonus_points").eq("id", competitionId).single();
+  const bonusPts = comp?.bonus_points ?? 3;
+
+  // Award bonus points to each winning player
+  for (const player of (winningPlayers ?? [])) {
+    await supabase.from("streak_bonuses").insert({
+      player_id: player.id,
+      points: bonusPts,
+      streak_length: 0,
+      reason: "team_win",
+      awarded_at: new Date().toISOString(),
+    });
+    // Increment team_wins on profile (for season history / badges)
+    await supabase.rpc("increment_team_wins", { p_player_id: player.id }).catch(() => {
+      // Fallback if RPC doesn't exist
+      supabase.from("profiles").select("team_wins").eq("id", player.id).single().then(({ data }) => {
+        supabase.from("profiles").update({ team_wins: ((data as any)?.team_wins ?? 0) + 1 }).eq("id", player.id);
+      });
+    });
+  }
+
+  // Mark competition as inactive
+  await supabase.from("team_competitions").update({ is_active: false }).eq("id", competitionId);
+
+  return { winnerName: winner.name, winnerScore: winner.score ?? 0 };
+}
+
 export async function toggleTeamCompetition(active: boolean): Promise<void> {
   await supabase.from("team_competitions").update({ is_active: active }).eq("is_active", !active);
 }
