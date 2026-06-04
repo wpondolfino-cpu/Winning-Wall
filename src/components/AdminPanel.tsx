@@ -559,66 +559,6 @@ export default function AdminPanel({}: Props) {
             </div>
           )}
 
-          {/* Competition History */}
-          {compHistory.length > 0 && (
-            <div style={{ marginTop: 24 }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 12 }}>
-                📋 Competition History
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {compHistory.map(comp => {
-                  const details = compTeamDetails[comp.id];
-                  const isExpanded = expandedComp === comp.id;
-                  const winner = details ? [...details].sort((a,b) => b.teamScore - a.teamScore)[0] : null;
-                  return (
-                    <div key={comp.id} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
-                      <div onClick={() => setExpandedComp(isExpanded ? null : comp.id)} style={{ padding: "12px 16px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <div style={{ flex: 1 }}>
-                          {details && details.length > 0 ? (
-                            <>
-                              <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                                {[...details].sort((a,b) => b.teamScore - a.teamScore).map((t: any, i: number) => (
-                                  <span key={t.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                    <span style={{ color: i === 0 ? "var(--gold)" : "var(--text)" }}>{t.name}</span>
-                                    <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: i === 0 ? "var(--gold)" : "#93b4ff" }}>{t.teamScore}</span>
-                                    {i === 0 && <span style={{ color: "var(--muted)", fontSize: 11 }}>vs</span>}
-                                  </span>
-                                ))}
-                                <span style={{ fontSize: 11, color: "#5de098", marginLeft: 4 }}>+{comp.bonus_points} pts</span>
-                              </div>
-                              <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 3 }}>{comp.start_date} – {comp.end_date}</div>
-                            </>
-                          ) : (
-                            <div style={{ fontSize: 13, color: "var(--muted)" }}>{comp.start_date} – {comp.end_date} · Loading…</div>
-                          )}
-                        </div>
-                        <span style={{ color: "var(--muted)", fontSize: 16, marginLeft: 8 }}>{isExpanded ? "▲" : "▼"}</span>
-                      </div>
-                      {isExpanded && details && (
-                        <div style={{ borderTop: "1px solid var(--border)", padding: "12px 16px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                          {[...details].sort((a,b) => b.teamScore - a.teamScore).map((team: any, ti: number) => (
-                            <div key={team.id} style={{ background: "var(--surface)", borderRadius: 10, padding: "10px 12px", border: `1px solid ${ti === 0 ? "rgba(240,192,64,0.4)" : "var(--border)"}` }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                                <div style={{ width: 10, height: 10, borderRadius: "50%", background: team.color, flexShrink: 0 }} />
-                                <div style={{ fontSize: 13, fontWeight: 700, color: ti === 0 ? "var(--gold)" : "var(--text)" }}>{team.name}</div>
-                                <div style={{ marginLeft: "auto", fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: ti === 0 ? "var(--gold)" : "#93b4ff" }}>{team.teamScore} pts</div>
-                              </div>
-                              {team.players.map((p: any) => (
-                                <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: 11, borderBottom: "1px solid var(--border)" }}>
-                                  <span style={{ color: "var(--text)" }}>{p.name}</span>
-                                  <span style={{ color: "#93b4ff", fontWeight: 600 }}>{team.ptMap[p.id] ?? 0} pts</span>
-                                </div>
-                              ))}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -813,3 +753,63 @@ export default function AdminPanel({}: Props) {
     </div>
   );
 }
+          {/* Competition History */}
+          {compHistory.length > 0 && (
+            <div style={{ marginTop: 24 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 12 }}>
+                📋 Competition History
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {compHistory.map(comp => {
+                  const details = compTeamDetails[comp.id];
+                  const isExpanded = expandedComp === comp.id;
+                  const winner = details ? [...details].sort((a,b) => b.teamScore - a.teamScore)[0] : null;
+                  return (
+                    <div key={comp.id} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+                      <div onClick={() => setExpandedComp(isExpanded ? null : comp.id)} style={{ padding: "12px 16px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div style={{ flex: 1 }}>
+                          {details && details.length > 0 ? (
+                            <>
+                              <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                {[...details].sort((a,b) => b.teamScore - a.teamScore).map((t: any, i: number) => (
+                                  <span key={t.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                    <span style={{ color: i === 0 ? "var(--gold)" : "var(--text)" }}>{t.name}</span>
+                                    <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: i === 0 ? "var(--gold)" : "#93b4ff" }}>{t.teamScore}</span>
+                                    {i === 0 && <span style={{ color: "var(--muted)", fontSize: 11 }}>vs</span>}
+                                  </span>
+                                ))}
+                                <span style={{ fontSize: 11, color: "#5de098", marginLeft: 4 }}>+{comp.bonus_points} pts</span>
+                              </div>
+                              <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 3 }}>{comp.start_date} – {comp.end_date}</div>
+                            </>
+                          ) : (
+                            <div style={{ fontSize: 13, color: "var(--muted)" }}>{comp.start_date} – {comp.end_date} · Loading…</div>
+                          )}
+                        </div>
+                        <span style={{ color: "var(--muted)", fontSize: 16, marginLeft: 8 }}>{isExpanded ? "▲" : "▼"}</span>
+                      </div>
+                      {isExpanded && details && (
+                        <div style={{ borderTop: "1px solid var(--border)", padding: "12px 16px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                          {[...details].sort((a,b) => b.teamScore - a.teamScore).map((team: any, ti: number) => (
+                            <div key={team.id} style={{ background: "var(--surface)", borderRadius: 10, padding: "10px 12px", border: `1px solid ${ti === 0 ? "rgba(240,192,64,0.4)" : "var(--border)"}` }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                                <div style={{ width: 10, height: 10, borderRadius: "50%", background: team.color, flexShrink: 0 }} />
+                                <div style={{ fontSize: 13, fontWeight: 700, color: ti === 0 ? "var(--gold)" : "var(--text)" }}>{team.name}</div>
+                                <div style={{ marginLeft: "auto", fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: ti === 0 ? "var(--gold)" : "#93b4ff" }}>{team.teamScore} pts</div>
+                              </div>
+                              {team.players.map((p: any) => (
+                                <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: 11, borderBottom: "1px solid var(--border)" }}>
+                                  <span style={{ color: "var(--text)" }}>{p.name}</span>
+                                  <span style={{ color: "#93b4ff", fontWeight: 600 }}>{team.ptMap[p.id] ?? 0} pts</span>
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
