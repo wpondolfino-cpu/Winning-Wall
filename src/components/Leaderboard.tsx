@@ -44,6 +44,7 @@ export default function Leaderboard({ currentUserId }: Props) {
   const [profiles, setProfiles]     = useState<{id:string;name:string;grade_category?:string;avatar_url?:string}[]>([]);
   const [periodEntries, setPeriodEntries] = useState<PeriodEntry[]>([]);
   const [periodBonuses, setPeriodBonuses]   = useState<any[]>([]);
+  const [boostUsages, setBoostUsages]       = useState<any[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [expandedPlayer, setExpandedPlayer] = useState<string | null>(null);
   const [xpData, setXpData]               = useState<Record<string,number>>({});
@@ -93,7 +94,7 @@ export default function Leaderboard({ currentUserId }: Props) {
 
 
   async function loadData() {
-    const [{ data: ws }, { data: sc }, { data: pr }, { data: psc }, { data: bon }] = await Promise.all([
+    const [{ data: ws }, { data: sc }, { data: pr }, { data: psc }, { data: bon }, { data: boosts }] = await Promise.all([
       supabase.from("workouts").select("*").eq("is_active", true).order("created_at", { ascending: false }),
       supabase.from("scores").select("*"),
       supabase.from("profiles").select("id,name,grade_category,is_period_champion,avatar_url").eq("role", "player"),
@@ -103,6 +104,8 @@ export default function Leaderboard({ currentUserId }: Props) {
       supabase.from("streak_bonuses").select("*")
         .gte("awarded_at", periodStart.toISOString())
         .lte("awarded_at", periodEnd.toISOString()),
+      supabase.from("perk_usage").select("player_id,perk_key,workout_id,used_at")
+        .eq("perk_key", "score_boost"),
     ]);
     const allWorkouts = ws ?? [];
     setWorkouts(allWorkouts);
@@ -112,6 +115,7 @@ export default function Leaderboard({ currentUserId }: Props) {
     setProfiles(pr ?? []);
     setPeriodScores(psc ?? []);
     setPeriodBonuses(bon ?? []);
+    setBoostUsages(boosts ?? []);
   }
 
   function buildPeriodBoard() {
@@ -451,6 +455,7 @@ export default function Leaderboard({ currentUserId }: Props) {
                               b.reason === "daily_completion" ? "✅ Daily Completion Bonus" :
                               b.reason === "challenge_win"    ? "⚔️ Challenge Win" :
                               b.reason === "streak"           ? "🔥 Streak Bonus" :
+                              b.reason === "team_win"         ? "🏆 Team Competition Win" :
                               "⭐ Bonus";
                             return (
                               <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
@@ -554,6 +559,7 @@ export default function Leaderboard({ currentUserId }: Props) {
                               b.reason === "daily_completion" ? "✅ Daily Completion Bonus" :
                               b.reason === "challenge_win"    ? "⚔️ Challenge Win" :
                               b.reason === "streak"           ? "🔥 Streak Bonus" :
+                              b.reason === "team_win"         ? "🏆 Team Competition Win" :
                               "⭐ Bonus";
                             return (
                               <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
