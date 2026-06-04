@@ -388,6 +388,8 @@ export default function AdminPanel({}: Props) {
       </div>
 
       {/* ══ BADGES TAB ══ */}
+      
+      {/* ══ BADGES TAB ══ */}
       {adminTab === "badges" && (
         <div>
           {/* Header + New Badge button */}
@@ -563,6 +565,7 @@ export default function AdminPanel({}: Props) {
       </div>
       )}
 
+      {/* ══ XP TAB ══ */}
       {adminTab === "xp" && (
         <div>
           {/* XP on/off toggle */}
@@ -624,6 +627,7 @@ export default function AdminPanel({}: Props) {
         </div>
       )}
 
+      {/* ══ TEAMS TAB ══ */}
       {adminTab === "teams" && (
         <div>
       <div style={{ marginTop: 32 }}>
