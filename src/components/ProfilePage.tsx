@@ -119,8 +119,9 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
     const ok = await usePerk(profile.id, "score_boost");
     if (ok) {
       // Query DB directly to avoid stale myScores state
-      const { data: existing } = await supabase.from("scores")
+      const { data: existing, error: fetchError } = await supabase.from("scores")
         .select("*").eq("player_id", profile.id).eq("workout_id", workout.id).single();
+      if (fetchError) { showToast("Error fetching score: " + fetchError.message); setUsingBoost(false); return; }
       if (existing) {
         const updateFields: any = {};
         if (existing.self_points > 0) {
@@ -128,21 +129,23 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
         } else {
           updateFields.made = (existing.made || 0) + 5;
         }
-        await supabase.from("scores").update(updateFields).eq("id", existing.id);
+        const { error: updateError } = await supabase.from("scores").update(updateFields).eq("id", existing.id);
+        if (updateError) { showToast("Error updating score: " + updateError.message); setUsingBoost(false); return; }
         const { data: wk } = await supabase.from("workouts")
           .select("first_place_pts,second_place_pts,third_place_pts,scoring_type")
           .eq("id", workout.id).single();
         if (wk?.scoring_type === "competitive") {
-          await supabase.rpc("rerank_workout", {
+          const { error: rankError } = await supabase.rpc("rerank_workout", {
             p_workout_id: workout.id,
             p_first_pts: wk.first_place_pts ?? 3,
             p_second_pts: wk.second_place_pts ?? 2,
             p_third_pts: wk.third_place_pts ?? 1,
           });
+          if (rankError) { showToast("Error reranking: " + rankError.message); setUsingBoost(false); return; }
         }
         showToast(`⚡ +5 applied to ${workout.title}! Rankings updated.`);
       } else {
-        showToast("No score found for that drill. Log it first.");
+        showToast("No score found — log this workout first.");
       }
       setScoreBoostUsed(true);
       setShowBoostPicker(false);
