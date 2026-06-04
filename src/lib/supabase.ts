@@ -857,8 +857,11 @@ export async function endTeamCompetition(competitionId: string): Promise<{ winne
     } catch(e) { console.error("team_wins update error:", e); }
   }
 
-  // Mark competition as inactive
-  await supabase.from("team_competitions").update({ is_active: false }).eq("id", competitionId);
+  // Mark competition as inactive and record winning team
+  await supabase.from("team_competitions").update({
+    is_active: false,
+    winning_team_id: winner.id,
+  }).eq("id", competitionId);
 
   return { winnerName: winner.name, winnerScore: winner.score ?? 0 };
 }
