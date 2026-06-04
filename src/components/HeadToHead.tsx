@@ -653,11 +653,32 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
                     ⚠️ You need to log a score for this drill first before challenging someone!
                   </div>
                 )}
-                <button onClick={sendChallenge}
-                  disabled={sending || !selectedOpponent || !selectedWorkout || !myScores.find(s => s.workout_id === selectedWorkout)}
-                  className="btn-primary">
-                  {sending ? "Sending…" : "⚔️ Send Challenge"}
-                </button>
+                {needsScore ? (
+                  <div>
+                    <div style={{ padding: "10px 12px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, fontSize: 12, color: "var(--silver-light)", marginBottom: 10 }}>
+                      ⚠️ You haven't logged this drill in the last 24 hours. Enter your score to send the challenge:
+                    </div>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                      <input
+                        type="number" value={challengeScore} onChange={e => setChallengeScore(e.target.value)}
+                        placeholder="Your score" min="0"
+                        style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 14, fontFamily: "inherit", outline: "none" }}
+                      />
+                      <button onClick={sendChallengeWithScore} disabled={sending} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                        {sending ? "Sending…" : "⚔️ Send"}
+                      </button>
+                      <button onClick={() => { setNeedsScore(false); setChallengeScore(""); }} style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "9px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={sendChallenge}
+                    disabled={sending || !selectedOpponent || !selectedWorkout || !myScores.find(s => s.workout_id === selectedWorkout)}
+                    className="btn-primary">
+                    {sending ? "Sending…" : "⚔️ Send Challenge"}
+                  </button>
+                )}
               </div>
             </div>
           )}
