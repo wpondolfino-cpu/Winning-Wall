@@ -1,6 +1,6 @@
 // src/components/AdminPanel.tsx
 import { useState, useEffect } from "react";
-import { supabase, approveUser, rejectUser, Profile, TEAM_CATEGORIES, TEAM_COLORS, saveTeamCompetition, getActiveTeamCompetition, TeamCompetition, getTeams, Team, getXpPerks, XpPerk } from "../lib/supabase";
+import { supabase, approveUser, rejectUser, Profile, TEAM_CATEGORIES, TEAM_COLORS, saveTeamCompetition, endTeamCompetition, getActiveTeamCompetition, TeamCompetition, getTeams, Team, getXpPerks, XpPerk } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
 interface Props {
@@ -63,6 +63,7 @@ export default function AdminPanel({}: Props) {
 
   // ── Team competition state ──
   const [teamComp, setTeamComp]           = useState<TeamCompetition | null>(null);
+  const [endingComp, setEndingComp]       = useState(false);
   const [activeTeams, setActiveTeams]     = useState<Team[]>([]);
   const [numTeams, setNumTeams]           = useState(2);
   const [teamCategory, setTeamCategory]   = useState("🏀 Basketball");
