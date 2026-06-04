@@ -612,8 +612,6 @@ export default function AdminPanel({}: Props) {
                 fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", marginTop: 8,
               }}>{endingComp ? "Ending…" : "🏆 End Competition & Award Winner"}
               </button>
-              <div style={{ display: "none"
-              </div>
             </div>
             <button onClick={() => handleToggleTeams(!teamComp.is_active)} disabled={teamTogglingOff}
               style={{ background: teamComp.is_active ? "rgba(255,107,107,0.15)" : "rgba(40,180,80,0.15)", color: teamComp.is_active ? "#ff7b7b" : "#5de098", border: `1px solid ${teamComp.is_active ? "rgba(255,107,107,0.3)" : "rgba(40,180,80,0.3)"}`, borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
