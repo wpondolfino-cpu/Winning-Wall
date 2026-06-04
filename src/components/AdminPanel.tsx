@@ -103,7 +103,26 @@ export default function AdminPanel({}: Props) {
     // Load competition history
     const { data: history } = await supabase.from("team_competitions")
       .select("*").order("created_at", { ascending: false });
-    setCompHistory(history ?? []);
+    const hist = history ?? [];
+    setCompHistory(hist);
+    // Pre-load team details for all competitions so summary shows immediately
+    for (const comp of hist) {
+      const { data: teams } = await supabase.from("teams").select("*").eq("competition_id", comp.id);
+      if (!teams) continue;
+      const teamsWithPlayers = await Promise.all(teams.map(async (team: any) => {
+        const { data: players } = await supabase.from("profiles")
+          .select("id,name,grade_category").eq("team_id", team.id);
+        const playerIds = (players ?? []).map((p: any) => p.id);
+        const { data: lb } = playerIds.length > 0
+          ? await supabase.from("leaderboard").select("id,total_points").in("id", playerIds)
+          : { data: [] };
+        const ptMap: Record<string,number> = {};
+        (lb ?? []).forEach((e: any) => { ptMap[e.id] = e.total_points ?? 0; });
+        const teamScore = (players ?? []).reduce((s: number, p: any) => s + (ptMap[p.id] ?? 0), 0);
+        return { ...team, players: players ?? [], ptMap, teamScore };
+      }));
+      setCompTeamDetails(prev => ({ ...prev, [comp.id]: teamsWithPlayers }));
+    }
   }
 
   async function loadCompDetails(compId: string) {
@@ -553,17 +572,27 @@ export default function AdminPanel({}: Props) {
                   const winner = details ? [...details].sort((a,b) => b.teamScore - a.teamScore)[0] : null;
                   return (
                     <div key={comp.id} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
-                      <div onClick={() => loadCompDetails(comp.id)} style={{ padding: "12px 16px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
-                            {comp.start_date} – {comp.end_date}
-                            {winner && <span style={{ marginLeft: 8, fontSize: 11, color: "var(--gold)" }}>🏆 {winner.name}</span>}
-                          </div>
-                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                            Bonus: +{comp.bonus_points} pts · Click to {isExpanded ? "collapse" : "expand"}
-                          </div>
+                      <div onClick={() => setExpandedComp(isExpanded ? null : comp.id)} style={{ padding: "12px 16px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div style={{ flex: 1 }}>
+                          {details && details.length > 0 ? (
+                            <>
+                              <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                {[...details].sort((a,b) => b.teamScore - a.teamScore).map((t: any, i: number) => (
+                                  <span key={t.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                    <span style={{ color: i === 0 ? "var(--gold)" : "var(--text)" }}>{t.name}</span>
+                                    <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: i === 0 ? "var(--gold)" : "#93b4ff" }}>{t.teamScore}</span>
+                                    {i === 0 && <span style={{ color: "var(--muted)", fontSize: 11 }}>vs</span>}
+                                  </span>
+                                ))}
+                                <span style={{ fontSize: 11, color: "#5de098", marginLeft: 4 }}>+{comp.bonus_points} pts</span>
+                              </div>
+                              <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 3 }}>{comp.start_date} – {comp.end_date}</div>
+                            </>
+                          ) : (
+                            <div style={{ fontSize: 13, color: "var(--muted)" }}>{comp.start_date} – {comp.end_date} · Loading…</div>
+                          )}
                         </div>
-                        <span style={{ color: "var(--muted)", fontSize: 16 }}>{isExpanded ? "▲" : "▼"}</span>
+                        <span style={{ color: "var(--muted)", fontSize: 16, marginLeft: 8 }}>{isExpanded ? "▲" : "▼"}</span>
                       </div>
                       {isExpanded && details && (
                         <div style={{ borderTop: "1px solid var(--border)", padding: "12px 16px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
