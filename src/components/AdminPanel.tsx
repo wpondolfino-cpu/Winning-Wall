@@ -562,7 +562,6 @@ export default function AdminPanel({}: Props) {
 
           )}
         </div>
-      </div>
       )}
 
       {/* ══ XP TAB ══ */}
@@ -812,7 +811,6 @@ export default function AdminPanel({}: Props) {
             </div>
           )}
         </div>
-      </div>
       </div>
       </div>
       )}
