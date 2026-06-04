@@ -947,7 +947,7 @@ export async function hasPerkUsedThisPeriod(playerId: string, perkKey: string): 
   return !!data;
 }
 
-export async function usePerk(playerId: string, perkKey: string): Promise<boolean> {
+export async function usePerk(playerId: string, perkKey: string, workoutId?: string): Promise<boolean> {
   const periodStart = currentPeriodStart().toISOString().split("T")[0];
   const { error } = await supabase.from("perk_usage").insert({
     player_id: playerId, perk_key: perkKey, period_start: periodStart,
