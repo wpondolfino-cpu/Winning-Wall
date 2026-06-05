@@ -658,7 +658,10 @@ export default function AdminPanel({}: Props) {
                 try {
                   const result = await endTeamCompetition(teamComp.id);
                   if (result) {
-                    showToast(`🏆 ${result.winnerName} wins with ${result.winnerScore} pts! Bonus points awarded.`);
+                    const bonusMsg = result.bonusErrors > 0
+                      ? ` ⚠️ ${result.bonusErrors}/${result.playerCount} bonus inserts failed.`
+                      : ` +${teamComp.bonus_points} pts awarded to ${result.playerCount} players.`;
+                    showToast(`🏆 ${result.winnerName} wins with ${result.winnerScore} pts!${bonusMsg}`);
                     await loadTeamData();
                   }
                 } catch(e: any) { showToast("Error: " + e.message); }
