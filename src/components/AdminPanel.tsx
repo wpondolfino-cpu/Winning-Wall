@@ -668,11 +668,13 @@ export default function AdminPanel({}: Props) {
                         if (result) {
                           const bonusMsg = result.bonusErrors > 0
                             ? ` ⚠️ ${result.bonusErrors}/${result.playerCount} bonus inserts failed.`
-                            : ` +${teamComp.bonus_points} pts awarded to ${result.playerCount} players.`;
+                            : result.playerCount > 0
+                            ? ` +${teamComp.bonus_points} pts awarded to ${result.playerCount} players.`
+                            : " No players found on winning team.";
                           showToast(`🏆 ${result.winnerName} wins with ${result.winnerScore} pts!${bonusMsg}`);
                           await loadTeamData();
                         } else {
-                          showToast("Error: could not find competition teams.");
+                          showToast("Error: could not end competition.");
                         }
                       } catch(e: any) { showToast("Error: " + e.message); }
                       finally { setEndingComp(false); }
