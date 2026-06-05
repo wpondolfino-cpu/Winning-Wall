@@ -842,6 +842,7 @@ export async function endTeamCompetition(competitionId: string): Promise<{ winne
 
   // Award bonus points to ALL winning players
   const playerList = winningPlayers ?? [];
+  let bonusErrors = 0;
   for (const player of playerList) {
     const { error: bonusErr } = await supabase.from("streak_bonuses").insert({
       player_id: player.id,
@@ -850,20 +851,20 @@ export async function endTeamCompetition(competitionId: string): Promise<{ winne
       reason: "team_win",
       awarded_at: new Date().toISOString(),
     });
-    if (bonusErr) console.error("Bonus insert error for", player.name, bonusErr.message);
+    if (bonusErr) { console.error("Bonus insert error for", player.name, bonusErr.message); bonusErrors++; }
 
     // Increment team_wins on profile
     const { data: pw } = await supabase.from("profiles").select("team_wins").eq("id", player.id).single();
     await supabase.from("profiles").update({ team_wins: ((pw as any)?.team_wins ?? 0) + 1 }).eq("id", player.id);
   }
 
+  return { winnerName: winner.name, winnerScore: winner.score ?? 0, bonusErrors, playerCount: playerList.length };
+
   // Mark competition as inactive and record winning team
   await supabase.from("team_competitions").update({
     is_active: false,
     winning_team_id: winner.id,
   }).eq("id", competitionId);
-
-  return { winnerName: winner.name, winnerScore: winner.score ?? 0 };
 }
 
 export async function toggleTeamCompetition(active: boolean): Promise<void> {
