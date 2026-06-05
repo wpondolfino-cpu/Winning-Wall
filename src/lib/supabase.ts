@@ -830,7 +830,7 @@ export async function endTeamCompetition(competitionId: string): Promise<{ winne
 
   // Even if teams is empty, still close the competition
   if (!teams.length) {
-    await supabase.from("team_competitions").update({ is_active: false }).eq("id", competitionId);
+    await supabase.rpc("close_team_competition", { p_competition_id: competitionId, p_winning_team_id: null });
     return { winnerName: "Unknown", winnerScore: 0, bonusErrors: 0, playerCount: 0 };
   }
 
@@ -865,11 +865,11 @@ export async function endTeamCompetition(competitionId: string): Promise<{ winne
 
   return { winnerName: winner.name, winnerScore: winner.score ?? 0, bonusErrors, playerCount: playerList.length };
 
-  // Mark competition as inactive and record winning team
-  await supabase.from("team_competitions").update({
-    is_active: false,
-    winning_team_id: winner.id,
-  }).eq("id", competitionId);
+  // Mark competition as inactive and record winning team via RPC (bypasses RLS)
+  await supabase.rpc("close_team_competition", {
+    p_competition_id: competitionId,
+    p_winning_team_id: winner.id,
+  });
 }
 
 export async function toggleTeamCompetition(active: boolean): Promise<void> {
