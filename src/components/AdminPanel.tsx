@@ -652,26 +652,39 @@ export default function AdminPanel({}: Props) {
                 {teamComp.start_date && `${teamComp.start_date} – ${teamComp.end_date} · `}
                 Bonus: +{teamComp.bonus_points} pts · {activeTeams.length} teams
               </div>
-              <button onClick={async () => {
-                if (!window.confirm("End this competition and award bonus points to the winning team?")) return;
-                setEndingComp(true);
-                try {
-                  const result = await endTeamCompetition(teamComp.id);
-                  if (result) {
-                    const bonusMsg = result.bonusErrors > 0
-                      ? ` ⚠️ ${result.bonusErrors}/${result.playerCount} bonus inserts failed.`
-                      : ` +${teamComp.bonus_points} pts awarded to ${result.playerCount} players.`;
-                    showToast(`🏆 ${result.winnerName} wins with ${result.winnerScore} pts!${bonusMsg}`);
-                    await loadTeamData();
-                  }
-                } catch(e: any) { showToast("Error: " + e.message); }
-                finally { setEndingComp(false); }
-              }} disabled={endingComp} style={{
-                background: "rgba(240,192,64,0.15)", border: "1px solid rgba(240,192,64,0.4)",
-                color: "var(--gold)", borderRadius: 8, padding: "7px 14px",
-                fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", marginTop: 8,
-              }}>{endingComp ? "Ending…" : "🏆 End Competition & Award Winner"}
-              </button>
+              {!endingComp ? (
+                <button onClick={() => setEndingComp(true)} style={{
+                  background: "rgba(240,192,64,0.15)", border: "1px solid rgba(240,192,64,0.4)",
+                  color: "var(--gold)", borderRadius: 8, padding: "7px 14px",
+                  fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", marginTop: 8,
+                }}>🏆 End Competition & Award Winner</button>
+              ) : (
+                <div style={{ marginTop: 8, padding: "10px 12px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 8 }}>
+                  <div style={{ fontSize: 12, color: "var(--text)", marginBottom: 8 }}>Award +{teamComp.bonus_points} pts to the winning team?</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={async () => {
+                      try {
+                        const result = await endTeamCompetition(teamComp.id);
+                        if (result) {
+                          const bonusMsg = result.bonusErrors > 0
+                            ? ` ⚠️ ${result.bonusErrors}/${result.playerCount} bonus inserts failed.`
+                            : ` +${teamComp.bonus_points} pts awarded to ${result.playerCount} players.`;
+                          showToast(`🏆 ${result.winnerName} wins with ${result.winnerScore} pts!${bonusMsg}`);
+                          await loadTeamData();
+                        } else {
+                          showToast("Error: could not find competition teams.");
+                        }
+                      } catch(e: any) { showToast("Error: " + e.message); }
+                      finally { setEndingComp(false); }
+                    }} style={{ background: "var(--gold)", color: "#000", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                      ✅ Confirm
+                    </button>
+                    <button onClick={() => setEndingComp(false)} style={{ background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             <button onClick={() => handleToggleTeams(!teamComp.is_active)} disabled={teamTogglingOff}
               style={{ background: teamComp.is_active ? "rgba(255,107,107,0.15)" : "rgba(40,180,80,0.15)", color: teamComp.is_active ? "#ff7b7b" : "#5de098", border: `1px solid ${teamComp.is_active ? "rgba(255,107,107,0.3)" : "rgba(40,180,80,0.3)"}`, borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
