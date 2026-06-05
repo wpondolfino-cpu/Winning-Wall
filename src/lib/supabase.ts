@@ -824,7 +824,7 @@ export async function saveTeamCompetition(
   }
 }
 
-export async function endTeamCompetition(competitionId: string): Promise<{ winnerName: string; winnerScore: number } | null> {
+export async function endTeamCompetition(competitionId: string): Promise<{ winnerName: string; winnerScore: number; bonusErrors: number; playerCount: number } | null> {
   // Get all teams with their scores
   const teams = await getTeams(competitionId);
   if (!teams.length) return null;
