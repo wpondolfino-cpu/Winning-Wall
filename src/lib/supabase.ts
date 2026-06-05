@@ -845,22 +845,22 @@ export async function endTeamCompetition(competitionId: string): Promise<{ winne
     .select("bonus_points").eq("id", competitionId).single();
   const bonusPts = comp?.bonus_points ?? 3;
 
-  // Award bonus points to ALL winning players
+  // Award bonus points via security definer function (bypasses RLS)
   const playerList = winningPlayers ?? [];
   let bonusErrors = 0;
-  for (const player of playerList) {
-    const { error: bonusErr } = await supabase.from("streak_bonuses").insert({
-      player_id: player.id,
-      points: bonusPts,
-      streak_length: 0,
-      reason: "team_win",
-      awarded_at: new Date().toISOString(),
+  if (playerList.length > 0) {
+    const playerIds = playerList.map((p: any) => p.id);
+    const { error: bonusErr } = await supabase.rpc("award_team_bonus", {
+      p_player_ids: playerIds,
+      p_points: bonusPts,
+      p_reason: "team_win",
     });
-    if (bonusErr) { console.error("Bonus insert error for", player.name, bonusErr.message); bonusErrors++; }
-
-    // Increment team_wins on profile
-    const { data: pw } = await supabase.from("profiles").select("team_wins").eq("id", player.id).single();
-    await supabase.from("profiles").update({ team_wins: ((pw as any)?.team_wins ?? 0) + 1 }).eq("id", player.id);
+    if (bonusErr) {
+      console.error("Bonus RPC error:", bonusErr.message);
+      bonusErrors = playerList.length;
+    }
+    // Increment team_wins on profiles
+    await supabase.rpc("increment_team_wins", { p_player_ids: playerIds });
   }
 
   return { winnerName: winner.name, winnerScore: winner.score ?? 0, bonusErrors, playerCount: playerList.length };
