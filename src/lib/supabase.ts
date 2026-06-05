@@ -827,7 +827,12 @@ export async function saveTeamCompetition(
 export async function endTeamCompetition(competitionId: string): Promise<{ winnerName: string; winnerScore: number; bonusErrors: number; playerCount: number } | null> {
   // Get all teams with their scores
   const teams = await getTeams(competitionId);
-  if (!teams.length) return null;
+
+  // Even if teams is empty, still close the competition
+  if (!teams.length) {
+    await supabase.from("team_competitions").update({ is_active: false }).eq("id", competitionId);
+    return { winnerName: "Unknown", winnerScore: 0, bonusErrors: 0, playerCount: 0 };
+  }
 
   // Find winning team (highest score)
   const winner = teams.reduce((best: any, t: any) => (t.score ?? 0) > (best.score ?? 0) ? t : best, teams[0]);
