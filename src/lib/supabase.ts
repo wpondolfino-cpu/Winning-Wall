@@ -840,21 +840,21 @@ export async function endTeamCompetition(competitionId: string): Promise<{ winne
     .select("bonus_points").eq("id", competitionId).single();
   const bonusPts = comp?.bonus_points ?? 3;
 
-  // Award bonus points to each winning player
-  for (const player of (winningPlayers ?? [])) {
-    await supabase.from("streak_bonuses").insert({
+  // Award bonus points to ALL winning players
+  const playerList = winningPlayers ?? [];
+  for (const player of playerList) {
+    const { error: bonusErr } = await supabase.from("streak_bonuses").insert({
       player_id: player.id,
       points: bonusPts,
       streak_length: 0,
       reason: "team_win",
       awarded_at: new Date().toISOString(),
     });
-    // Increment team_wins on profile (for season history / badges)
+    if (bonusErr) console.error("Bonus insert error for", player.name, bonusErr.message);
+
     // Increment team_wins on profile
-    try {
-      const { data: pw } = await supabase.from("profiles").select("team_wins").eq("id", player.id).single();
-      await supabase.from("profiles").update({ team_wins: ((pw as any)?.team_wins ?? 0) + 1 }).eq("id", player.id);
-    } catch(e) { console.error("team_wins update error:", e); }
+    const { data: pw } = await supabase.from("profiles").select("team_wins").eq("id", player.id).single();
+    await supabase.from("profiles").update({ team_wins: ((pw as any)?.team_wins ?? 0) + 1 }).eq("id", player.id);
   }
 
   // Mark competition as inactive and record winning team
