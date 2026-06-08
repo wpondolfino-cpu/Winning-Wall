@@ -276,7 +276,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   async function resetPerks(playerId: string, name: string) {
     if (window.confirm(`Reset all perks for ${name}? They will be able to use each perk again.`)) {
       await supabase.from("perk_usage").delete().eq("player_id", playerId);
-      showToast(`✅ Perks reset for ${name}`);
+      alert(`✅ Perks reset for ${name}`);
     }
   }
 
