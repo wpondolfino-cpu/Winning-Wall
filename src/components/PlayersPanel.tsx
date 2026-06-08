@@ -272,6 +272,14 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const [pendingPlayers, setPendingPlayers] = useState<any[]>([]);
   const [approving, setApproving]         = useState<string | null>(null);
 
+  // ── Reset player perks ──
+  async function resetPerks(playerId: string, name: string) {
+    if (window.confirm(`Reset all perks for ${name}? They will be able to use each perk again.`)) {
+      await supabase.from("perk_usage").delete().eq("player_id", playerId);
+      showToast(`✅ Perks reset for ${name}`);
+    }
+  }
+
   // ── Remove / delete player ──
   async function removePlayer(id: string, name: string) {
     if (!window.confirm(
@@ -674,6 +682,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                   ) : (
                     <button onClick={() => removePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🚫 Remove</button>
                   )}
+                  <button onClick={() => resetPerks(p.id, p.name)} style={{ background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", color: "var(--gold)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🔄 Perks</button>
                   <button onClick={() => deletePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗑 Delete</button>
                 </div>
               </div>
