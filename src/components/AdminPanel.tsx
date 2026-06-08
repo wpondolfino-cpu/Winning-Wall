@@ -125,6 +125,14 @@ export default function AdminPanel({}: Props) {
     }
   }
 
+  async function deleteCompetition(compId: string) {
+    await supabase.from("teams").delete().eq("competition_id", compId);
+    await supabase.from("team_competitions").delete().eq("id", compId);
+    setCompHistory(prev => prev.filter(c => c.id !== compId));
+    setCompTeamDetails(prev => { const n = {...prev}; delete n[compId]; return n; });
+    showToast("Competition deleted.");
+  }
+
   async function loadCompDetails(compId: string) {
     if (compTeamDetails[compId]) { setExpandedComp(expandedComp === compId ? null : compId); return; }
     const { data: teams } = await supabase.from("teams").select("*").eq("competition_id", compId);
@@ -805,7 +813,10 @@ export default function AdminPanel({}: Props) {
                             <div style={{ fontSize: 13, color: "var(--muted)" }}>{comp.start_date} – {comp.end_date} · Loading…</div>
                           )}
                         </div>
-                        <span style={{ color: "var(--muted)", fontSize: 16, marginLeft: 8 }}>{isExpanded ? "▲" : "▼"}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                          <span style={{ color: "var(--muted)", fontSize: 16 }}>{isExpanded ? "▲" : "▼"}</span>
+                          <button onClick={e => { e.stopPropagation(); if (window.confirm("Delete this competition and its history?")) deleteCompetition(comp.id); }} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>🗑</button>
+                        </div>
                       </div>
                       {isExpanded && details && (
                         <div style={{ borderTop: "1px solid var(--border)", padding: "12px 16px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
