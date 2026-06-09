@@ -19,10 +19,14 @@ interface EditScore {
   id: string;
   workout_id: string;
   workout_title: string;
+  scoring_type: string;
   made: number;
   reps: number;
   sprint_secs: number;
   self_points: number;
+  first_place_pts?: number;
+  second_place_pts?: number;
+  third_place_pts?: number;
 }
 
 
@@ -311,7 +315,13 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   // ── Edit scores ──
   const [editScoresFor, setEditScoresFor] = useState<string | null>(null); // player id
   const [playerScores, setPlayerScores]   = useState<EditScore[]>([]);
-  const [scoreSaving, setScoreSaving]     = useState(false);
+  const [scoreSaving, setScoreSaving]     = useState<string | null>(null); // track which score is saving
+  const [scoreToast, setScoreToast]       = useState("");
+
+  function showScoreToast(msg: string) {
+    setScoreToast(msg);
+    setTimeout(() => setScoreToast(""), 3000);
+  }
 
   const now = Date.now();
   const FOURTEEN_DAYS = 14 * 24 * 60 * 60 * 1000;
@@ -368,14 +378,11 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     }
     setAddSaving(true); setAddError("");
     try {
-      // Create auth user via admin API (uses service role via edge function in prod;
-      // for now uses signUp which works on free tier)
       const { data, error } = await supabase.auth.signUp({
         email: addEmail,
         password: addPass,
         options: { data: { name: addName, role: "player", grade_category: addGrade, must_change_password: true } },
       });
-      // Coach-added players are pre-approved — must change their temp password on first login
       if (error) throw error;
       setShowAdd(false); setAddName(""); setAddEmail(""); setAddPass("");
       setAddGrade(GRADE_CATEGORIES[0]);
@@ -392,8 +399,6 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       const { error } = await supabase.auth.resetPasswordForEmail(inviteEmail, {
         redirectTo: window.location.origin,
       });
-      // We use resetPasswordForEmail as a proxy — in production wire up
-      // supabase.auth.admin.inviteUserByEmail via an Edge Function
       if (error) throw error;
       setInviteMsg(`✓ Invite sent to ${inviteEmail}`);
       setInviteEmail("");
@@ -423,33 +428,59 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     finally { setEditSaving(false); }
   }
 
-  // ── Open score editor for a player ──
+  // ── Open score editor for a player — shows ALL workout types ──
   async function openEditScores(playerId: string) {
+    // Fetch all scores for this player (no scoring_type filter)
     const scores = allScores.filter(s => s.player_id === playerId);
-    const mapped: EditScore[] = scores.map(s => ({
-      id: s.id,
-      workout_id: s.workout_id,
-      workout_title: workouts.find(w => w.id === s.workout_id)?.title ?? "Unknown",
-      made: s.made,
-      reps: s.reps,
-      sprint_secs: s.sprint_secs,
-      self_points: s.self_points,
-    }));
+    const mapped: EditScore[] = scores.map(s => {
+      const workout = workouts.find(w => w.id === s.workout_id);
+      return {
+        id: s.id,
+        workout_id: s.workout_id,
+        workout_title: workout?.title ?? "Unknown",
+        scoring_type: workout?.scoring_type ?? "competitive",
+        made: s.made,
+        reps: s.reps,
+        sprint_secs: s.sprint_secs,
+        self_points: s.self_points,
+        first_place_pts: workout?.first_place_pts,
+        second_place_pts: workout?.second_place_pts,
+        third_place_pts: workout?.third_place_pts,
+      };
+    });
     setPlayerScores(mapped);
     setEditScoresFor(playerId);
   }
 
-  // ── Save score edits ──
+  // ── Save a single score and rerank if competitive ──
   async function saveScore(sc: EditScore) {
-    setScoreSaving(true);
+    setScoreSaving(sc.id);
     try {
       const { error } = await supabase.from("scores").update({
-        made: sc.made, reps: sc.reps,
-        sprint_secs: sc.sprint_secs, self_points: sc.self_points,
+        made: sc.made,
+        reps: sc.reps,
+        sprint_secs: sc.sprint_secs,
+        self_points: sc.self_points,
       }).eq("id", sc.id);
       if (error) throw error;
-    } catch (e: any) { alert("Error saving score: " + e.message); }
-    finally { setScoreSaving(false); }
+
+      // Re-rank if competitive so points update correctly
+      if (sc.scoring_type === "competitive") {
+        const { error: rankError } = await supabase.rpc("rerank_workout", {
+          p_workout_id: sc.workout_id,
+          p_first_pts:  sc.first_place_pts  ?? 3,
+          p_second_pts: sc.second_place_pts ?? 2,
+          p_third_pts:  sc.third_place_pts  ?? 1,
+        });
+        if (rankError) throw rankError;
+      }
+
+      showScoreToast("✅ Score saved!");
+    } catch (e: any) {
+      showScoreToast("Error: " + e.message);
+    } finally {
+      setScoreSaving(null);
+    }
   }
 
   async function deleteScore(scoreId: string) {
@@ -559,6 +590,29 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
 
   if (loading) return <div className="loading">Loading player data…</div>;
 
+  // Helper: get the editable score value for display/input
+  function getScoreValue(sc: EditScore): number {
+    if (sc.scoring_type === "self_reported") return sc.self_points;
+    if (sc.scoring_type === "flat") return sc.self_points;
+    // competitive: use made (or reps if made is 0)
+    return sc.made > 0 ? sc.made : sc.reps;
+  }
+
+  function setScoreValue(sc: EditScore, val: number): EditScore {
+    if (sc.scoring_type === "self_reported" || sc.scoring_type === "flat") {
+      return { ...sc, self_points: val };
+    }
+    // competitive: figure out which field was originally used
+    if (sc.reps > 0 && sc.made === 0) return { ...sc, reps: val };
+    return { ...sc, made: val };
+  }
+
+  function getScoringLabel(sc: EditScore): string {
+    if (sc.scoring_type === "flat") return "✅ Flat";
+    if (sc.scoring_type === "self_reported") return "✏️ Self-Reported";
+    return "🏆 Competitive";
+  }
+
   return (
     <div className="panel active">
       <div className="section-title">Players & Coaches</div>
@@ -651,7 +705,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
             </div>
           </div>
 
-          {/* Active Players */}
+          {/* Active / Inactive tabs */}
           <div style={{ display: "flex", gap: 8, marginBottom: 16, borderBottom: "1px solid var(--border)", paddingBottom: 12 }}>
             <button onClick={() => setInactiveTab(false)} style={{ background: !inactiveTab ? "var(--royal)" : "var(--surface2)", color: !inactiveTab ? "#fff" : "var(--muted)", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Active</button>
             <button onClick={() => setInactiveTab(true)} style={{ background: inactiveTab ? "var(--royal)" : "var(--surface2)", color: inactiveTab ? "#fff" : "var(--muted)", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Inactive</button>
@@ -823,18 +877,64 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       {/* ── Edit Scores Modal ── */}
       {editScoresFor && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "20px 0" }} onClick={() => setEditScoresFor(null)}>
-          <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(560px, 96vw)", padding: 24 }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", marginBottom: 16 }}>📊 Edit Scores</div>
-            {playerScores.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13 }}>No scores to edit.</div>}
-            {playerScores.map(sc => (
-              <div key={sc.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
-                <div style={{ flex: 1, fontSize: 13, color: "var(--text)" }}>{sc.workout_title}</div>
-                <input type="number" value={sc.made} onChange={e => setPlayerScores(ps => ps.map(s => s.id === sc.id ? { ...s, made: +e.target.value } : s))}
-                  onBlur={() => saveScore(sc)} placeholder="Score"
-                  style={{ width: 70, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, textAlign: "center" }} />
-                <button onClick={() => deleteScore(sc.id)} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>🗑</button>
+          <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(600px, 96vw)", padding: 24 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", marginBottom: 4 }}>📊 Edit Scores</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Edit any score and click Save. Competitive drills auto-rerank after saving.</div>
+
+            {/* Toast inside modal */}
+            {scoreToast && (
+              <div style={{ padding: "8px 14px", background: scoreToast.startsWith("Error") ? "rgba(255,107,107,0.15)" : "rgba(40,180,80,0.15)", border: `1px solid ${scoreToast.startsWith("Error") ? "rgba(255,107,107,0.3)" : "rgba(40,180,80,0.3)"}`, borderRadius: 8, fontSize: 13, color: scoreToast.startsWith("Error") ? "#ff7b7b" : "#5de098", fontWeight: 600, marginBottom: 14 }}>
+                {scoreToast}
               </div>
-            ))}
+            )}
+
+            {playerScores.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13, padding: "20px 0" }}>No scores to edit.</div>}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {playerScores.map(sc => (
+                <div key={sc.id} style={{ padding: "12px 14px", background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)" }}>
+                  {/* Workout title + type badge */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{sc.workout_title}</div>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
+                      background: sc.scoring_type === "competitive" ? "rgba(240,192,64,0.15)" : sc.scoring_type === "flat" ? "rgba(40,180,80,0.15)" : "rgba(26,63,168,0.2)",
+                      color: sc.scoring_type === "competitive" ? "var(--gold)" : sc.scoring_type === "flat" ? "#5de098" : "#93b4ff",
+                    }}>{getScoringLabel(sc)}</span>
+                  </div>
+                  {/* Score input + action buttons */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>
+                        {sc.scoring_type === "self_reported" ? "Points" : sc.scoring_type === "flat" ? "Points" : "Score"}
+                      </label>
+                      <input
+                        type="number"
+                        value={getScoreValue(sc)}
+                        onChange={e => setPlayerScores(ps => ps.map(s => s.id === sc.id ? setScoreValue(sc, parseInt(e.target.value) || 0) : s))}
+                        style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 15, fontWeight: 600, textAlign: "center" }}
+                      />
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 20 }}>
+                      <button
+                        onClick={() => saveScore(sc)}
+                        disabled={scoreSaving === sc.id}
+                        style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: scoreSaving === sc.id ? "not-allowed" : "pointer", whiteSpace: "nowrap", opacity: scoreSaving === sc.id ? 0.7 : 1 }}
+                      >
+                        {scoreSaving === sc.id ? "Saving…" : "💾 Save"}
+                      </button>
+                      <button
+                        onClick={() => deleteScore(sc.id)}
+                        style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}
+                      >
+                        🗑 Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
             <button onClick={() => setEditScoresFor(null)} style={{ marginTop: 16, background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>Close</button>
           </div>
         </div>
