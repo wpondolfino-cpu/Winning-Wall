@@ -29,6 +29,14 @@ interface EditScore {
   third_place_pts?: number;
 }
 
+interface StreakBonus {
+  id: string;
+  player_id: string;
+  points: number;
+  reason: string;
+  awarded_at: string;
+}
+
 
 function getCalendarDays(year: number, month: number) {
   const firstDay = new Date(year, month, 1).getDay();
@@ -313,9 +321,11 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   }
 
   // ── Edit scores ──
-  const [editScoresFor, setEditScoresFor] = useState<string | null>(null); // player id
+  const [editScoresFor, setEditScoresFor] = useState<string | null>(null);
   const [playerScores, setPlayerScores]   = useState<EditScore[]>([]);
-  const [scoreSaving, setScoreSaving]     = useState<string | null>(null); // track which score is saving
+  const [playerBonuses, setPlayerBonuses] = useState<StreakBonus[]>([]);
+  const [scoreSaving, setScoreSaving]     = useState<string | null>(null);
+  const [bonusDeleting, setBonusDeleting] = useState<string | null>(null);
   const [scoreToast, setScoreToast]       = useState("");
 
   function showScoreToast(msg: string) {
@@ -449,6 +459,15 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       };
     });
     setPlayerScores(mapped);
+
+    // Also load streak bonuses for this player
+    const { data: bonuses } = await supabase
+      .from("streak_bonuses")
+      .select("*")
+      .eq("player_id", playerId)
+      .order("awarded_at", { ascending: false });
+    setPlayerBonuses(bonuses ?? []);
+
     setEditScoresFor(playerId);
   }
 
@@ -488,6 +507,21 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     const { error } = await supabase.from("scores").delete().eq("id", scoreId);
     if (error) { alert("Error: " + error.message); return; }
     setPlayerScores(ps => ps.filter(s => s.id !== scoreId));
+  }
+
+  async function deleteBonus(bonusId: string) {
+    if (!window.confirm("Delete this bonus? This will reduce the player's points.")) return;
+    setBonusDeleting(bonusId);
+    try {
+      const { error } = await supabase.from("streak_bonuses").delete().eq("id", bonusId);
+      if (error) throw error;
+      setPlayerBonuses(pb => pb.filter(b => b.id !== bonusId));
+      showScoreToast("✅ Bonus deleted!");
+    } catch (e: any) {
+      showScoreToast("Error: " + e.message);
+    } finally {
+      setBonusDeleting(null);
+    }
   }
 
 
@@ -933,6 +967,45 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* ── Bonuses Section ── */}
+            <div style={{ marginTop: 24 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#ff8c42", letterSpacing: 1 }}>⭐ Bonuses</div>
+                <div style={{ fontSize: 11, color: "var(--muted)" }}>{playerBonuses.length} row{playerBonuses.length !== 1 ? "s" : ""} · {playerBonuses.reduce((s, b) => s + (b.points ?? 0), 0)} pts total</div>
+              </div>
+              {playerBonuses.length === 0 ? (
+                <div style={{ fontSize: 13, color: "var(--muted)", padding: "12px 0" }}>No bonuses on record.</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {playerBonuses.map(b => {
+                    const label =
+                      b.reason === "personal_best"    ? "🏅 Personal Best" :
+                      b.reason === "daily_completion" ? "✅ Daily Completion" :
+                      b.reason === "challenge_win"    ? "⚔️ Challenge Win" :
+                      b.reason === "streak"           ? "🔥 Streak Milestone" :
+                      b.reason === "team_win"         ? "🏆 Team Win" :
+                      "⭐ Bonus";
+                    return (
+                      <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--surface2)", borderRadius: 8, border: "1px solid var(--border)" }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>{label}</div>
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{new Date(b.awarded_at).toLocaleDateString()}</div>
+                        </div>
+                        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "#ff8c42", flexShrink: 0 }}>+{b.points}</div>
+                        <button
+                          onClick={() => deleteBonus(b.id)}
+                          disabled={bonusDeleting === b.id}
+                          style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: bonusDeleting === b.id ? "not-allowed" : "pointer", flexShrink: 0, opacity: bonusDeleting === b.id ? 0.6 : 1 }}
+                        >
+                          {bonusDeleting === b.id ? "…" : "🗑 Delete"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <button onClick={() => setEditScoresFor(null)} style={{ marginTop: 16, background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>Close</button>
