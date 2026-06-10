@@ -8,7 +8,6 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   realtime: { params: { eventsPerSecond: 10 } },
 });
 
-// ── Grade Categories ──────────────────────────────────────────
 export const GRADE_CATEGORIES = [
   "Underclassman (9th-10th Grade)",
   "Upperclassman (11th-12th Grade)",
@@ -16,25 +15,14 @@ export const GRADE_CATEGORIES = [
 ] as const;
 export type GradeCategory = typeof GRADE_CATEGORIES[number];
 
-// ── Scoring Types ─────────────────────────────────────────────
-// "competitive"   — ranked within grade group (1st=3pts, 2nd=2pts, 3rd=1pt)
-// "self_reported" — player types in their own point value
-// "flat"          — everyone who logs gets the same fixed points
 export type ScoringType = "competitive" | "self_reported" | "flat";
 
-// ── Streak bonus ──────────────────────────────────────────────
-export const STREAK_BONUS_DAYS = 7;   // consecutive days to trigger bonus
-export const STREAK_BONUS_PTS  = 3;   // bonus points awarded every 7 days
-
-// ── Biweekly period helper ────────────────────────────────────
-// Uses a configurable anchor date stored in the database settings
-// Admin can change the period start from the Admin panel
+export const STREAK_BONUS_DAYS = 7;
+export const STREAK_BONUS_PTS  = 3;
 
 export function getPeriodAnchor(): Date {
-  // Check localStorage for admin-set anchor date
   const stored = localStorage.getItem("period_anchor");
   if (stored) return new Date(stored);
-  // Default anchor — admin should set this via Admin panel
   return new Date("2025-05-03");
 }
 
@@ -47,7 +35,7 @@ export function currentPeriodStart(): Date {
   const now = new Date();
   const msSinceEpoch = now.getTime() - EPOCH.getTime();
   const periodMs = 14 * 24 * 60 * 60 * 1000;
-  if (msSinceEpoch < 0) return EPOCH; // before anchor, use anchor as start
+  if (msSinceEpoch < 0) return EPOCH;
   const periodsSince = Math.floor(msSinceEpoch / periodMs);
   return new Date(EPOCH.getTime() + periodsSince * periodMs);
 }
@@ -65,7 +53,6 @@ export function getPeriodNumber(): number {
   return Math.floor(msSinceEpoch / periodMs) + 1;
 }
 
-// ── Database Types ────────────────────────────────────────────
 export type Role = "player" | "coach" | "admin" | "inactive" | "pending_player" | "pending_coach";
 
 export interface Profile {
@@ -94,9 +81,9 @@ export interface Workout {
   scoring_type: ScoringType;
   scoring_metric?: string;
   flat_points?: number;
-  first_place_pts?: number;   // custom points for 1st place (competitive)
-  second_place_pts?: number;  // custom points for 2nd place (competitive)
-  third_place_pts?: number;   // custom points for 3rd place (competitive)
+  first_place_pts?: number;
+  second_place_pts?: number;
+  third_place_pts?: number;
   group_name?: string;
   is_active?: boolean;
   deadline?: string;
@@ -125,7 +112,7 @@ export interface ScoreAttempt {
   reps: number;
   sprint_secs: number;
   self_points: number;
-  raw_score: number;     // computed: made + reps or self_points
+  raw_score: number;
   is_personal_best: boolean;
   attempted_at: string;
 }
@@ -168,14 +155,33 @@ export interface LeaderboardEntry {
   current_streak?: number;
 }
 
+// ── Personal Bests ────────────────────────────────────────────
+
+export interface PersonalBest {
+  id: string;
+  player_id: string;
+  workout_id: string;
+  raw_score: number;
+  achieved_at: string;
+}
+
+export async function getMyPersonalBests(playerId: string): Promise<PersonalBest[]> {
+  const { data, error } = await supabase
+    .from("personal_bests")
+    .select("*")
+    .eq("player_id", playerId)
+    .order("achieved_at", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
 // ── Auth helpers ──────────────────────────────────────────────
 export async function signUp(
   email: string,
   password: string,
   profile: Omit<Profile, "id" | "created_at">,
-  selfRegistered = true  // true = needs approval, false = added by coach/admin
+  selfRegistered = true
 ) {
-  // Self-registered accounts go into pending state for approval
   const pendingRole = selfRegistered
     ? (profile.role === "coach" ? "pending_coach" : "pending_player")
     : profile.role;
@@ -196,7 +202,6 @@ export async function signUp(
 }
 
 export async function awardChallengeWinBonus(playerId: string): Promise<void> {
-  // Award +1 point for winning a head-to-head challenge
   await supabase.from("streak_bonuses").insert({
     player_id: playerId,
     points: 1,
@@ -214,7 +219,6 @@ export async function approveUser(userId: string, role: "player" | "coach"): Pro
 }
 
 export async function rejectUser(userId: string): Promise<void> {
-  // Use RPC to delete both the profile and auth user with elevated privileges
   const { error } = await supabase.rpc("delete_pending_user", { target_user_id: userId });
   if (error) throw error;
 }
@@ -255,10 +259,9 @@ export async function createWorkout(
 
 // ── Score helpers ─────────────────────────────────────────────
 
-// Computes the single "raw score" number used for ranking
 export function computeRawScore(s: { made: number; reps: number; sprint_secs: number; self_points: number }): number {
   if (s.self_points > 0) return s.self_points;
-  if (s.sprint_secs > 0 && s.made === 0 && s.reps === 0) return -s.sprint_secs; // lower = better for time
+  if (s.sprint_secs > 0 && s.made === 0 && s.reps === 0) return -s.sprint_secs;
   return s.made + s.reps;
 }
 
@@ -268,7 +271,6 @@ export async function submitScore(
 
   const newRaw = computeRawScore(score);
 
-  // 1. Fetch the workout to get custom rank points + scoring type
   const { data: workout } = await supabase
     .from("workouts")
     .select("first_place_pts, second_place_pts, third_place_pts, scoring_type, flat_points")
@@ -280,7 +282,6 @@ export async function submitScore(
   const secondPts   = workout?.second_place_pts ?? 2;
   const thirdPts    = workout?.third_place_pts  ?? 1;
 
-  // 2. Check if a personal best already exists
   const { data: existing } = await supabase
     .from("scores")
     .select("*")
@@ -291,7 +292,6 @@ export async function submitScore(
   const previousBest: number | null = (existing && computeRawScore(existing) > 0) ? computeRawScore(existing) : null;
   const isPersonalBest = previousBest === null || newRaw > previousBest;
 
-  // 3. Always log this attempt for streak + history
   await supabase.from("score_attempts").insert({
     player_id: score.player_id,
     workout_id: score.workout_id,
@@ -304,26 +304,20 @@ export async function submitScore(
     attempted_at: new Date().toISOString(),
   });
 
-  // 4. Save score and assign points based on scoring type
   let saved: Score;
 
-  // Strip client-only fields before saving to DB
   const { local_date: _ld, ...cleanScore } = score as any;
 
   if (scoringType === "flat") {
-    // ── Flat: award points once per calendar day (local timezone) ──
     const flatPts = workout?.flat_points ?? 0;
-    // Use local date passed in score object, fallback to UTC date
     const localToday = (score as any).local_date ?? new Date().toISOString().split("T")[0];
 
     const { data: existingRow } = await supabase.from("scores")
       .select("*").eq("player_id", score.player_id).eq("workout_id", score.workout_id).maybeSingle();
 
     if (existingRow && existingRow.last_logged_date === localToday) {
-      // Already logged today in their timezone — no new points
       saved = existingRow as Score;
     } else if (existingRow) {
-      // Different day — add flat points
       const newPoints = (existingRow.points ?? 0) + flatPts;
       const { data, error } = await supabase.from("scores")
         .update({ points: newPoints, self_points: flatPts, last_logged_date: localToday })
@@ -332,7 +326,6 @@ export async function submitScore(
       if (error) throw error;
       saved = data as Score;
     } else {
-      // First ever log — insert fresh
       const { data, error } = await supabase.from("scores")
         .insert({ ...score, points: flatPts, self_points: flatPts, last_logged_date: localToday }).select().single();
       if (error) throw error;
@@ -340,7 +333,6 @@ export async function submitScore(
     }
 
   } else if (scoringType === "self_reported") {
-    // ── Self-reported: points = exactly what the player typed in ──
     const { data, error } = await supabase
       .from("scores")
       .upsert({ ...cleanScore, points: score.self_points }, { onConflict: "player_id,workout_id" })
@@ -349,7 +341,6 @@ export async function submitScore(
     saved = data as Score;
 
   } else {
-    // ── Competitive: save raw score first, then re-rank everyone ──
     if (isPersonalBest) {
       const { data, error } = await supabase
         .from("scores")
@@ -360,7 +351,6 @@ export async function submitScore(
     } else {
       saved = existing as Score;
     }
-    // Re-rank all players atomically
     const { error: rankError } = await supabase.rpc("rerank_workout", {
       p_workout_id: score.workout_id,
       p_first_pts:  firstPts,
@@ -370,14 +360,23 @@ export async function submitScore(
     if (rankError) console.error("Re-rank error:", rankError);
   }
 
-  // Award XP for this attempt (use admin-configured value)
+  // ── Save to personal_bests table — persists across season resets ──
+  if (isPersonalBest) {
+    await supabase.from("personal_bests").upsert({
+      player_id:   score.player_id,
+      workout_id:  score.workout_id,
+      raw_score:   newRaw,
+      achieved_at: new Date().toISOString(),
+    }, { onConflict: "player_id,workout_id" });
+  }
+
+  // Award XP for this attempt
   getXpActionValue("_xp_workout", XP_PER_ATTEMPT).then(xp =>
     awardXp(score.player_id, xp, "workout_attempt").catch(console.error)
   );
 
-  // Award +3 bonus points for beating personal best
+  // Award bonus points for beating personal best
   if (isPersonalBest && previousBest !== null && scoringType === "competitive") {
-    // Only award for competitive workouts — not self-reported or flat
     try {
       await supabase.from("streak_bonuses").insert({
         player_id: score.player_id,
@@ -389,7 +388,6 @@ export async function submitScore(
     } catch (e) { console.error(e); }
   }
 
-  // Check and update all-time records (fire and forget — don't block the return)
   if (isPersonalBest) {
     const { data: prof } = await supabase.from("profiles").select("name,avatar_url").eq("id", score.player_id).single();
     const { data: wo } = await supabase.from("workouts").select("title,description").eq("id", score.workout_id).single();
@@ -400,14 +398,12 @@ export async function submitScore(
         newRaw
       ).catch(console.error);
     }
-    // Refresh global stats records (points, workouts, challenges) in background
     refreshGlobalRecords(score.player_id, prof?.name ?? "", prof?.avatar_url ?? null).catch(console.error);
   }
 
   return { saved, isPersonalBest, previousBest };
 }
 
-// Keep old upsertScore as alias for coach manual edits
 export async function upsertScore(
   score: Omit<Score, "id" | "points" | "logged_at">
 ) {
@@ -450,7 +446,6 @@ export async function getStreak(playerId: string): Promise<StreakRecord | null> 
   return data;
 }
 
-// Call this every time a player logs a score
 export async function updateStreak(playerId: string): Promise<{ newStreak: number; bonusAwarded: boolean }> {
   const today = new Date().toISOString().split("T")[0];
   const existing = await getStreak(playerId);
@@ -466,27 +461,21 @@ export async function updateStreak(playerId: string): Promise<{ newStreak: numbe
     );
 
     if (diffDays === 0) {
-      // Already logged today — keep streak as is
       return { newStreak: existing.current_streak, bonusAwarded: false };
     } else if (diffDays === 1) {
-      // Consecutive day — extend streak
       newStreak = existing.current_streak + 1;
     } else {
-      // Streak broken
       newStreak = 1;
     }
   }
 
-  // Check if bonus should be awarded
   const prevStreak = existing?.current_streak ?? 0;
   const prevBonusAt = existing?.bonus_awarded_at;
   const alreadyAwardedToday = prevBonusAt === today;
 
-  // Award bonus every 7 days (7, 14, 21, etc.)
   const crossedNewMilestone = Math.floor(newStreak / STREAK_BONUS_DAYS) > Math.floor(prevStreak / STREAK_BONUS_DAYS);
   if (crossedNewMilestone && !alreadyAwardedToday) {
     bonusAwarded = true;
-    // Award streak bonus points as a special score entry
     await supabase.from("streak_bonuses").insert({
       player_id: playerId,
       points: STREAK_BONUS_PTS,
@@ -495,7 +484,6 @@ export async function updateStreak(playerId: string): Promise<{ newStreak: numbe
     });
   }
 
-  // Upsert streak record
   await supabase.from("streaks").upsert({
     player_id: playerId,
     current_streak: newStreak,
@@ -517,14 +505,11 @@ export async function getBiweeklyChampions(): Promise<BiweeklyChampion[]> {
   return data ?? [];
 }
 
-// Called by a Supabase cron Edge Function every 2 weeks,
-// but also exposed here so coaches can manually trigger it
 export async function crownBiweeklyWinners(leaderboard: LeaderboardEntry[]): Promise<void> {
   const periodStart  = currentPeriodStart().toISOString();
   const periodEnd    = currentPeriodEnd().toISOString();
   const periodNumber = getPeriodNumber();
 
-  // Find winner per grade group
   const winners: Record<string, LeaderboardEntry> = {};
   for (const entry of leaderboard) {
     const cat = entry.grade_category ?? "Unknown";
@@ -533,13 +518,11 @@ export async function crownBiweeklyWinners(leaderboard: LeaderboardEntry[]): Pro
     }
   }
 
-  // Clear current champions
   await supabase.from("profiles").update({ is_period_champion: false }).neq("id", "none");
 
   for (const [grade, winner] of Object.entries(winners)) {
     if (!winner.total_points) continue;
 
-    // Fetch avatar_url for this winner
     const { data: prof } = await supabase
       .from("profiles").select("avatar_url").eq("id", winner.id).single();
 
@@ -547,7 +530,6 @@ export async function crownBiweeklyWinners(leaderboard: LeaderboardEntry[]): Pro
       .update({ is_period_champion: true, champion_since: new Date().toISOString() })
       .eq("id", winner.id);
 
-    // Update most periods won record
     const { count: periodsWon } = await supabase
       .from("biweekly_champions")
       .select("id", { count: "exact", head: true })
@@ -587,14 +569,12 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
   return data ?? [];
 }
 
-
 // ── Records ───────────────────────────────────────────────────
 
 export async function getCurrentSeason(): Promise<string> {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
-  // Season runs roughly June-May
   return month >= 6 ? `${year}-${year+1}` : `${year-1}-${year}`;
 }
 
@@ -608,7 +588,6 @@ export async function checkAndUpdateRecords(
   newScore: number,
 ): Promise<void> {
   const season = await getCurrentSeason();
-  // Check best score for this drill
   await supabase.rpc("upsert_record", {
     p_type: "best_score",
     p_workout_id: workoutId,
@@ -626,7 +605,6 @@ export async function checkAndUpdateRecords(
 export async function refreshGlobalRecords(playerId: string, playerName: string, avatarUrl: string | null): Promise<void> {
   const season = await getCurrentSeason();
 
-  // Most total points all-time (from leaderboard view)
   const { data: lb } = await supabase.from("leaderboard").select("id,name,total_points,avatar_url,workouts_completed").eq("id", playerId).single();
   if (lb) {
     await supabase.rpc("upsert_record", {
@@ -645,7 +623,6 @@ export async function refreshGlobalRecords(playerId: string, playerName: string,
     });
   }
 
-  // Most challenges won
   const { count: wins } = await supabase.from("challenges")
     .select("id", { count: "exact", head: true })
     .eq("winner_id", playerId)
@@ -659,7 +636,6 @@ export async function refreshGlobalRecords(playerId: string, playerName: string,
     });
   }
 
-  // Best win rate (min 10 challenges)
   const { count: total } = await supabase.from("challenges")
     .select("id", { count: "exact", head: true })
     .or(`challenger_id.eq.${playerId},opponent_id.eq.${playerId}`)
@@ -674,7 +650,6 @@ export async function refreshGlobalRecords(playerId: string, playerName: string,
     });
   }
 
-  // Longest streak (from streaks table)
   const { data: streak } = await supabase.from("streaks")
     .select("longest_streak").eq("player_id", playerId).single();
   if (streak?.longest_streak) {
@@ -705,7 +680,6 @@ export async function getBestScoreRecords() {
     .order("workout_title");
   return data ?? [];
 }
-
 
 // ── Teams ─────────────────────────────────────────────────────
 
@@ -745,30 +719,23 @@ export async function getTeams(competitionId: string): Promise<Team[]> {
   const { data: teams } = await supabase.from("teams").select("*").eq("competition_id", competitionId);
   if (!teams) return [];
 
-  // Calculate each team's score by summing points of its members
   const teamsWithScores = await Promise.all(teams.map(async team => {
-    // Get players on this team
     const { data: members } = await supabase.from("profiles")
       .select("id").eq("team_id", team.id);
     const memberIds = (members ?? []).map((m: any) => m.id);
     if (memberIds.length === 0) return { ...team, score: 0, memberCount: 0 };
 
-    // Sum their leaderboard points
     const { data: lb } = await supabase.from("leaderboard")
       .select("id,total_points,rank").in("id", memberIds);
     const drillScore = (lb ?? []).reduce((sum: number, p: any) => sum + (p.total_points ?? 0), 0);
-    // Map individual points keyed by player id
     const playerPoints: Record<string, number> = {};
     (lb ?? []).forEach((p: any) => { playerPoints[p.id] = p.total_points ?? 0; });
 
-    // Check if any member has team_bonus perk unlocked — adds +3 to team starting score
-    // If XP system is disabled, all perks are unlocked so boost always applies
     const { data: xpToggle } = await supabase.from("xp_settings")
       .select("xp_required").eq("perk_key", "_xp_enabled").single();
     const xpEnabled = (xpToggle?.xp_required ?? 1) !== 0;
     let hasTeamBoost = false;
     if (!xpEnabled) {
-      // XP off — all perks unlocked, boost applies if team has any members
       hasTeamBoost = memberIds.length > 0;
     } else {
       const { data: xpSettings } = await supabase.from("xp_settings")
@@ -789,15 +756,13 @@ export async function getTeams(competitionId: string): Promise<Team[]> {
 export async function saveTeamCompetition(
   numTeams: number,
   teamNames: string[],
-  playerAssignments: Record<string, string[]>, // teamName -> playerId[]
+  playerAssignments: Record<string, string[]>,
   bonusPoints: number,
   startDate: string,
   endDate: string,
 ): Promise<void> {
-  // Deactivate any existing competition
   await supabase.from("team_competitions").update({ is_active: false }).eq("is_active", true);
 
-  // Create new competition
   const { data: comp, error: compErr } = await supabase.from("team_competitions").insert({
     is_active: true,
     bonus_points: bonusPoints,
@@ -806,7 +771,6 @@ export async function saveTeamCompetition(
   }).select().single();
   if (compErr) throw compErr;
 
-  // Create teams and assign players
   for (let i = 0; i < numTeams; i++) {
     const name = teamNames[i];
     const color = TEAM_COLORS[i % TEAM_COLORS.length];
@@ -814,30 +778,23 @@ export async function saveTeamCompetition(
       name, color, competition_id: comp.id,
     }).select().single();
     if (!team) continue;
-    // Assign players to this team
     const playerIds = playerAssignments[name] ?? [];
     if (playerIds.length > 0) {
-      if (playerIds.length > 0) {
-        await supabase.from("profiles").update({ team_id: team.id }).in("id", playerIds);
-      }
+      await supabase.from("profiles").update({ team_id: team.id }).in("id", playerIds);
     }
   }
 }
 
 export async function endTeamCompetition(competitionId: string): Promise<{ winnerName: string; winnerScore: number; bonusErrors: number; playerCount: number } | null> {
-  // Get all teams with their scores
   const teams = await getTeams(competitionId);
 
-  // Even if teams is empty, still close the competition
   if (!teams.length) {
     await supabase.rpc("close_team_competition", { p_competition_id: competitionId, p_winning_team_id: null });
     return { winnerName: "Unknown", winnerScore: 0, bonusErrors: 0, playerCount: 0 };
   }
 
-  // Find winning team (highest score)
   const winner = teams.reduce((best: any, t: any) => (t.score ?? 0) > (best.score ?? 0) ? t : best, teams[0]);
 
-  // Get all players on winning team
   const { data: winningPlayers } = await supabase.from("profiles")
     .select("id,name").eq("team_id", winner.id);
 
@@ -845,7 +802,6 @@ export async function endTeamCompetition(competitionId: string): Promise<{ winne
     .select("bonus_points").eq("id", competitionId).single();
   const bonusPts = comp?.bonus_points ?? 3;
 
-  // Award bonus points via security definer function (bypasses RLS)
   const playerList = winningPlayers ?? [];
   let bonusErrors = 0;
   if (playerList.length > 0) {
@@ -859,13 +815,11 @@ export async function endTeamCompetition(competitionId: string): Promise<{ winne
       console.error("Bonus RPC error:", bonusErr.message);
       bonusErrors = playerList.length;
     }
-    // Increment team_wins on profiles
     await supabase.rpc("increment_team_wins", { p_player_ids: playerIds });
   }
 
   return { winnerName: winner.name, winnerScore: winner.score ?? 0, bonusErrors, playerCount: playerList.length };
 
-  // Mark competition as inactive and record winning team via RPC (bypasses RLS)
   await supabase.rpc("close_team_competition", {
     p_competition_id: competitionId,
     p_winning_team_id: winner.id,
@@ -876,12 +830,11 @@ export async function toggleTeamCompetition(active: boolean): Promise<void> {
   await supabase.from("team_competitions").update({ is_active: active }).eq("is_active", !active);
 }
 
-
 // ── XP System ─────────────────────────────────────────────────
 
-export const XP_PER_ATTEMPT    = 10; // default fallback
-export const XP_CHALLENGE_SENT = 2;  // default fallback
-export const XP_CHALLENGE_DONE = 3;  // default fallback
+export const XP_PER_ATTEMPT    = 10;
+export const XP_CHALLENGE_SENT = 2;
+export const XP_CHALLENGE_DONE = 3;
 
 async function getXpActionValue(key: string, fallback: number): Promise<number> {
   const { data } = await supabase.from("xp_settings").select("xp_required").eq("perk_key", key).single();
@@ -916,7 +869,6 @@ export async function getPlayerXp(playerId: string): Promise<number> {
 export async function awardXp(playerId: string, amount: number, reason: string): Promise<void> {
   await supabase.from("xp_log").insert({ player_id: playerId, xp_amount: amount, reason });
   await supabase.from("profiles").update({ total_xp: supabase.rpc as any }).eq("id", playerId);
-  // Use increment via RPC-less approach
   const { data: prof } = await supabase.from("profiles").select("total_xp").eq("id", playerId).single();
   const current = prof?.total_xp ?? 0;
   await supabase.from("profiles").update({ total_xp: current + amount }).eq("id", playerId);
@@ -939,10 +891,10 @@ export function getPlayerTier(xp: number, perks: XpPerk[]): { tier: number; perk
   const tier = currentPerk ? sorted.indexOf(currentPerk) + 1 : 0;
 
   const outlineColors: Record<string, string> = {
-    "team_eligible":  "#9ca3af",  // light gray
-    "streak_shield":  "#c0c0c0",  // silver
-    "team_bonus":     "#2550d4",  // royal blue
-    "score_boost":    "#f0c040",  // gold
+    "team_eligible":  "#9ca3af",
+    "streak_shield":  "#c0c0c0",
+    "team_bonus":     "#2550d4",
+    "score_boost":    "#f0c040",
   };
   const avatarOutline = currentPerk ? (outlineColors[currentPerk.perk_key] ?? "var(--border)") : "var(--border)";
 
@@ -992,7 +944,6 @@ export async function uploadAvatar(userId: string, file: File): Promise<string> 
   const ext = file.name.split(".").pop() ?? "jpg";
   const path = `${userId}/avatar.${ext}`;
 
-  // Remove old avatar first (ignore error if none exists)
   await supabase.storage.from("avatars").remove([`${userId}/avatar.jpg`, `${userId}/avatar.png`, `${userId}/avatar.webp`]);
 
   const { error: uploadError } = await supabase.storage
@@ -1001,9 +952,8 @@ export async function uploadAvatar(userId: string, file: File): Promise<string> 
   if (uploadError) throw uploadError;
 
   const { data } = supabase.storage.from("avatars").getPublicUrl(path);
-  const publicUrl = data.publicUrl + `?t=${Date.now()}`; // bust cache
+  const publicUrl = data.publicUrl + `?t=${Date.now()}`;
 
-  // Save URL to profile
   const { error: profileError } = await supabase
     .from("profiles")
     .update({ avatar_url: publicUrl })
