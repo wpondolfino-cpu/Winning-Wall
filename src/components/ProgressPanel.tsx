@@ -1,6 +1,6 @@
 // src/components/ProgressPanel.tsx
 import { useState, useEffect } from "react";
-import { supabase, Profile, Score, Workout, ScoreAttempt, getMyAttempts } from "../lib/supabase";
+import { supabase, Profile, Score, Workout, ScoreAttempt, getMyAttempts, getMyPersonalBests, PersonalBest } from "../lib/supabase";
 import { Badge, getActiveBadges, checkBadge, PlayerStats } from "../lib/badges";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
@@ -11,7 +11,6 @@ interface Props {
   overrideUserId?: string;
 }
 
-// ── Streak calendar helpers ───────────────────────────────────
 function getCalendarDays(year: number, month: number) {
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -33,7 +32,6 @@ function StreakCalendar({ attempts }: { attempts: ScoreAttempt[] }) {
   function isLogged(day: number) {
     return loggedDays.has(`${calYear}-${calMonth}-${day}`);
   }
-
   function isToday(day: number) {
     return calYear === now.getFullYear() && calMonth === now.getMonth() && day === now.getDate();
   }
@@ -56,7 +54,6 @@ function StreakCalendar({ attempts }: { attempts: ScoreAttempt[] }) {
 
   return (
     <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px", marginBottom: 20 }}>
-      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <button onClick={prevMonth} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 18, cursor: "pointer", padding: "0 6px" }}>‹</button>
         <div style={{ textAlign: "center" }}>
@@ -67,13 +64,11 @@ function StreakCalendar({ attempts }: { attempts: ScoreAttempt[] }) {
         </div>
         <button onClick={nextMonth} style={{ background: "none", border: "none", color: calYear === now.getFullYear() && calMonth === now.getMonth() ? "var(--border)" : "var(--muted)", fontSize: 18, cursor: "pointer", padding: "0 6px" }}>›</button>
       </div>
-      {/* Day labels */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3, marginBottom: 4 }}>
         {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d => (
           <div key={d} style={{ textAlign: "center", fontSize: 10, color: "var(--muted)", fontWeight: 600 }}>{d}</div>
         ))}
       </div>
-      {/* Day cells */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3 }}>
         {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
         {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => (
@@ -92,7 +87,6 @@ function StreakCalendar({ attempts }: { attempts: ScoreAttempt[] }) {
           </div>
         ))}
       </div>
-      {/* Legend */}
       <div style={{ display: "flex", gap: 14, marginTop: 10, justifyContent: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "var(--muted)" }}>
           <div style={{ width: 10, height: 10, borderRadius: 2, background: "var(--royal)" }} /> Logged
@@ -105,7 +99,6 @@ function StreakCalendar({ attempts }: { attempts: ScoreAttempt[] }) {
   );
 }
 
-// ── Simple line chart ─────────────────────────────────────────
 function ProgressChart({ attempts, workouts }: { attempts: ScoreAttempt[]; workouts: Workout[] }) {
   const [selectedWorkout, setSelectedWorkout] = useState<string>("all");
 
@@ -114,7 +107,7 @@ function ProgressChart({ attempts, workouts }: { attempts: ScoreAttempt[]; worko
 
   const filtered = (selectedWorkout === "all" ? attempts : attempts.filter(a => a.workout_id === selectedWorkout))
     .slice().sort((a, b) => new Date(a.attempted_at).getTime() - new Date(b.attempted_at).getTime())
-    .slice(-20); // last 20 attempts
+    .slice(-20);
 
   if (filtered.length < 2) return (
     <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: "30px 0" }}>
@@ -149,22 +142,17 @@ function ProgressChart({ attempts, workouts }: { attempts: ScoreAttempt[]; worko
         </select>
       )}
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", overflow: "visible" }}>
-        {/* Grid lines */}
         {[0.25, 0.5, 0.75].map(pct => (
           <line key={pct} x1={PAD} y1={PAD + pct * (H - PAD * 2)} x2={W - PAD} y2={PAD + pct * (H - PAD * 2)}
             stroke="var(--border)" strokeWidth="0.5" strokeDasharray="3,3" />
         ))}
-        {/* Area fill */}
         <path d={area} fill={trend} fillOpacity="0.08" />
-        {/* Line */}
         <polyline points={polyline} fill="none" stroke={trend} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-        {/* Points */}
         {points.map((p, i) => (
           <g key={i}>
             <circle cx={p.x} cy={p.y} r="4" fill={i === points.length - 1 ? trend : "var(--surface2)"} stroke={trend} strokeWidth="2" />
           </g>
         ))}
-        {/* First + last labels */}
         <text x={points[0].x} y={points[0].y - 8} textAnchor="middle" fontSize="9" fill="var(--muted)">{scores[0]}</text>
         <text x={points[points.length-1].x} y={points[points.length-1].y - 8} textAnchor="middle" fontSize="9" fill={trend} fontWeight="bold">{scores[scores.length-1]}</text>
       </svg>
@@ -180,7 +168,8 @@ function ProgressChart({ attempts, workouts }: { attempts: ScoreAttempt[]; worko
 }
 
 export default function ProgressPanel({ profile, myScores, workouts, overrideUserId }: Props) {
-  const [attempts, setAttempts]     = useState<ScoreAttempt[]>([]);
+  const [attempts, setAttempts]         = useState<ScoreAttempt[]>([]);
+  const [personalBests, setPersonalBests] = useState<PersonalBest[]>([]);
   const [overrideProfile, setOverrideProfile]   = useState<Profile | null>(null);
   const [overrideScores, setOverrideScores]     = useState<Score[] | null>(null);
   const [overrideLoading, setOverrideLoading]   = useState(!!overrideUserId);
@@ -193,6 +182,7 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
 
   useEffect(() => {
     loadAttempts();
+    loadPersonalBests();
     loadBadges();
     loadChampCount();
     loadTeamWins();
@@ -205,6 +195,18 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
     if (!uid) return;
     const { data } = await supabase.from("streaks").select("current_streak").eq("player_id", uid).single();
     setMyStreak(data?.current_streak ?? 0);
+  }
+
+  async function loadPersonalBests() {
+    const uid = overrideUserId ?? (await supabase.auth.getUser()).data.user?.id;
+    if (!uid) return;
+    try {
+      const bests = await getMyPersonalBests(uid);
+      setPersonalBests(bests);
+    } catch (e) {
+      // Table may not exist yet if migration hasn't been run — fail silently
+      setPersonalBests([]);
+    }
   }
 
   async function loadOverrideData() {
@@ -231,7 +233,6 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
   async function loadTeamWins() {
     const uid = overrideUserId ?? (await supabase.auth.getUser()).data.user?.id;
     if (!uid) return;
-    // Count past team competitions where user's team won
     const { data: comps } = await supabase.from("team_competitions")
       .select("id,winning_team_id")
       .not("winning_team_id","is",null);
@@ -268,7 +269,7 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
   }
 
   async function loadAttempts() {
-    if (overrideUserId) return; // handled by loadOverrideData
+    if (overrideUserId) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setAttempts(await getMyAttempts(user.id));
@@ -285,7 +286,6 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
   const effectiveProfile = overrideProfile ?? (overrideUserId ? null : profile);
   const effectiveScores  = overrideScores ?? myScores;
 
-  // If override was requested but profile didn't load, show error
   if (overrideUserId && !effectiveProfile) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300, padding: 40 }}>
@@ -295,13 +295,9 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
   }
 
   const totalPoints   = effectiveScores.reduce((sum, s) => sum + (s.points ?? 0), 0);
-  const totalMade     = effectiveScores.reduce((sum, s) => sum + s.made, 0);
-  const totalAtt      = effectiveScores.reduce((sum, s) => sum + s.attempts, 0);
   const activeWorkouts = (workouts ?? []).filter(w => w.is_active !== false);
   const completedCount = effectiveScores.length;
-  const completionPct  = activeWorkouts.length > 0 ? Math.round((completedCount / activeWorkouts.length) * 100) : 0;
 
-  // Rank from leaderboard
   const myEntry = leaderboard.find(e => e.id === effectiveProfile?.id);
   const myRank  = myEntry?.rank ?? null;
   const totalPlayers = leaderboard.length;
@@ -365,30 +361,37 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
       {/* ── PERSONAL BESTS ── */}
       {view === "bests" && (
         <div className="card">
-          <div className="card-title">Your Best Score Per Workout</div>
-          {effectiveScores.length === 0 ? (
+          <div className="card-title">Your All-Time Best Score Per Workout</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>
+            Preserved across season resets — your best ever, with the date you set it 🏆
+          </div>
+          {personalBests.length === 0 ? (
             <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 14, padding: 24 }}>
               No workouts logged yet. Head to Workouts to get started! 🏀
             </div>
           ) : (
             <>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 80px", padding: "6px 0", fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "1px", borderBottom: "1px solid var(--border)", marginBottom: 4 }}>
-                <div>Workout</div><div style={{ textAlign: "center" }}>Best Score</div><div style={{ textAlign: "center" }}>Points</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 110px", padding: "6px 0", fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "1px", borderBottom: "1px solid var(--border)", marginBottom: 4 }}>
+                <div>Workout</div>
+                <div style={{ textAlign: "center" }}>Best</div>
+                <div style={{ textAlign: "center" }}>Date Set</div>
               </div>
-              {effectiveScores.map(s => {
-                const w = workouts.find(x => x.id === s.workout_id);
-                const bestDisplay = s.self_points > 0 ? `${s.self_points} pts`
-                  : s.sprint_secs > 0 ? `${s.sprint_secs}s`
-                  : `${s.made + s.reps}`;
-                const attemptCount = attempts.filter(a => a.workout_id === s.workout_id).length;
+              {personalBests.map(pb => {
+                const w = workouts.find(x => x.id === pb.workout_id);
+                const displayScore = pb.raw_score < 0
+                  ? `${Math.abs(pb.raw_score)}s`
+                  : `${pb.raw_score}`;
+                const date = new Date(pb.achieved_at).toLocaleDateString("en-US", {
+                  month: "short", day: "numeric", year: "numeric"
+                });
                 return (
-                  <div key={s.id} style={{ display: "grid", gridTemplateColumns: "1fr 100px 80px", padding: "12px 0", borderBottom: "1px solid var(--border)", alignItems: "center" }}>
+                  <div key={pb.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 110px", padding: "12px 0", borderBottom: "1px solid var(--border)", alignItems: "center" }}>
                     <div>
-                      <div style={{ fontWeight: 600, color: "var(--text)", fontSize: 13 }}>{w?.title ?? "Unknown"}</div>
-                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{w?.category} · {attemptCount} attempt{attemptCount !== 1 ? "s" : ""}</div>
+                      <div style={{ fontWeight: 600, color: "var(--text)", fontSize: 13 }}>{w?.emoji ?? "🏀"} {w?.title ?? "Unknown"}</div>
+                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{w?.category}</div>
                     </div>
-                    <div style={{ textAlign: "center", fontWeight: 700, color: "var(--gold)", fontSize: 16 }}>{bestDisplay}</div>
-                    <div style={{ textAlign: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "#93b4ff" }}>{s.points}</div>
+                    <div style={{ textAlign: "center", fontWeight: 700, color: "var(--gold)", fontSize: 16 }}>{displayScore}</div>
+                    <div style={{ textAlign: "center", fontSize: 11, color: "#93b4ff" }}>{date}</div>
                   </div>
                 );
               })}
