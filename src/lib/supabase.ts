@@ -1,6 +1,7 @@
 // src/lib/supabase.ts
-// Supabase client + all shared types, interfaces, and constants.
-// All logic lives in the focused files alongside this one.
+// Supabase client + all shared types and constants.
+// Re-exports everything from the split lib files so all existing
+// component imports from "../lib/supabase" continue to work unchanged.
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -29,7 +30,7 @@ export type Role = "player" | "coach" | "admin" | "inactive" | "pending_player" 
 export const STREAK_BONUS_DAYS = 7;
 export const STREAK_BONUS_PTS  = 3;
 
-// ── XP constants ──────────────────────────────────────────────
+// ── XP constants ─────────────────────────────────────────────
 export const XP_PER_ATTEMPT    = 10;
 export const XP_CHALLENGE_SENT = 2;
 export const XP_CHALLENGE_DONE = 3;
@@ -186,3 +187,27 @@ export const DEFAULT_PERKS: XpPerk[] = [
   { perk_key: "team_bonus",          perk_name: "Team Boost",            xp_required: 1250, description: "Your team starts with +3 pts. Blue avatar outline." },
   { perk_key: "score_boost",         perk_name: "Score Boost",           xp_required: 2000, description: "+5 to one workout score per period. Gold avatar outline." },
 ];
+
+// ── Re-export everything from split files ─────────────────────
+// This keeps all existing component imports working unchanged.
+// Components import from "../lib/supabase" as before — this file
+// forwards everything so nothing breaks.
+export * from "./periods";
+export * from "./auth";
+export * from "./workouts";
+export * from "./scores";
+export * from "./streaks";
+export * from "./leaderboard";
+export * from "./records";
+export * from "./teams";
+export { 
+  getXpEnabled,
+  setXpEnabled,
+  getXpPerks,
+  getPlayerXp,
+  awardXp,
+  getPlayerTier,
+  hasPerkUsedThisPeriod,
+  usePerk,
+  checkUnseenPerks,
+} from "./xp";
