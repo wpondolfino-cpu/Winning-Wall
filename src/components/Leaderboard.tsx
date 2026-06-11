@@ -451,12 +451,12 @@ export default function Leaderboard({ currentUserId }: Props) {
                         )}
                         {periodBonuses.filter(b => b.player_id === entry.id).map((b, i) => {
                             const label =
-                              b.reason === "personal_best"    ? "🏅 Beat Personal Record" :
-                              b.reason === "daily_completion" ? "✅ Daily Completion Bonus" :
-                              b.reason === "challenge_win"    ? "⚔️ Challenge Win" :
-                              b.reason === "streak"           ? "🔥 Streak Bonus" :
-                              b.reason === "team_win"         ? "🏆 Team Competition Win" :
-                              "⭐ Bonus";
+b.reason?.startsWith("personal_best") ? 🏅 Beat PB${b.reason.includes(":") ?  — ${b.reason.split(":")[1]} : ""} :
+b.reason === "daily_completion" ? "✅ Daily Completion Bonus" :
+b.reason === "challenge_win"    ? "⚔️ Challenge Win" :
+b.reason === "streak"           ? "🔥 Streak Bonus" :
+b.reason === "team_win"         ? "🏆 Team Competition Win" :
+"⭐ Bonus";
                             return (
                               <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
                                 <div style={{ fontSize: 12, color: "#ff8c42" }}>{label}</div>
@@ -555,12 +555,12 @@ export default function Leaderboard({ currentUserId }: Props) {
                         )}
                         {periodBonuses.filter(b => b.player_id === entry.player_id).map((b, i) => {
                             const label =
-                              b.reason === "personal_best"    ? "🏅 Beat Personal Record" :
-                              b.reason === "daily_completion" ? "✅ Daily Completion Bonus" :
-                              b.reason === "challenge_win"    ? "⚔️ Challenge Win" :
-                              b.reason === "streak"           ? "🔥 Streak Bonus" :
-                              b.reason === "team_win"         ? "🏆 Team Competition Win" :
-                              "⭐ Bonus";
+b.reason?.startsWith("personal_best") ? 🏅 Beat PB${b.reason.includes(":") ?  — ${b.reason.split(":")[1]} : ""} :
+b.reason === "daily_completion" ? "✅ Daily Completion Bonus" :
+b.reason === "challenge_win"    ? "⚔️ Challenge Win" :
+b.reason === "streak"           ? "🔥 Streak Bonus" :
+b.reason === "team_win"         ? "🏆 Team Competition Win" :
+"⭐ Bonus";
                             return (
                               <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
                                 <div style={{ fontSize: 12, color: "#ff8c42" }}>{label}</div>
