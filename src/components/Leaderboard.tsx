@@ -451,7 +451,7 @@ export default function Leaderboard({ currentUserId }: Props) {
                         )}
                         {periodBonuses.filter(b => b.player_id === entry.id).map((b, i) => {
                             const label =
-b.reason?.startsWith("personal_best") ? 🏅 Beat PB${b.reason.includes(":") ?  — ${b.reason.split(":")[1]} : ""} :
+b.reason?.startsWith("personal_best") ? "🏅 Beat PB" + (b.reason.includes(":") ? " — " + b.reason.split(":")[1] : "") :
 b.reason === "daily_completion" ? "✅ Daily Completion Bonus" :
 b.reason === "challenge_win"    ? "⚔️ Challenge Win" :
 b.reason === "streak"           ? "🔥 Streak Bonus" :
