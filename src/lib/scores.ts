@@ -143,7 +143,7 @@ export async function submitScore(
       saved = data as Score;
     } else {
       const { data, error } = await supabase.from("scores")
-        .insert({ ...score, points: flatPts, self_points: flatPts, last_logged_date: localToday })
+        .insert({ ...cleanScore, points: flatPts, self_points: flatPts, last_logged_date: localToday })
         .select().single();
       if (error) throw error;
       saved = data as Score;
