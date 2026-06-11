@@ -1,13 +1,10 @@
 // src/lib/xp.ts
 // XP system — awarding XP, perks, player tier, perk notifications
-// XP enabled/disabled reads from database only (no localStorage)
+// Note: XP_PER_ATTEMPT, XP_CHALLENGE_SENT, XP_CHALLENGE_DONE constants
+// live in supabase.ts to avoid duplicate export conflicts.
 
 import { supabase, XpPerk, DEFAULT_PERKS } from "./supabase";
 import { currentPeriodStart } from "./periods";
-
-export const XP_PER_ATTEMPT    = 10;
-export const XP_CHALLENGE_SENT = 2;
-export const XP_CHALLENGE_DONE = 3;
 
 // ── XP enabled state — database only, no localStorage ────────
 export async function getXpEnabled(): Promise<boolean> {
