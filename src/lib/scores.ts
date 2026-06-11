@@ -175,8 +175,8 @@ export async function submitScore(
     if (rankError) console.error("Re-rank error:", rankError);
   }
 
-  // Save to personal_bests — survives season resets
-  if (isPersonalBest) {
+  // Save to personal_bests — competitive only, survives season resets
+  if (isPersonalBest && scoringType === "competitive") {
     await supabase.from("personal_bests").upsert({
       player_id:   score.player_id,
       workout_id:  score.workout_id,
@@ -190,15 +190,20 @@ export async function submitScore(
     awardXp(score.player_id, xp, "workout_attempt").catch(console.error)
   );
 
-  // Award personal best bonus point
+  // Award personal best bonus point — competitive only, includes workout title
+  // so score breakdown shows "🏅 Beat Personal Record — Star Shooting"
   if (isPersonalBest && previousBest !== null && scoringType === "competitive") {
     try {
+      const { data: wt } = await supabase
+        .from("workouts").select("title").eq("id", score.workout_id).single();
+      const workoutTitle = wt?.title ?? "Unknown drill";
+
       await supabase.from("streak_bonuses").insert({
         player_id:     score.player_id,
         points:        1,
         streak_length: 0,
         awarded_at:    new Date().toISOString(),
-        reason:        "personal_best",
+        reason:        `personal_best:${workoutTitle}`,
       });
     } catch (e) { console.error(e); }
   }
