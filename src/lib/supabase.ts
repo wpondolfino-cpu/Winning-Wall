@@ -147,6 +147,7 @@ export interface LeaderboardEntry {
   rank: number;
   is_period_champion?: boolean;
   current_streak?: number;
+  total_xp?: number;
 }
 
 export interface PersonalBest {
