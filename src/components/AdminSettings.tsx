@@ -1,43 +1,6 @@
 // src/components/AdminSettings.tsx
 import { useState, useEffect } from "react";
-import { supabase, setPeriodAnchor, getPeriodAnchor, currentPeriodStart, currentPeriodEnd } from "../lib/supabase";
-
-// ── Badge stored in Supabase ──────────────────────────────────
-interface Badge {
-  id: string;
-  icon: string;
-  name: string;
-  description: string;
-  trigger_type: "workouts" | "points" | "streak" | "champion" | "top_score" | "challenges_won" | "team_wins";
-  trigger_value: number;
-  is_active: boolean;
-}
-
-const TRIGGER_LABELS: Record<string, string> = {
-  workouts:        "Workouts logged",
-  points:          "Total points earned",
-  streak:          "Day logging streak",
-  champion:        "Won a biweekly period",
-  top_score:       "Scored #1 on any drill",
-  challenges_won:  "Challenges won",
-  team_wins:       "Team competition wins",
-};
-
-const DEFAULT_BADGES: Omit<Badge, "id">[] = [
-  { icon: "🏀", name: "First Rep",       description: "Logged your first workout",        trigger_type: "workouts",  trigger_value: 1,   is_active: true },
-  { icon: "💪", name: "Getting Reps",    description: "Logged 5 workouts",                trigger_type: "workouts",  trigger_value: 5,   is_active: true },
-  { icon: "🔟", name: "Grinder",         description: "Logged 10 workouts",               trigger_type: "workouts",  trigger_value: 10,  is_active: true },
-  { icon: "⚡", name: "Workhorse",       description: "Logged 25 workouts",               trigger_type: "workouts",  trigger_value: 25,  is_active: true },
-  { icon: "🔥", name: "On Fire",         description: "3-day logging streak",             trigger_type: "streak",    trigger_value: 3,   is_active: true },
-  { icon: "🌟", name: "Week Warrior",    description: "7-day logging streak",             trigger_type: "streak",    trigger_value: 7,   is_active: true },
-  { icon: "💯", name: "Two Week Grind",  description: "14-day logging streak",            trigger_type: "streak",    trigger_value: 14,  is_active: true },
-  { icon: "🥉", name: "On the Board",    description: "Earned 10 total points",           trigger_type: "points",    trigger_value: 10,  is_active: true },
-  { icon: "🥈", name: "Rising Star",     description: "Earned 25 total points",           trigger_type: "points",    trigger_value: 25,  is_active: true },
-  { icon: "🥇", name: "Elite",           description: "Earned 50 total points",           trigger_type: "points",    trigger_value: 50,  is_active: true },
-  { icon: "💎", name: "Century Club",    description: "Earned 100 total points",          trigger_type: "points",    trigger_value: 100, is_active: true },
-  { icon: "👑", name: "Champion",        description: "Won a biweekly period",            trigger_type: "champion",  trigger_value: 1,   is_active: true },
-  { icon: "🎯", name: "Sharpshooter",    description: "Scored #1 on any drill",           trigger_type: "top_score", trigger_value: 1,   is_active: true },
-];
+import { supabase, currentPeriodStart, currentPeriodEnd, resetPlayerScores, savePeriodAnchor, getPeriodAnchor } from "../lib/supabase";
 
 export default function AdminSettings() {
   const [exporting, setExporting]   = useState(false);
@@ -56,11 +19,8 @@ export default function AdminSettings() {
   const periodEnd   = currentPeriodEnd();
   const daysLeft    = Math.ceil((periodEnd.getTime() - Date.now()) / 86400000);
 
-
-
-
-  function saveAnchor() {
-    setPeriodAnchor(new Date(anchorDate));
+  async function saveAnchor() {
+    await savePeriodAnchor(new Date(anchorDate));
     setAnchorSaved(true);
     setTimeout(() => { setAnchorSaved(false); window.location.reload(); }, 1000);
   }
@@ -94,7 +54,6 @@ export default function AdminSettings() {
     } finally { setExporting(false); }
   }
 
-
   async function handleSeasonReset() {
     if (resetStep === 0) { setResetStep(1); return; }
     if (resetStep === 1) { setResetStep(2); return; }
@@ -107,22 +66,17 @@ export default function AdminSettings() {
       const { data: drillBests } = await supabase.from("scores").select("player_id,workout_id,points");
 
       if (profiles && allScores) {
-        // Calculate totals per player
         const ptMap: Record<string,number> = {};
         allScores.forEach((s:any) => { ptMap[s.player_id] = (ptMap[s.player_id]||0) + (s.points||0); });
-        // Sort for overall rank
         const sorted = Object.entries(ptMap).sort((a,b) => b[1]-a[1]);
-        // Drill wins (#1 on any drill)
         const drillWinMap: Record<string,number> = {};
         const workoutIds = [...new Set((drillBests??[]).map((s:any) => s.workout_id))];
         workoutIds.forEach(wid => {
           const top = (drillBests??[]).filter((s:any) => s.workout_id === wid).sort((a:any,b:any) => b.points-a.points)[0];
           if (top) drillWinMap[top.player_id] = (drillWinMap[top.player_id]||0) + 1;
         });
-        // H2H wins
         const h2hMap: Record<string,number> = {};
         (chalWins??[]).forEach((c:any) => { h2hMap[c.winner_id] = (h2hMap[c.winner_id]||0) + 1; });
-        // Build group ranks
         const gradeGroups: Record<string,string[]> = {};
         profiles.forEach((p:any) => {
           if (!gradeGroups[p.grade_category]) gradeGroups[p.grade_category] = [];
@@ -133,7 +87,6 @@ export default function AdminSettings() {
           const sortedGrade = ids.sort((a,b) => (ptMap[b]||0) - (ptMap[a]||0));
           sortedGrade.forEach((id,i) => { gradeRankMap[id] = i+1; });
         });
-        // Insert snapshot records
         const snapshots = profiles.map((p:any) => ({
           player_id: p.id,
           season_label: seasonLabel,
@@ -147,34 +100,25 @@ export default function AdminSettings() {
         }));
         await supabase.from("season_history").insert(snapshots);
 
-        // ── Award period champion badges ──
-        // Find the top overall scorer — they become the period champion
+        // Award period champion badge to top scorer
         const topPlayer = sorted[0];
         if (topPlayer) {
           const now = new Date().toISOString();
-          // Record in biweekly_champions so the badge checker finds it
           await supabase.from("biweekly_champions").insert({
             player_id: topPlayer[0],
             period_start: periodStart.toISOString(),
             period_end: periodEnd.toISOString(),
             points: topPlayer[1],
           });
-          // Also mark them as period champion on their profile
           await supabase.from("profiles")
             .update({ is_period_champion: true, champion_since: now })
             .eq("id", topPlayer[0]);
         }
       }
 
-      // Records table preserved (all-time records survive resets)
-      // Personal bests preserved — zero out points only so leaderboard resets
-      // but players can still see and beat their best scores year to year
-      await supabase.from("scores").update({ points: 0 }).neq("id", "00000000-0000-0000-0000-000000000000");
-      // Delete score_attempts history (the per-attempt log) so history starts fresh
-      await supabase.from("score_attempts").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-      await supabase.from("streaks").delete().neq("player_id", "00000000-0000-0000-0000-000000000000");
-      await supabase.from("streak_bonuses").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-      await supabase.from("profiles").update({ is_period_champion: false, champion_since: null }).neq("id", "00000000-0000-0000-0000-000000000000");
+      // ── Unified reset — same logic as bulk reset in PlayersPanel ──
+      await resetPlayerScores(null, { resetChampions: true });
+
       setResetStep(0);
       showToast("✅ Season reset complete!");
     } catch (e: any) {
@@ -193,8 +137,6 @@ export default function AdminSettings() {
     borderRadius: 8, padding: "9px 12px", color: "var(--text)",
     fontSize: 13, fontFamily: "inherit", outline: "none", width: "100%",
   } as const;
-
-  const COMMON_EMOJIS = ["🏅","🏀","🔥","💪","⚡","🌟","🎯","👑","💯","🥇","🥈","🥉","💎","🏆","🎽","⏱️","🦅"];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -285,7 +227,7 @@ export default function AdminSettings() {
         {resetStep === 2 && (
           <div style={{ padding: "14px 16px", background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", borderRadius: 10 }}>
             <div style={{ fontWeight: 700, color: "#ff7b7b", marginBottom: 8 }}>🚨 FINAL CONFIRMATION — This cannot be undone!</div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>Type this to confirm you understand all scores will be permanently deleted.</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>This will permanently reset all scores for all players.</div>
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={handleSeasonReset} disabled={resetting} style={{ background: "#ff3c3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
                 {resetting ? "Resetting…" : "🔄 RESET SEASON NOW"}
