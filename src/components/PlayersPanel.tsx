@@ -1,7 +1,7 @@
 // src/components/PlayersPanel.tsx  (Coach view — manage players)
 import { useState, useEffect } from "react";
 // ProgressPanel removed - using inline player view
-import { supabase, Score, Workout, ScoreAttempt, GRADE_CATEGORIES, GradeCategory, approveUser, rejectUser } from "../lib/supabase";
+import { supabase, Score, Workout, ScoreAttempt, GRADE_CATEGORIES, GradeCategory, approveUser, rejectUser, resetPlayerScores } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
 interface Props {
@@ -562,10 +562,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     setBulkResetting(true);
     try {
       const ids = Array.from(selectedIds);
-      await supabase.from("scores").update({ points: 0, made: 0, reps: 0, self_points: 0 }).in("player_id", ids);
-      await supabase.from("score_attempts").delete().in("player_id", ids);
-      await supabase.from("streak_bonuses").delete().in("player_id", ids);
-      await supabase.from("streaks").delete().in("player_id", ids);
+      await resetPlayerScores(ids);
       setSelectedIds(new Set());
       setShowBulkReset(false);
       alert(`✅ Scores reset for ${ids.length} player${ids.length > 1 ? "s" : ""}.`);
