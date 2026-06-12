@@ -19,12 +19,18 @@ const RECORD_META: Record<string, { label: string; icon: string; desc: string }>
 
 type HofTab = "champions" | "records";
 
-export default function HallOfFame() {
+interface Props {
+  canDelete?: boolean;
+}
+
+export default function HallOfFame({ canDelete = false }: Props) {
   const [tab, setTab]               = useState<HofTab>("champions");
   const [champions, setChampions]   = useState<any[]>([]);
   const [allRecords, setAllRecords] = useState<any[]>([]);
   const [drillRecords, setDrillRecords] = useState<any[]>([]);
   const [loading, setLoading]       = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [toast, setToast]           = useState("");
 
   const periodStart = currentPeriodStart();
   const periodEnd   = currentPeriodEnd();
@@ -44,6 +50,41 @@ export default function HallOfFame() {
     setLoading(false);
   }
 
+  async function deleteRecord(id: string, label: string) {
+    if (!window.confirm(`Delete the "${label}" record? This cannot be undone.\n\nIt will reappear automatically if someone sets a new score for this drill.`)) return;
+    setDeletingId(id);
+    try {
+      const { error } = await supabase.from("records").delete().eq("id", id);
+      if (error) throw error;
+      await loadAll();
+      showToast("✅ Record deleted.");
+    } catch (e: any) {
+      showToast("Error: " + e.message);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function deleteChampion(id: string, name: string) {
+    if (!window.confirm(`Remove ${name}'s champion entry? This cannot be undone.`)) return;
+    setDeletingId(id);
+    try {
+      const { error } = await supabase.from("biweekly_champions").delete().eq("id", id);
+      if (error) throw error;
+      await loadAll();
+      showToast("✅ Champion entry deleted.");
+    } catch (e: any) {
+      showToast("Error: " + e.message);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3000);
+  }
+
   const latestTime = champions.length > 0 ? new Date(champions[0].crowned_at).getTime() : 0;
   const reigningIds = new Set(
     champions
@@ -59,6 +100,13 @@ export default function HallOfFame() {
       <div className="section-sub">
         Current period: {periodStart.toLocaleDateString()} – {periodEnd.toLocaleDateString()}
       </div>
+
+      {/* Admin mode indicator */}
+      {canDelete && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.25)", borderRadius: 10, marginBottom: 16, fontSize: 12, color: "var(--gold)" }}>
+          👑 Admin mode — delete buttons visible. Players do not see these.
+        </div>
+      )}
 
       {/* Tab bar */}
       <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 12, padding: 5, marginBottom: 22, border: "1px solid var(--border)" }}>
@@ -135,10 +183,21 @@ export default function HallOfFame() {
                       </div>
                     </div>
 
-                    {/* Points */}
-                    <div style={{ textAlign: "center", flexShrink: 0 }}>
-                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: isReigning ? "var(--gold)" : "#93b4ff", lineHeight: 1 }}>{c.points}</div>
-                      <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>pts</div>
+                    {/* Points + admin delete */}
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, flexShrink: 0 }}>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: isReigning ? "var(--gold)" : "#93b4ff", lineHeight: 1 }}>{c.points}</div>
+                        <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>pts</div>
+                      </div>
+                      {canDelete && (
+                        <button
+                          onClick={() => deleteChampion(c.id, c.player_name)}
+                          disabled={deletingId === c.id}
+                          style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontFamily: "inherit", cursor: "pointer", opacity: deletingId === c.id ? 0.6 : 1 }}
+                        >
+                          {deletingId === c.id ? "…" : "🗑 Delete"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -179,6 +238,15 @@ export default function HallOfFame() {
                           : <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{initials}</span>
                         }
                       </div>
+                      {canDelete && (
+                        <button
+                          onClick={() => deleteRecord(rec.id, meta.label)}
+                          disabled={deletingId === rec.id}
+                          style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer", flexShrink: 0, opacity: deletingId === rec.id ? 0.6 : 1 }}
+                        >
+                          {deletingId === rec.id ? "…" : "🗑"}
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -222,6 +290,15 @@ export default function HallOfFame() {
                             : <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{initials}</span>
                           }
                         </div>
+                        {canDelete && (
+                          <button
+                            onClick={() => deleteRecord(rec.id, rec.workout_title)}
+                            disabled={deletingId === rec.id}
+                            style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer", flexShrink: 0, opacity: deletingId === rec.id ? 0.6 : 1 }}
+                          >
+                            {deletingId === rec.id ? "…" : "🗑"}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -232,6 +309,7 @@ export default function HallOfFame() {
         </div>
       )}
 
+      {toast && <div className="toast show">{toast}</div>}
     </div>
   );
 }
