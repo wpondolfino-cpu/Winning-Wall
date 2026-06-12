@@ -1,6 +1,6 @@
 // src/components/HeadToHead.tsx
 import { useState, useEffect, useCallback } from "react";
-import { supabase, Score, Workout, submitScore, awardChallengeWinBonus, awardXp, XP_CHALLENGE_SENT, XP_CHALLENGE_DONE, getActiveTeamCompetition, getTeams, TeamCompetition, Team } from "../lib/supabase";
+import { supabase, Score, Workout, submitScore, awardChallengeWinBonus, awardXp, XP_CHALLENGE_SENT, XP_CHALLENGE_DONE, getActiveTeamCompetition, getTeams, TeamCompetition, Team, getXpPerks } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
 interface Props {
@@ -56,6 +56,7 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
   const [myTeam, setMyTeam]             = useState<Team | null>(null);
   const [newTeamNotif, setNewTeamNotif] = useState(false);
   const [teamRecord, setTeamRecord]     = useState<{wins:number;losses:number}>({wins:0,losses:0});
+  const [xpPerks, setXpPerks]           = useState<any[]>([]);
   const { leaderboard } = useLeaderboard();
   const [challenges, setChallenges]           = useState<Challenge[]>([]);
   const [showNew, setShowNew]                 = useState(false);
@@ -64,19 +65,27 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
   const [loading, setLoading]                 = useState(true);
   const [sending, setSending]                 = useState(false);
   const [rematching, setRematching]           = useState<string | null>(null);
-  const [needsScore, setNeedsScore]           = useState(false);  // challenger has no 24h score
-  const [challengeScore, setChallengeScore]   = useState("");     // score input for challenger
+  const [needsScore, setNeedsScore]           = useState(false);
+  const [challengeScore, setChallengeScore]   = useState("");
   const [responding, setResponding]           = useState<string | null>(null);
   const [myResponse, setMyResponse]           = useState("");
   const [toast, setToast]                     = useState("");
   const [activeTab, setActiveTab]             = useState<"h2h" | "stats" | "teams">("h2h");
 
   const activeWorkouts = workouts.filter(w => w.is_active !== false && w.scoring_type === "competitive");
-  const opponents = leaderboard.filter(e => e.id !== currentUserId);
+
+  // ── Only show opponents who have challenges unlocked ──────────
+  // Prevents free wins from challenging players who can't respond
+  const challengesThreshold = xpPerks.length > 0
+    ? (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150)
+    : 150;
+  const opponents = leaderboard.filter(e =>
+    e.id !== currentUserId &&
+    (e.total_xp ?? 0) >= challengesThreshold
+  );
 
   const expireChallenges = useCallback(async () => {
     const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
-    // Find expired pending challenges where current user is challenger
     const { data: expired } = await supabase
       .from("challenges")
       .select("*")
@@ -86,13 +95,11 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
 
     if (expired && expired.length > 0) {
       for (const c of expired) {
-        // Mark as completed, challenger wins by default (+1 pt)
         await supabase.from("challenges").update({
           status: "completed",
           winner_id: currentUserId,
-          opponent_score: -1, // sentinel = expired
+          opponent_score: -1,
         }).eq("id", c.id);
-        // Award 1 point to challenger
         await awardChallengeWinBonus(currentUserId).catch(console.warn);
       }
     }
@@ -108,7 +115,6 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
     setChallenges(data ?? []);
     setLoading(false);
 
-    // Mark pending challenges to me as seen
     const unseen = (data ?? []).filter(
       (c: Challenge) => c.opponent_id === currentUserId && c.status === "pending" && !c.opponent_seen
     );
@@ -120,11 +126,15 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
     }
   }, [currentUserId]);
 
-  useEffect(() => { expireChallenges().then(() => loadChallenges()); }, [loadChallenges, expireChallenges]);
+  useEffect(() => {
+    expireChallenges().then(() => loadChallenges());
+    // Load XP perks so we can filter opponents by challenges_unlocked threshold
+    getXpPerks().then(setXpPerks).catch(console.error);
+  }, [loadChallenges, expireChallenges]);
+
   useEffect(() => {
     loadTeamData();
     loadTeamRecord();
-    // Reload team scores whenever any score or bonus changes
     const channel = supabase
       .channel("team-scores-sync")
       .on("postgres_changes", { event: "*", schema: "public", table: "scores" }, () => loadTeamData())
@@ -134,29 +144,22 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
   }, [currentUserId]);
 
   async function loadTeamRecord() {
-    // Find all past completed competitions (has a winning_team_id)
     const { data: comps } = await supabase.from("team_competitions")
       .select("id,winning_team_id")
       .not("winning_team_id","is",null);
     if (!comps || comps.length === 0) return;
 
-    // For each completed competition, find what team the player was on
     const compIds = comps.map((c: any) => c.id);
     const { data: myTeams } = await supabase.from("teams")
       .select("id,competition_id")
       .in("competition_id", compIds);
     if (!myTeams) return;
 
-    // Check which teams the player belongs to by checking profiles history
-    // We use current team_id but also need past — simplest: check team membership
     const { data: profs } = await supabase.from("profiles")
       .select("team_id")
       .eq("id", currentUserId);
     const myTeamIds = new Set((profs ?? []).map((p: any) => p.team_id).filter(Boolean));
 
-    // Also check current teamProfiles for historical assignments
-    // For past comps, the player's team_id would have been set to a team in that comp
-    // Cross reference: my team in each comp
     let wins = 0, losses = 0;
     for (const comp of comps) {
       const teamsInComp = (myTeams ?? []).filter((t: any) => t.competition_id === comp.id);
@@ -174,18 +177,15 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
     if (!comp) return;
     const t = await getTeams(comp.id);
     setTeams(t);
-    // Load profiles with team assignments
     const { data: profs } = await supabase.from("profiles")
       .select("id,name,avatar_url,grade_category,team_id")
       .eq("role","player")
       .not("team_id","is",null);
     setTeamProfiles(profs ?? []);
-    // Find my team
     const me = (profs ?? []).find((p: any) => p.id === currentUserId);
     if (me?.team_id) {
       const mine = t.find(tm => tm.id === me.team_id) ?? null;
       setMyTeam(mine);
-      // Show notification if teams were created recently (last 24h) and not dismissed
       const createdAt = (comp as any).created_at;
       if (createdAt) {
         const age = Date.now() - new Date(createdAt).getTime();
@@ -195,7 +195,6 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
     }
   }
 
-  // Count of unseen challenges (for the red dot in App.tsx via prop)
   const unseenCount = challenges.filter(
     c => c.opponent_id === currentUserId && c.status === "pending" && !c.opponent_seen
   ).length;
@@ -208,7 +207,6 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
       const workout  = workouts.find(w => w.id === selectedWorkout);
       const opponent = leaderboard.find(e => e.id === selectedOpponent);
 
-      // Check for best score in last 24 hours
       const since24h = new Date(Date.now() - 86400000).toISOString();
       const { data: recentAttempts } = await supabase
         .from("score_attempts")
@@ -217,14 +215,12 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
         .eq("workout_id", selectedWorkout)
         .gte("attempted_at", since24h);
 
-      // If no recent attempts, need to prompt for a score
       if (!recentAttempts || recentAttempts.length === 0) {
         setNeedsScore(true);
         setSending(false);
         return;
       }
 
-      // Use best score from last 24 hours
       const best24h = recentAttempts.reduce((best: any, s: any) => {
         const score = s.self_points > 0 ? s.self_points : (s.made + s.reps);
         const bestScore = best ? (best.self_points > 0 ? best.self_points : (best.made + best.reps)) : 0;
@@ -247,7 +243,6 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
       const workout  = workouts.find(w => w.id === selectedWorkout);
       const opponent = leaderboard.find(e => e.id === selectedOpponent);
 
-      // Submit the score to their workout history first
       await submitScore({
         player_id:   currentUserId,
         workout_id:  selectedWorkout,
@@ -293,7 +288,6 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
       const rivalId   = c.challenger_id === currentUserId ? c.opponent_id   : c.challenger_id;
       const rivalName = c.challenger_id === currentUserId ? c.opponent_name : c.challenger_name;
 
-      // Check 24h score for rematch too
       const since24h = new Date(Date.now() - 86400000).toISOString();
       const { data: recentAttempts } = await supabase
         .from("score_attempts")
@@ -352,13 +346,12 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
 
   async function submitResponse(challenge: Challenge) {
     const score = parseInt(myResponse) || 0;
-    const finalScore = score; // Use exactly what was entered for the challenge
+    const finalScore = score;
 
-    // Determine winner
     const winnerId =
       finalScore > challenge.challenger_score ? currentUserId :
       challenge.challenger_score > finalScore ? challenge.challenger_id :
-      null; // tie
+      null;
 
     await supabase.from("challenges").update({
       opponent_score: finalScore,
@@ -366,14 +359,11 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
       winner_id:      winnerId,
     }).eq("id", challenge.id);
 
-    // Award +1 point to the winner and XP for completion
     if (winnerId) {
       await awardChallengeWinBonus(winnerId).catch(console.error);
     }
     (async () => { try { const { data } = await supabase.from("xp_settings").select("xp_required").eq("perk_key","_xp_challenge_done").single(); await awardXp(currentUserId, data?.xp_required ?? XP_CHALLENGE_DONE, "challenge_completed"); } catch(e) { console.error(e); } })();
 
-    // ── Sync to workout scores ──────────────────────────────────
-    // If this score is a personal best on the workout, update it
     const workout = workouts.find(w => w.id === challenge.workout_id);
     if (workout && score > 0) {
       try {
@@ -408,7 +398,6 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
   const myPending    = pending.filter(c => c.opponent_id   === currentUserId);
   const theirPending = pending.filter(c => c.challenger_id === currentUserId);
 
-  // ── All-time stats ────────────────────────────────────────────
   const completedChallenges = challenges.filter(c => c.status === "completed");
   const totalWins   = completedChallenges.filter(c => c.winner_id === currentUserId).length;
   const totalLosses = completedChallenges.filter(c => c.winner_id && c.winner_id !== currentUserId).length;
@@ -419,7 +408,6 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
   const mostBeaten     = [...rivalStats].sort((a, b) => b.won - a.won)[0];
   const mostLostTo     = [...rivalStats].sort((a, b) => b.lost - a.lost)[0];
 
-  // ── Card component ────────────────────────────────────────────
   function ChallengeCard({ c }: { c: Challenge }) {
     const isChallenger = c.challenger_id === currentUserId;
     const myScore   = isChallenger ? c.challenger_score : (c.opponent_score ?? null);
@@ -454,7 +442,6 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
           </div>
         </div>
 
-        {/* Score comparison — hidden until both have submitted (prevents gaming) */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 10, alignItems: "center", marginBottom: 10 }}>
           <div style={{ textAlign: "center", padding: "10px", background: "var(--surface)", borderRadius: 8 }}>
             <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>YOU</div>
@@ -484,41 +471,27 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
             )}
           </div>
         </div>
-        {/* Waiting message while pending */}
         {c.status === "pending" && (myScore !== null || theirScore !== null) && (
           <div style={{ textAlign: "center", fontSize: 12, color: "var(--muted)", marginBottom: 8, padding: "6px 10px", background: "rgba(255,255,255,0.04)", borderRadius: 8 }}>
             🔒 Scores hidden until both players submit
           </div>
         )}
 
-        {/* Result + Rematch */}
         {c.status === "completed" && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: iWon ? "var(--gold)" : theyWon ? "#ff7b7b" : "var(--muted)" }}>
-  {c.opponent_score === -1 ? "🏆 Won (opponent forfeited)" : iWon ? "🏆 You Won!" : theyWon ? "💪 Keep grinding!" : "🤝 Tied!"}
+              {c.opponent_score === -1 ? "🏆 Won (opponent forfeited)" : iWon ? "🏆 You Won!" : theyWon ? "💪 Keep grinding!" : "🤝 Tied!"}
             </div>
             <button
               onClick={() => sendRematch(c)}
               disabled={rematching === c.id}
-              style={{
-                background: "rgba(147,180,255,0.12)",
-                border: "1px solid rgba(147,180,255,0.3)",
-                color: "#93b4ff",
-                borderRadius: 8,
-                padding: "6px 14px",
-                fontSize: 12,
-                fontWeight: 700,
-                fontFamily: "inherit",
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-              }}
+              style={{ background: "rgba(147,180,255,0.12)", border: "1px solid rgba(147,180,255,0.3)", color: "#93b4ff", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}
             >
               {rematching === c.id ? "Sending…" : "🔄 Rematch"}
             </button>
           </div>
         )}
 
-        {/* Respond */}
         {c.status === "pending" && c.opponent_id === currentUserId && (
           responding === c.id ? (
             <div style={{ marginTop: 10 }}>
@@ -534,26 +507,14 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
                   placeholder="Your score" min="0"
                   style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", color: "var(--text)", fontSize: 14, fontFamily: "inherit", outline: "none" }}
                 />
-                <button onClick={() => submitResponse(c)} style={{
-                  background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8,
-                  padding: "8px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
-                }}>Submit</button>
-                <button onClick={() => setResponding(null)} style={{
-                  background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)",
-                  borderRadius: 8, padding: "8px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer",
-                }}>Cancel</button>
+                <button onClick={() => submitResponse(c)} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Submit</button>
+                <button onClick={() => setResponding(null)} style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>Cancel</button>
               </div>
             </div>
           ) : (
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <button onClick={() => respondToChallenge(c, true)} style={{
-                flex: 1, background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8,
-                padding: "8px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
-              }}>Accept Challenge</button>
-              <button onClick={() => respondToChallenge(c, false)} style={{
-                background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)",
-                borderRadius: 8, padding: "8px 14px", fontSize: 12, fontFamily: "inherit", cursor: "pointer",
-              }}>Decline</button>
+              <button onClick={() => respondToChallenge(c, true)} style={{ flex: 1, background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "8px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Accept Challenge</button>
+              <button onClick={() => respondToChallenge(c, false)} style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>Decline</button>
             </div>
           )
         )}
@@ -561,7 +522,6 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
     );
   }
 
-  // ── Stat tile ─────────────────────────────────────────────────
   function StatTile({ label, value, color }: { label: string; value: string | number; color?: string }) {
     return (
       <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px", textAlign: "center" }}>
@@ -573,17 +533,13 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
 
   return (
     <div className="panel active">
-      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
         <div>
           <div className="section-title">Challenges</div>
           <div className="section-sub">Head-to-Head · Team Competition</div>
         </div>
-
       </div>
 
-      {/* Tab switcher */}
-      {/* Team notification banner */}
       {newTeamNotif && myTeam && (
         <div style={{ background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 10, padding: "10px 14px", marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
           <div style={{ fontSize: 13, color: "var(--gold)", fontWeight: 600 }}>
@@ -597,37 +553,17 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
       )}
 
       <div style={{ display: "flex", gap: 6, marginBottom: 20, background: "var(--surface2)", borderRadius: 10, padding: 4 }}>
-        <button onClick={() => setActiveTab("h2h")} style={{
-          flex: 1, background: activeTab === "h2h" ? "var(--royal)" : "transparent",
-          color: activeTab === "h2h" ? "#fff" : "var(--muted)",
-          border: "none", borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 600,
-          fontFamily: "inherit", cursor: "pointer", transition: "all 0.15s",
-        }}>⚔️ Head to Head{myPending.length > 0 ? ` (${myPending.length})` : ""}</button>
-        <button onClick={() => setActiveTab("teams")} style={{
-          flex: 1, background: activeTab === "teams" ? "var(--royal)" : "transparent",
-          color: activeTab === "teams" ? "#fff" : "var(--muted)",
-          border: "none", borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 600,
-          fontFamily: "inherit", cursor: "pointer", transition: "all 0.15s",
-        }}>🏆 Teams</button>
-        <button onClick={() => setActiveTab("stats")} style={{
-          flex: 1, background: activeTab === "stats" ? "var(--royal)" : "transparent",
-          color: activeTab === "stats" ? "#fff" : "var(--muted)",
-          border: "none", borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 600,
-          fontFamily: "inherit", cursor: "pointer", transition: "all 0.15s",
-        }}>📊 My Stats</button>
+        <button onClick={() => setActiveTab("h2h")} style={{ flex: 1, background: activeTab === "h2h" ? "var(--royal)" : "transparent", color: activeTab === "h2h" ? "#fff" : "var(--muted)", border: "none", borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", transition: "all 0.15s" }}>⚔️ Head to Head{myPending.length > 0 ? ` (${myPending.length})` : ""}</button>
+        <button onClick={() => setActiveTab("teams")} style={{ flex: 1, background: activeTab === "teams" ? "var(--royal)" : "transparent", color: activeTab === "teams" ? "#fff" : "var(--muted)", border: "none", borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", transition: "all 0.15s" }}>🏆 Teams</button>
+        <button onClick={() => setActiveTab("stats")} style={{ flex: 1, background: activeTab === "stats" ? "var(--royal)" : "transparent", color: activeTab === "stats" ? "#fff" : "var(--muted)", border: "none", borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", transition: "all 0.15s" }}>📊 My Stats</button>
       </div>
 
       {/* ── HEAD TO HEAD TAB ── */}
       {activeTab === "h2h" && (
         <>
-          {/* New Challenge button inside tab */}
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
-            <button onClick={() => setShowNew(s => !s)} style={{
-              background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10,
-              padding: "9px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
-            }}>{showNew ? "✕ Cancel" : "⚔️ New Challenge"}</button>
+            <button onClick={() => setShowNew(s => !s)} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{showNew ? "✕ Cancel" : "⚔️ New Challenge"}</button>
           </div>
-          {/* New challenge form */}
           {showNew && (
             <div className="card" style={{ marginBottom: 20 }}>
               <div className="card-title">Send a Challenge</div>
@@ -639,6 +575,11 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
                     <option value="">Select a player…</option>
                     {opponents.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
                   </select>
+                  {opponents.length === 0 && (
+                    <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)", padding: "8px 12px", background: "rgba(255,107,107,0.08)", border: "1px solid rgba(255,107,107,0.2)", borderRadius: 8 }}>
+                      No eligible opponents yet — other players need to reach {challengesThreshold} XP to unlock challenges.
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>Choose Drill</label>
@@ -659,23 +600,13 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
                       ⚠️ You haven't logged this drill in the last 24 hours. Enter your score to send the challenge:
                     </div>
                     <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                      <input
-                        type="number" value={challengeScore} onChange={e => setChallengeScore(e.target.value)}
-                        placeholder="Your score" min="0"
-                        style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 14, fontFamily: "inherit", outline: "none" }}
-                      />
-                      <button onClick={sendChallengeWithScore} disabled={sending} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
-                        {sending ? "Sending…" : "⚔️ Send"}
-                      </button>
-                      <button onClick={() => { setNeedsScore(false); setChallengeScore(""); }} style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "9px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>
-                        Cancel
-                      </button>
+                      <input type="number" value={challengeScore} onChange={e => setChallengeScore(e.target.value)} placeholder="Your score" min="0" style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 14, fontFamily: "inherit", outline: "none" }} />
+                      <button onClick={sendChallengeWithScore} disabled={sending} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{sending ? "Sending…" : "⚔️ Send"}</button>
+                      <button onClick={() => { setNeedsScore(false); setChallengeScore(""); }} style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "9px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>Cancel</button>
                     </div>
                   </div>
                 ) : (
-                  <button onClick={sendChallenge}
-                    disabled={sending || !selectedOpponent || !selectedWorkout || !myScores.find(s => s.workout_id === selectedWorkout)}
-                    className="btn-primary">
+                  <button onClick={sendChallenge} disabled={sending || !selectedOpponent || !selectedWorkout || !myScores.find(s => s.workout_id === selectedWorkout)} className="btn-primary">
                     {sending ? "Sending…" : "⚔️ Send Challenge"}
                   </button>
                 )}
@@ -683,40 +614,26 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
             </div>
           )}
 
-          {/* Waiting for me */}
           {myPending.length > 0 && (
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 10 }}>
-                ⚔️ Waiting For You ({myPending.length})
-              </div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 10 }}>⚔️ Waiting For You ({myPending.length})</div>
               {myPending.map(c => <ChallengeCard key={c.id} c={c} />)}
             </div>
           )}
-
-          {/* My sent challenges */}
           {theirPending.length > 0 && (
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#93b4ff", letterSpacing: 1, marginBottom: 10 }}>
-                📤 Challenges You Sent ({theirPending.length})
-              </div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#93b4ff", letterSpacing: 1, marginBottom: 10 }}>📤 Challenges You Sent ({theirPending.length})</div>
               {theirPending.map(c => <ChallengeCard key={c.id} c={c} />)}
             </div>
           )}
-
-          {/* Completed */}
           {completed.length > 0 && (
             <div>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--muted)", letterSpacing: 1, marginBottom: 10 }}>
-                📋 Past Challenges
-              </div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--muted)", letterSpacing: 1, marginBottom: 10 }}>📋 Past Challenges</div>
               {completed.map(c => <ChallengeCard key={c.id} c={c} />)}
             </div>
           )}
-
           {challenges.length === 0 && !loading && !showNew && (
-            <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 14, padding: "40px 0" }}>
-              No challenges yet. Hit "New Challenge" to call someone out! ⚔️
-            </div>
+            <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 14, padding: "40px 0" }}>No challenges yet. Hit "New Challenge" to call someone out! ⚔️</div>
           )}
         </>
       )}
@@ -727,16 +644,11 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
           {!teamComp || !teamComp.is_active ? (
             <div style={{ textAlign: "center", padding: "60px 20px" }}>
               <div style={{ fontSize: 48, marginBottom: 16 }}>👀</div>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)", letterSpacing: 1, marginBottom: 10 }}>
-                Keep an eye out for the next team competition!
-              </div>
-              <div style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.7 }}>
-                The coaching staff will announce when the next team challenge begins.
-              </div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)", letterSpacing: 1, marginBottom: 10 }}>Keep an eye out for the next team competition!</div>
+              <div style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.7 }}>The coaching staff will announce when the next team challenge begins.</div>
             </div>
           ) : (
             <div>
-              {/* My team highlight */}
               {myTeam && (
                 <div style={{ background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 12, padding: "12px 16px", marginBottom: 16 }}>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Your team</div>
@@ -744,12 +656,9 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
                     <div style={{ width: 10, height: 10, borderRadius: "50%", background: myTeam.color }} />
                     <div style={{ fontWeight: 700, fontSize: 18, color: "var(--gold)" }}>{myTeam.name}</div>
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-                    {teamComp.start_date} – {teamComp.end_date} · Winning team earns +{teamComp.bonus_points} pts each
-                  </div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>{teamComp.start_date} – {teamComp.end_date} · Winning team earns +{teamComp.bonus_points} pts each</div>
                 </div>
               )}
-              {/* Team standings */}
               {(() => {
                 const teamPoints: Record<string, number> = {};
                 teams.forEach(t => { teamPoints[t.id] = (t as any).score ?? 0; });
@@ -779,11 +688,7 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
                         </div>
                       </div>
                       <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 4 }}>
-                        {[...members].sort((a: any, b: any) => {
-                            const aPts = (team as any).playerPoints?.[a.id] ?? 0;
-                            const bPts = (team as any).playerPoints?.[b.id] ?? 0;
-                            return bPts - aPts;
-                          }).map((p: any) => {
+                        {[...members].sort((a: any, b: any) => ((team as any).playerPoints?.[b.id] ?? 0) - ((team as any).playerPoints?.[a.id] ?? 0)).map((p: any) => {
                           const initials = p.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase();
                           const isMe = p.id === currentUserId;
                           const playerPts = (team as any).playerPoints?.[p.id] ?? 0;
@@ -825,33 +730,29 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
       {/* ── STATS TAB ── */}
       {activeTab === "stats" && (
         <div>
-          {/* W/L/T Record */}
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--muted)", letterSpacing: 1, marginBottom: 10, textTransform: "uppercase" }}>
-            All-Time Record
-          </div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--muted)", letterSpacing: 1, marginBottom: 10, textTransform: "uppercase" }}>All-Time Record</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
             <StatTile label="Wins"   value={totalWins}   color="var(--gold)" />
             <StatTile label="Losses" value={totalLosses} color="#ff7b7b" />
             <StatTile label="Ties"   value={totalTies}   color="var(--muted)" />
           </div>
           <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 16px", marginBottom: 24 }}>
-              <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Team Competition Record</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <div style={{ textAlign: "center", background: "var(--surface)", borderRadius: 8, padding: "10px" }}>
-                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "var(--gold)", lineHeight: 1 }}>{teamRecord.wins}</div>
-                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Wins</div>
-                </div>
-                <div style={{ textAlign: "center", background: "var(--surface)", borderRadius: 8, padding: "10px" }}>
-                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "#ff7b7b", lineHeight: 1 }}>{teamRecord.losses}</div>
-                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Losses</div>
-                </div>
+            <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Team Competition Record</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div style={{ textAlign: "center", background: "var(--surface)", borderRadius: 8, padding: "10px" }}>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "var(--gold)", lineHeight: 1 }}>{teamRecord.wins}</div>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Wins</div>
               </div>
-              <div style={{ textAlign: "center", fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
-                {teamRecord.wins + teamRecord.losses > 0 ? `${teamRecord.wins + teamRecord.losses} team competition${teamRecord.wins + teamRecord.losses !== 1 ? "s" : ""} played` : "No team competitions completed yet"}
+              <div style={{ textAlign: "center", background: "var(--surface)", borderRadius: 8, padding: "10px" }}>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "#ff7b7b", lineHeight: 1 }}>{teamRecord.losses}</div>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Losses</div>
               </div>
             </div>
+            <div style={{ textAlign: "center", fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
+              {teamRecord.wins + teamRecord.losses > 0 ? `${teamRecord.wins + teamRecord.losses} team competition${teamRecord.wins + teamRecord.losses !== 1 ? "s" : ""} played` : "No team competitions completed yet"}
+            </div>
+          </div>
 
-          {/* Win rate */}
           {completedChallenges.length > 0 && (
             <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px", marginBottom: 24, textAlign: "center" }}>
               <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Win Rate</div>
@@ -862,12 +763,9 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
             </div>
           )}
 
-          {/* Rivals breakdown */}
           {rivalStats.length > 0 && (
             <>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--muted)", letterSpacing: 1, marginBottom: 10, textTransform: "uppercase" }}>
-                Rival Breakdown
-              </div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--muted)", letterSpacing: 1, marginBottom: 10, textTransform: "uppercase" }}>Rival Breakdown</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
                 {mostChallenged && (
                   <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -898,10 +796,7 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
                 )}
               </div>
 
-              {/* Full roster table */}
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--muted)", letterSpacing: 1, marginBottom: 10, textTransform: "uppercase" }}>
-                vs. Every Player
-              </div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--muted)", letterSpacing: 1, marginBottom: 10, textTransform: "uppercase" }}>vs. Every Player</div>
               <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 40px 40px 40px 40px", padding: "8px 14px", borderBottom: "1px solid var(--border)", fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>
                   <div>Player</div><div style={{ textAlign: "center" }}>Total</div><div style={{ textAlign: "center", color: "var(--gold)" }}>W</div><div style={{ textAlign: "center", color: "#ff7b7b" }}>L</div><div style={{ textAlign: "center", color: "var(--muted)" }}>T</div>
@@ -920,9 +815,7 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
           )}
 
           {challenges.length === 0 && (
-            <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 14, padding: "40px 0" }}>
-              Complete some challenges to see your stats! ⚔️
-            </div>
+            <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 14, padding: "40px 0" }}>Complete some challenges to see your stats! ⚔️</div>
           )}
         </div>
       )}
@@ -932,7 +825,6 @@ export default function HeadToHead({ currentUserId, currentUserName, workouts, m
   );
 }
 
-// Export the unseen count calculator so App.tsx can use it
 export function getUnseenChallengeCount(challenges: { opponent_id: string; status: string; opponent_seen: boolean }[], userId: string): number {
   return challenges.filter(c => c.opponent_id === userId && c.status === "pending" && !c.opponent_seen).length;
 }
