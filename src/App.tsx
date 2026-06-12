@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuth } from "./hooks/useAuth";
 import { useWorkouts } from "./hooks/useWorkouts";
-import { getMyScores, getAllScores, signOut, Score, Profile } from "./lib/supabase";
+import { getMyScores, getAllScores, signOut, Score, Profile, getPlayerXp, getXpPerks, checkUnseenPerks, loadPeriodAnchor } from "./lib/supabase";
 import ProfileEditor from "./components/ProfileEditor";
 import ProfilePage from "./components/ProfilePage";
 import LoginPage from "./pages/LoginPage";
@@ -16,6 +16,7 @@ import AdminSettings from "./components/AdminSettings";
 import InstallPrompt from "./components/InstallPrompt";
 import ChangePassword from "./components/ChangePassword";
 import HeadToHead from "./components/HeadToHead";
+import PerkTutorial from "./components/PerkTutorial";
 
 type PlayerTab = "workouts" | "leaderboard" | "progress" | "h2h" | "hof" | "profile" | "more";
 type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "profile";
@@ -33,6 +34,10 @@ export default function App() {
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing]   = useState(false);
 
+  // ── Perk notification state ──
+  const [newPerkCount, setNewPerkCount] = useState(0);
+  const [perkToast, setPerkToast]       = useState("");
+
   function handleSwipeStart(e: React.TouchEvent) {
     touchStartX.current = e.touches[0].clientX;
     pullStartY.current  = e.touches[0].clientY;
@@ -41,7 +46,6 @@ export default function App() {
     if (refreshing) return;
     const dy = e.touches[0].clientY - pullStartY.current;
     const dx = Math.abs(touchStartX.current - e.touches[0].clientX);
-    // Only trigger pull if pulling down and mostly vertical
     if (dy > 0 && dx < 30 && (e.currentTarget as HTMLElement).scrollTop === 0) {
       setPullDistance(Math.min(dy * 0.4, 70));
     }
@@ -51,7 +55,6 @@ export default function App() {
     const diffX = touchStartX.current - e.changedTouches[0].clientX;
     const diffY = e.changedTouches[0].clientY - pullStartY.current;
 
-    // Pull to refresh — vertical pull down > 60px
     if (diffY > 60 && Math.abs(diffX) < 30 && pullDistance > 40) {
       setPullDistance(0);
       setRefreshing(true);
@@ -61,13 +64,13 @@ export default function App() {
     }
     setPullDistance(0);
 
-    // Horizontal swipe navigation
     if (Math.abs(diffX) < 60) return;
     const idx = swipeTabs.indexOf(playerTab);
     if (idx === -1) return;
     if (diffX > 0 && idx < swipeTabs.length - 1) setPlayerTab(swipeTabs[idx + 1]);
     if (diffX < 0 && idx > 0) setPlayerTab(swipeTabs[idx - 1]);
   }
+
   const [coachTab, setCoachTab]     = useState<CoachTab>("workouts");
   const [adminTab, setAdminTab]     = useState<AdminTab>("workouts");
   const [pendingChallenges, setPendingChallenges] = useState(0);
@@ -78,9 +81,43 @@ export default function App() {
   const [xpEnabled, setXpEnabled]     = useState(true);
   const [localProfile, setLocalProfile] = useState<Profile | null>(null);
 
+  // Load period anchor from DB on startup so all devices use the same date
+  useEffect(() => {
+    loadPeriodAnchor().catch(console.error);
+  }, []);
+
   useEffect(() => {
     if (user && profile?.role === "player") loadMyScores();
     if (user && (profile?.role === "coach" || profile?.role === "admin")) loadAllScores();
+  }, [user, profile]);
+
+  // ── Check for newly unlocked perk tutorials ──
+  const checkNewPerks = useCallback(async () => {
+    if (!user || profile?.role !== "player") return;
+    try {
+      const [xp, perks] = await Promise.all([
+        getPlayerXp(user.id),
+        getXpPerks(),
+      ]);
+      const unseen = await checkUnseenPerks(user.id, xp, perks);
+      if (unseen.length > 0) {
+        setNewPerkCount(unseen.length);
+        const PERK_NAMES: Record<string, string> = {
+          challenges_unlocked: "⚔️ Challenges Unlocked",
+          team_eligible:       "👥 Team Eligible",
+          streak_shield:       "🛡️ Streak Shield",
+          team_bonus:          "⚡ Team Boost",
+          score_boost:         "💪 Score Boost",
+        };
+        const name = PERK_NAMES[unseen[0]] ?? "New Perk";
+        setPerkToast(`🎁 ${name} — check your Profile!`);
+        setTimeout(() => setPerkToast(""), 4000);
+      } else {
+        setNewPerkCount(0);
+      }
+    } catch (e) {
+      console.error("checkNewPerks error:", e);
+    }
   }, [user, profile]);
 
   // Poll for unseen challenges every 30s
@@ -103,7 +140,6 @@ export default function App() {
         .eq("status", "pending")
         .eq("opponent_seen", false);
 
-      // Check if there's a new active team competition (created in last 24h) not yet dismissed
       const { data: newTeam } = await sb
         .from("team_competitions")
         .select("id,created_at")
@@ -123,14 +159,14 @@ export default function App() {
     // Load player XP and perks
     if (user && profile?.role === "player") {
       (async () => {
-  const { getPlayerXp: gxp, getXpPerks: gperks } = await import("./lib/supabase");
-        const [xp, perks] = await Promise.all([gxp(user.id), gperks()]);
+        const [xp, perks] = await Promise.all([getPlayerXp(user.id), getXpPerks()]);
         setPlayerXp(xp);
         setXpPerks(perks);
-        // Check if XP system is enabled
+        // XP enabled — read from DB only
         const xpEnabledPerk = perks.find((p: any) => p.perk_key === "_xp_enabled");
-        const stored = localStorage.getItem("xp_enabled");
-        setXpEnabled(stored !== "false" && xpEnabledPerk?.xp_required !== 0);
+        setXpEnabled(xpEnabledPerk?.xp_required !== 0);
+        // Check for unseen perk tutorials
+        checkNewPerks();
       })();
     }
 
@@ -140,7 +176,9 @@ export default function App() {
   async function loadMyScores() {
     if (!user) return;
     setMyScores(await getMyScores(user.id));
+    checkNewPerks();
   }
+
   async function loadAllScores() {
     setAllScores(await getAllScores());
   }
@@ -168,13 +206,10 @@ export default function App() {
 
   if (!user || !profile) return <LoginPage />;
 
-  // Only show change password screen for coach/admin-added accounts
-  // Self-registered users pick their own password so must_change_password is never set for them
   if (profile.must_change_password === true) {
     return <ChangePassword title="Welcome to Attleboro Winning Wall! 🦅" subtitle="Your account was set up by a coach. Please create your own personal password before continuing." onComplete={() => window.location.reload()} />;
   }
 
-  // Pending approval screen
   if (profile.role === "pending_player" || profile.role === "pending_coach") {
     const isCoachRequest = profile.role === "pending_coach";
     return (
@@ -229,7 +264,7 @@ export default function App() {
               <div className={`nav-item ${playerTab==="leaderboard"?"active":""}`} onClick={()=>{setPlayerTab("leaderboard");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏆</span> Leaderboard</div>
               <div className={`nav-item ${playerTab==="progress"?"active":""}`} onClick={()=>{setPlayerTab("progress");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">📈</span> My Progress</div>
               <div className={`nav-item ${playerTab==="hof"?"active":""}`} onClick={()=>{setPlayerTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👑</span> Hall of Fame</div>
-              <div className={`nav-item ${playerTab==="profile"?"active":""}`} onClick={()=>{setPlayerTab("profile");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👤</span> My Profile</div>
+              <div className={`nav-item ${playerTab==="profile"?"active":""}`} onClick={()=>{ setPlayerTab("profile"); setNewPerkCount(0); if(window.innerWidth<768)setSidebarOpen(false); }}><span className="nav-icon">👤</span> My Profile</div>
               <div className={`nav-item ${playerTab==="h2h"?"active":""}`} onClick={()=>{ setPlayerTab("h2h"); setPendingChallenges(0); if(window.innerWidth<768)setSidebarOpen(false); }} style={{ position: "relative" }}>
                 <span className="nav-icon">⚔️</span> Challenges
                 {pendingChallenges > 0 && (
@@ -331,7 +366,7 @@ export default function App() {
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>👑</span><span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>Hall of Fame</span></div>
                   <span style={{ color: "var(--muted)" }}>›</span>
                 </div>
-                <div onClick={() => setPlayerTab("profile")} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
+                <div onClick={() => { setPlayerTab("profile"); setNewPerkCount(0); }} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>👤</span><span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>My Profile</span></div>
                   <span style={{ color: "var(--muted)" }}>›</span>
                 </div>
@@ -397,8 +432,9 @@ export default function App() {
           )}
         </div>
       </div>
+
       {/* ── Bottom Tab Bar (mobile players) ── */}
-            {isPlayer && (
+      {isPlayer && (
         <nav className="bottom-tab-bar" aria-label="Main navigation">
           <button className={`bottom-tab${playerTab === "workouts" ? " active" : ""}`}
             onClick={() => setPlayerTab("workouts")}>
@@ -445,17 +481,45 @@ export default function App() {
             </svg>
             <span>Progress</span>
           </button>
-          <button className={`bottom-tab${["hof","profile","more"].includes(playerTab) ? " active" : ""}`}
-            onClick={() => setPlayerTab("more")}>
+          <button
+            className={`bottom-tab${["hof","profile","more"].includes(playerTab) ? " active" : ""}`}
+            onClick={() => { setPlayerTab("more"); setNewPerkCount(0); }}
+            style={{ position: "relative" }}>
             <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <line x1="3" y1="12" x2="21" y2="12"/>
               <line x1="3" y1="6" x2="21" y2="6"/>
               <line x1="3" y1="18" x2="21" y2="18"/>
             </svg>
             <span>More</span>
+            {newPerkCount > 0 && (
+              <span className="tab-badge">{newPerkCount}</span>
+            )}
           </button>
         </nav>
       )}
+
+      {/* ── Perk unlock toast ── */}
+      {isPlayer && perkToast && (
+        <div className="toast show" style={{
+          background: "rgba(26,63,168,0.95)",
+          border: "1px solid rgba(147,180,255,0.4)",
+          color: "#93b4ff",
+          fontWeight: 600,
+        }}>
+          {perkToast}
+        </div>
+      )}
+
+      {/* ── Perk tutorial modal ── */}
+      {isPlayer && user && (
+        <PerkTutorial
+          playerId={user.id}
+          currentXp={playerXp}
+          perks={xpPerks}
+          onTutorialSeen={() => checkNewPerks()}
+        />
+      )}
+
       <InstallPrompt />
     </div>
   );
