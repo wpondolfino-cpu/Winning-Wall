@@ -394,7 +394,7 @@ export default function App() {
             <CoachPanel workouts={workouts} onPublished={refreshWorkouts} />
           )}
           {isCoach && coachTab === "leaderboard" && <Leaderboard />}
-          {isCoach && coachTab === "hof" && <HallOfFame />}
+          {isCoach && coachTab === "hof" && <HallOfFame canDelete={true} />}
           {isCoach && coachTab === "players" && (
             <PlayersPanel allScores={allScores} workouts={workouts} />
           )}
@@ -409,7 +409,7 @@ export default function App() {
             <CoachPanel workouts={workouts} onPublished={refreshWorkouts} />
           )}
           {isAdmin && adminTab === "leaderboard" && <Leaderboard />}
-          {isAdmin && adminTab === "hof" && <HallOfFame />}
+          {isAdmin && adminTab === "hof" && <HallOfFame canDelete={true} />}
           {isAdmin && adminTab === "players" && (
             <PlayersPanel allScores={allScores} workouts={workouts} />
           )}
