@@ -22,13 +22,13 @@ const TAG_COLORS: Record<string, string> = {
 };
 
 export default function CoachPanel({ workouts, onPublished }: Props) {
-  // ── builder state ──
   const [showBuilder, setShowBuilder]   = useState(false);
   const [editWorkout, setEditWorkout]   = useState<Workout | null>(null);
   const [title, setTitle]               = useState("");
   const [category, setCategory]         = useState<Category>("Shooting");
   const [desc, setDesc]                 = useState("");
   const [videoUrl, setVideoUrl]         = useState("");
+  const [resourceUrl, setResourceUrl]   = useState("");
   const [emoji, setEmoji]               = useState("🏀");
   const [scoringType, setScoringType]   = useState<ScoringType>("competitive");
   const [scoringMetric, setScoringMetric] = useState("shots made");
@@ -39,11 +39,8 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
   const [groupName, setGroupName]       = useState("");
   const [isActive, setIsActive]         = useState(true);
   const [deadline, setDeadline]         = useState("");
-
-  // ── multi-spot state ──
   const [spotNames, setSpotNames] = useState<string[]>(["Spot 1", "Spot 2", "Spot 3", "Spot 4", "Spot 5"]);
 
-  // ── announcements ──
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showAnnounce, setShowAnnounce]   = useState(false);
@@ -54,18 +51,12 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
   const [saving, setSaving]             = useState(false);
   const [deleting, setDeleting]         = useState<string | null>(null);
   const [error, setError]               = useState("");
-
-  // ── video preview ──
   const [previewWorkout, setPreviewWorkout] = useState<Workout | null>(null);
-
-  // ── champions ──
   const [champions, setChampions]       = useState<BiweeklyChampion[]>([]);
   const [showChampions, setShowChampions] = useState(false);
   const [crowning, setCrowning]         = useState(false);
   const [undoing, setUndoing]           = useState(false);
   const [deactivatingGroup, setDeactivatingGroup] = useState(false);
-
-  // ── group filter ──
   const [selectedGroup, setSelectedGroup] = useState<string>("all");
 
   const { leaderboard } = useLeaderboard();
@@ -144,7 +135,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
 
   function openNew() {
     setEditWorkout(null);
-    setTitle(""); setDesc(""); setVideoUrl(""); setEmoji("🏀");
+    setTitle(""); setDesc(""); setVideoUrl(""); setResourceUrl(""); setEmoji("🏀");
     setCategory("Shooting"); setScoringType("competitive");
     setScoringMetric("shots made"); setFlatPoints("50");
     setGroupName(""); setIsActive(true); setDeadline(""); setError("");
@@ -159,6 +150,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
     setCategory((w.category as Category) ?? "Shooting");
     setDesc(w.description ?? "");
     setVideoUrl(w.video_url ?? "");
+    setResourceUrl((w as any).resource_url ?? "");
     setEmoji(w.emoji ?? "🏀");
     setScoringType(w.scoring_type ?? "competitive");
     setScoringMetric(w.scoring_metric ?? "shots made");
@@ -179,7 +171,6 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
     setShowBuilder(false); setEditWorkout(null); setError("");
   }
 
-  // ── spot helpers ──
   function addSpot() {
     if (spotNames.length >= 10) return;
     setSpotNames(prev => [...prev, `Spot ${prev.length + 1}`]);
@@ -210,6 +201,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
         is_active: isActive,
         deadline: deadline ? new Date(deadline + "T23:59:59").toISOString() : undefined,
         ...(scoringType === "multi_spot" ? { spot_config: spotNames.filter(s => s.trim()) } : {}),
+        ...(resourceUrl.trim() ? { resource_url: resourceUrl.trim() } : {}),
       } as any);
       cancelBuilder(); onPublished();
     } catch (e: any) { setError(e.message); }
@@ -234,6 +226,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
         is_active: isActive,
         deadline: deadline ? new Date(deadline + "T23:59:59").toISOString() : null,
         spot_config: scoringType === "multi_spot" ? spotNames.filter(s => s.trim()) : null,
+        resource_url: resourceUrl.trim() || null,
       }).eq("id", editWorkout.id);
       if (err) throw err;
       cancelBuilder(); onPublished();
@@ -347,7 +340,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
           <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Describe the drill and what players should do…" />
         </div>
 
-        {/* Scoring type — 4 options */}
+        {/* Scoring type */}
         <div>
           <label>Scoring Type</label>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 6 }}>
@@ -370,7 +363,6 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
           </div>
         </div>
 
-        {/* Flat points value */}
         {scoringType === "flat" && (
           <div>
             <label>Points Awarded for Completion</label>
@@ -378,7 +370,6 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
           </div>
         )}
 
-        {/* Competitive metric */}
         {scoringType === "competitive" && (
           <div>
             <label>What are players measuring?</label>
@@ -391,7 +382,6 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
           </div>
         )}
 
-        {/* Rank points for competitive and multi_spot */}
         {(scoringType === "competitive" || scoringType === "multi_spot") && (
           <div>
             <label>Points Per Rank <span style={{ color: "var(--muted)", fontWeight: 400 }}>(customize what each place earns)</span></label>
@@ -422,7 +412,6 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
           </div>
         )}
 
-        {/* Multi-spot config */}
         {scoringType === "multi_spot" && (
           <div>
             <label>Spots <span style={{ color: "var(--muted)", fontWeight: 400 }}>(players enter one score per spot, totaled automatically)</span></label>
@@ -430,21 +419,15 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
               {spotNames.map((spot, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600, minWidth: 24, textAlign: "center" }}>{i + 1}</div>
-                  <input
-                    value={spot}
-                    onChange={e => updateSpot(i, e.target.value)}
-                    placeholder={`Spot ${i + 1} name`}
-                    style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}
-                  />
+                  <input value={spot} onChange={e => updateSpot(i, e.target.value)} placeholder={`Spot ${i + 1} name`}
+                    style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
                   {spotNames.length > 1 && (
                     <button onClick={() => removeSpot(i)} style={{ background: "none", border: "none", color: "#ff7b7b", cursor: "pointer", fontSize: 18, padding: "4px 6px", lineHeight: 1 }}>×</button>
                   )}
                 </div>
               ))}
               {spotNames.length < 10 && (
-                <button onClick={addSpot} style={{ background: "none", border: "1px dashed var(--border)", borderRadius: 8, padding: "9px 14px", fontSize: 13, color: "var(--muted)", cursor: "pointer", fontFamily: "inherit", marginTop: 2 }}>
-                  + Add spot
-                </button>
+                <button onClick={addSpot} style={{ background: "none", border: "1px dashed var(--border)", borderRadius: 8, padding: "9px 14px", fontSize: 13, color: "var(--muted)", cursor: "pointer", fontFamily: "inherit", marginTop: 2 }}>+ Add spot</button>
               )}
             </div>
             <div style={{ marginTop: 10, padding: "10px 14px", background: "rgba(26,63,168,0.08)", border: "1px solid rgba(26,63,168,0.2)", borderRadius: 8, fontSize: 12, color: "var(--silver-light)", lineHeight: 1.6 }}>
@@ -453,7 +436,6 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
           </div>
         )}
 
-        {/* Self reported tip */}
         {scoringType === "self_reported" && (
           <div style={{ padding: "10px 14px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, fontSize: 12, color: "var(--silver-light)", lineHeight: 1.6 }}>
             💡 Tell players in the description how many points they can earn and how. Example: "Complete all 5 stations = 5 points."
@@ -464,6 +446,24 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
           <label>YouTube Video URL (optional)</label>
           <input value={videoUrl} onChange={e => setVideoUrl(e.target.value)} placeholder="https://youtube.com/watch?v=…" />
           {embedPreview && <div style={{ marginTop: 6, fontSize: 11, color: "#5de098" }}>✓ Valid YouTube URL</div>}
+        </div>
+
+        {/* Resource link */}
+        <div>
+          <label>Program / Resource Link (optional)</label>
+          <input
+            value={resourceUrl}
+            onChange={e => setResourceUrl(e.target.value)}
+            placeholder="https://docs.google.com/… or any link"
+          />
+          {resourceUrl.trim() && (
+            <div style={{ fontSize: 11, color: "#5de098", marginTop: 4 }}>
+              📄 Players will see a "View Program" button linking here
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, lineHeight: 1.5 }}>
+            Paste any link — Google Doc, Google Sheet, PDF, Dropbox, etc. Make sure it's set to "Anyone with the link can view."
+          </div>
         </div>
 
         {error && <div className="error-msg">{error}</div>}
@@ -483,7 +483,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
   return (
     <div className="panel active">
 
-      {/* ── Announcements ── */}
+      {/* Announcements */}
       <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: "16px 20px", marginBottom: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <div>
@@ -536,7 +536,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
         )}
       </div>
 
-      {/* ── Biweekly Champions Banner ── */}
+      {/* Biweekly Champions */}
       <div style={{ background: "linear-gradient(135deg, rgba(26,63,168,0.3), rgba(240,192,64,0.1))", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 14, padding: "16px 20px", marginBottom: 24, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1 }}>👑 Biweekly Champions</div>
@@ -572,7 +572,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
         </div>
       )}
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div className="flex-between">
         <div className="section-head" style={{ marginBottom: 0 }}>
           <div className="section-title">Manage Workouts</div>
@@ -583,7 +583,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
 
       {showBuilder && builderForm}
 
-      {/* ── Group filter tabs ── */}
+      {/* Group filter */}
       {groups.length > 1 && (
         <div style={{ marginBottom: 20 }}>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, background: "var(--surface2)", padding: 6, borderRadius: 12, border: "1px solid var(--border)" }}>
@@ -622,7 +622,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
         </div>
       )}
 
-      {/* ── Workout Cards ── */}
+      {/* Workout Cards */}
       <div className="workout-grid">
         {filteredWorkouts.map(w => {
           const vid = getVideoId(w.video_url);
@@ -663,6 +663,14 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
                 <div style={{ marginTop: 4 }}>
                   <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: scoringColor.bg, color: scoringColor.color }}>{scoringLabel}</span>
                 </div>
+                {(w as any).resource_url && (
+                  <div style={{ marginTop: 8 }}>
+                    <a href={(w as any).resource_url} target="_blank" rel="noreferrer"
+                      style={{ fontSize: 11, color: "#93b4ff", textDecoration: "none", fontWeight: 600 }}>
+                      📄 View Program ↗
+                    </a>
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
                   <button onClick={() => openEdit(w)} style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", color: "var(--silver-light)", borderRadius: 7, padding: "6px 0", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
                   <button onClick={() => toggleActive(w)} style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", color: w.is_active ? "var(--gold)" : "#5de098", borderRadius: 7, padding: "6px 0", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{w.is_active ? "👁 Hide" : "👁 Show"}</button>
