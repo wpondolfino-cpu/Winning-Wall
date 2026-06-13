@@ -36,9 +36,12 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
   const [secondPts, setSecondPts] = useState("3");
   const [thirdPts, setThirdPts]   = useState("1");
   const [flatPoints, setFlatPoints]     = useState("50");
-  const [groupName, setGroupName]       = useState("");   // e.g. "Week 1 & 2"
-  const [isActive, setIsActive]         = useState(true); // visible to players?
-  const [deadline, setDeadline]           = useState(""); // ISO date string
+  const [groupName, setGroupName]       = useState("");
+  const [isActive, setIsActive]         = useState(true);
+  const [deadline, setDeadline]         = useState("");
+
+  // ── multi-spot state ──
+  const [spotNames, setSpotNames] = useState<string[]>(["Spot 1", "Spot 2", "Spot 3", "Spot 4", "Spot 5"]);
 
   // ── announcements ──
   const [announcements, setAnnouncements] = useState<any[]>([]);
@@ -62,7 +65,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
   const [undoing, setUndoing]           = useState(false);
   const [deactivatingGroup, setDeactivatingGroup] = useState(false);
 
-  // ── group filter (coach view) ──
+  // ── group filter ──
   const [selectedGroup, setSelectedGroup] = useState<string>("all");
 
   const { leaderboard } = useLeaderboard();
@@ -88,29 +91,19 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
     if (!window.confirm(`Remove "${groupName}" workouts from the leaderboard?\n\nPlayers can still log scores and do challenges — they just won\'t count toward leaderboard points.`)) return;
     setDeactivatingGroup(true);
     try {
-      await supabase.from("workouts")
-        .update({ leaderboard_active: false })
-        .eq("group_name", groupName);
-      onPublished(); // refresh workouts
-    } catch (e: any) {
-      alert("Error: " + e.message);
-    } finally {
-      setDeactivatingGroup(false);
-    }
+      await supabase.from("workouts").update({ leaderboard_active: false }).eq("group_name", groupName);
+      onPublished();
+    } catch (e: any) { alert("Error: " + e.message); }
+    finally { setDeactivatingGroup(false); }
   }
 
   async function reactivateGroupOnLeaderboard(groupName: string) {
     setDeactivatingGroup(true);
     try {
-      await supabase.from("workouts")
-        .update({ leaderboard_active: true })
-        .eq("group_name", groupName);
+      await supabase.from("workouts").update({ leaderboard_active: true }).eq("group_name", groupName);
       onPublished();
-    } catch (e: any) {
-      alert("Error: " + e.message);
-    } finally {
-      setDeactivatingGroup(false);
-    }
+    } catch (e: any) { alert("Error: " + e.message); }
+    finally { setDeactivatingGroup(false); }
   }
 
   async function loadAnnouncements() {
@@ -142,28 +135,24 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
     await supabase.from("announcements").update({ is_pinned: !ann.is_pinned }).eq("id", ann.id);
     loadAnnouncements();
   }
-  const periodStart  = currentPeriodStart();
-  const periodEnd    = currentPeriodEnd();
 
-  // ── derive unique group names from existing workouts ──
+  const periodStart = currentPeriodStart();
+  const periodEnd   = currentPeriodEnd();
+
   const groups = ["all", ...Array.from(new Set(workouts.map(w => w.group_name).filter(Boolean))) as string[]];
+  const filteredWorkouts = selectedGroup === "all" ? workouts : workouts.filter(w => w.group_name === selectedGroup);
 
-  const filteredWorkouts = selectedGroup === "all"
-    ? workouts
-    : workouts.filter(w => w.group_name === selectedGroup);
-
-  // ── open builder for new workout ──
   function openNew() {
     setEditWorkout(null);
     setTitle(""); setDesc(""); setVideoUrl(""); setEmoji("🏀");
     setCategory("Shooting"); setScoringType("competitive");
     setScoringMetric("shots made"); setFlatPoints("50");
     setGroupName(""); setIsActive(true); setDeadline(""); setError("");
+    setSpotNames(["Spot 1", "Spot 2", "Spot 3", "Spot 4", "Spot 5"]);
     setShowBuilder(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  // ── open builder pre-filled for editing ──
   function openEdit(w: Workout) {
     setEditWorkout(w);
     setTitle(w.title);
@@ -180,6 +169,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
     setGroupName(w.group_name ?? "");
     setIsActive(w.is_active ?? true);
     setDeadline(w.deadline ? new Date(w.deadline).toISOString().split("T")[0] : "");
+    setSpotNames((w as any).spot_config ?? ["Spot 1", "Spot 2", "Spot 3", "Spot 4", "Spot 5"]);
     setError("");
     setShowBuilder(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -189,12 +179,22 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
     setShowBuilder(false); setEditWorkout(null); setError("");
   }
 
-  // ── publish new workout ──
+  // ── spot helpers ──
+  function addSpot() {
+    if (spotNames.length >= 10) return;
+    setSpotNames(prev => [...prev, `Spot ${prev.length + 1}`]);
+  }
+  function removeSpot(i: number) {
+    setSpotNames(prev => prev.filter((_, idx) => idx !== i));
+  }
+  function updateSpot(i: number, val: string) {
+    setSpotNames(prev => prev.map((s, idx) => idx === i ? val : s));
+  }
+
   async function publish() {
     if (!title.trim()) { setError("Please enter a workout title."); return; }
-    if (scoringType === "flat" && parseInt(flatPoints) <= 0) {
-      setError("Please enter a point value greater than 0."); return;
-    }
+    if (scoringType === "flat" && parseInt(flatPoints) <= 0) { setError("Please enter a point value greater than 0."); return; }
+    if (scoringType === "multi_spot" && spotNames.filter(s => s.trim()).length < 1) { setError("Please add at least one spot."); return; }
     setSaving(true); setError("");
     try {
       await createWorkout({
@@ -203,19 +203,19 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
         scoring_type: scoringType,
         scoring_metric: scoringType === "competitive" ? scoringMetric : undefined,
         flat_points: scoringType === "flat" ? parseInt(flatPoints) : undefined,
-        first_place_pts: scoringType === "competitive" ? parseInt(firstPts) || 3 : undefined,
-        second_place_pts: scoringType === "competitive" ? parseInt(secondPts) || 2 : undefined,
-        third_place_pts: scoringType === "competitive" ? parseInt(thirdPts) || 1 : undefined,
+        first_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(firstPts) || 3 : undefined,
+        second_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(secondPts) || 2 : undefined,
+        third_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(thirdPts) || 1 : undefined,
         group_name: groupName.trim() || undefined,
         is_active: isActive,
         deadline: deadline ? new Date(deadline + "T23:59:59").toISOString() : undefined,
-      });
+        ...(scoringType === "multi_spot" ? { spot_config: spotNames.filter(s => s.trim()) } : {}),
+      } as any);
       cancelBuilder(); onPublished();
     } catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
   }
 
-  // ── save edits ──
   async function saveEdit() {
     if (!editWorkout) return;
     if (!title.trim()) { setError("Please enter a workout title."); return; }
@@ -227,12 +227,13 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
         scoring_type: scoringType,
         scoring_metric: scoringType === "competitive" ? scoringMetric : null,
         flat_points: scoringType === "flat" ? parseInt(flatPoints) : null,
-        first_place_pts: scoringType === "competitive" ? parseInt(firstPts) || 3 : null,
-        second_place_pts: scoringType === "competitive" ? parseInt(secondPts) || 2 : null,
-        third_place_pts: scoringType === "competitive" ? parseInt(thirdPts) || 1 : null,
+        first_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(firstPts) || 3 : null,
+        second_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(secondPts) || 2 : null,
+        third_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(thirdPts) || 1 : null,
         group_name: groupName.trim() || null,
         is_active: isActive,
         deadline: deadline ? new Date(deadline + "T23:59:59").toISOString() : null,
+        spot_config: scoringType === "multi_spot" ? spotNames.filter(s => s.trim()) : null,
       }).eq("id", editWorkout.id);
       if (err) throw err;
       cancelBuilder(); onPublished();
@@ -240,7 +241,6 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
     finally { setSaving(false); }
   }
 
-  // ── delete workout ──
   async function deleteWorkout(w: Workout) {
     if (!window.confirm(`Delete "${w.title}"?\n\nAll player scores for this workout will also be deleted. This cannot be undone.`)) return;
     setDeleting(w.id);
@@ -252,17 +252,16 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
     finally { setDeleting(null); }
   }
 
-  // ── toggle active/hidden without deleting ──
   async function toggleActive(w: Workout) {
     await supabase.from("workouts").update({ is_active: !w.is_active }).eq("id", w.id);
     onPublished();
   }
 
-  // ── champions ──
   async function loadChampions() {
     const data = await getBiweeklyChampions();
     setChampions(data); setShowChampions(true);
   }
+
   async function handleCrownWinners() {
     setCrowning(true);
     try {
@@ -277,24 +276,13 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
     if (!window.confirm("Undo the most recent crowning?\n\nThis will:\n• Remove the most recent Hall of Fame entries\n• Clear champion status from those players\n• Remove their crown emojis from My Progress")) return;
     setUndoing(true);
     try {
-      const { data: recent } = await supabase
-        .from("biweekly_champions")
-        .select("crowned_at, player_id")
-        .order("crowned_at", { ascending: false })
-        .limit(10);
+      const { data: recent } = await supabase.from("biweekly_champions").select("crowned_at, player_id").order("crowned_at", { ascending: false }).limit(10);
       if (!recent || recent.length === 0) { alert("No crownings to undo."); return; }
       const latestTime = new Date(recent[0].crowned_at).getTime();
-      const sameCrowning = recent.filter((r: any) =>
-        Math.abs(new Date(r.crowned_at).getTime() - latestTime) < 60000
-      );
+      const sameCrowning = recent.filter((r: any) => Math.abs(new Date(r.crowned_at).getTime() - latestTime) < 60000);
       const playerIds = sameCrowning.map((r: any) => r.player_id);
-      await supabase.from("biweekly_champions")
-        .delete()
-        .in("player_id", playerIds)
-        .gte("crowned_at", new Date(latestTime - 60000).toISOString());
-      await supabase.from("profiles")
-        .update({ is_period_champion: false, champion_since: null })
-        .in("id", playerIds);
+      await supabase.from("biweekly_champions").delete().in("player_id", playerIds).gte("crowned_at", new Date(latestTime - 60000).toISOString());
+      await supabase.from("profiles").update({ is_period_champion: false, champion_since: null }).in("id", playerIds);
       await loadChampions();
       alert("↩️ Crown has been undone successfully.");
     } catch (e: any) { alert("Error: " + e.message); }
@@ -303,17 +291,15 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
 
   const EMOJIS = ["🏀","🎯","⚡","💪","🏆","🔥","🎽","⏱️"];
 
-  // ── shared builder form JSX ──
   const builderForm = (
     <div className="card" style={{ marginTop: 20, marginBottom: 28 }}>
       <div className="card-title">{editWorkout ? "✏️ Edit Workout" : "New Workout"}</div>
       <div className="builder-form">
 
-        {/* Title + Category */}
         <div className="builder-row">
           <div>
             <label>Workout Title</label>
-            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Crossover Series" />
+            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. 5-Spot Shooting" />
           </div>
           <div>
             <label>Category</label>
@@ -323,83 +309,53 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
           </div>
         </div>
 
-        {/* Group Name */}
         <div>
-          <label>Workout Group <span style={{ color: "var(--muted)", fontWeight: 400 }}>(e.g. "Week 1 & 2" — groups drills together)</span></label>
+          <label>Workout Group <span style={{ color: "var(--muted)", fontWeight: 400 }}>(e.g. "Week 1 & 2")</span></label>
           <input value={groupName} onChange={e => setGroupName(e.target.value)} placeholder="e.g. Week 1 & 2" />
         </div>
 
-        {/* Deadline */}
         <div style={{ marginBottom: 4 }}>
-          <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>
-            Deadline (optional)
-          </label>
+          <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Deadline (optional)</label>
           <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)}
             min={new Date().toISOString().split("T")[0]}
             style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
-          {deadline && (
-            <div style={{ fontSize: 11, color: "var(--gold)", marginTop: 4 }}>
-              ⏰ Players will see a countdown to this date
-            </div>
-          )}
+          {deadline && <div style={{ fontSize: 11, color: "var(--gold)", marginTop: 4 }}>⏰ Players will see a countdown to this date</div>}
         </div>
 
-        {/* Active toggle */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)" }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text)" }}>Visible to Players</div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-              When off, players cannot see this workout. Points already earned are kept.
-            </div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>When off, players cannot see this workout. Points already earned are kept.</div>
           </div>
-          <div
-            onClick={() => setIsActive(a => !a)}
-            style={{
-              width: 46, height: 26, borderRadius: 13, cursor: "pointer", flexShrink: 0,
-              background: isActive ? "var(--royal)" : "var(--surface3)",
-              position: "relative", transition: "background .2s",
-              border: "1px solid var(--border)",
-            }}
-          >
-            <div style={{
-              position: "absolute", top: 3, left: isActive ? 22 : 3,
-              width: 18, height: 18, borderRadius: "50%", background: "#fff",
-              transition: "left .2s",
-            }} />
+          <div onClick={() => setIsActive(a => !a)} style={{ width: 46, height: 26, borderRadius: 13, cursor: "pointer", flexShrink: 0, background: isActive ? "var(--royal)" : "var(--surface3)", position: "relative", transition: "background .2s", border: "1px solid var(--border)" }}>
+            <div style={{ position: "absolute", top: 3, left: isActive ? 22 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .2s" }} />
           </div>
-          <span style={{ fontSize: 12, fontWeight: 600, color: isActive ? "#5de098" : "var(--muted)" }}>
-            {isActive ? "On" : "Off"}
-          </span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: isActive ? "#5de098" : "var(--muted)" }}>{isActive ? "On" : "Off"}</span>
         </div>
 
-        {/* Emoji */}
         <div>
           <label>Emoji Icon</label>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {EMOJIS.map(e => (
-              <button key={e} onClick={() => setEmoji(e)} style={{
-                background: emoji === e ? "var(--royal)" : "var(--surface2)",
-                border: `1px solid ${emoji === e ? "var(--royal-light)" : "var(--border)"}`,
-                borderRadius: 8, padding: "6px 10px", fontSize: 20, cursor: "pointer",
-              }}>{e}</button>
+              <button key={e} onClick={() => setEmoji(e)} style={{ background: emoji === e ? "var(--royal)" : "var(--surface2)", border: `1px solid ${emoji === e ? "var(--royal-light)" : "var(--border)"}`, borderRadius: 8, padding: "6px 10px", fontSize: 20, cursor: "pointer" }}>{e}</button>
             ))}
           </div>
         </div>
 
-        {/* Description */}
         <div>
           <label>Description / Instructions</label>
           <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Describe the drill and what players should do…" />
         </div>
 
-        {/* Scoring type */}
+        {/* Scoring type — 4 options */}
         <div>
           <label>Scoring Type</label>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 6 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 6 }}>
             {([
-              { type: "competitive", icon: "🏆", label: "Competitive", sub: "Ranked in grade group. 1st=3 · 2nd=2 · 3rd=1" },
-              { type: "flat",        icon: "✅", label: "Flat Points", sub: "Everyone who logs it gets the same points." },
-              { type: "self_reported", icon: "✏️", label: "Self-Reported", sub: "Player types in how many points they earned." },
+              { type: "competitive",  icon: "🏆", label: "Competitive",   sub: "Ranked in grade group. 1st/2nd/3rd earn pts." },
+              { type: "multi_spot",   icon: "🎯", label: "Multi-Spot",    sub: "Player enters score per spot. Total is summed." },
+              { type: "flat",         icon: "✅", label: "Flat Points",   sub: "Everyone who logs it gets the same points." },
+              { type: "self_reported",icon: "✏️", label: "Self-Reported", sub: "Player types in how many points they earned." },
             ] as const).map(opt => (
               <div key={opt.type} onClick={() => setScoringType(opt.type)} style={{
                 padding: 12, borderRadius: 10, cursor: "pointer", transition: "all .2s",
@@ -435,38 +391,64 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
           </div>
         )}
 
-        {/* Custom rank points — only show for competitive */}
-        {scoringType === "competitive" && (
+        {/* Rank points for competitive and multi_spot */}
+        {(scoringType === "competitive" || scoringType === "multi_spot") && (
           <div>
             <label>Points Per Rank <span style={{ color: "var(--muted)", fontWeight: 400 }}>(customize what each place earns)</span></label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 6 }}>
               <div>
                 <div style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700, marginBottom: 5 }}>🥇 1st Place</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <input type="number" value={firstPts} min="0" onChange={e => setFirstPts(e.target.value)}
-                    style={{ width: "100%", background: "var(--surface2)", border: "1px solid rgba(240,192,64,0.4)", borderRadius: 8, padding: "9px 12px", color: "var(--gold)", fontSize: 16, fontWeight: 700, fontFamily: "inherit", outline: "none", textAlign: "center" }} />
+                  <input type="number" value={firstPts} min="0" onChange={e => setFirstPts(e.target.value)} style={{ width: "100%", background: "var(--surface2)", border: "1px solid rgba(240,192,64,0.4)", borderRadius: 8, padding: "9px 12px", color: "var(--gold)", fontSize: 16, fontWeight: 700, fontFamily: "inherit", outline: "none", textAlign: "center" }} />
                   <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>pts</span>
                 </div>
               </div>
               <div>
                 <div style={{ fontSize: 11, color: "var(--silver)", fontWeight: 700, marginBottom: 5 }}>🥈 2nd Place</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <input type="number" value={secondPts} min="0" onChange={e => setSecondPts(e.target.value)}
-                    style={{ width: "100%", background: "var(--surface2)", border: "1px solid rgba(176,184,200,0.3)", borderRadius: 8, padding: "9px 12px", color: "var(--silver-light)", fontSize: 16, fontWeight: 700, fontFamily: "inherit", outline: "none", textAlign: "center" }} />
+                  <input type="number" value={secondPts} min="0" onChange={e => setSecondPts(e.target.value)} style={{ width: "100%", background: "var(--surface2)", border: "1px solid rgba(176,184,200,0.3)", borderRadius: 8, padding: "9px 12px", color: "var(--silver-light)", fontSize: 16, fontWeight: 700, fontFamily: "inherit", outline: "none", textAlign: "center" }} />
                   <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>pts</span>
                 </div>
               </div>
               <div>
                 <div style={{ fontSize: 11, color: "#cd7f32", fontWeight: 700, marginBottom: 5 }}>🥉 3rd Place</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <input type="number" value={thirdPts} min="0" onChange={e => setThirdPts(e.target.value)}
-                    style={{ width: "100%", background: "var(--surface2)", border: "1px solid rgba(205,127,50,0.3)", borderRadius: 8, padding: "9px 12px", color: "#cd7f32", fontSize: 16, fontWeight: 700, fontFamily: "inherit", outline: "none", textAlign: "center" }} />
+                  <input type="number" value={thirdPts} min="0" onChange={e => setThirdPts(e.target.value)} style={{ width: "100%", background: "var(--surface2)", border: "1px solid rgba(205,127,50,0.3)", borderRadius: 8, padding: "9px 12px", color: "#cd7f32", fontSize: 16, fontWeight: 700, fontFamily: "inherit", outline: "none", textAlign: "center" }} />
                   <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>pts</span>
                 </div>
               </div>
             </div>
-            <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>
-              Everyone else gets 0 pts. Defaults are 5 / 3 / 1.
+            <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>Everyone else gets 0 pts. Defaults are 5 / 3 / 1.</div>
+          </div>
+        )}
+
+        {/* Multi-spot config */}
+        {scoringType === "multi_spot" && (
+          <div>
+            <label>Spots <span style={{ color: "var(--muted)", fontWeight: 400 }}>(players enter one score per spot, totaled automatically)</span></label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+              {spotNames.map((spot, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600, minWidth: 24, textAlign: "center" }}>{i + 1}</div>
+                  <input
+                    value={spot}
+                    onChange={e => updateSpot(i, e.target.value)}
+                    placeholder={`Spot ${i + 1} name`}
+                    style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}
+                  />
+                  {spotNames.length > 1 && (
+                    <button onClick={() => removeSpot(i)} style={{ background: "none", border: "none", color: "#ff7b7b", cursor: "pointer", fontSize: 18, padding: "4px 6px", lineHeight: 1 }}>×</button>
+                  )}
+                </div>
+              ))}
+              {spotNames.length < 10 && (
+                <button onClick={addSpot} style={{ background: "none", border: "1px dashed var(--border)", borderRadius: 8, padding: "9px 14px", fontSize: 13, color: "var(--muted)", cursor: "pointer", fontFamily: "inherit", marginTop: 2 }}>
+                  + Add spot
+                </button>
+              )}
+            </div>
+            <div style={{ marginTop: 10, padding: "10px 14px", background: "rgba(26,63,168,0.08)", border: "1px solid rgba(26,63,168,0.2)", borderRadius: 8, fontSize: 12, color: "var(--silver-light)", lineHeight: 1.6 }}>
+              🎯 Players will see each spot as a separate input. Their total score is the sum of all spots and gets ranked competitively.
             </div>
           </div>
         )}
@@ -478,7 +460,6 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
           </div>
         )}
 
-        {/* Video URL */}
         <div>
           <label>YouTube Video URL (optional)</label>
           <input value={videoUrl} onChange={e => setVideoUrl(e.target.value)} placeholder="https://youtube.com/watch?v=…" />
@@ -515,9 +496,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
         </div>
         {showAnnounce && (
           <div style={{ marginBottom: 16, padding: "14px", background: "var(--surface)", borderRadius: 10, border: "1px solid var(--border)" }}>
-            <textarea value={newMsg} onChange={e => setNewMsg(e.target.value)}
-              placeholder="Write your announcement here... (e.g. 'Great work this week! 🔥 Remember workouts close Friday.')"
-              rows={3}
+            <textarea value={newMsg} onChange={e => setNewMsg(e.target.value)} placeholder="Write your announcement here..." rows={3}
               style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", resize: "vertical", boxSizing: "border-box" }} />
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", cursor: "pointer" }}>
@@ -558,30 +537,18 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
       </div>
 
       {/* ── Biweekly Champions Banner ── */}
-      <div style={{
-        background: "linear-gradient(135deg, rgba(26,63,168,0.3), rgba(240,192,64,0.1))",
-        border: "1px solid rgba(240,192,64,0.3)", borderRadius: 14,
-        padding: "16px 20px", marginBottom: 24,
-        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap",
-      }}>
+      <div style={{ background: "linear-gradient(135deg, rgba(26,63,168,0.3), rgba(240,192,64,0.1))", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 14, padding: "16px 20px", marginBottom: 24, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1 }}>👑 Biweekly Champions</div>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
-            Current period: {periodStart.toLocaleDateString()} – {periodEnd.toLocaleDateString()}
-          </div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>Current period: {periodStart.toLocaleDateString()} – {periodEnd.toLocaleDateString()}</div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "space-between", width: "100%", marginTop: 10 }}>
           <button onClick={loadChampions} style={{ flex: 1, minWidth: 100, background: "var(--surface2)", color: "var(--silver-light)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", textAlign: "center" }}>View History</button>
-          <button onClick={handleCrownWinners} disabled={crowning} style={{ flex: 1, minWidth: 100, background: "var(--gold)", color: "#0a0c14", border: "none", borderRadius: 8, padding: "8px 10px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", textAlign: "center" }}>
-            {crowning ? "Crowning…" : "Crown Winners"}
-          </button>
-          <button onClick={handleUndoCrown} disabled={undoing || crowning} style={{ flex: 1, minWidth: 100, background: "rgba(255,107,107,0.15)", color: "#ff7b7b", border: "1px solid rgba(255,107,107,0.3)", borderRadius: 8, padding: "8px 10px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", textAlign: "center" }}>
-            {undoing ? "Undoing…" : "↩️ Undo Crown"}
-          </button>
+          <button onClick={handleCrownWinners} disabled={crowning} style={{ flex: 1, minWidth: 100, background: "var(--gold)", color: "#0a0c14", border: "none", borderRadius: 8, padding: "8px 10px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", textAlign: "center" }}>{crowning ? "Crowning…" : "Crown Winners"}</button>
+          <button onClick={handleUndoCrown} disabled={undoing || crowning} style={{ flex: 1, minWidth: 100, background: "rgba(255,107,107,0.15)", color: "#ff7b7b", border: "1px solid rgba(255,107,107,0.3)", borderRadius: 8, padding: "8px 10px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", textAlign: "center" }}>{undoing ? "Undoing…" : "↩️ Undo Crown"}</button>
         </div>
       </div>
 
-      {/* Champions history modal */}
       {showChampions && (
         <div className="modal-overlay open" onClick={() => setShowChampions(false)}>
           <div className="log-modal" style={{ width: 520 }} onClick={e => e.stopPropagation()}>
@@ -594,9 +561,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
                     <div key={c.id} style={{ background: "var(--surface2)", borderRadius: 10, padding: "12px 14px", border: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div>
                         <div style={{ fontWeight: 600, color: "var(--text)", fontSize: 14 }}>👑 {c.player_name}</div>
-                        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                          {c.grade_category} · {new Date(c.period_start).toLocaleDateString()} – {new Date(c.period_end).toLocaleDateString()}
-                        </div>
+                        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{c.grade_category} · {new Date(c.period_start).toLocaleDateString()} – {new Date(c.period_end).toLocaleDateString()}</div>
                       </div>
                       <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)" }}>{c.points} pts</div>
                     </div>
@@ -613,31 +578,21 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
           <div className="section-title">Manage Workouts</div>
           <div className="section-sub">Post and manage drills for players</div>
         </div>
-        {!showBuilder && (
-          <button className="coach-add-btn" onClick={openNew}>+ New Workout</button>
-        )}
+        {!showBuilder && <button className="coach-add-btn" onClick={openNew}>+ New Workout</button>}
       </div>
 
-      {/* Builder */}
       {showBuilder && builderForm}
 
       {/* ── Group filter tabs ── */}
       {groups.length > 1 && (
         <div style={{ marginBottom: 20 }}>
-          {/* Group tabs */}
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, background: "var(--surface2)", padding: 6, borderRadius: 12, border: "1px solid var(--border)" }}>
             {groups.map(g => (
-              <button key={g} onClick={() => setSelectedGroup(g)} style={{
-                padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer",
-                fontFamily: "inherit", fontSize: 12, fontWeight: 600,
-                background: selectedGroup === g ? "var(--royal)" : "transparent",
-                color: selectedGroup === g ? "#fff" : "var(--muted)", transition: "all .2s",
-              }}>
+              <button key={g} onClick={() => setSelectedGroup(g)} style={{ padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600, background: selectedGroup === g ? "var(--royal)" : "transparent", color: selectedGroup === g ? "#fff" : "var(--muted)", transition: "all .2s" }}>
                 {g === "all" ? "All Groups" : g}
               </button>
             ))}
           </div>
-          {/* Deactivate/reactivate button for selected group */}
           {selectedGroup !== "all" && (() => {
             const groupWorkouts = workouts.filter(w => w.group_name === selectedGroup);
             const allDeactivated = groupWorkouts.length > 0 && groupWorkouts.every(w => w.leaderboard_active === false);
@@ -649,19 +604,15 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
                     {allDeactivated ? "🔴 Excluded from leaderboard" : someDeactivated ? "⚠️ Partially excluded from leaderboard" : "🟢 Active on leaderboard"}
                   </div>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                    {allDeactivated
-                      ? "Players can still log scores & do challenges — won't count toward leaderboard points"
-                      : "Scores from these drills count toward leaderboard rankings"}
+                    {allDeactivated ? "Players can still log scores & do challenges — won't count toward leaderboard points" : "Scores from these drills count toward leaderboard rankings"}
                   </div>
                 </div>
                 {allDeactivated ? (
-                  <button onClick={() => reactivateGroupOnLeaderboard(selectedGroup)} disabled={deactivatingGroup}
-                    style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
+                  <button onClick={() => reactivateGroupOnLeaderboard(selectedGroup)} disabled={deactivatingGroup} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
                     {deactivatingGroup ? "Updating…" : "✓ Re-activate on Leaderboard"}
                   </button>
                 ) : (
-                  <button onClick={() => deactivateGroupFromLeaderboard(selectedGroup)} disabled={deactivatingGroup}
-                    style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
+                  <button onClick={() => deactivateGroupFromLeaderboard(selectedGroup)} disabled={deactivatingGroup} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
                     {deactivatingGroup ? "Updating…" : "🔴 Remove from Leaderboard"}
                   </button>
                 )}
@@ -680,10 +631,12 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
           const p3 = w.third_place_pts ?? 1;
           const scoringLabel =
             w.scoring_type === "competitive" ? `🏆 ${p1}/${p2}/${p3} pts` :
-            w.scoring_type === "flat" ? `✅ ${w.flat_points} pts` : "✏️ Self-Reported";
+            w.scoring_type === "multi_spot"  ? `🎯 ${p1}/${p2}/${p3} pts · ${((w as any).spot_config?.length ?? 0)} spots` :
+            w.scoring_type === "flat"        ? `✅ ${w.flat_points} pts` : "✏️ Self-Reported";
           const scoringColor =
             w.scoring_type === "competitive" ? { bg: "rgba(240,192,64,0.15)", color: "var(--gold)" } :
-            w.scoring_type === "flat" ? { bg: "rgba(40,180,80,0.15)", color: "#5de098" } :
+            w.scoring_type === "multi_spot"  ? { bg: "rgba(26,63,168,0.2)", color: "#93b4ff" } :
+            w.scoring_type === "flat"        ? { bg: "rgba(40,180,80,0.15)", color: "#5de098" } :
             { bg: "rgba(26,63,168,0.2)", color: "#93b4ff" };
 
           return (
@@ -692,52 +645,28 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
                 <div className="workout-thumb-coach" onClick={() => setPreviewWorkout(w)}>
                   <img src={`https://img.youtube.com/vi/${vid}/hqdefault.jpg`} alt={w.title} />
                   <div className="thumb-overlay"><div className="play-btn" /></div>
-                  <div className="thumb-tag-bar">
-                    <span className={`tag ${TAG_COLORS[w.category] ?? "tag-blue"}`}>{w.category}</span>
-                  </div>
+                  <div className="thumb-tag-bar"><span className={`tag ${TAG_COLORS[w.category] ?? "tag-blue"}`}>{w.category}</span></div>
                 </div>
               ) : (
                 <div className="emoji-thumb">{w.emoji}</div>
               )}
-
               <div className="workout-info">
-                {/* Title + group badge */}
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 6 }}>
                   <div className="workout-title">{w.title}</div>
-                  {!w.is_active && (
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 5, background: "rgba(255,107,107,0.15)", color: "#ff7b7b", flexShrink: 0, whiteSpace: "nowrap" }}>HIDDEN</span>
-                  )}
+                  {!w.is_active && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 5, background: "rgba(255,107,107,0.15)", color: "#ff7b7b", flexShrink: 0, whiteSpace: "nowrap" }}>HIDDEN</span>}
                 </div>
-                {w.group_name && (
-                  <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>📁 {w.group_name}</div>
-                )}
+                {w.group_name && <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>📁 {w.group_name}</div>}
                 {w.deadline && (() => {
                   const days = Math.ceil((new Date(w.deadline).getTime() - Date.now()) / 86400000);
-                  return (
-                    <div style={{ fontSize: 11, fontWeight: 600, color: days <= 2 ? "#ff7b7b" : days <= 5 ? "var(--gold)" : "var(--muted)", marginBottom: 4 }}>
-                      ⏰ {days <= 0 ? "Deadline passed" : `${days} day${days !== 1 ? "s" : ""} left`}
-                    </div>
-                  );
+                  return <div style={{ fontSize: 11, fontWeight: 600, color: days <= 2 ? "#ff7b7b" : days <= 5 ? "var(--gold)" : "var(--muted)", marginBottom: 4 }}>⏰ {days <= 0 ? "Deadline passed" : `${days} day${days !== 1 ? "s" : ""} left`}</div>;
                 })()}
                 <div style={{ marginTop: 4 }}>
                   <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: scoringColor.bg, color: scoringColor.color }}>{scoringLabel}</span>
                 </div>
-
-                {/* ── Edit / Hide / Delete buttons ── */}
                 <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
-                  <button
-                    onClick={() => openEdit(w)}
-                    style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", color: "var(--silver-light)", borderRadius: 7, padding: "6px 0", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}
-                  >✏️ Edit</button>
-                  <button
-                    onClick={() => toggleActive(w)}
-                    style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", color: w.is_active ? "var(--gold)" : "#5de098", borderRadius: 7, padding: "6px 0", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}
-                  >{w.is_active ? "👁 Hide" : "👁 Show"}</button>
-                  <button
-                    onClick={() => deleteWorkout(w)}
-                    disabled={deleting === w.id}
-                    style={{ flex: 1, background: "var(--surface)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 7, padding: "6px 0", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}
-                  >{deleting === w.id ? "…" : "🗑 Delete"}</button>
+                  <button onClick={() => openEdit(w)} style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", color: "var(--silver-light)", borderRadius: 7, padding: "6px 0", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
+                  <button onClick={() => toggleActive(w)} style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", color: w.is_active ? "var(--gold)" : "#5de098", borderRadius: 7, padding: "6px 0", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{w.is_active ? "👁 Hide" : "👁 Show"}</button>
+                  <button onClick={() => deleteWorkout(w)} disabled={deleting === w.id} style={{ flex: 1, background: "var(--surface)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 7, padding: "6px 0", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{deleting === w.id ? "…" : "🗑 Delete"}</button>
                 </div>
               </div>
             </div>
@@ -745,7 +674,6 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
         })}
       </div>
 
-      {/* Video preview modal */}
       {previewWorkout && (
         <div className="modal-overlay open" onClick={() => setPreviewWorkout(null)}>
           <div className="video-modal" onClick={e => e.stopPropagation()}>
@@ -754,11 +682,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
               <button className="modal-close" style={{ position: "static", marginLeft: 12 }} onClick={() => setPreviewWorkout(null)}>✕</button>
             </div>
             <div className="video-container">
-              <iframe
-                src={`${getEmbedUrl(previewWorkout.video_url)}&rel=0`}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
+              <iframe src={`${getEmbedUrl(previewWorkout.video_url)}&rel=0`} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
             </div>
             <div className="video-modal-body"><p className="video-desc">{previewWorkout.description}</p></div>
           </div>
