@@ -21,7 +21,7 @@ export const GRADE_CATEGORIES = [
 export type GradeCategory = typeof GRADE_CATEGORIES[number];
 
 // ── Scoring Types ─────────────────────────────────────────────
-export type ScoringType = "competitive" | "self_reported" | "flat";
+export type ScoringType = "competitive" | "self_reported" | "flat" | "multi_spot";
 
 // ── Roles ─────────────────────────────────────────────────────
 export type Role = "player" | "coach" | "admin" | "inactive" | "pending_player" | "pending_coach";
