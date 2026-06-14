@@ -109,13 +109,20 @@ export default function App() {
   }, [user, profile]);
 
   useEffect(() => {
-    if (!user || profile?.role !== "player") return;
+    if (!user) return;
     async function checkPendingApprovals() {
       const { supabase: sb } = await import("./lib/supabase");
       const { count: pendingCount } = await sb.from("profiles").select("id", { count: "exact", head: true }).in("role", ["pending_player", "pending_coach"]);
       const { count: resetCount } = await sb.from("password_reset_requests").select("id", { count: "exact", head: true }).eq("status", "pending");
       setPendingApprovals((pendingCount ?? 0) + (resetCount ?? 0));
     }
+    checkPendingApprovals();
+    const approvalInterval = setInterval(checkPendingApprovals, 60000);
+    return () => clearInterval(approvalInterval);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || profile?.role !== "player") return;
     async function checkChallenges() {
       const { supabase: sb } = await import("./lib/supabase");
       const { count } = await sb.from("challenges").select("id", { count: "exact", head: true }).eq("opponent_id", user!.id).eq("status", "pending").eq("opponent_seen", false);
@@ -125,9 +132,7 @@ export default function App() {
       setPendingChallenges((count ?? 0) + teamNotif);
     }
     checkChallenges();
-    checkPendingApprovals();
     const interval = setInterval(checkChallenges, 30000);
-    const approvalInterval = setInterval(checkPendingApprovals, 60000);
     if (user && profile?.role === "player") {
       (async () => {
         const [xp, perks] = await Promise.all([getPlayerXp(user.id), getXpPerks()]);
@@ -137,7 +142,7 @@ export default function App() {
         checkNewPerks();
       })();
     }
-    return () => { clearInterval(interval); clearInterval(approvalInterval); };
+    return () => clearInterval(interval);
   }, [user, profile]);
 
   async function loadMyScores() {
