@@ -280,22 +280,15 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   }
 
   async function handlePasswordReset(req: PasswordResetRequest) {
-    if (!window.confirm(`Reset password for ${req.name} (${req.email}) to Bombardiers1!?`)) return;
+    if (!window.confirm(`Mark password reset request for ${req.name} as handled?\n\nYou will need to manually reset their password in Supabase:\nAuthentication → Users → find ${req.name} → ⋮ → Reset password\n\nThen tell them to log in with the new temporary password.`)) return;
     setResetting(req.id);
     try {
-      // Update the player's password via admin API isn't available client-side
-      // Instead update must_change_password and mark request resolved
-      // The actual password reset flow: mark resolved so it stops showing,
-      // and update the profile so they get the "change password" prompt on next login
-      await supabase.from("profiles")
-        .update({ must_change_password: true } as any)
-        .eq("id", req.player_id);
       await supabase
         .from("password_reset_requests")
         .update({ status: "resolved" })
         .eq("id", req.id);
       await loadPasswordResets();
-      alert(`✅ Password reset for ${req.name}. They can now log in with Bombardiers1! and will be prompted to change it.`);
+      alert(`✅ Request marked as handled.\n\nReminder: Go to Supabase → Authentication → Users → find ${req.name} → manually reset their password to Bombardiers1!\n\nThen let them know they can log in.`);
     } catch (e: any) {
       alert("Error: " + e.message);
     } finally {
