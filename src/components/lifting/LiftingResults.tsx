@@ -1,146 +1,101 @@
-// src/components/lifting/LiftingResults.tsx
-import { useState, useEffect } from "react";
-import { LiftingProgram, LiftingDay, DayExercise, getBestSet, calcVolume, getAllLogsForProgram } from "./lifting";
-import { supabase } from "../../lib/supabase";
+// src/components/lifting/LiftingCharts.tsx
+// Phase 2: per-exercise 1RM progress chart (players only)
+// Uses pure SVG — no external chart library needed
+import { LiftingLog, calc1RM, getBestSet } from "./lifting";
 
 interface Props {
-  program: LiftingProgram;
-  days: Record<string, LiftingDay[]>;
-  dayExercises: Record<string, (DayExercise & { exercise: any })[]>;
-  onClose: () => void;
+  exerciseName: string;
+  logs: LiftingLog[]; // chronological oldest first
 }
 
-export default function LiftingResults({ program, days, dayExercises, onClose }: Props) {
-  const [loading, setLoading] = useState(true);
-  const [playerResults, setPlayerResults] = useState<any[]>([]);
+export default function LiftingChart({ exerciseName, logs }: Props) {
+  if (logs.length < 2) return null;
 
-  useEffect(() => { loadResults(); }, []);
+  const points = [...logs].reverse().map((log, i) => {
+    const best = getBestSet(log.sets_data);
+    return {
+      date: new Date(log.logged_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      value: best ? calc1RM(best.weight, best.reps) : 0,
+      index: i,
+    };
+  }).filter(p => p.value > 0);
 
-  async function loadResults() {
-    setLoading(true);
-    try {
-      // Get all bank exercise IDs across all days
-      const allExIds: string[] = [];
-      Object.values(dayExercises).forEach(exs => exs.forEach(ex => { if (ex.exercise?.id) allExIds.push(ex.exercise.id); }));
-      const uniqueExIds = [...new Set(allExIds)];
-      if (uniqueExIds.length === 0) { setLoading(false); return; }
+  if (points.length < 2) return null;
 
-      const logs = await getAllLogsForProgram([], uniqueExIds);
-      if (logs.length === 0) { setLoading(false); return; }
+  const W = 320, H = 100, PAD = 8;
+  const minV = Math.min(...points.map(p => p.value)) - 5;
+  const maxV = Math.max(...points.map(p => p.value)) + 5;
+  const scaleX = (i: number) => PAD + (i / (points.length - 1)) * (W - PAD * 2);
+  const scaleY = (v: number) => H - PAD - ((v - minV) / (maxV - minV)) * (H - PAD * 2);
 
-      // Group by player
-      const byPlayer: Record<string, { player: any; logsByEx: Record<string, any[]> }> = {};
-      logs.forEach((log: any) => {
-        const pid = log.player_id;
-        if (!byPlayer[pid]) byPlayer[pid] = { player: log.player, logsByEx: {} };
-        if (!byPlayer[pid].logsByEx[log.exercise_id]) byPlayer[pid].logsByEx[log.exercise_id] = [];
-        byPlayer[pid].logsByEx[log.exercise_id].push(log);
-      });
-
-      // Build results per player
-      const results = Object.values(byPlayer).map(({ player, logsByEx }) => {
-        const exerciseResults = uniqueExIds.map(exId => {
-          const exLogs = logsByEx[exId] ?? [];
-          if (exLogs.length === 0) return { exId, hasData: false };
-          const firstLog = exLogs[exLogs.length - 1];
-          const lastLog = exLogs[0];
-          const firstBest = getBestSet(firstLog.sets_data);
-          const lastBest = getBestSet(lastLog.sets_data);
-          const growth = (lastBest?.weight ?? 0) - (firstBest?.weight ?? 0);
-          const totalVol = exLogs.reduce((sum: number, l: any) => sum + calcVolume(l.sets_data), 0);
-          return {
-            exId, hasData: true,
-            firstWeight: firstBest?.weight ?? 0,
-            lastWeight: lastBest?.weight ?? 0,
-            growth, sessions: exLogs.length, totalVol,
-            lastNote: lastLog.notes,
-            lastDate: lastLog.logged_at,
-          };
-        }).filter(r => r.hasData);
-        return { player, exerciseResults };
-      }).filter(r => r.exerciseResults.length > 0);
-
-      setPlayerResults(results);
-    } finally { setLoading(false); }
-  }
-
-  // Build exercise name lookup
-  const exNameById: Record<string, string> = {};
-  const exMuscleById: Record<string, string> = {};
-  Object.values(dayExercises).forEach(exs => exs.forEach(ex => {
-    if (ex.exercise) { exNameById[ex.exercise.id] = ex.exercise.name; exMuscleById[ex.exercise.id] = ex.exercise.muscle_group; }
-  }));
+  const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"}${scaleX(i)},${scaleY(p.value)}`).join(" ");
+  const gained = points[points.length - 1].value - points[0].value;
 
   return (
-    <div className="modal-overlay open" onClick={onClose}>
-      <div className="log-modal" style={{ maxWidth: 640, width: "95vw", maxHeight: "85vh", overflow: "hidden", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
-        <button className="modal-close" onClick={onClose}>✕</button>
-        <div className="modal-title" style={{ marginBottom: 2 }}>📊 Player Results</div>
-        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>{program.title}</div>
-
-        {loading ? (
-          <div style={{ textAlign: "center", color: "var(--muted)", padding: "40px 0" }}>Loading…</div>
-        ) : playerResults.length === 0 ? (
-          <div style={{ textAlign: "center", color: "var(--muted)", padding: "40px 0", fontSize: 14 }}>
-            No players have logged sessions yet.
+    <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px", marginTop: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>{exerciseName}</div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>Est. 1RM · {points.length} sessions</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: gained >= 0 ? "#5de098" : "#ff7b7b", lineHeight: 1 }}>
+            {gained > 0 ? "+" : ""}{gained} lbs
           </div>
-        ) : (
-          <div style={{ overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 20 }}>
-            {playerResults.map(({ player, exerciseResults }) => {
-              const initials = player.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase();
-              return (
-                <div key={player.id} style={{ background: "var(--surface2)", borderRadius: 12, border: "1px solid var(--border)", overflow: "hidden" }}>
-                  {/* Player header */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: "1px solid var(--border)", background: "rgba(0,0,0,0.1)" }}>
-                    <div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", border: "2px solid var(--border)", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      {player.avatar_url
-                        ? <img src={player.avatar_url} alt={player.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>{initials}</span>}
-                    </div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{player.name}</div>
-                    <div style={{ marginLeft: "auto", fontSize: 11, color: "var(--muted)" }}>
-                      {exerciseResults.length} exercise{exerciseResults.length !== 1 ? "s" : ""} logged
-                    </div>
-                  </div>
-
-                  {/* Table header */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 70px 70px 55px", gap: 4, padding: "6px 14px", fontSize: 9, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>
-                    <div>Exercise</div>
-                    <div style={{ textAlign: "center" }}>First</div>
-                    <div style={{ textAlign: "center" }}>Latest</div>
-                    <div style={{ textAlign: "center" }}>Growth</div>
-                    <div style={{ textAlign: "center" }}>Sessions</div>
-                  </div>
-
-                  {exerciseResults.map((r: any) => {
-                    const growthColor = r.growth > 0 ? "#5de098" : r.growth < 0 ? "#ff7b7b" : "var(--muted)";
-                    const growthLabel = r.growth > 0 ? `+${r.growth} lbs` : r.growth === 0 ? "—" : `${r.growth} lbs`;
-                    return (
-                      <div key={r.exId} style={{ borderTop: "1px solid var(--border)", padding: "8px 14px" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 70px 70px 55px", gap: 4, alignItems: "center" }}>
-                          <div>
-                            <div style={{ fontSize: 12, color: "var(--text)", fontWeight: 600 }}>{exNameById[r.exId] ?? r.exId}</div>
-                            <div style={{ fontSize: 10, color: "var(--muted)" }}>{exMuscleById[r.exId]}</div>
-                          </div>
-                          <div style={{ textAlign: "center", fontSize: 12, color: "var(--silver-light)" }}>{r.firstWeight > 0 ? `${r.firstWeight} lbs` : "—"}</div>
-                          <div style={{ textAlign: "center", fontSize: 12, color: "var(--silver-light)", fontWeight: 600 }}>{r.lastWeight > 0 ? `${r.lastWeight} lbs` : "—"}</div>
-                          <div style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: growthColor }}>{growthLabel}</div>
-                          <div style={{ textAlign: "center", fontSize: 12, color: "var(--muted)" }}>{r.sessions}</div>
-                        </div>
-                        {r.lastNote && (
-                          <div style={{ marginTop: 4, fontSize: 11, color: "var(--muted)", fontStyle: "italic", paddingLeft: 2 }}>
-                            💬 "{r.lastNote}"
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </div>
-        )}
+          <div style={{ fontSize: 10, color: "var(--muted)" }}>total gain</div>
+        </div>
       </div>
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ overflow: "visible" }}>
+        {/* Grid lines */}
+        {[0.25, 0.5, 0.75].map(t => (
+          <line key={t} x1={PAD} x2={W - PAD} y1={PAD + t * (H - PAD * 2)} y2={PAD + t * (H - PAD * 2)} stroke="rgba(255,255,255,0.05)" strokeWidth={1} />
+        ))}
+        {/* Line */}
+        <path d={pathD} fill="none" stroke="#93b4ff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+        {/* Dots */}
+        {points.map((p, i) => (
+          <circle key={i} cx={scaleX(i)} cy={scaleY(p.value)} r={3} fill="#93b4ff" />
+        ))}
+        {/* First and last labels */}
+        <text x={scaleX(0)} y={H - 1} textAnchor="middle" fontSize={9} fill="var(--muted)">{points[0].date}</text>
+        <text x={scaleX(points.length - 1)} y={H - 1} textAnchor="middle" fontSize={9} fill="var(--muted)">{points[points.length - 1].date}</text>
+        {/* Current 1RM label */}
+        <text x={scaleX(points.length - 1)} y={scaleY(points[points.length - 1].value) - 6} textAnchor="middle" fontSize={10} fontWeight="700" fill="#5de098">
+          {points[points.length - 1].value} lbs
+        </text>
+      </svg>
+    </div>
+  );
+}
+
+interface ProgressProps {
+  playerId: string;
+  allLogs: LiftingLog[];
+  exerciseNames: Record<string, string>;
+}
+
+export function LiftingProgressPanel({ allLogs, exerciseNames }: ProgressProps) {
+  const byEx: Record<string, LiftingLog[]> = {};
+  [...allLogs].reverse().forEach(log => {
+    if (!byEx[log.exercise_id]) byEx[log.exercise_id] = [];
+    byEx[log.exercise_id].push(log);
+  });
+
+  const exercisesWithData = Object.entries(byEx).filter(([, logs]) => logs.length >= 2);
+
+  if (exercisesWithData.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--muted)", fontSize: 13 }}>
+        Log at least 2 sessions on the same exercise to see your progress chart.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {exercisesWithData.map(([exId, logs]) => (
+        <LiftingChart key={exId} exerciseName={exerciseNames[exId] ?? "Unknown"} logs={logs} />
+      ))}
     </div>
   );
 }
