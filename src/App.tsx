@@ -17,10 +17,11 @@ import InstallPrompt from "./components/InstallPrompt";
 import ChangePassword from "./components/ChangePassword";
 import HeadToHead from "./components/HeadToHead";
 import PerkTutorial from "./components/PerkTutorial";
+import LiftingPanel from "./components/LiftingPanel";
 
-type PlayerTab = "workouts" | "leaderboard" | "progress" | "h2h" | "hof" | "profile" | "more";
-type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "profile";
-type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "admin" | "settings" | "profile";
+type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "more";
+type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "profile";
+type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "profile";
 
 export default function App() {
   const { user, profile, authState } = useAuth();
@@ -28,13 +29,12 @@ export default function App() {
   const [myScores, setMyScores]     = useState<Score[]>([]);
   const [allScores, setAllScores]   = useState<Score[]>([]);
   const [playerTab, setPlayerTab]   = useState<PlayerTab>("workouts");
-  const swipeTabs: PlayerTab[]        = ["workouts", "leaderboard", "h2h", "progress", "profile"];
+  const swipeTabs: PlayerTab[]        = ["workouts", "leaderboard", "h2h", "lifting", "more"];
   const touchStartX                   = useRef(0);
   const pullStartY                    = useRef(0);
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing]   = useState(false);
 
-  // ── Perk notification state ──
   const [newPerkCount, setNewPerkCount] = useState(0);
   const [perkToast, setPerkToast]       = useState("");
 
@@ -54,16 +54,13 @@ export default function App() {
   async function handleSwipeEnd(e: React.TouchEvent) {
     const diffX = touchStartX.current - e.changedTouches[0].clientX;
     const diffY = e.changedTouches[0].clientY - pullStartY.current;
-
     if (diffY > 60 && Math.abs(diffX) < 30 && pullDistance > 40) {
-      setPullDistance(0);
-      setRefreshing(true);
+      setPullDistance(0); setRefreshing(true);
       await loadMyScores();
       setTimeout(() => setRefreshing(false), 600);
       return;
     }
     setPullDistance(0);
-
     if (Math.abs(diffX) < 60) return;
     const idx = swipeTabs.indexOf(playerTab);
     if (idx === -1) return;
@@ -81,24 +78,17 @@ export default function App() {
   const [xpEnabled, setXpEnabled]     = useState(true);
   const [localProfile, setLocalProfile] = useState<Profile | null>(null);
 
-  // Load period anchor from DB on startup so all devices use the same date
-  useEffect(() => {
-    loadPeriodAnchor().catch(console.error);
-  }, []);
+  useEffect(() => { loadPeriodAnchor().catch(console.error); }, []);
 
   useEffect(() => {
     if (user && profile?.role === "player") loadMyScores();
     if (user && (profile?.role === "coach" || profile?.role === "admin")) loadAllScores();
   }, [user, profile]);
 
-  // ── Check for newly unlocked perk tutorials ──
   const checkNewPerks = useCallback(async () => {
     if (!user || profile?.role !== "player") return;
     try {
-      const [xp, perks] = await Promise.all([
-        getPlayerXp(user.id),
-        getXpPerks(),
-      ]);
+      const [xp, perks] = await Promise.all([getPlayerXp(user.id), getXpPerks()]);
       const unseen = await checkUnseenPerks(user.id, xp, perks);
       if (unseen.length > 0) {
         setNewPerkCount(unseen.length);
@@ -115,38 +105,20 @@ export default function App() {
       } else {
         setNewPerkCount(0);
       }
-    } catch (e) {
-      console.error("checkNewPerks error:", e);
-    }
+    } catch (e) { console.error("checkNewPerks error:", e); }
   }, [user, profile]);
 
-  // Poll for unseen challenges every 30s
   useEffect(() => {
     if (!user || profile?.role !== "player") return;
     async function checkPendingApprovals() {
       const { supabase: sb } = await import("./lib/supabase");
-      const { count } = await sb.from("profiles")
-        .select("id", { count: "exact", head: true })
-        .in("role", ["pending_player", "pending_coach"]);
+      const { count } = await sb.from("profiles").select("id", { count: "exact", head: true }).in("role", ["pending_player", "pending_coach"]);
       setPendingApprovals(count ?? 0);
     }
-
     async function checkChallenges() {
       const { supabase: sb } = await import("./lib/supabase");
-      const { count } = await sb
-        .from("challenges")
-        .select("id", { count: "exact", head: true })
-        .eq("opponent_id", user!.id)
-        .eq("status", "pending")
-        .eq("opponent_seen", false);
-
-      const { data: newTeam } = await sb
-        .from("team_competitions")
-        .select("id,created_at")
-        .eq("is_active", true)
-        .gte("created_at", new Date(Date.now() - 86400000).toISOString())
-        .single();
-
+      const { count } = await sb.from("challenges").select("id", { count: "exact", head: true }).eq("opponent_id", user!.id).eq("status", "pending").eq("opponent_seen", false);
+      const { data: newTeam } = await sb.from("team_competitions").select("id,created_at").eq("is_active", true).gte("created_at", new Date(Date.now() - 86400000).toISOString()).single();
       const dismissedTeamId = localStorage.getItem("dismissed_team_notif");
       const teamNotif = (newTeam && newTeam.id !== dismissedTeamId) ? 1 : 0;
       setPendingChallenges((count ?? 0) + teamNotif);
@@ -155,21 +127,15 @@ export default function App() {
     checkPendingApprovals();
     const interval = setInterval(checkChallenges, 30000);
     const approvalInterval = setInterval(checkPendingApprovals, 60000);
-
-    // Load player XP and perks
     if (user && profile?.role === "player") {
       (async () => {
         const [xp, perks] = await Promise.all([getPlayerXp(user.id), getXpPerks()]);
-        setPlayerXp(xp);
-        setXpPerks(perks);
-        // XP enabled — read from DB only
+        setPlayerXp(xp); setXpPerks(perks);
         const xpEnabledPerk = perks.find((p: any) => p.perk_key === "_xp_enabled");
         setXpEnabled(xpEnabledPerk?.xp_required !== 0);
-        // Check for unseen perk tutorials
         checkNewPerks();
       })();
     }
-
     return () => { clearInterval(interval); clearInterval(approvalInterval); };
   }, [user, profile]);
 
@@ -178,11 +144,7 @@ export default function App() {
     setMyScores(await getMyScores(user.id));
     checkNewPerks();
   }
-
-  async function loadAllScores() {
-    setAllScores(await getAllScores());
-  }
-
+  async function loadAllScores() { setAllScores(await getAllScores()); }
   function handleProfileUpdated(updates: Partial<Profile>) {
     setLocalProfile(prev => ({ ...(prev ?? profile!), ...updates }));
   }
@@ -195,20 +157,10 @@ export default function App() {
       </div>
     );
   }
-
-  if (authState === "invite") {
-    return <ChangePassword title="Welcome to Attleboro Winning Wall! 🦅" subtitle="Your account is ready. Please create your own personal password before continuing." onComplete={() => window.location.reload()} />;
-  }
-
-  if (authState === "recovery") {
-    return <ChangePassword title="Reset Your Password" subtitle="Enter your new password below." onComplete={() => window.location.reload()} />;
-  }
-
+  if (authState === "invite") return <ChangePassword title="Welcome to Attleboro Winning Wall! 🦅" subtitle="Your account is ready. Please create your own personal password before continuing." onComplete={() => window.location.reload()} />;
+  if (authState === "recovery") return <ChangePassword title="Reset Your Password" subtitle="Enter your new password below." onComplete={() => window.location.reload()} />;
   if (!user || !profile) return <LoginPage />;
-
-  if (profile.must_change_password === true) {
-    return <ChangePassword title="Welcome to Attleboro Winning Wall! 🦅" subtitle="Your account was set up by a coach. Please create your own personal password before continuing." onComplete={() => window.location.reload()} />;
-  }
+  if (profile.must_change_password === true) return <ChangePassword title="Welcome to Attleboro Winning Wall! 🦅" subtitle="Your account was set up by a coach. Please create your own personal password before continuing." onComplete={() => window.location.reload()} />;
 
   if (profile.role === "pending_player" || profile.role === "pending_coach") {
     const isCoachRequest = profile.role === "pending_coach";
@@ -217,17 +169,11 @@ export default function App() {
         <img src="/logo.png" alt="Winning Wall" style={{ height: 80, objectFit: "contain", opacity: 0.9 }} />
         <div style={{ textAlign: "center", maxWidth: 400 }}>
           <div style={{ fontSize: 32 }}>⏳</div>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#f0c040", letterSpacing: 1, marginTop: 10 }}>
-            Awaiting Approval
-          </div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#f0c040", letterSpacing: 1, marginTop: 10 }}>Awaiting Approval</div>
           <div style={{ fontSize: 14, color: "#7a85a0", marginTop: 12, lineHeight: 1.7 }}>
-            Your {isCoachRequest ? "coach" : "player"} account is pending approval
-            {isCoachRequest ? " from an admin" : " from a coach or admin"}.
-            You'll be able to log in once approved. Check back soon!
+            Your {isCoachRequest ? "coach" : "player"} account is pending approval{isCoachRequest ? " from an admin" : " from a coach or admin"}. You'll be able to log in once approved. Check back soon!
           </div>
-          <button onClick={signOut} style={{ marginTop: 24, background: "var(--surface2)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 24px", fontSize: 14, fontFamily: "inherit", cursor: "pointer" }}>
-            Sign Out
-          </button>
+          <button onClick={signOut} style={{ marginTop: 24, background: "var(--surface2)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 24px", fontSize: 14, fontFamily: "inherit", cursor: "pointer" }}>Sign Out</button>
         </div>
       </div>
     );
@@ -243,12 +189,7 @@ export default function App() {
     <div id="app-screen" className={`screen active${isPlayer ? " has-bottom-tabs" : ""}`}>
       {/* Header */}
       <div className="app-header">
-        <img
-          src="/logo.png"
-          alt="Open menu"
-          onClick={() => setSidebarOpen(o => !o)}
-          style={{ height: 36, objectFit: "contain", flexShrink: 0, cursor: "pointer" }}
-        />
+        <img src="/logo.png" alt="Open menu" onClick={() => setSidebarOpen(o => !o)} style={{ height: 36, objectFit: "contain", flexShrink: 0, cursor: "pointer" }} />
         <div className="header-logo">Winning <span>Wall</span></div>
         <div className="header-role">{roleLabel}</div>
         <div className="header-user">{displayProfile.name}</div>
@@ -256,112 +197,95 @@ export default function App() {
 
       {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
       <div className="app-body">
-        {/* ── Sidebar ── */}
+        {/* Sidebar */}
         <div className={`sidebar${sidebarOpen ? "" : " sidebar-collapsed"}`}>
           {isPlayer && (
             <>
               <div className={`nav-item ${playerTab==="workouts"?"active":""}`} onClick={()=>{setPlayerTab("workouts");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏋️</span> Workouts</div>
               <div className={`nav-item ${playerTab==="leaderboard"?"active":""}`} onClick={()=>{setPlayerTab("leaderboard");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏆</span> Leaderboard</div>
+              <div className={`nav-item ${playerTab==="lifting"?"active":""}`} onClick={()=>{setPlayerTab("lifting");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">💪</span> Lifting</div>
               <div className={`nav-item ${playerTab==="progress"?"active":""}`} onClick={()=>{setPlayerTab("progress");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">📈</span> My Progress</div>
               <div className={`nav-item ${playerTab==="hof"?"active":""}`} onClick={()=>{setPlayerTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👑</span> Hall of Fame</div>
               <div className={`nav-item ${playerTab==="profile"?"active":""}`} onClick={()=>{ setPlayerTab("profile"); setNewPerkCount(0); if(window.innerWidth<768)setSidebarOpen(false); }}><span className="nav-icon">👤</span> My Profile</div>
               <div className={`nav-item ${playerTab==="h2h"?"active":""}`} onClick={()=>{ setPlayerTab("h2h"); setPendingChallenges(0); if(window.innerWidth<768)setSidebarOpen(false); }} style={{ position: "relative" }}>
                 <span className="nav-icon">⚔️</span> Challenges
-                {pendingChallenges > 0 && (
-                  <span style={{ position: "absolute", top: 6, right: 8, background: "#e53935", color: "#fff", borderRadius: "50%", width: 18, height: 18, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>
-                    {pendingChallenges}
-                  </span>
-                )}
+                {pendingChallenges > 0 && <span style={{ position: "absolute", top: 6, right: 8, background: "#e53935", color: "#fff", borderRadius: "50%", width: 18, height: 18, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>{pendingChallenges}</span>}
               </div>
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
-              <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)" }}>
-                <span className="nav-icon">🚪</span> Sign Out
-              </div>
+              <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)" }}><span className="nav-icon">🚪</span> Sign Out</div>
             </>
           )}
           {isCoach && (
             <>
               <div className={`nav-item ${coachTab==="workouts"?"active":""}`} onClick={()=>{setCoachTab("workouts");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">➕</span> Manage Workouts</div>
               <div className={`nav-item ${coachTab==="leaderboard"?"active":""}`} onClick={()=>{setCoachTab("leaderboard");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏆</span> Leaderboard</div>
+              <div className={`nav-item ${coachTab==="lifting"?"active":""}`} onClick={()=>{setCoachTab("lifting");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">💪</span> Lifting Programs</div>
               <div className={`nav-item ${coachTab==="players"?"active":""}`} onClick={()=>{setCoachTab("players");setPendingApprovals(0);if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Players & Coaches
                 {pendingApprovals > 0 && <span style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{pendingApprovals}</span>}
               </div>
               <div className={`nav-item ${coachTab==="hof"?"active":""}`} onClick={()=>{setCoachTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👑</span> Hall of Fame</div>
               <div className={`nav-item ${coachTab==="profile"?"active":""}`} onClick={()=>{setCoachTab("profile");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👤</span> My Profile</div>
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
-              <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)" }}>
-                <span className="nav-icon">🚪</span> Sign Out
-              </div>
+              <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)" }}><span className="nav-icon">🚪</span> Sign Out</div>
             </>
           )}
           {isAdmin && (
             <>
               <div className={`nav-item ${adminTab==="workouts"?"active":""}`} onClick={()=>{setAdminTab("workouts");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">➕</span> Manage Workouts</div>
               <div className={`nav-item ${adminTab==="leaderboard"?"active":""}`} onClick={()=>{setAdminTab("leaderboard");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏆</span> Leaderboard</div>
+              <div className={`nav-item ${adminTab==="lifting"?"active":""}`} onClick={()=>{setAdminTab("lifting");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">💪</span> Lifting Programs</div>
               <div className={`nav-item ${adminTab==="players"?"active":""}`} onClick={()=>{setAdminTab("players");setPendingApprovals(0);if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Players & Coaches
                 {pendingApprovals > 0 && <span style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{pendingApprovals}</span>}
               </div>
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
               <div className={`nav-item ${adminTab==="hof"?"active":""}`} onClick={()=>{setAdminTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="hof" ? "var(--gold)" : undefined }}><span className="nav-icon">👑</span> Hall of Fame</div>
-              <div className={`nav-item ${adminTab==="admin"?"active":""}`} onClick={()=>{setAdminTab("admin");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="admin" ? "var(--gold)" : undefined }}>
-                <span className="nav-icon">👑</span> Admin
-              </div>
-              <div className={`nav-item ${adminTab==="settings"?"active":""}`} onClick={()=>{setAdminTab("settings");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="settings" ? "var(--gold)" : undefined }}>
-                <span className="nav-icon">⚙️</span> Settings
-              </div>
-              <div className={`nav-item ${adminTab==="profile"?"active":""}`} onClick={()=>{setAdminTab("profile");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="profile" ? "var(--gold)" : undefined }}>
-                <span className="nav-icon">👤</span> My Profile
-              </div>
+              <div className={`nav-item ${adminTab==="admin"?"active":""}`} onClick={()=>{setAdminTab("admin");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="admin" ? "var(--gold)" : undefined }}><span className="nav-icon">👑</span> Admin</div>
+              <div className={`nav-item ${adminTab==="settings"?"active":""}`} onClick={()=>{setAdminTab("settings");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="settings" ? "var(--gold)" : undefined }}><span className="nav-icon">⚙️</span> Settings</div>
+              <div className={`nav-item ${adminTab==="profile"?"active":""}`} onClick={()=>{setAdminTab("profile");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="profile" ? "var(--gold)" : undefined }}><span className="nav-icon">👤</span> My Profile</div>
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
-              <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)" }}>
-                <span className="nav-icon">🚪</span> Sign Out
-              </div>
+              <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)" }}><span className="nav-icon">🚪</span> Sign Out</div>
             </>
           )}
         </div>
 
-        {/* ── Main Content ── */}
+        {/* Main Content */}
         <div className="main-content"
           onTouchStart={isPlayer ? handleSwipeStart : undefined}
           onTouchMove={isPlayer ? handleSwipeMove : undefined}
           onTouchEnd={isPlayer ? handleSwipeEnd : undefined}
         >
-          {/* Pull to refresh indicator */}
           {isPlayer && (pullDistance > 0 || refreshing) && (
-            <div style={{
-              display: "flex", alignItems: "center", justifyContent: "center",
-              height: refreshing ? 48 : pullDistance,
-              transition: refreshing ? "none" : "height 0.1s",
-              overflow: "hidden", color: "var(--muted)", fontSize: 13,
-              gap: 8,
-            }}>
-              {refreshing
-                ? <><span style={{ display: "inline-block", animation: "spin 0.8s linear infinite" }}>🔄</span> Refreshing…</>
-                : pullDistance > 40 ? "↑ Release to refresh" : "↓ Pull to refresh"
-              }
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: refreshing ? 48 : pullDistance, transition: refreshing ? "none" : "height 0.1s", overflow: "hidden", color: "var(--muted)", fontSize: 13, gap: 8 }}>
+              {refreshing ? <><span style={{ display: "inline-block", animation: "spin 0.8s linear infinite" }}>🔄</span> Refreshing…</> : pullDistance > 40 ? "↑ Release to refresh" : "↓ Pull to refresh"}
             </div>
           )}
-          {isPlayer && playerTab === "workouts" && (
-            <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} />
-          )}
+
+          {/* Player panels */}
+          {isPlayer && playerTab === "workouts" && <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} />}
           {isPlayer && playerTab === "leaderboard" && <Leaderboard currentUserId={user.id} />}
-          {isPlayer && playerTab === "progress" && (
-            <ProgressPanel profile={displayProfile} myScores={myScores} workouts={workouts} />
-          )}
-          {isPlayer && playerTab === "profile" && (
-            <ProfilePage
-              profile={displayProfile}
-              onUpdated={handleProfileUpdated}
-              myScores={allScores.filter((s: any) => s.player_id === user?.id)}
-              workouts={workouts}
-              xpEnabled={xpEnabled}
-            />
-          )}
+          {isPlayer && playerTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} />}
+          {isPlayer && playerTab === "progress" && <ProgressPanel profile={displayProfile} myScores={myScores} workouts={workouts} />}
           {isPlayer && playerTab === "hof" && <HallOfFame />}
+          {isPlayer && playerTab === "profile" && <ProfilePage profile={displayProfile} onUpdated={handleProfileUpdated} myScores={allScores.filter((s: any) => s.player_id === user?.id)} workouts={workouts} xpEnabled={xpEnabled} />}
+          {isPlayer && playerTab === "h2h" && xpEnabled && xpPerks.length > 0 && playerXp < (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) ? (
+            <div className="panel active" style={{ textAlign: "center", padding: "60px 20px" }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--muted)", letterSpacing: 1, marginBottom: 12 }}>Challenges Locked</div>
+              <div style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.7 }}>
+                Earn <strong style={{ color: "var(--gold)" }}>{(xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) - playerXp} more XP</strong> to unlock head-to-head challenges.<br/>Log workouts to earn XP!
+              </div>
+            </div>
+          ) : isPlayer && playerTab === "h2h" && (
+            <HeadToHead currentUserId={user.id} currentUserName={displayProfile.name} workouts={workouts} myScores={myScores} onScoreLogged={loadMyScores} />
+          )}
           {isPlayer && playerTab === "more" && (
             <div className="panel active">
               <div className="section-title">More</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+                <div onClick={() => setPlayerTab("progress")} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>📈</span><span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>My Progress</span></div>
+                  <span style={{ color: "var(--muted)" }}>›</span>
+                </div>
                 <div onClick={() => setPlayerTab("hof")} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>👑</span><span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>Hall of Fame</span></div>
                   <span style={{ color: "var(--muted)" }}>›</span>
@@ -378,26 +302,13 @@ export default function App() {
               </div>
             </div>
           )}
-          {isPlayer && playerTab === "h2h" && xpEnabled && xpPerks.length > 0 && playerXp < (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) ? (
-            <div className="panel active" style={{ textAlign: "center", padding: "60px 20px" }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--muted)", letterSpacing: 1, marginBottom: 12 }}>Challenges Locked</div>
-              <div style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.7 }}>
-                Earn <strong style={{ color: "var(--gold)" }}>{(xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) - playerXp} more XP</strong> to unlock head-to-head challenges.
-                <br/>Log workouts to earn XP!
-              </div>
-            </div>
-          ) : isPlayer && playerTab === "h2h" && (
-            <HeadToHead currentUserId={user.id} currentUserName={displayProfile.name} workouts={workouts} myScores={myScores} onScoreLogged={loadMyScores} />
-          )}
-          {isCoach && coachTab === "workouts" && (
-            <CoachPanel workouts={workouts} onPublished={refreshWorkouts} />
-          )}
+
+          {/* Coach panels */}
+          {isCoach && coachTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} />}
           {isCoach && coachTab === "leaderboard" && <Leaderboard />}
+          {isCoach && coachTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isCoach={true} />}
           {isCoach && coachTab === "hof" && <HallOfFame canDelete={true} />}
-          {isCoach && coachTab === "players" && (
-            <PlayersPanel allScores={allScores} workouts={workouts} />
-          )}
+          {isCoach && coachTab === "players" && <PlayersPanel allScores={allScores} workouts={workouts} />}
           {isCoach && coachTab === "profile" && (
             <div className="panel active">
               <div className="section-title">My Profile</div>
@@ -405,17 +316,14 @@ export default function App() {
               <ProfileEditor profile={displayProfile} onUpdated={handleProfileUpdated} />
             </div>
           )}
-          {isAdmin && adminTab === "workouts" && (
-            <CoachPanel workouts={workouts} onPublished={refreshWorkouts} />
-          )}
+
+          {/* Admin panels */}
+          {isAdmin && adminTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} />}
           {isAdmin && adminTab === "leaderboard" && <Leaderboard />}
+          {isAdmin && adminTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isAdmin={true} />}
           {isAdmin && adminTab === "hof" && <HallOfFame canDelete={true} />}
-          {isAdmin && adminTab === "players" && (
-            <PlayersPanel allScores={allScores} workouts={workouts} />
-          )}
-          {isAdmin && adminTab === "admin" && (
-            <AdminPanel />
-          )}
+          {isAdmin && adminTab === "players" && <PlayersPanel allScores={allScores} workouts={workouts} />}
+          {isAdmin && adminTab === "admin" && <AdminPanel />}
           {isAdmin && adminTab === "settings" && (
             <div className="panel active">
               <div className="section-title">Settings</div>
@@ -433,91 +341,52 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── Bottom Tab Bar (mobile players) ── */}
+      {/* Bottom Tab Bar */}
       {isPlayer && (
         <nav className="bottom-tab-bar" aria-label="Main navigation">
-          <button className={`bottom-tab${playerTab === "workouts" ? " active" : ""}`}
-            onClick={() => setPlayerTab("workouts")}>
+          <button className={`bottom-tab${playerTab === "workouts" ? " active" : ""}`} onClick={() => setPlayerTab("workouts")}>
             <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10"/>
-              <path d="M4.93 4.93c4.25 4.25 4.25 9.9 0 14.14"/>
-              <path d="M19.07 4.93c-4.25 4.25-4.25 9.9 0 14.14"/>
-              <line x1="2" y1="12" x2="22" y2="12"/>
+              <circle cx="12" cy="12" r="10"/><path d="M4.93 4.93c4.25 4.25 4.25 9.9 0 14.14"/><path d="M19.07 4.93c-4.25 4.25-4.25 9.9 0 14.14"/><line x1="2" y1="12" x2="22" y2="12"/>
             </svg>
             <span>Workouts</span>
           </button>
-          <button className={`bottom-tab${playerTab === "leaderboard" ? " active" : ""}`}
-            onClick={() => setPlayerTab("leaderboard")}>
+          <button className={`bottom-tab${playerTab === "leaderboard" ? " active" : ""}`} onClick={() => setPlayerTab("leaderboard")}>
             <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M6 9H4.5a2.5 2.5 0 010-5H6"/>
-              <path d="M18 9h1.5a2.5 2.5 0 000-5H18"/>
-              <path d="M4 22h16"/>
-              <path d="M10 22v-4"/>
-              <path d="M14 22v-4"/>
-              <path d="M6 4h12v9a6 6 0 01-12 0V4z"/>
+              <path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M10 22v-4"/><path d="M14 22v-4"/><path d="M6 4h12v9a6 6 0 01-12 0V4z"/>
             </svg>
             <span>Leaderboard</span>
           </button>
-          <button className={`bottom-tab${playerTab === "h2h" ? " active" : ""}`}
-            onClick={() => { setPlayerTab("h2h"); setPendingChallenges(0); }}
-            style={{ position: "relative" }}>
+          <button className={`bottom-tab${playerTab === "h2h" ? " active" : ""}`} onClick={() => { setPlayerTab("h2h"); setPendingChallenges(0); }} style={{ position: "relative" }}>
             <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z"/>
-              <path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
-              <path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z"/>
-              <path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z"/>
-              <path d="M14 14.5V19a2 2 0 01-2 2H6a2 2 0 01-2-2v-5"/>
-              <path d="M10 9.5V5a2 2 0 012-2h6a2 2 0 012 2v5"/>
+              <path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z"/><path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/><path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z"/><path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z"/><path d="M14 14.5V19a2 2 0 01-2 2H6a2 2 0 01-2-2v-5"/><path d="M10 9.5V5a2 2 0 012-2h6a2 2 0 012 2v5"/>
             </svg>
             <span>Challenges</span>
-            {pendingChallenges > 0 && (
-              <span className="tab-badge">{pendingChallenges}</span>
-            )}
+            {pendingChallenges > 0 && <span className="tab-badge">{pendingChallenges}</span>}
           </button>
-          <button className={`bottom-tab${playerTab === "progress" ? " active" : ""}`}
-            onClick={() => setPlayerTab("progress")}>
+          <button className={`bottom-tab${playerTab === "lifting" ? " active" : ""}`} onClick={() => setPlayerTab("lifting")}>
             <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+              <path d="M6.5 6.5h11"/><path d="M6.5 17.5h11"/><path d="M3 9.5v5"/><path d="M21 9.5v5"/><path d="M2 11h2"/><path d="M20 11h2"/><rect x="5" y="8" width="14" height="8" rx="1"/>
             </svg>
-            <span>Progress</span>
+            <span>Lifting</span>
           </button>
-          <button
-            className={`bottom-tab${["hof","profile","more"].includes(playerTab) ? " active" : ""}`}
-            onClick={() => { setPlayerTab("more"); setNewPerkCount(0); }}
-            style={{ position: "relative" }}>
+          <button className={`bottom-tab${["hof","profile","progress","more"].includes(playerTab) ? " active" : ""}`} onClick={() => { setPlayerTab("more"); setNewPerkCount(0); }} style={{ position: "relative" }}>
             <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="3" y1="12" x2="21" y2="12"/>
-              <line x1="3" y1="6" x2="21" y2="6"/>
-              <line x1="3" y1="18" x2="21" y2="18"/>
+              <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
             </svg>
             <span>More</span>
-            {newPerkCount > 0 && (
-              <span className="tab-badge">{newPerkCount}</span>
-            )}
+            {newPerkCount > 0 && <span className="tab-badge">{newPerkCount}</span>}
           </button>
         </nav>
       )}
 
-      {/* ── Perk unlock toast ── */}
       {isPlayer && perkToast && (
-        <div className="toast show" style={{
-          background: "rgba(26,63,168,0.95)",
-          border: "1px solid rgba(147,180,255,0.4)",
-          color: "#93b4ff",
-          fontWeight: 600,
-        }}>
+        <div className="toast show" style={{ background: "rgba(26,63,168,0.95)", border: "1px solid rgba(147,180,255,0.4)", color: "#93b4ff", fontWeight: 600 }}>
           {perkToast}
         </div>
       )}
 
-      {/* ── Perk tutorial modal ── */}
       {isPlayer && user && (
-        <PerkTutorial
-          playerId={user.id}
-          currentXp={playerXp}
-          perks={xpPerks}
-          onTutorialSeen={() => checkNewPerks()}
-        />
+        <PerkTutorial playerId={user.id} currentXp={playerXp} perks={xpPerks} onTutorialSeen={() => checkNewPerks()} />
       )}
 
       <InstallPrompt />
