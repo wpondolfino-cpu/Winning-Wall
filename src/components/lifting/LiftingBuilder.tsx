@@ -200,10 +200,10 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
     if (!window.confirm(`Load "${tpl.name}" template? This will replace your current days.`)) return;
     // We need to resolve bank exercise IDs from names — we'll do a best-effort lookup
     // and set exercises with name only; bank lookup happens on save
-    setDays(tpl.days.map(d => ({
+    setDays(tpl.days.map((d: any) => ({
       name: d.name,
       is_rest_day: d.is_rest_day,
-      exercises: d.exercises.map((ex: any, i) => ({
+      exercises: d.exercises.map((ex: any, i: number) => ({
         bank_exercise_id: "", // will resolve on save
         exercise: { id: "", name: ex.name, muscle_group: ex.muscle_group, default_rest_secs: ex.rest_secs, created_at: "" } as BankExercise,
         target_sets: ex.target_sets,
