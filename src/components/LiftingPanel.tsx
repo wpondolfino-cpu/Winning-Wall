@@ -597,7 +597,7 @@ export default function LiftingPanel({ playerId, playerName, avatarUrl, isCoach 
                           if (!r.hasData) return (
                             <div key={r.exercise.id} style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px 80px 70px", gap: 6, padding: "8px 14px", borderTop: "1px solid var(--border)", alignItems: "center", minWidth: 400 }}>
                               <div style={{ fontSize: 12, color: "var(--muted)" }}>{r.exercise.name}</div>
-                              <div style={{ textAlign: "center", fontSize: 11, color: "var(--muted)" }} colSpan={4}>Not logged</div>
+                              <div style={{ gridColumn: "2 / 6", textAlign: "center", fontSize: 11, color: "var(--muted)" }}>Not logged</div>
                             </div>
                           );
                           const growthColor = r.growth > 0 ? "#5de098" : r.growth < 0 ? "#ff7b7b" : "var(--muted)";
