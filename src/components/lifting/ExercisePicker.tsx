@@ -79,9 +79,9 @@ export default function ExercisePicker({ playerId, onSelect, placeholder = "Sear
       {open && (
         <div style={{
           position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 9999,
-          background: "#1a1d2e", border: "1px solid var(--border)", borderRadius: 10,
-          boxShadow: "0 12px 32px rgba(0,0,0,0.6)",
-          maxHeight: 380, display: "flex", flexDirection: "column",
+          background: "#12141f", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.8)",
+          maxHeight: 420, display: "flex", flexDirection: "column", overflow: "hidden",
         }}>
           {/* Search */}
           <div style={{ padding: "10px 10px 6px" }}>
@@ -117,7 +117,7 @@ export default function ExercisePicker({ playerId, onSelect, placeholder = "Sear
           </div>
 
           {/* Exercise list */}
-          <div style={{ overflowY: "auto", flex: 1 }}>
+          <div style={{ overflowY: "auto", flex: 1, minHeight: 200 }}>
             {bank.length === 0 && (
               <div style={{ padding: "20px 14px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
                 Loading exercises…
@@ -136,17 +136,18 @@ export default function ExercisePicker({ playerId, onSelect, placeholder = "Sear
                   padding: "10px 14px", cursor: "pointer",
                   borderTop: "1px solid rgba(255,255,255,0.05)",
                   display: "flex", alignItems: "center", gap: 10,
+                  background: "transparent",
                 }}
-                onMouseEnter={e => (e.currentTarget.style.background = "rgba(26,63,168,0.2)")}
-                onMouseLeave={e => (e.currentTarget.style.background = "")}
+                onMouseEnter={e => (e.currentTarget.style.background = "rgba(26,63,168,0.3)")}
+                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
               >
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>{ex.name}</div>
-                  <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 1 }}>
+                  <div style={{ fontSize: 13, color: "#e8eaf0", fontWeight: 500 }}>{ex.name}</div>
+                  <div style={{ fontSize: 10, color: "#7a85a0", marginTop: 1 }}>
                     {ex.muscle_group} · {ex.default_rest_secs}s rest
                   </div>
                 </div>
-                {ex.video_url && <span style={{ fontSize: 11, color: "var(--gold)" }}>📹</span>}
+                {ex.video_url && <span style={{ fontSize: 11, color: "#f0c040" }}>📹</span>}
               </div>
             ))}
           </div>
