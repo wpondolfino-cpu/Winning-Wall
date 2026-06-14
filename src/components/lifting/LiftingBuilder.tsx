@@ -32,7 +32,7 @@ interface BuilderExercise {
 }
 
 // ── Templates ──────────────────────────────────────────────────
-const TEMPLATES: { name: string; desc: string; icon: string; days: Omit<BuilderDay, "exercises"> & { exercises: Omit<BuilderExercise, "bank_exercise_id" | "exercise">[] & { name: string; muscle_group: MuscleGroup }[] }[] }[] = [
+const TEMPLATES: any[] = [
   {
     name: "3-Day Strength",
     desc: "Lower power, upper push, upper pull — classic strength split",
