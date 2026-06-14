@@ -17,7 +17,7 @@ import InstallPrompt from "./components/InstallPrompt";
 import ChangePassword from "./components/ChangePassword";
 import HeadToHead from "./components/HeadToHead";
 import PerkTutorial from "./components/PerkTutorial";
-import LiftingPanel from "./components/lifting";
+import LiftingPanel from "./components/LiftingPanel";
 
 type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "more";
 type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "profile";
@@ -112,8 +112,9 @@ export default function App() {
     if (!user || profile?.role !== "player") return;
     async function checkPendingApprovals() {
       const { supabase: sb } = await import("./lib/supabase");
-      const { count } = await sb.from("profiles").select("id", { count: "exact", head: true }).in("role", ["pending_player", "pending_coach"]);
-      setPendingApprovals(count ?? 0);
+      const { count: pendingCount } = await sb.from("profiles").select("id", { count: "exact", head: true }).in("role", ["pending_player", "pending_coach"]);
+      const { count: resetCount } = await sb.from("password_reset_requests").select("id", { count: "exact", head: true }).eq("status", "pending");
+      setPendingApprovals((pendingCount ?? 0) + (resetCount ?? 0));
     }
     async function checkChallenges() {
       const { supabase: sb } = await import("./lib/supabase");
