@@ -5,7 +5,7 @@ import { supabase } from "../../lib/supabase";
 
 interface Props {
   program: LiftingProgram;
-  days: LiftingDay[];
+  days: Record<string, LiftingDay[]>;
   dayExercises: Record<string, (DayExercise & { exercise: any })[]>;
   onClose: () => void;
 }
