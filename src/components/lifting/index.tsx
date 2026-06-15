@@ -120,22 +120,22 @@ export default function LiftingPanel({ playerId, playerName, avatarUrl, isCoach 
 
   return (
     <div className="panel active">
-      {/* Player tab bar (Programs / Progress / Bank) */}
-      {!canManage && (
-        <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 12, padding: 5, marginBottom: 20, border: "1px solid var(--border)" }}>
-          <button onClick={() => setActiveTab("programs")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "programs" ? "var(--royal)" : "transparent", color: activeTab === "programs" ? "#fff" : "var(--muted)", transition: "all .2s" }}>
-            💪 Programs
-          </button>
-          <button onClick={() => setActiveTab("bank")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "bank" ? "var(--royal)" : "transparent", color: activeTab === "bank" ? "#fff" : "var(--muted)", transition: "all .2s" }}>
-            📚 Exercises
-          </button>
+      {/* Tab bar — coaches: Programs | Bank, players: Programs | Exercises | Progress */}
+      <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 12, padding: 5, marginBottom: 20, border: "1px solid var(--border)" }}>
+        <button onClick={() => setActiveTab("programs")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "programs" ? "var(--royal)" : "transparent", color: activeTab === "programs" ? "#fff" : "var(--muted)", transition: "all .2s" }}>
+          💪 Programs
+        </button>
+        <button onClick={() => setActiveTab("bank")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "bank" ? "var(--royal)" : "transparent", color: activeTab === "bank" ? "#fff" : "var(--muted)", transition: "all .2s" }}>
+          📚 {canManage ? "Exercise Bank" : "Exercises"}
+        </button>
+        {!canManage && (
           <button onClick={() => setActiveTab("progress")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "progress" ? "var(--royal)" : "transparent", color: activeTab === "progress" ? "#fff" : "var(--muted)", transition: "all .2s" }}>
             📈 Progress
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
-      {(canManage || activeTab === "programs") && (
+      {activeTab === "programs" && (
         <LiftingPrograms
           playerId={playerId}
           playerName={playerName}
@@ -152,13 +152,11 @@ export default function LiftingPanel({ playerId, playerName, avatarUrl, isCoach 
         />
       )}
 
-      {(canManage || activeTab === "bank") && (
-        <div style={{ marginTop: canManage ? 32 : 0 }}>
-          <ExerciseBank playerId={playerId} canManage={canManage} />
-        </div>
+      {activeTab === "bank" && (
+        <ExerciseBank playerId={playerId} canManage={canManage} />
       )}
 
-      {!canManage && activeTab === "progress" && (
+      {activeTab === "progress" && !canManage && (
         <div>
           <div className="section-title" style={{ marginBottom: 4 }}>📈 My Progress</div>
           <div className="section-sub" style={{ marginBottom: 20 }}>Estimated 1RM over time — requires 2+ sessions per exercise</div>
