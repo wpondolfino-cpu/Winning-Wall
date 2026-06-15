@@ -297,10 +297,11 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Reset failed");
-      // Remove from list immediately, then reload to confirm
+      // Remove immediately from UI
       setPasswordResets(prev => prev.filter(r => r.id !== req.id));
-      await loadPasswordResets();
       alert(`✅ Password for ${req.name} has been reset to Bombardiers1!\n\nTell them to log in and they'll be prompted to set a new password.`);
+      // Reload after alert dismissed to sync with DB
+      await loadPasswordResets();
     } catch (e: any) {
       alert("Error: " + e.message);
     } finally {
