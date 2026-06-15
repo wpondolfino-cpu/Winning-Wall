@@ -369,10 +369,13 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
             <label>Assign to Players</label>
             <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 6, maxHeight: 180, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 8, padding: 8 }}>
               {allPlayers.map(p => (
-                <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 8px", borderRadius: 6, cursor: "pointer", background: assignedPlayers.includes(p.id) ? "rgba(26,63,168,0.1)" : "transparent" }}>
-                  <input type="checkbox" checked={assignedPlayers.includes(p.id)} onChange={e => setAssignedPlayers(prev => e.target.checked ? [...prev, p.id] : prev.filter(id => id !== p.id))} />
+                <div key={p.id} onClick={() => setAssignedPlayers(prev => prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id])}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", borderRadius: 6, cursor: "pointer", background: assignedPlayers.includes(p.id) ? "rgba(26,63,168,0.1)" : "transparent" }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${assignedPlayers.includes(p.id) ? "var(--royal)" : "var(--border)"}`, background: assignedPlayers.includes(p.id) ? "var(--royal)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    {assignedPlayers.includes(p.id) && <span style={{ color: "#fff", fontSize: 10, lineHeight: 1 }}>✓</span>}
+                  </div>
                   <span style={{ fontSize: 13, color: "var(--text)" }}>{p.name}</span>
-                </label>
+                </div>
               ))}
             </div>
           </div>
