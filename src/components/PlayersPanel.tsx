@@ -280,15 +280,25 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   }
 
   async function handlePasswordReset(req: PasswordResetRequest) {
-    if (!window.confirm(`Mark password reset request for ${req.name} as handled?\n\nYou will need to manually reset their password in Supabase:\nAuthentication → Users → find ${req.name} → ⋮ → Reset password\n\nThen tell them to log in with the new temporary password.`)) return;
+    if (!window.confirm(`Reset password for ${req.name} to Bombardiers1!?\n\nThey will be prompted to change it on next login.`)) return;
     setResetting(req.id);
     try {
-      await supabase
-        .from("password_reset_requests")
-        .update({ status: "resolved" })
-        .eq("id", req.id);
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-password`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({ player_id: req.player_id, request_id: req.id }),
+        }
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Reset failed");
       await loadPasswordResets();
-      alert(`✅ Request marked as handled.\n\nReminder: Go to Supabase → Authentication → Users → find ${req.name} → manually reset their password to Bombardiers1!\n\nThen let them know they can log in.`);
+      alert(`✅ Password for ${req.name} has been reset to Bombardiers1!\n\nTell them to log in and they'll be prompted to set a new password.`);
     } catch (e: any) {
       alert("Error: " + e.message);
     } finally {
