@@ -404,7 +404,7 @@ export default function Leaderboard({ currentUserId }: Props) {
                     {entry.is_period_champion && <span title="Biweekly Champion!">👑</span>}
                     {entry.name}
                     {entry.id === currentUserId && <span style={{ fontSize: 11, color: "#93b4ff" }}>(you)</span>}
-                    {entry.current_streak && entry.current_streak >= 2 && (
+                    {(entry.current_streak ?? 0) >= 2 && (
                       <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 10, background: "rgba(255,100,0,0.2)", color: "#ff8c42", border: "1px solid rgba(255,100,0,0.3)" }}>🔥 {entry.current_streak}d</span>
                     )}
                   </div>
