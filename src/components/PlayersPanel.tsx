@@ -298,7 +298,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Reset failed");
       // Update status client-side since Edge Function update may be unreliable
-      await supabase.from("password_reset_requests").update({ status: "resolved" }).eq("id", req.id);
+      await supabase.from("password_reset_requests").update({ status: "done" }).eq("id", req.id);
       setPasswordResets(prev => prev.filter(r => r.id !== req.id));
       alert(`✅ Password for ${req.name} has been reset to Bombardiers1!\n\nTell them to log in and they'll be prompted to set a new password.`);
       await loadPasswordResets();
