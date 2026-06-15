@@ -17,7 +17,7 @@ import InstallPrompt from "./components/InstallPrompt";
 import ChangePassword from "./components/ChangePassword";
 import HeadToHead from "./components/HeadToHead";
 import PerkTutorial from "./components/PerkTutorial";
-import LiftingPanel from "./components/LiftingPanel";
+import LiftingPanel from "./components/lifting";
 
 type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "more";
 type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "profile";
