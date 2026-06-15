@@ -9,6 +9,7 @@ import {
 import { LiftingProgressPanel } from "./LiftingCharts";
 import LiftingPrograms from "./LiftingPrograms";
 import LiftingBuilder from "./LiftingBuilder";
+import ExerciseBank from "./ExerciseBank";
 
 interface Props {
   playerId: string;
@@ -40,7 +41,7 @@ export default function LiftingPanel({ playerId, playerName, avatarUrl, isCoach 
   const [isPersonalBuilder, setIsPersonalBuilder] = useState(false);
 
   // Active tab (players only)
-  const [activeTab, setActiveTab] = useState<"programs" | "progress">("programs");
+  const [activeTab, setActiveTab] = useState<"programs" | "progress" | "bank">("programs");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -119,14 +120,17 @@ export default function LiftingPanel({ playerId, playerName, avatarUrl, isCoach 
 
   return (
     <div className="panel active">
-      {/* Player tab bar (Programs / Progress) */}
+      {/* Player tab bar (Programs / Progress / Bank) */}
       {!canManage && (
         <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 12, padding: 5, marginBottom: 20, border: "1px solid var(--border)" }}>
           <button onClick={() => setActiveTab("programs")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "programs" ? "var(--royal)" : "transparent", color: activeTab === "programs" ? "#fff" : "var(--muted)", transition: "all .2s" }}>
             💪 Programs
           </button>
+          <button onClick={() => setActiveTab("bank")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "bank" ? "var(--royal)" : "transparent", color: activeTab === "bank" ? "#fff" : "var(--muted)", transition: "all .2s" }}>
+            📚 Exercises
+          </button>
           <button onClick={() => setActiveTab("progress")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "progress" ? "var(--royal)" : "transparent", color: activeTab === "progress" ? "#fff" : "var(--muted)", transition: "all .2s" }}>
-            📈 My Progress
+            📈 Progress
           </button>
         </div>
       )}
@@ -146,6 +150,12 @@ export default function LiftingPanel({ playerId, playerName, avatarUrl, isCoach 
           onNewProgram={(personal = false) => openBuilder(undefined, personal)}
           onRefresh={load}
         />
+      )}
+
+      {(canManage || activeTab === "bank") && (
+        <div style={{ marginTop: canManage ? 32 : 0 }}>
+          <ExerciseBank playerId={playerId} canManage={canManage} />
+        </div>
       )}
 
       {!canManage && activeTab === "progress" && (
