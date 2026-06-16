@@ -24,7 +24,6 @@ export default function LiftingLogModal({ dayExercise, playerId, playerName, ava
   const [restRemaining, setRestRemaining] = useState(dayExercise.rest_secs ?? 90);
   const [completedSetIdx, setCompletedSetIdx] = useState<number | null>(null);
   const restRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const vid = getYouTubeId(ex?.video_url);
 
   useEffect(() => () => { if (restRef.current) clearInterval(restRef.current); }, []);
 
@@ -76,11 +75,24 @@ export default function LiftingLogModal({ dayExercise, playerId, playerName, ava
         </div>
 
         {/* Video */}
-        {vid && (
-          <div style={{ borderRadius: 10, overflow: "hidden", marginBottom: 14, background: "#000", position: "relative", paddingTop: "40%" }}>
-            <iframe src={`https://www.youtube.com/embed/${vid}?rel=0&modestbranding=1`} title={ex?.name} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
-          </div>
-        )}
+        {ex?.video_url && (() => {
+          const id = getYouTubeId(ex.video_url);
+          const isShort = ex.video_url.includes("/shorts/");
+          if (!id) return null;
+          if (isShort) {
+            return (
+              <a href={ex.video_url} target="_blank" rel="noreferrer"
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px", background: "rgba(255,0,0,0.1)", border: "1px solid rgba(255,0,0,0.2)", borderRadius: 10, marginBottom: 14, color: "#ff7b7b", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>
+                📱 Watch Demo on YouTube Shorts ↗
+              </a>
+            );
+          }
+          return (
+            <div style={{ borderRadius: 10, overflow: "hidden", marginBottom: 14, background: "#000", position: "relative", paddingTop: "40%" }}>
+              <iframe src={`https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`} title={ex?.name} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
+            </div>
+          );
+        })()}
 
         {/* Target */}
         {(dayExercise.target_sets || dayExercise.target_reps || dayExercise.target_weight) && (
