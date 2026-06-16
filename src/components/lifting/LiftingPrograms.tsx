@@ -3,6 +3,7 @@ import { useState } from "react";
 import { LiftingProgram, LiftingDay, DayExercise, BankExercise, archiveProgram, restoreProgram, getLogsForExercises } from "./lifting";
 import LiftingDayCard from "./LiftingDay";
 import LiftingResults from "./LiftingResults";
+import ProgramComplete from "./ProgramComplete";
 
 interface Props {
   playerId: string;
@@ -70,6 +71,15 @@ export default function LiftingPrograms({
     return (diff % progDays.length) + 1;
   }
 
+  function isProgramComplete(prog: LiftingProgram): boolean {
+    if (!prog.start_date) return false;
+    const start = new Date(prog.start_date);
+    const today = new Date();
+    const diff = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    const progDays = days[prog.id] ?? [];
+    return diff >= progDays.length;
+  }
+
   function renderProgram(prog: LiftingProgram, isArchived = false) {
     const progDays = days[prog.id] ?? [];
     const isExpanded = expandedProgram === prog.id;
@@ -121,7 +131,14 @@ export default function LiftingPrograms({
         {/* Days */}
         {isExpanded && !isArchived && (
           <div style={{ borderTop: "1px solid var(--border)", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-            {logsLoading ? (
+            {isProgramComplete(prog) && !canManage ? (
+              <ProgramComplete
+                program={prog}
+                days={progDays}
+                dayExercises={dayExercises}
+                playerId={playerId}
+              />
+            ) : logsLoading ? (
               <div style={{ textAlign: "center", color: "var(--muted)", padding: "20px 0" }}>Loading…</div>
             ) : progDays.map(day => (
               <LiftingDayCard
