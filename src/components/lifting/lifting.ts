@@ -46,6 +46,7 @@ export interface DayExercise {
   rest_secs: number;
   superset_group?: number;
   sort_order: number;
+  notes?: string;
   // joined from bank
   exercise?: BankExercise;
 }
@@ -322,4 +323,92 @@ export function getYouTubeEmbedUrl(url?: string): string | null {
   return isShort
     ? `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`
     : `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`;
+}
+
+// ── Program completion stats ──────────────────────────────────
+
+export interface ProgramStats {
+  sessionsLogged: number;
+  totalDays: number;
+  totalVolume: number;
+  totalSets: number;
+  topGains: { name: string; firstWeight: number; lastWeight: number; gain: number }[];
+  oneRMGains: { name: string; first1RM: number; last1RM: number }[];
+}
+
+export async function getProgramStats(
+  playerId: string,
+  dayIds: string[],
+  dayExercisesMap: Record<string, (DayExercise & { exercise: BankExercise })[]>
+): Promise<ProgramStats> {
+  if (dayIds.length === 0) return { sessionsLogged: 0, totalDays: dayIds.length, totalVolume: 0, totalSets: 0, topGains: [], oneRMGains: [] };
+
+  // Get all bank exercise IDs in this program
+  const bankIds = [...new Set(
+    Object.values(dayExercisesMap).flat().map(de => de.exercise?.id).filter(Boolean)
+  )] as string[];
+
+  if (bankIds.length === 0) return { sessionsLogged: 0, totalDays: dayIds.length, totalVolume: 0, totalSets: 0, topGains: [], oneRMGains: [] };
+
+  const { data: logs } = await supabase
+    .from("lifting_logs")
+    .select("*")
+    .eq("player_id", playerId)
+    .in("exercise_id", bankIds)
+    .order("logged_at", { ascending: true });
+
+  const allLogs = logs ?? [];
+
+  // Sessions = unique days logged
+  const uniqueDates = new Set(allLogs.map(l => new Date(l.logged_at).toDateString()));
+  const sessionsLogged = uniqueDates.size;
+
+  // Total volume and sets
+  let totalVolume = 0;
+  let totalSets = 0;
+  allLogs.forEach(log => {
+    totalVolume += calcVolume(log.sets_data);
+    totalSets += log.sets_data.length;
+  });
+
+  // Per-exercise first vs last
+  const byEx: Record<string, any[]> = {};
+  allLogs.forEach(log => {
+    if (!byEx[log.exercise_id]) byEx[log.exercise_id] = [];
+    byEx[log.exercise_id].push(log);
+  });
+
+  // Build name lookup
+  const nameById: Record<string, string> = {};
+  Object.values(dayExercisesMap).flat().forEach(de => {
+    if (de.exercise) nameById[de.exercise.id] = de.exercise.name;
+  });
+
+  const topGains: ProgramStats["topGains"] = [];
+  const oneRMGains: ProgramStats["oneRMGains"] = [];
+
+  Object.entries(byEx).forEach(([exId, exLogs]) => {
+    if (exLogs.length < 2) return;
+    const first = getBestSet(exLogs[0].sets_data);
+    const last = getBestSet(exLogs[exLogs.length - 1].sets_data);
+    if (!first || !last) return;
+    const gain = last.weight - first.weight;
+    if (gain <= 0) return;
+    topGains.push({ name: nameById[exId] ?? exId, firstWeight: first.weight, lastWeight: last.weight, gain });
+    const first1RM = calc1RM(first.weight, first.reps);
+    const last1RM = calc1RM(last.weight, last.reps);
+    oneRMGains.push({ name: nameById[exId] ?? exId, first1RM, last1RM });
+  });
+
+  topGains.sort((a, b) => b.gain - a.gain);
+  oneRMGains.sort((a, b) => (b.last1RM - b.first1RM) - (a.last1RM - a.first1RM));
+
+  return {
+    sessionsLogged,
+    totalDays: dayIds.length,
+    totalVolume: Math.round(totalVolume),
+    totalSets,
+    topGains: topGains.slice(0, 3),
+    oneRMGains: oneRMGains.slice(0, 3),
+  };
 }
