@@ -95,12 +95,15 @@ export default function LiftingLogModal({ dayExercise, playerId, playerName, ava
         })()}
 
         {/* Target */}
-        {(dayExercise.target_sets || dayExercise.target_reps || dayExercise.target_weight) && (
+        {(dayExercise.target_sets || dayExercise.target_reps || dayExercise.target_weight || (dayExercise as any).notes) && (
           <div style={{ padding: "8px 12px", background: "rgba(26,63,168,0.1)", border: "1px solid rgba(26,63,168,0.25)", borderRadius: 8, fontSize: 12, color: "var(--silver-light)", marginBottom: 12, lineHeight: 1.5 }}>
             🎯 Target: <strong style={{ color: "#93b4ff" }}>
               {[dayExercise.target_sets && `${dayExercise.target_sets} sets`, dayExercise.target_reps && `${dayExercise.target_reps} reps`, dayExercise.target_weight && `${dayExercise.target_weight} lbs`].filter(Boolean).join(" × ")}
             </strong>
             {" · "}<span style={{ color: "var(--muted)" }}>{dayExercise.rest_secs ?? 90}s rest</span>
+            {(dayExercise as any).notes && (
+              <div style={{ marginTop: 4, color: "#93b4ff", fontWeight: 600 }}>📌 {(dayExercise as any).notes}</div>
+            )}
           </div>
         )}
 
