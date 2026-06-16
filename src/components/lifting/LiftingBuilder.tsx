@@ -31,128 +31,10 @@ interface BuilderExercise {
   sort_order: number;
 }
 
-// ── Templates ──────────────────────────────────────────────────
-const TEMPLATES: any[] = [
-  {
-    name: "3-Day Strength",
-    desc: "Lower power, upper push, upper pull — classic strength split",
-    icon: "💪",
-    days: [
-      { name: "Lower Power", is_rest_day: false, exercises: [
-        { name: "Trap Bar Deadlift", muscle_group: "Legs", target_sets: 4, target_reps: 5, target_weight: "", rest_secs: 180, sort_order: 0 },
-        { name: "Box Squat", muscle_group: "Legs", target_sets: 4, target_reps: 5, target_weight: "", rest_secs: 180, sort_order: 1 },
-        { name: "Leg Press", muscle_group: "Legs", target_sets: 3, target_reps: 10, target_weight: "", rest_secs: 120, sort_order: 2 },
-        { name: "Calf Raise", muscle_group: "Legs", target_sets: 3, target_reps: 15, target_weight: "", rest_secs: 60, sort_order: 3 },
-      ]},
-      { name: "Rest", is_rest_day: true, exercises: [] },
-      { name: "Upper Push", is_rest_day: false, exercises: [
-        { name: "Bench Press", muscle_group: "Chest", target_sets: 4, target_reps: 5, target_weight: "", rest_secs: 180, sort_order: 0 },
-        { name: "Incline Bench Press", muscle_group: "Chest", target_sets: 3, target_reps: 8, target_weight: "", rest_secs: 150, sort_order: 1 },
-        { name: "Overhead Press", muscle_group: "Shoulders", target_sets: 3, target_reps: 8, target_weight: "", rest_secs: 150, sort_order: 2 },
-        { name: "Tricep Pushdown", muscle_group: "Arms", target_sets: 3, target_reps: 12, target_weight: "", rest_secs: 60, sort_order: 3 },
-      ]},
-      { name: "Rest", is_rest_day: true, exercises: [] },
-      { name: "Upper Pull", is_rest_day: false, exercises: [
-        { name: "Weighted Chin-Up", muscle_group: "Back", target_sets: 4, target_reps: 6, target_weight: "", rest_secs: 150, sort_order: 0 },
-        { name: "Barbell Row", muscle_group: "Back", target_sets: 4, target_reps: 6, target_weight: "", rest_secs: 150, sort_order: 1 },
-        { name: "Face Pull", muscle_group: "Back", target_sets: 3, target_reps: 15, target_weight: "", rest_secs: 60, sort_order: 2 },
-        { name: "Barbell Curl", muscle_group: "Arms", target_sets: 3, target_reps: 10, target_weight: "", rest_secs: 60, sort_order: 3 },
-      ]},
-      { name: "Rest", is_rest_day: true, exercises: [] },
-      { name: "Rest", is_rest_day: true, exercises: [] },
-    ],
-  },
-  {
-    name: "Push / Pull / Legs",
-    desc: "Classic hypertrophy split for muscle growth",
-    icon: "🏋️",
-    days: [
-      { name: "Push", is_rest_day: false, exercises: [
-        { name: "Bench Press", muscle_group: "Chest", target_sets: 4, target_reps: 8, target_weight: "", rest_secs: 150, sort_order: 0 },
-        { name: "Incline DB Press", muscle_group: "Chest", target_sets: 3, target_reps: 10, target_weight: "", rest_secs: 120, sort_order: 1 },
-        { name: "Overhead Press", muscle_group: "Shoulders", target_sets: 3, target_reps: 10, target_weight: "", rest_secs: 120, sort_order: 2 },
-        { name: "Lateral Raise", muscle_group: "Shoulders", target_sets: 3, target_reps: 15, target_weight: "", rest_secs: 60, sort_order: 3 },
-        { name: "Tricep Pushdown", muscle_group: "Arms", target_sets: 3, target_reps: 12, target_weight: "", rest_secs: 60, sort_order: 4 },
-      ]},
-      { name: "Pull", is_rest_day: false, exercises: [
-        { name: "Romanian Deadlift", muscle_group: "Legs", target_sets: 4, target_reps: 8, target_weight: "", rest_secs: 150, sort_order: 0 },
-        { name: "Barbell Row", muscle_group: "Back", target_sets: 4, target_reps: 8, target_weight: "", rest_secs: 150, sort_order: 1 },
-        { name: "Chin-Up", muscle_group: "Back", target_sets: 3, target_reps: 8, target_weight: "", rest_secs: 120, sort_order: 2 },
-        { name: "Face Pull", muscle_group: "Back", target_sets: 3, target_reps: 15, target_weight: "", rest_secs: 60, sort_order: 3 },
-        { name: "Barbell Curl", muscle_group: "Arms", target_sets: 3, target_reps: 12, target_weight: "", rest_secs: 60, sort_order: 4 },
-      ]},
-      { name: "Legs", is_rest_day: false, exercises: [
-        { name: "Barbell Squat", muscle_group: "Legs", target_sets: 4, target_reps: 8, target_weight: "", rest_secs: 180, sort_order: 0 },
-        { name: "Romanian Deadlift", muscle_group: "Legs", target_sets: 3, target_reps: 10, target_weight: "", rest_secs: 120, sort_order: 1 },
-        { name: "Leg Press", muscle_group: "Legs", target_sets: 3, target_reps: 12, target_weight: "", rest_secs: 90, sort_order: 2 },
-        { name: "Leg Curl", muscle_group: "Legs", target_sets: 3, target_reps: 12, target_weight: "", rest_secs: 60, sort_order: 3 },
-        { name: "Calf Raise", muscle_group: "Legs", target_sets: 4, target_reps: 15, target_weight: "", rest_secs: 45, sort_order: 4 },
-      ]},
-      { name: "Rest", is_rest_day: true, exercises: [] },
-    ],
-  },
-  {
-    name: "Athletic Performance",
-    desc: "Basketball-specific — explosive power, speed, and strength",
-    icon: "🏀",
-    days: [
-      { name: "Explosive Lower", is_rest_day: false, exercises: [
-        { name: "Power Clean", muscle_group: "Athletic", target_sets: 5, target_reps: 3, target_weight: "", rest_secs: 180, sort_order: 0 },
-        { name: "Box Jump", muscle_group: "Athletic", target_sets: 4, target_reps: 5, target_weight: "", rest_secs: 120, sort_order: 1 },
-        { name: "Trap Bar Deadlift", muscle_group: "Legs", target_sets: 4, target_reps: 5, target_weight: "", rest_secs: 180, sort_order: 2 },
-        { name: "Single Leg Press", muscle_group: "Legs", target_sets: 3, target_reps: 10, target_weight: "", rest_secs: 90, sort_order: 3 },
-        { name: "Nordic Curl", muscle_group: "Legs", target_sets: 3, target_reps: 6, target_weight: "", rest_secs: 120, sort_order: 4 },
-      ]},
-      { name: "Rest", is_rest_day: true, exercises: [] },
-      { name: "Upper Strength", is_rest_day: false, exercises: [
-        { name: "Bench Press", muscle_group: "Chest", target_sets: 4, target_reps: 6, target_weight: "", rest_secs: 180, sort_order: 0 },
-        { name: "Weighted Chin-Up", muscle_group: "Back", target_sets: 4, target_reps: 6, target_weight: "", rest_secs: 150, sort_order: 1 },
-        { name: "Dumbbell Row", muscle_group: "Back", target_sets: 3, target_reps: 10, target_weight: "", rest_secs: 90, sort_order: 2 },
-        { name: "Pallof Press", muscle_group: "Core", target_sets: 3, target_reps: 12, target_weight: "", rest_secs: 60, sort_order: 3 },
-        { name: "Dead Bug", muscle_group: "Core", target_sets: 3, target_reps: 10, target_weight: "", rest_secs: 45, sort_order: 4 },
-      ]},
-      { name: "Rest", is_rest_day: true, exercises: [] },
-      { name: "Speed & Power", is_rest_day: false, exercises: [
-        { name: "Broad Jump", muscle_group: "Athletic", target_sets: 4, target_reps: 5, target_weight: "", rest_secs: 120, sort_order: 0 },
-        { name: "Lateral Band Walk", muscle_group: "Athletic", target_sets: 3, target_reps: 20, target_weight: "", rest_secs: 60, sort_order: 1 },
-        { name: "Hip Thrust", muscle_group: "Legs", target_sets: 4, target_reps: 10, target_weight: "", rest_secs: 90, sort_order: 2 },
-        { name: "Bulgarian Split Squat", muscle_group: "Legs", target_sets: 3, target_reps: 10, target_weight: "", rest_secs: 90, sort_order: 3 },
-        { name: "Medicine Ball Slam", muscle_group: "Athletic", target_sets: 3, target_reps: 10, target_weight: "", rest_secs: 60, sort_order: 4 },
-      ]},
-      { name: "Rest", is_rest_day: true, exercises: [] },
-      { name: "Rest", is_rest_day: true, exercises: [] },
-    ],
-  },
-  {
-    name: "Full Body 3x",
-    desc: "3 rotating full-body sessions — great for beginners or in-season",
-    icon: "🔄",
-    days: [
-      { name: "Full Body A", is_rest_day: false, exercises: [
-        { name: "Box Squat", muscle_group: "Legs", target_sets: 3, target_reps: 8, target_weight: "", rest_secs: 150, sort_order: 0 },
-        { name: "Bench Press", muscle_group: "Chest", target_sets: 3, target_reps: 8, target_weight: "", rest_secs: 150, sort_order: 1 },
-        { name: "Barbell Row", muscle_group: "Back", target_sets: 3, target_reps: 8, target_weight: "", rest_secs: 120, sort_order: 2 },
-        { name: "Plank", muscle_group: "Core", target_sets: 3, target_reps: 30, target_weight: "", rest_secs: 45, sort_order: 3 },
-      ]},
-      { name: "Rest", is_rest_day: true, exercises: [] },
-      { name: "Full Body B", is_rest_day: false, exercises: [
-        { name: "Romanian Deadlift", muscle_group: "Legs", target_sets: 3, target_reps: 8, target_weight: "", rest_secs: 150, sort_order: 0 },
-        { name: "Incline Bench Press", muscle_group: "Chest", target_sets: 3, target_reps: 8, target_weight: "", rest_secs: 150, sort_order: 1 },
-        { name: "Lat Pulldown", muscle_group: "Back", target_sets: 3, target_reps: 10, target_weight: "", rest_secs: 90, sort_order: 2 },
-        { name: "Ab Wheel Rollout", muscle_group: "Core", target_sets: 3, target_reps: 10, target_weight: "", rest_secs: 60, sort_order: 3 },
-      ]},
-      { name: "Rest", is_rest_day: true, exercises: [] },
-      { name: "Full Body C", is_rest_day: false, exercises: [
-        { name: "Goblet Squat", muscle_group: "Legs", target_sets: 3, target_reps: 10, target_weight: "", rest_secs: 90, sort_order: 0 },
-        { name: "Dumbbell Bench Press", muscle_group: "Chest", target_sets: 3, target_reps: 10, target_weight: "", rest_secs: 120, sort_order: 1 },
-        { name: "Dumbbell Row", muscle_group: "Back", target_sets: 3, target_reps: 10, target_weight: "", rest_secs: 90, sort_order: 2 },
-        { name: "Hanging Leg Raise", muscle_group: "Core", target_sets: 3, target_reps: 12, target_weight: "", rest_secs: 60, sort_order: 3 },
-      ]},
-      { name: "Rest", is_rest_day: true, exercises: [] },
-      { name: "Rest", is_rest_day: true, exercises: [] },
-    ],
-  },
-];
+// ── AHS Summer 2025 Program ID ────────────────────────────────
+const AHS_PROGRAM_ID = 'aaaaaaaa-0000-0000-0000-000000000001';
+
+
 
 export default function LiftingBuilder({ playerId, editProgram, editDays, editDayExercises, isPersonal, onSaved, onCancel }: Props) {
   const [title, setTitle] = useState(editProgram?.title ?? "");
@@ -196,24 +78,46 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
     setAllPlayers(data ?? []);
   }
 
-  function applyTemplate(tpl: typeof TEMPLATES[0]) {
-    if (!window.confirm(`Load "${tpl.name}" template? This will replace your current days.`)) return;
-    // We need to resolve bank exercise IDs from names — we'll do a best-effort lookup
-    // and set exercises with name only; bank lookup happens on save
-    setDays(tpl.days.map((d: any) => ({
-      name: d.name,
-      is_rest_day: d.is_rest_day,
-      exercises: d.exercises.map((ex: any, i: number) => ({
-        bank_exercise_id: "", // will resolve on save
-        exercise: { id: "", name: ex.name, muscle_group: ex.muscle_group, default_rest_secs: ex.rest_secs, created_at: "" } as BankExercise,
-        target_sets: ex.target_sets,
-        target_reps: ex.target_reps,
-        target_weight: ex.target_weight,
-        rest_secs: ex.rest_secs,
-        sort_order: i,
-      })),
-    })));
-    setTitle(tpl.name);
+  async function loadAHSProgram() {
+    if (!window.confirm("Load the AHS Summer 2025 program? This will replace your current days with all 70 days (10 weeks × 7 days).")) return;
+    try {
+      const { data: progDays } = await supabase
+        .from("lifting_days")
+        .select("*")
+        .eq("program_id", AHS_PROGRAM_ID)
+        .order("day_number");
+      if (!progDays || progDays.length === 0) {
+        alert("AHS Summer 2025 program not found in database. Make sure you ran ahs_summer_2025_full.sql in Supabase.");
+        return;
+      }
+      const dayIds = progDays.map((d: any) => d.id);
+      const { data: dayExs } = await supabase
+        .from("lifting_day_exercises")
+        .select("*, exercise:lifting_exercise_bank(*)")
+        .in("day_id", dayIds)
+        .order("sort_order");
+      const exsByDay: Record<string, any[]> = {};
+      (dayExs ?? []).forEach((de: any) => {
+        if (!exsByDay[de.day_id]) exsByDay[de.day_id] = [];
+        exsByDay[de.day_id].push(de);
+      });
+      const builtDays: BuilderDay[] = progDays.map((d: any) => ({
+        name: d.name,
+        is_rest_day: d.is_rest_day,
+        exercises: (exsByDay[d.id] ?? []).map((de: any) => ({
+          bank_exercise_id: de.bank_exercise_id,
+          exercise: de.exercise,
+          target_sets: de.target_sets ?? 3,
+          target_reps: de.target_reps ?? 8,
+          target_weight: "",
+          rest_secs: de.rest_secs ?? 90,
+          sort_order: de.sort_order,
+        })),
+      }));
+      setDays(builtDays);
+      setTitle("AHS Summer 2025 — 10 Week Program");
+      setDesc("Attleboro High School Basketball 10-week summer lifting program.");
+    } catch (e: any) { alert("Error loading program: " + e.message); }
   }
 
   function addDay() {
@@ -387,20 +291,19 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
           </div>
         )}
 
-        {/* Templates */}
+        {/* AHS Summer Program Loader */}
         {!editProgram && (
           <div>
-            <label>Quick Start — Load a Template <span style={{ color: "var(--muted)", fontWeight: 400 }}>(optional)</span></label>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 6 }}>
-              {TEMPLATES.map(tpl => (
-                <div key={tpl.name} onClick={() => applyTemplate(tpl)} style={{ padding: 12, borderRadius: 10, cursor: "pointer", border: "1px solid var(--border)", background: "var(--surface2)", transition: "all .15s" }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--royal-light)")}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}>
-                  <div style={{ fontSize: 24, marginBottom: 4 }}>{tpl.icon}</div>
-                  <div style={{ fontWeight: 600, fontSize: 12, color: "var(--text)", marginBottom: 3 }}>{tpl.name}</div>
-                  <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.4 }}>{tpl.desc}</div>
-                </div>
-              ))}
+            <label>Quick Start <span style={{ color: "var(--muted)", fontWeight: 400 }}>(optional)</span></label>
+            <div onClick={loadAHSProgram} style={{ marginTop: 8, padding: 16, borderRadius: 12, cursor: "pointer", border: "1px solid rgba(26,63,168,0.4)", background: "rgba(26,63,168,0.08)", display: "flex", alignItems: "center", gap: 14, transition: "all .15s" }}
+              onMouseEnter={e => (e.currentTarget.style.background = "rgba(26,63,168,0.18)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "rgba(26,63,168,0.08)")}>
+              <div style={{ fontSize: 36 }}>🏀</div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", marginBottom: 3 }}>AHS Summer 2025 — 10 Week Program</div>
+                <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>Load all 70 days (10 weeks × 7 days). Progressive overload — light to heavy. Weeks 1-2: technique. Weeks 3-6: build. Week 7: deload. Weeks 8-10: peak.</div>
+              </div>
+              <div style={{ marginLeft: "auto", fontSize: 20, color: "#93b4ff", flexShrink: 0 }}>→</div>
             </div>
           </div>
         )}
