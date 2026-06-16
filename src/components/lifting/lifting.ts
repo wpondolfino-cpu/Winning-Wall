@@ -310,6 +310,6 @@ export function estimateDuration(dayExercises: DayExercise[]): number {
 
 export function getYouTubeId(url?: string): string | null {
   if (!url) return null;
-  const match = url.match(/(?:v=|youtu\.be\/)([^&?/]+)/);
+  const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([^&?/]+)/);
   return match ? match[1] : null;
 }
