@@ -112,9 +112,10 @@ export default function LiftingDayCard({ day, exercises, logs, playerId, playerN
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 48px 48px 70px 80px 65px", gap: 4, padding: "10px 16px", alignItems: "center" }}>
                           <div>
                             <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text)" }}>{dex.exercise?.name ?? "Unknown"}</div>
-                            <div style={{ display: "flex", gap: 8, marginTop: 3, alignItems: "center" }}>
+                            <div style={{ display: "flex", gap: 8, marginTop: 3, alignItems: "center", flexWrap: "wrap" }}>
                               {vid && <a href={`https://youtube.com/watch?v=${vid}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize: 10, color: "var(--gold)", textDecoration: "none", fontWeight: 600 }}>📹 Demo</a>}
                               <span style={{ fontSize: 10, color: "var(--muted)" }}>{dex.rest_secs}s rest</span>
+                              {(dex as any).notes && <span style={{ fontSize: 10, color: "#93b4ff", fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "rgba(26,63,168,0.15)" }}>{(dex as any).notes}</span>}
                             </div>
                           </div>
                           <div style={{ textAlign: "center", fontSize: 12, color: "var(--silver-light)", fontWeight: 600 }}>{dex.target_sets ?? "—"}</div>
