@@ -29,6 +29,7 @@ interface BuilderExercise {
   rest_secs: number;
   superset_group?: number;
   sort_order: number;
+  notes: string;
 }
 
 // ── AHS Summer 2025 Program ID ────────────────────────────────
@@ -64,6 +65,7 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
           rest_secs: de.rest_secs ?? 90,
           superset_group: de.superset_group,
           sort_order: de.sort_order,
+          notes: de.notes ?? "",
         })),
       }));
       setDays(builtDays);
@@ -112,6 +114,7 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
           target_weight: "",
           rest_secs: de.rest_secs ?? 90,
           sort_order: de.sort_order,
+          notes: de.notes ?? "",
         })),
       }));
       setDays(builtDays);
@@ -150,6 +153,7 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
         target_weight: "",
         rest_secs: ex.default_rest_secs,
         sort_order: d.exercises.length,
+        notes: "",
       }],
     }));
   }
@@ -217,6 +221,7 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
             rest_secs: e.rest_secs,
             superset_group: e.superset_group ?? null,
             sort_order: j,
+            notes: e.notes || null,
           };
         }).filter(e => e.bank_exercise_id);
         await saveDayExercises(savedDays[i].id, exs as any);
@@ -355,6 +360,11 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
                                 style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 7, padding: "6px 8px", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none", textAlign: "center", boxSizing: "border-box" }} />
                             </div>
                           ))}
+                        </div>
+                        <div style={{ marginTop: 6 }}>
+                          <div style={{ fontSize: 9, color: "var(--muted)", marginBottom: 3, textTransform: "uppercase", letterSpacing: 0.3 }}>Notes (e.g. "each leg", "slow tempo", "add weight")</div>
+                          <input value={ex.notes} onChange={e => updateEx(di, ei, "notes", e.target.value)} placeholder="optional note for players…"
+                            style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 7, padding: "6px 8px", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
                         </div>
                       </div>
                     ))}
