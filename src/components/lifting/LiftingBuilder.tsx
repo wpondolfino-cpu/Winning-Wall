@@ -1,8 +1,10 @@
 // src/components/lifting/LiftingBuilder.tsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { LiftingProgram, LiftingDay, DayExercise, BankExercise, MuscleGroup, saveProgram, saveDays, saveDayExercises, getAssignedPlayers, saveAssignments } from "./lifting";
 import ExercisePicker from "./ExercisePicker";
 import { supabase } from "../../lib/supabase";
+
+const isMobile = () => window.innerWidth < 768 || ('ontouchstart' in window);
 
 interface Props {
   playerId: string;
@@ -32,8 +34,21 @@ interface BuilderExercise {
   notes: string;
 }
 
-// ── AHS Summer 2025 Program ID ────────────────────────────────
-const AHS_PROGRAM_ID = 'aaaaaaaa-0000-0000-0000-000000000001';
+// ── AHS Program IDs ───────────────────────────────────────────
+const AHS_PROGRAMS = [
+  {
+    id: 'aaaaaaaa-0000-0000-0000-000000000001',
+    icon: '🏋️',
+    title: 'AHS Summer 2025 — Advanced (10 Week)',
+    desc: 'Hang cleans, push jerk, front squat. For experienced lifters ready to push heavy weight.',
+  },
+  {
+    id: 'aaaaaaaa-0000-0000-0000-000000000002',
+    icon: '🏀',
+    title: 'AHS Summer 2025 — Beginner (10 Week)',
+    desc: 'DB bench, KB deadlift, goblet squat. Perfect for players new to lifting or returning after a break.',
+  },
+];
 
 
 
@@ -49,6 +64,51 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
   const [error, setError] = useState("");
   const [bank, setBank] = useState<BankExercise[]>([]);
   const [nextSuperset, setNextSuperset] = useState(1);
+  const [mobile, setMobile] = useState(isMobile());
+  const dragItem = useRef<{ dayIdx: number; exIdx: number } | null>(null);
+  const dragOver = useRef<{ dayIdx: number; exIdx: number } | null>(null);
+
+  useEffect(() => {
+    const handler = () => setMobile(isMobile());
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+
+  function moveEx(dayIdx: number, exIdx: number, dir: "up" | "down") {
+    setDays(prev => prev.map((d, i) => {
+      if (i !== dayIdx) return d;
+      const exs = [...d.exercises];
+      const target = dir === "up" ? exIdx - 1 : exIdx + 1;
+      if (target < 0 || target >= exs.length) return d;
+      [exs[exIdx], exs[target]] = [exs[target], exs[exIdx]];
+      return { ...d, exercises: exs.map((e, j) => ({ ...e, sort_order: j })) };
+    }));
+  }
+
+  function handleDragStart(dayIdx: number, exIdx: number) {
+    dragItem.current = { dayIdx, exIdx };
+  }
+
+  function handleDragEnter(dayIdx: number, exIdx: number) {
+    dragOver.current = { dayIdx, exIdx };
+  }
+
+  function handleDragEnd(dayIdx: number) {
+    if (!dragItem.current || !dragOver.current) return;
+    if (dragItem.current.dayIdx !== dayIdx || dragOver.current.dayIdx !== dayIdx) return;
+    const from = dragItem.current.exIdx;
+    const to = dragOver.current.exIdx;
+    if (from === to) return;
+    setDays(prev => prev.map((d, i) => {
+      if (i !== dayIdx) return d;
+      const exs = [...d.exercises];
+      const [moved] = exs.splice(from, 1);
+      exs.splice(to, 0, moved);
+      return { ...d, exercises: exs.map((e, j) => ({ ...e, sort_order: j })) };
+    }));
+    dragItem.current = null;
+    dragOver.current = null;
+  }
 
   useEffect(() => {
     loadPlayers();
@@ -80,16 +140,16 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
     setAllPlayers(data ?? []);
   }
 
-  async function loadAHSProgram() {
-    if (!window.confirm("Load the AHS Summer 2025 program? This will replace your current days with all 70 days (10 weeks × 7 days).")) return;
+  async function loadAHSProgram(programId: string, programTitle: string) {
+    if (!window.confirm(`Load "${programTitle}"? This will replace your current days with all 72 days (pre-test + 10 weeks + post-test).`)) return;
     try {
       const { data: progDays } = await supabase
         .from("lifting_days")
         .select("*")
-        .eq("program_id", AHS_PROGRAM_ID)
+        .eq("program_id", programId)
         .order("day_number");
       if (!progDays || progDays.length === 0) {
-        alert("AHS Summer 2025 program not found in database. Make sure you ran ahs_summer_2025_full.sql in Supabase.");
+        alert("Program not found in database. Make sure you ran the SQL file in Supabase.");
         return;
       }
       const dayIds = progDays.map((d: any) => d.id);
@@ -118,8 +178,8 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
         })),
       }));
       setDays(builtDays);
-      setTitle("AHS Summer 2025 — 10 Week Program");
-      setDesc("Attleboro High School Basketball 10-week summer lifting program.");
+      setTitle(programTitle);
+      setDesc("Attleboro High School Basketball 10-week summer program.");
     } catch (e: any) { alert("Error loading program: " + e.message); }
   }
 
@@ -153,7 +213,7 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
         target_weight: "",
         rest_secs: ex.default_rest_secs,
         sort_order: d.exercises.length,
-        notes: "",
+        notes: ex.default_notes ?? "",
       }],
     }));
   }
@@ -300,15 +360,20 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
         {!editProgram && (
           <div>
             <label>Quick Start <span style={{ color: "var(--muted)", fontWeight: 400 }}>(optional)</span></label>
-            <div onClick={loadAHSProgram} style={{ marginTop: 8, padding: 16, borderRadius: 12, cursor: "pointer", border: "1px solid rgba(26,63,168,0.4)", background: "rgba(26,63,168,0.08)", display: "flex", alignItems: "center", gap: 14, transition: "all .15s" }}
-              onMouseEnter={e => (e.currentTarget.style.background = "rgba(26,63,168,0.18)")}
-              onMouseLeave={e => (e.currentTarget.style.background = "rgba(26,63,168,0.08)")}>
-              <div style={{ fontSize: 36 }}>🏀</div>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", marginBottom: 3 }}>AHS Summer 2025 — 10 Week Program</div>
-                <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>Load all 70 days (10 weeks × 7 days). Progressive overload — light to heavy. Weeks 1-2: technique. Weeks 3-6: build. Week 7: deload. Weeks 8-10: peak.</div>
-              </div>
-              <div style={{ marginLeft: "auto", fontSize: 20, color: "#93b4ff", flexShrink: 0 }}>→</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+              {AHS_PROGRAMS.map(prog => (
+                <div key={prog.id} onClick={() => loadAHSProgram(prog.id, prog.title)}
+                  style={{ padding: 16, borderRadius: 12, cursor: "pointer", border: "1px solid rgba(26,63,168,0.4)", background: "rgba(26,63,168,0.08)", display: "flex", alignItems: "center", gap: 14, transition: "all .15s" }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "rgba(26,63,168,0.18)")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "rgba(26,63,168,0.08)")}>
+                  <div style={{ fontSize: 36 }}>{prog.icon}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)", marginBottom: 3 }}>{prog.title}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.5 }}>{prog.desc}</div>
+                  </div>
+                  <div style={{ fontSize: 20, color: "#93b4ff", flexShrink: 0 }}>→</div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -337,8 +402,23 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
                 {!day.is_rest_day && (
                   <div style={{ padding: "10px 14px" }}>
                     {day.exercises.map((ex, ei) => (
-                      <div key={ei} style={{ marginBottom: 10, padding: 10, background: ex.superset_group != null ? "rgba(147,92,255,0.06)" : "var(--surface)", border: `1px solid ${ex.superset_group != null ? "rgba(147,92,255,0.25)" : "var(--border)"}`, borderRadius: 9 }}>
+                      <div key={ei} style={{ marginBottom: 10, padding: 10, background: ex.superset_group != null ? "rgba(147,92,255,0.06)" : "var(--surface)", border: `1px solid ${ex.superset_group != null ? "rgba(147,92,255,0.25)" : "var(--border)"}`, borderRadius: 9, cursor: mobile ? "default" : "grab" }}
+                        draggable={!mobile}
+                        onDragStart={() => !mobile && handleDragStart(di, ei)}
+                        onDragEnter={() => !mobile && handleDragEnter(di, ei)}
+                        onDragEnd={() => !mobile && handleDragEnd(di)}
+                        onDragOver={e => e.preventDefault()}
+                      >
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                          {!mobile && <span style={{ fontSize: 14, color: "var(--muted)", cursor: "grab", flexShrink: 0 }} title="Drag to reorder">⠿</span>}
+                          {mobile && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 1, flexShrink: 0 }}>
+                              <button onClick={() => moveEx(di, ei, "up")} disabled={ei === 0}
+                                style={{ background: "none", border: "none", color: ei === 0 ? "var(--border)" : "var(--muted)", cursor: ei === 0 ? "default" : "pointer", fontSize: 12, padding: "0 2px", lineHeight: 1 }}>▲</button>
+                              <button onClick={() => moveEx(di, ei, "down")} disabled={ei === day.exercises.length - 1}
+                                style={{ background: "none", border: "none", color: ei === day.exercises.length - 1 ? "var(--border)" : "var(--muted)", cursor: ei === day.exercises.length - 1 ? "default" : "pointer", fontSize: 12, padding: "0 2px", lineHeight: 1 }}>▼</button>
+                            </div>
+                          )}
                           <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, minWidth: 18 }}>{ei + 1}</div>
                           <div style={{ flex: 1, fontWeight: 600, fontSize: 13, color: "var(--text)" }}>{ex.exercise.name}</div>
                           <div style={{ fontSize: 10, color: "var(--muted)" }}>{ex.exercise.muscle_group}</div>
