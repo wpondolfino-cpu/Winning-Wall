@@ -12,6 +12,7 @@ export interface BankExercise {
   muscle_group: MuscleGroup;
   video_url?: string;
   default_rest_secs: number;
+  default_notes?: string;
   created_by?: string;
   created_at: string;
 }
@@ -77,11 +78,12 @@ export async function upsertBankExercise(
   muscle_group: MuscleGroup,
   video_url: string | null,
   default_rest_secs: number,
-  created_by: string
+  created_by: string,
+  default_notes?: string
 ): Promise<BankExercise> {
   const { data, error } = await supabase
     .from("lifting_exercise_bank")
-    .upsert({ name, muscle_group, video_url: video_url || null, default_rest_secs, created_by }, { onConflict: "name" })
+    .upsert({ name, muscle_group, video_url: video_url || null, default_rest_secs, created_by, default_notes: default_notes || null }, { onConflict: "name" })
     .select().single();
   if (error) throw error;
   return data as BankExercise;
