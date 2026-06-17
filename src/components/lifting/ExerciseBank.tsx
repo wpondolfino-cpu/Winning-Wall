@@ -18,6 +18,7 @@ export default function ExerciseBank({ playerId, canManage }: Props) {
   const [editMuscle, setEditMuscle] = useState<MuscleGroup>("Other");
   const [editVideo, setEditVideo] = useState("");
   const [editRest, setEditRest] = useState("90");
+  const [editDefaultNotes, setEditDefaultNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -84,12 +85,13 @@ export default function ExerciseBank({ playerId, canManage }: Props) {
     setEditMuscle(ex.muscle_group as MuscleGroup);
     setEditVideo(ex.video_url ?? "");
     setEditRest(ex.default_rest_secs.toString());
+    setEditDefaultNotes(ex.default_notes ?? "");
     setShowAdd(false);
   }
 
   function openAdd() {
     setEditing(null);
-    setEditName(""); setEditMuscle("Other"); setEditVideo(""); setEditRest("90");
+    setEditName(""); setEditMuscle("Other"); setEditVideo(""); setEditRest("90"); setEditDefaultNotes("");
     setShowAdd(true);
   }
 
@@ -106,12 +108,13 @@ export default function ExerciseBank({ playerId, canManage }: Props) {
             muscle_group: editMuscle,
             video_url: editVideo || null,
             default_rest_secs: parseInt(editRest) || 90,
+            default_notes: editDefaultNotes || null,
           })
           .eq("id", editing.id);
         if (error) throw error;
       } else {
         // Add new exercise
-        await upsertBankExercise(editName.trim(), editMuscle, editVideo || null, parseInt(editRest) || 90, playerId);
+        await upsertBankExercise(editName.trim(), editMuscle, editVideo || null, parseInt(editRest) || 90, playerId, editDefaultNotes || undefined);
       }
       await load();
       setEditing(null); setShowAdd(false);
@@ -179,6 +182,8 @@ export default function ExerciseBank({ playerId, canManage }: Props) {
             </div>
             <input value={editVideo} onChange={e => setEditVideo(e.target.value)} placeholder="YouTube URL (optional)"
               style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+            <input value={editDefaultNotes} onChange={e => setEditDefaultNotes(e.target.value)} placeholder='Default notes (e.g. "each leg", "slow tempo") — auto-fills when added to a program'
+              style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={handleSave} disabled={saving || !editName.trim()}
                 style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
@@ -213,7 +218,10 @@ export default function ExerciseBank({ playerId, canManage }: Props) {
                       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: isEditing ? "rgba(26,63,168,0.1)" : "var(--surface2)", borderRadius: isEditing ? "10px 10px 0 0" : 10, border: `1px solid ${isEditing ? "rgba(26,63,168,0.4)" : "var(--border)"}`, borderBottom: isEditing ? "none" : undefined }}>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{ex.name}</div>
-                          <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>{ex.default_rest_secs}s rest</div>
+                          <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                            <span>{ex.default_rest_secs}s rest</span>
+                            {ex.default_notes && <span style={{ color: "#93b4ff", fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "rgba(26,63,168,0.15)" }}>{ex.default_notes}</span>}
+                          </div>
                         </div>
                         {vid ? (
                           <a href={ex.video_url} target="_blank" rel="noreferrer"
@@ -250,6 +258,8 @@ export default function ExerciseBank({ playerId, canManage }: Props) {
                               style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 7, padding: "7px 10px", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
                           </div>
                           <input value={editVideo} onChange={e => setEditVideo(e.target.value)} placeholder="YouTube URL"
+                            style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 7, padding: "7px 10px", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+                          <input value={editDefaultNotes} onChange={e => setEditDefaultNotes(e.target.value)} placeholder='Default notes (e.g. "each leg") — auto-fills in programs'
                             style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 7, padding: "7px 10px", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
                           {editVideo && getYouTubeId(editVideo) && (
                             <div style={{ fontSize: 11, color: "#5de098" }}>✓ Valid YouTube URL</div>
