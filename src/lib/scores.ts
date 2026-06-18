@@ -132,6 +132,7 @@ export async function submitScore(
   if (scoringType === "flat") {
     const flatPts    = workout?.flat_points ?? 0;
     const localToday = (score as any).local_date ?? new Date().toISOString().split("T")[0];
+    const { local_date: _ld, ...cleanScore } = score as any;
     const { data: existingRow } = await supabase
       .from("scores").select("*")
       .eq("player_id", score.player_id).eq("workout_id", score.workout_id).maybeSingle();
@@ -148,7 +149,7 @@ export async function submitScore(
       saved = data as Score;
     } else {
       const { data, error } = await supabase.from("scores")
-        .insert({ ...score, points: flatPts, self_points: flatPts, last_logged_date: localToday })
+        .insert({ ...cleanScore, points: flatPts, self_points: flatPts, last_logged_date: localToday })
         .select().single();
       if (error) throw error;
       saved = data as Score;
