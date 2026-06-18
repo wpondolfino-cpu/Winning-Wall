@@ -21,7 +21,7 @@ export interface LiftingProgram {
   id: string;
   title: string;
   description?: string;
-  visibility: "public" | "assigned" | "personal";
+  visibility: "public" | "assigned" | "personal" | "draft";
   is_active: boolean;
   archived: boolean;
   created_by: string;
@@ -108,9 +108,10 @@ export async function getVisiblePrograms(playerId: string, canManage: boolean): 
     .eq("player_id", playerId);
   const assignedIds = new Set((assignments ?? []).map((a: any) => a.program_id));
   return progs.filter(p =>
-    p.visibility === "public" ||
+    (p.visibility === "public" ||
     assignedIds.has(p.id) ||
-    (p.visibility === "personal" && p.created_by === playerId)
+    (p.visibility === "personal" && p.created_by === playerId)) &&
+    p.visibility !== "draft"
   );
 }
 
