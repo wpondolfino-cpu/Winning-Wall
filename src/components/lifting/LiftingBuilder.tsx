@@ -55,6 +55,7 @@ const AHS_PROGRAMS = [
 // ── WeekGroup component ───────────────────────────────────────
 interface WeekGroupProps {
   weekNum: number;
+  label: string;
   weekDays: { day: any; di: number }[];
   updateDay: (i: number, field: string, val: any) => void;
   copyDay: (i: number) => void;
@@ -73,7 +74,7 @@ interface WeekGroupProps {
   defaultOpen: boolean;
 }
 
-function WeekGroup({ weekNum, weekDays, updateDay, copyDay, removeDay, updateEx, removeExFromDay, markSuperset, addExerciseToDay, moveEx, mobile, handleDragStart, handleDragEnter, handleDragEnd, playerId, totalDays, defaultOpen }: WeekGroupProps) {
+function WeekGroup({ weekNum, label, weekDays, updateDay, copyDay, removeDay, updateEx, removeExFromDay, markSuperset, addExerciseToDay, moveEx, mobile, handleDragStart, handleDragEnter, handleDragEnd, playerId, totalDays, defaultOpen }: WeekGroupProps) {
   const [open, setOpen] = useState(defaultOpen);
   const activeDays = weekDays.filter(({ day }) => !day.is_rest_day).length;
   const totalEx = weekDays.reduce((sum, { day }) => sum + day.exercises.length, 0);
@@ -83,7 +84,7 @@ function WeekGroup({ weekNum, weekDays, updateDay, copyDay, removeDay, updateEx,
       {/* Week header */}
       <div onClick={() => setOpen(o => !o)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", cursor: "pointer", background: open ? "rgba(26,63,168,0.1)" : "var(--surface2)", userSelect: "none" }}>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>Week {weekNum}</div>
+          <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{label}</div>
           <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
             {weekDays.length} days · {activeDays} training · {totalEx} exercises
           </div>
@@ -508,17 +509,47 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
           <label>Days</label>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
             {(() => {
-              // Group days into weeks of 7
-              const weeks: { weekNum: number; days: { day: typeof days[0]; di: number }[] }[] = [];
+              // Group by "Week X" in name, or fall back to chunks of 7
+              const weekMap: Record<string, { weekNum: number; label: string; days: { day: typeof days[0]; di: number }[] }> = {};
+              let fallbackWeek = 0;
+
+              // Check if any day has "Week" in its name
+              const hasWeekNames = days.some(d => /week\s*\d+/i.test(d.name));
+
               days.forEach((day, di) => {
-                const weekNum = Math.floor(di / 7) + 1;
-                if (!weeks[weekNum - 1]) weeks[weekNum - 1] = { weekNum, days: [] };
-                weeks[weekNum - 1].days.push({ day, di });
+                let key: string;
+                let label: string;
+                let weekNum: number;
+
+                if (hasWeekNames) {
+                  const match = day.name.match(/week\s*(\d+)/i);
+                  if (match) {
+                    weekNum = parseInt(match[1]);
+                    key = `week-${weekNum}`;
+                    label = `Week ${weekNum}`;
+                  } else {
+                    // Pre/post test days or unnamed — put in their own group
+                    key = `special-${di}`;
+                    label = day.name || `Day ${di + 1}`;
+                    weekNum = di === 0 ? 0 : 999;
+                  }
+                } else {
+                  weekNum = Math.floor(di / 7) + 1;
+                  key = `week-${weekNum}`;
+                  label = `Week ${weekNum}`;
+                }
+
+                if (!weekMap[key]) weekMap[key] = { weekNum, label, days: [] };
+                weekMap[key].days.push({ day, di });
               });
-              return weeks.map(({ weekNum, days: weekDays }) => (
+
+              const sorted = Object.values(weekMap).sort((a, b) => a.weekNum - b.weekNum);
+
+              return sorted.map(({ weekNum, label, days: weekDays }, idx) => (
                 <WeekGroup
-                  key={weekNum}
+                  key={label}
                   weekNum={weekNum}
+                  label={label}
                   weekDays={weekDays}
                   updateDay={updateDay}
                   copyDay={copyDay}
@@ -534,7 +565,7 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
                   handleDragEnd={handleDragEnd}
                   playerId={playerId}
                   totalDays={days.length}
-                  defaultOpen={weekNum === 1}
+                  defaultOpen={idx === 0}
                 />
               ));
             })()}
