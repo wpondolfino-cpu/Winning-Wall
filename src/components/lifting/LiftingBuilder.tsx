@@ -52,6 +52,122 @@ const AHS_PROGRAMS = [
 
 
 
+// ── WeekGroup component ───────────────────────────────────────
+interface WeekGroupProps {
+  weekNum: number;
+  weekDays: { day: any; di: number }[];
+  updateDay: (i: number, field: string, val: any) => void;
+  copyDay: (i: number) => void;
+  removeDay: (i: number) => void;
+  updateEx: (di: number, ei: number, field: string, val: any) => void;
+  removeExFromDay: (di: number, ei: number) => void;
+  markSuperset: (di: number, ei: number) => void;
+  addExerciseToDay: (di: number, ex: BankExercise) => void;
+  moveEx: (di: number, ei: number, dir: "up" | "down") => void;
+  mobile: boolean;
+  handleDragStart: (di: number, ei: number) => void;
+  handleDragEnter: (di: number, ei: number) => void;
+  handleDragEnd: (di: number) => void;
+  playerId: string;
+  totalDays: number;
+  defaultOpen: boolean;
+}
+
+function WeekGroup({ weekNum, weekDays, updateDay, copyDay, removeDay, updateEx, removeExFromDay, markSuperset, addExerciseToDay, moveEx, mobile, handleDragStart, handleDragEnter, handleDragEnd, playerId, totalDays, defaultOpen }: WeekGroupProps) {
+  const [open, setOpen] = useState(defaultOpen);
+  const activeDays = weekDays.filter(({ day }) => !day.is_rest_day).length;
+  const totalEx = weekDays.reduce((sum, { day }) => sum + day.exercises.length, 0);
+
+  return (
+    <div style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+      {/* Week header */}
+      <div onClick={() => setOpen(o => !o)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", cursor: "pointer", background: open ? "rgba(26,63,168,0.1)" : "var(--surface2)", userSelect: "none" }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>Week {weekNum}</div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+            {weekDays.length} days · {activeDays} training · {totalEx} exercises
+          </div>
+        </div>
+        <span style={{ fontSize: 16, color: "var(--muted)" }}>{open ? "▲" : "▼"}</span>
+      </div>
+
+      {/* Days within week */}
+      {open && (
+        <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid var(--border)" }}>
+          {weekDays.map(({ day, di }) => (
+            <div key={di} style={{ background: "var(--surface2)", border: `1px solid ${day.is_rest_day ? "var(--border)" : "rgba(26,63,168,0.3)"}`, borderRadius: 10, overflow: "hidden" }}>
+              {/* Day header */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: day.is_rest_day ? "rgba(0,0,0,0.1)" : "rgba(26,63,168,0.06)" }}>
+                <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, minWidth: 44 }}>Day {di + 1}</div>
+                <input value={day.name} onChange={e => updateDay(di, "name", e.target.value)}
+                  placeholder={day.is_rest_day ? "Rest Day" : "e.g. Push Day"}
+                  style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 8px", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+                <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "var(--muted)", cursor: "pointer", whiteSpace: "nowrap" }}>
+                  <input type="checkbox" checked={day.is_rest_day} onChange={e => updateDay(di, "is_rest_day", e.target.checked)} />
+                  💤
+                </label>
+                <button onClick={() => copyDay(di)} title="Copy day" style={{ background: "none", border: "none", color: "#93b4ff", cursor: "pointer", fontSize: 13, padding: "2px 3px" }}>⧉</button>
+                {totalDays > 1 && <button onClick={() => removeDay(di)} style={{ background: "none", border: "none", color: "#ff7b7b", cursor: "pointer", fontSize: 14, padding: "2px 3px" }}>×</button>}
+              </div>
+
+              {/* Exercises */}
+              {!day.is_rest_day && (
+                <div style={{ padding: "8px 12px" }}>
+                  {day.exercises.map((ex: any, ei: number) => (
+                    <div key={ei} style={{ marginBottom: 8, padding: 8, background: ex.superset_group != null ? "rgba(147,92,255,0.06)" : "var(--surface)", border: `1px solid ${ex.superset_group != null ? "rgba(147,92,255,0.25)" : "var(--border)"}`, borderRadius: 8, cursor: mobile ? "default" : "grab" }}
+                      draggable={!mobile}
+                      onDragStart={() => !mobile && handleDragStart(di, ei)}
+                      onDragEnter={() => !mobile && handleDragEnter(di, ei)}
+                      onDragEnd={() => !mobile && handleDragEnd(di)}
+                      onDragOver={e => e.preventDefault()}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+                        {!mobile && <span style={{ fontSize: 13, color: "var(--muted)", cursor: "grab", flexShrink: 0 }}>⠿</span>}
+                        {mobile && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 1, flexShrink: 0 }}>
+                            <button onClick={() => moveEx(di, ei, "up")} disabled={ei === 0} style={{ background: "none", border: "none", color: ei === 0 ? "var(--border)" : "var(--muted)", cursor: "pointer", fontSize: 11, padding: "0 2px", lineHeight: 1 }}>▲</button>
+                            <button onClick={() => moveEx(di, ei, "down")} disabled={ei === day.exercises.length - 1} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 11, padding: "0 2px", lineHeight: 1 }}>▼</button>
+                          </div>
+                        )}
+                        <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, minWidth: 16 }}>{ei + 1}</div>
+                        <div style={{ flex: 1, fontWeight: 600, fontSize: 12, color: "var(--text)" }}>{ex.exercise.name}</div>
+                        <div style={{ fontSize: 9, color: "var(--muted)" }}>{ex.exercise.muscle_group}</div>
+                        {ex.superset_group != null && <span style={{ fontSize: 8, padding: "1px 4px", borderRadius: 4, background: "rgba(147,92,255,0.2)", color: "#9b6dff" }}>SS</span>}
+                        <button onClick={() => markSuperset(di, ei)} style={{ background: "none", border: "none", color: ex.superset_group != null ? "#9b6dff" : "var(--muted)", cursor: "pointer", fontSize: 11, padding: "1px 3px" }}>⚡</button>
+                        <button onClick={() => removeExFromDay(di, ei)} style={{ background: "none", border: "none", color: "#ff7b7b", cursor: "pointer", fontSize: 13, padding: "1px 3px" }}>×</button>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 5 }}>
+                        {[
+                          { lbl: "Sets", val: ex.target_sets.toString(), field: "target_sets", type: "int" },
+                          { lbl: "Reps", val: ex.target_reps.toString(), field: "target_reps", type: "int" },
+                          { lbl: "Wt (lbs)", val: ex.target_weight, field: "target_weight", type: "float" },
+                          { lbl: "Rest (s)", val: ex.rest_secs.toString(), field: "rest_secs", type: "int" },
+                        ].map(f => (
+                          <div key={f.field}>
+                            <div style={{ fontSize: 8, color: "var(--muted)", marginBottom: 2, textTransform: "uppercase", letterSpacing: 0.3 }}>{f.lbl}</div>
+                            <input type="number" value={f.val} placeholder={f.field === "target_weight" ? "opt." : ""}
+                              onChange={e => updateEx(di, ei, f.field, f.type === "int" ? parseInt(e.target.value) || 0 : e.target.value)}
+                              style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 4px", color: "var(--text)", fontSize: 11, fontFamily: "inherit", outline: "none", textAlign: "center", boxSizing: "border-box" }} />
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ marginTop: 5 }}>
+                        <input value={ex.notes} onChange={e => updateEx(di, ei, "notes", e.target.value)} placeholder='Notes (e.g. "each leg")'
+                          style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 6px", color: "var(--text)", fontSize: 11, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                      </div>
+                    </div>
+                  ))}
+                  <ExercisePicker playerId={playerId} onSelect={ex => addExerciseToDay(di, ex)} placeholder="+ Add exercise…" />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function LiftingBuilder({ playerId, editProgram, editDays, editDayExercises, isPersonal, onSaved, onCancel }: Props) {
   const [title, setTitle] = useState(editProgram?.title ?? "");
   const [desc, setDesc] = useState(editProgram?.description ?? "");
@@ -387,87 +503,46 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
           </div>
         )}
 
-        {/* Days */}
+        {/* Days — grouped by week */}
         <div>
           <label>Days</label>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>
-            {days.map((day, di) => (
-              <div key={di} style={{ background: "var(--surface2)", border: `1px solid ${day.is_rest_day ? "var(--border)" : "rgba(26,63,168,0.3)"}`, borderRadius: 12, overflow: "hidden" }}>
-                {/* Day header */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", background: day.is_rest_day ? "rgba(0,0,0,0.1)" : "rgba(26,63,168,0.08)" }}>
-                  <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700, minWidth: 50 }}>Day {di + 1}</div>
-                  <input value={day.name} onChange={e => updateDay(di, "name", e.target.value)}
-                    placeholder={day.is_rest_day ? "Rest Day" : "e.g. Push Day"}
-                    style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 7, padding: "6px 10px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
-                  <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--muted)", cursor: "pointer", whiteSpace: "nowrap" }}>
-                    <input type="checkbox" checked={day.is_rest_day} onChange={e => updateDay(di, "is_rest_day", e.target.checked)} />
-                    💤 Rest
-                  </label>
-                  <button onClick={() => copyDay(di)} title="Copy this day" style={{ background: "none", border: "none", color: "#93b4ff", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}>⧉</button>
-                  {days.length > 1 && <button onClick={() => removeDay(di)} style={{ background: "none", border: "none", color: "#ff7b7b", cursor: "pointer", fontSize: 16, padding: "2px 4px" }}>×</button>}
-                </div>
-
-                {/* Exercises for this day */}
-                {!day.is_rest_day && (
-                  <div style={{ padding: "10px 14px" }}>
-                    {day.exercises.map((ex, ei) => (
-                      <div key={ei} style={{ marginBottom: 10, padding: 10, background: ex.superset_group != null ? "rgba(147,92,255,0.06)" : "var(--surface)", border: `1px solid ${ex.superset_group != null ? "rgba(147,92,255,0.25)" : "var(--border)"}`, borderRadius: 9, cursor: mobile ? "default" : "grab" }}
-                        draggable={!mobile}
-                        onDragStart={() => !mobile && handleDragStart(di, ei)}
-                        onDragEnter={() => !mobile && handleDragEnter(di, ei)}
-                        onDragEnd={() => !mobile && handleDragEnd(di)}
-                        onDragOver={e => e.preventDefault()}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                          {!mobile && <span style={{ fontSize: 14, color: "var(--muted)", cursor: "grab", flexShrink: 0 }} title="Drag to reorder">⠿</span>}
-                          {mobile && (
-                            <div style={{ display: "flex", flexDirection: "column", gap: 1, flexShrink: 0 }}>
-                              <button onClick={() => moveEx(di, ei, "up")} disabled={ei === 0}
-                                style={{ background: "none", border: "none", color: ei === 0 ? "var(--border)" : "var(--muted)", cursor: ei === 0 ? "default" : "pointer", fontSize: 12, padding: "0 2px", lineHeight: 1 }}>▲</button>
-                              <button onClick={() => moveEx(di, ei, "down")} disabled={ei === day.exercises.length - 1}
-                                style={{ background: "none", border: "none", color: ei === day.exercises.length - 1 ? "var(--border)" : "var(--muted)", cursor: ei === day.exercises.length - 1 ? "default" : "pointer", fontSize: 12, padding: "0 2px", lineHeight: 1 }}>▼</button>
-                            </div>
-                          )}
-                          <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, minWidth: 18 }}>{ei + 1}</div>
-                          <div style={{ flex: 1, fontWeight: 600, fontSize: 13, color: "var(--text)" }}>{ex.exercise.name}</div>
-                          <div style={{ fontSize: 10, color: "var(--muted)" }}>{ex.exercise.muscle_group}</div>
-                          {ex.superset_group != null && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, background: "rgba(147,92,255,0.2)", color: "#9b6dff" }}>SS{ex.superset_group}</span>}
-                          <button onClick={() => markSuperset(di, ei)} title="Toggle superset" style={{ background: "none", border: "none", color: ex.superset_group != null ? "#9b6dff" : "var(--muted)", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>⚡</button>
-                          <button onClick={() => removeExFromDay(di, ei)} style={{ background: "none", border: "none", color: "#ff7b7b", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}>×</button>
-                        </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
-                          {[
-                            { lbl: "Sets", val: ex.target_sets.toString(), field: "target_sets", type: "int" },
-                            { lbl: "Reps", val: ex.target_reps.toString(), field: "target_reps", type: "int" },
-                            { lbl: "Weight (lbs)", val: ex.target_weight, field: "target_weight", type: "float" },
-                            { lbl: "Rest (secs)", val: ex.rest_secs.toString(), field: "rest_secs", type: "int" },
-                          ].map(f => (
-                            <div key={f.field}>
-                              <div style={{ fontSize: 9, color: "var(--muted)", marginBottom: 3, textTransform: "uppercase", letterSpacing: 0.3 }}>{f.lbl}</div>
-                              <input type="number" value={f.val} placeholder={f.lbl === "Weight (lbs)" ? "opt." : ""}
-                                onChange={e => updateEx(di, ei, f.field, f.type === "int" ? parseInt(e.target.value) || 0 : e.target.value)}
-                                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 7, padding: "6px 8px", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none", textAlign: "center", boxSizing: "border-box" }} />
-                            </div>
-                          ))}
-                        </div>
-                        <div style={{ marginTop: 6 }}>
-                          <div style={{ fontSize: 9, color: "var(--muted)", marginBottom: 3, textTransform: "uppercase", letterSpacing: 0.3 }}>Notes (e.g. "each leg", "slow tempo", "add weight")</div>
-                          <input value={ex.notes} onChange={e => updateEx(di, ei, "notes", e.target.value)} placeholder="optional note for players…"
-                            style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 7, padding: "6px 8px", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
-                        </div>
-                      </div>
-                    ))}
-                    <ExercisePicker playerId={playerId} onSelect={ex => addExerciseToDay(di, ex)} placeholder="+ Add exercise from bank…" />
-                  </div>
-                )}
-              </div>
-            ))}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+            {(() => {
+              // Group days into weeks of 7
+              const weeks: { weekNum: number; days: { day: typeof days[0]; di: number }[] }[] = [];
+              days.forEach((day, di) => {
+                const weekNum = Math.floor(di / 7) + 1;
+                if (!weeks[weekNum - 1]) weeks[weekNum - 1] = { weekNum, days: [] };
+                weeks[weekNum - 1].days.push({ day, di });
+              });
+              return weeks.map(({ weekNum, days: weekDays }) => (
+                <WeekGroup
+                  key={weekNum}
+                  weekNum={weekNum}
+                  weekDays={weekDays}
+                  updateDay={updateDay}
+                  copyDay={copyDay}
+                  removeDay={removeDay}
+                  updateEx={updateEx}
+                  removeExFromDay={removeExFromDay}
+                  markSuperset={markSuperset}
+                  addExerciseToDay={addExerciseToDay}
+                  moveEx={moveEx}
+                  mobile={mobile}
+                  handleDragStart={handleDragStart}
+                  handleDragEnter={handleDragEnter}
+                  handleDragEnd={handleDragEnd}
+                  playerId={playerId}
+                  totalDays={days.length}
+                  defaultOpen={weekNum === 1}
+                />
+              ));
+            })()}
             <button onClick={addDay} style={{ background: "none", border: "1px dashed var(--border)", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "var(--muted)", cursor: "pointer", fontFamily: "inherit" }}>
               + Add Day
             </button>
           </div>
         </div>
-
         {error && <div className="error-msg">{error}</div>}
 
         <div style={{ display: "flex", gap: 10 }}>
