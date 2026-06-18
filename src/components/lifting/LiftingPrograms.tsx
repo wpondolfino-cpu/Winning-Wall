@@ -4,6 +4,7 @@ import { LiftingProgram, LiftingDay, DayExercise, BankExercise, archiveProgram, 
 import LiftingDayCard from "./LiftingDay";
 import LiftingResults from "./LiftingResults";
 import ProgramComplete from "./ProgramComplete";
+import EditDayModal from "./EditDayModal";
 
 interface Props {
   playerId: string;
@@ -31,6 +32,7 @@ export default function LiftingPrograms({
   const [resultsProgram, setResultsProgram] = useState<LiftingProgram | null>(null);
   const [programLogs, setProgramLogs] = useState<any[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [editingDay, setEditingDay] = useState<LiftingDay | null>(null);
 
   const coachPrograms = programs.filter(p => p.visibility !== "personal");
   const personalPrograms = programs.filter(p => p.visibility === "personal" && p.created_by === playerId);
@@ -96,13 +98,14 @@ export default function LiftingPrograms({
             <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               {prog.title}
               {isPersonal && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 5, background: "rgba(147,180,255,0.15)", color: "#93b4ff" }}>PERSONAL</span>}
+              {prog.visibility === "draft" && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 5, background: "rgba(240,192,64,0.15)", color: "var(--gold)" }}>📝 DRAFT</span>}
               {isArchived && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 5, background: "rgba(255,255,255,0.08)", color: "var(--muted)" }}>ARCHIVED</span>}
             </div>
             {prog.description && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>{prog.description}</div>}
             <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, display: "flex", gap: 10, flexWrap: "wrap" }}>
               <span>{progDays.length} days</span>
               <span>{activeDayCount} training day{activeDayCount !== 1 ? "s" : ""}</span>
-              {!isPersonal && <span style={{ color: prog.visibility === "public" ? "#5de098" : "#93b4ff" }}>{prog.visibility === "public" ? "🌐 Everyone" : "👤 Assigned"}</span>}
+              {!isPersonal && <span style={{ color: prog.visibility === "public" ? "#5de098" : prog.visibility === "draft" ? "var(--gold)" : "#93b4ff" }}>{prog.visibility === "public" ? "🌐 Everyone" : prog.visibility === "draft" ? "📝 Draft" : "👤 Assigned"}</span>}
               {prog.start_date && currentDayNum && <span style={{ color: "var(--gold)" }}>📅 Day {currentDayNum} today</span>}
             </div>
           </div>
@@ -141,18 +144,27 @@ export default function LiftingPrograms({
             ) : logsLoading ? (
               <div style={{ textAlign: "center", color: "var(--muted)", padding: "20px 0" }}>Loading…</div>
             ) : progDays.map(day => (
-              <LiftingDayCard
-                key={day.id}
-                day={day}
-                exercises={dayExercises[day.id] ?? []}
-                logs={programLogs.filter((l: any) => (dayExercises[day.id] ?? []).some(de => de.exercise?.id === l.exercise_id))}
-                playerId={playerId}
-                playerName={playerName}
-                avatarUrl={avatarUrl}
-                isToday={currentDayNum === day.day_number}
-                canManage={canManage}
-                onLogged={onRefresh}
-              />
+              <div key={day.id}>
+                {canManage && (
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
+                    <button onClick={() => setEditingDay(day)}
+                      style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>
+                      ✏️ Edit Day
+                    </button>
+                  </div>
+                )}
+                <LiftingDayCard
+                  day={day}
+                  exercises={dayExercises[day.id] ?? []}
+                  logs={programLogs.filter((l: any) => (dayExercises[day.id] ?? []).some(de => de.exercise?.id === l.exercise_id))}
+                  playerId={playerId}
+                  playerName={playerName}
+                  avatarUrl={avatarUrl}
+                  isToday={currentDayNum === day.day_number}
+                  canManage={canManage}
+                  onLogged={onRefresh}
+                />
+              </div>
             ))}
           </div>
         )}
@@ -226,6 +238,15 @@ export default function LiftingPrograms({
           days={days}
           dayExercises={dayExercises}
           onClose={() => setResultsProgram(null)}
+        />
+      )}
+
+      {editingDay && (
+        <EditDayModal
+          day={editingDay}
+          playerId={playerId}
+          onSaved={onRefresh}
+          onClose={() => setEditingDay(null)}
         />
       )}
     </>
