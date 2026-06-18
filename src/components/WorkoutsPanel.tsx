@@ -85,6 +85,14 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
       let finalReps = parseInt(reps) || 0;
       const finalSelfPoints = activeWorkout.scoring_type === "flat" ? (activeWorkout.flat_points ?? 0) : parseInt(selfPoints) || 0;
       if (activeWorkout.scoring_type === "multi_spot") { finalMade = multiSpotTotal(); finalReps = 0; }
+
+      // Guard: don't submit if all values are zero (nothing entered)
+      const finalSprints = parseFloat(sprintSecs) || 0;
+      if (activeWorkout.scoring_type !== "flat" && finalMade === 0 && finalReps === 0 && finalSprints === 0 && finalSelfPoints === 0) {
+        showToast("Please enter a score before submitting.");
+        setSaving(false);
+        return;
+      }
       const localDate = new Date().toLocaleDateString("en-CA");
       const result = await _submitScore({ player_id: playerId, workout_id: activeWorkout.id, made: finalMade, attempts: 0, sprint_secs: parseFloat(sprintSecs) || 0, reps: finalReps, self_points: finalSelfPoints, local_date: localDate } as any);
       const isPersonalBest: boolean = result.isPersonalBest;
