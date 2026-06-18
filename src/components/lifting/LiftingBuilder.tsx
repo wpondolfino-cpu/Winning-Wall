@@ -55,7 +55,7 @@ const AHS_PROGRAMS = [
 export default function LiftingBuilder({ playerId, editProgram, editDays, editDayExercises, isPersonal, onSaved, onCancel }: Props) {
   const [title, setTitle] = useState(editProgram?.title ?? "");
   const [desc, setDesc] = useState(editProgram?.description ?? "");
-  const [visibility, setVisibility] = useState<"public" | "assigned" | "personal">(editProgram?.visibility ?? (isPersonal ? "personal" : "public"));
+  const [visibility, setVisibility] = useState<"public" | "assigned" | "personal" | "draft">(editProgram?.visibility ?? (isPersonal ? "personal" : "draft"));
   const [startDate, setStartDate] = useState(editProgram?.start_date ?? "");
   const [days, setDays] = useState<BuilderDay[]>([]);
   const [allPlayers, setAllPlayers] = useState<any[]>([]);
@@ -321,8 +321,12 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
         {!isPersonal && (
           <div>
             <label>Visibility</label>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 6 }}>
-              {([{ val: "public", icon: "🌐", label: "Everyone", sub: "All players see this" }, { val: "assigned", icon: "👤", label: "Specific Players", sub: "Assigned players only" }] as const).map(opt => (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 6 }}>
+              {([
+                { val: "draft", icon: "📝", label: "Draft", sub: "Only coaches see this" },
+                { val: "public", icon: "🌐", label: "Everyone", sub: "All players see this" },
+                { val: "assigned", icon: "👤", label: "Specific Players", sub: "Assigned players only" },
+              ] as const).map(opt => (
                 <div key={opt.val} onClick={() => setVisibility(opt.val)} style={{ padding: 12, borderRadius: 10, cursor: "pointer", border: `2px solid ${visibility === opt.val ? "var(--royal-light)" : "var(--border)"}`, background: visibility === opt.val ? "rgba(26,63,168,0.15)" : "var(--surface2)" }}>
                   <div style={{ fontSize: 22, marginBottom: 4 }}>{opt.icon}</div>
                   <div style={{ fontWeight: 600, fontSize: 12, color: "var(--text)", marginBottom: 3 }}>{opt.label}</div>
@@ -330,6 +334,11 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
                 </div>
               ))}
             </div>
+            {visibility === "draft" && (
+              <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, fontSize: 12, color: "var(--gold)" }}>
+                📝 Draft — players cannot see this program. Change to Everyone or Specific Players when ready to share.
+              </div>
+            )}
           </div>
         )}
 
