@@ -217,18 +217,16 @@ export default function LiftingPrograms({
                 let label: string;
                 let weekNum: number;
 
-                if (hasWeekNames) {
-                  const match = day.name.match(/week\s*(\d+)/i);
-                  if (match) {
-                    weekNum = parseInt(match[1]);
-                    key = `week-${weekNum}`;
-                    label = `Week ${weekNum}`;
-                  } else {
-                    // Pre/post test days — own group
-                    key = `special-${di}`;
-                    label = day.name;
-                    weekNum = day.day_number === 0 ? -1 : 999;
-                  }
+                const weekMatch = day.name.match(/week\s*(\d+)/i);
+                if (hasWeekNames && weekMatch) {
+                  weekNum = parseInt(weekMatch[1]);
+                  key = `week-${weekNum}`;
+                  label = `Week ${weekNum}`;
+                } else if (hasWeekNames) {
+                  // Pre/post test — no "Week X" in name, own group
+                  key = `special-${di}`;
+                  label = day.name;
+                  weekNum = day.day_number === 0 ? -1 : 999;
                 } else {
                   weekNum = Math.floor(di / 7) + 1;
                   key = `week-${weekNum}`;
