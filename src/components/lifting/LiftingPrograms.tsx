@@ -223,10 +223,11 @@ export default function LiftingPrograms({
                   key = `week-${weekNum}`;
                   label = `Week ${weekNum}`;
                 } else if (hasWeekNames) {
-                  // Pre/post test — no "Week X" in name, own group
+                  // Pre/post test — no "Week X" at start of name, own group
                   key = `special-${di}`;
                   label = day.name;
-                  weekNum = day.day_number === 0 ? -1 : 999;
+                  // Use index: first day = pre-test (-1), anything else = post-test (999)
+                  weekNum = di === 0 ? -1 : 999;
                 } else {
                   weekNum = Math.floor(di / 7) + 1;
                   key = `week-${weekNum}`;
