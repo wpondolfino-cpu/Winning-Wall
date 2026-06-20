@@ -512,14 +512,14 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
               // Group by "Week X" in name, or fall back to chunks of 7
               const weekMap: Record<string, { weekNum: number; label: string; days: { day: typeof days[0]; di: number }[] }> = {};
               // Check if any day has "Week" in its name
-              const hasWeekNames = days.some(d => /week\s*\d+/i.test(d.name));
+              const hasWeekNames = days.some(d => /^week\s*\d+/i.test(d.name));
 
               days.forEach((day, di) => {
                 let key: string;
                 let label: string;
                 let weekNum: number;
 
-                const weekMatch = day.name.match(/week\s*(\d+)/i);
+                const weekMatch = day.name.match(/^week\s*(\d+)/i);
                 if (hasWeekNames && weekMatch) {
                   weekNum = parseInt(weekMatch[1]);
                   key = `week-${weekNum}`;
