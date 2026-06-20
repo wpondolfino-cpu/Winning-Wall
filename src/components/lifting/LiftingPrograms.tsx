@@ -21,6 +21,70 @@ interface Props {
   onRefresh: () => void;
 }
 
+// ── ProgramWeekGroup ──────────────────────────────────────────
+function ProgramWeekGroup({ label, days, dayExercises, programLogs, playerId, playerName, avatarUrl, currentDayNum, canManage, onRefresh, onEditDay, defaultOpen }: {
+  label: string;
+  days: LiftingDay[];
+  dayExercises: Record<string, (DayExercise & { exercise: BankExercise })[]>;
+  programLogs: any[];
+  playerId: string;
+  playerName: string;
+  avatarUrl?: string;
+  currentDayNum: number | null;
+  canManage: boolean;
+  onRefresh: () => void;
+  onEditDay: (day: LiftingDay) => void;
+  defaultOpen: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const isSpecial = days.length === 1 && !/week\s*\d+/i.test(label);
+  const activeDays = days.filter(d => !d.is_rest_day).length;
+  const hasToday = days.some(d => d.day_number === currentDayNum);
+
+  if (isSpecial) {
+    const day = days[0];
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {canManage && (
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button onClick={() => onEditDay(day)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit Day</button>
+          </div>
+        )}
+        <LiftingDayCard day={day} exercises={dayExercises[day.id] ?? []} logs={programLogs.filter((l: any) => (dayExercises[day.id] ?? []).some(de => de.exercise?.id === l.exercise_id))} playerId={playerId} playerName={playerName} avatarUrl={avatarUrl} isToday={currentDayNum === day.day_number} canManage={canManage} onLogged={onRefresh} />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ border: `1px solid ${hasToday ? "rgba(26,63,168,0.5)" : "var(--border)"}`, borderRadius: 12, overflow: "hidden" }}>
+      <div onClick={() => setOpen(o => !o)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", cursor: "pointer", background: hasToday ? "rgba(26,63,168,0.15)" : open ? "rgba(26,63,168,0.06)" : "var(--surface2)", userSelect: "none" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: hasToday ? "#93b4ff" : "var(--text)" }}>{label}</div>
+          {hasToday && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: "var(--royal)", color: "#fff" }}>TODAY</span>}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 11, color: "var(--muted)" }}>{activeDays} training · {days.length - activeDays} rest</span>
+          <span style={{ fontSize: 14, color: "var(--muted)" }}>{open ? "▲" : "▼"}</span>
+        </div>
+      </div>
+      {open && (
+        <div style={{ borderTop: "1px solid var(--border)", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+          {days.map(day => (
+            <div key={day.id}>
+              {canManage && (
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
+                  <button onClick={() => onEditDay(day)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit Day</button>
+                </div>
+              )}
+              <LiftingDayCard day={day} exercises={dayExercises[day.id] ?? []} logs={programLogs.filter((l: any) => (dayExercises[day.id] ?? []).some(de => de.exercise?.id === l.exercise_id))} playerId={playerId} playerName={playerName} avatarUrl={avatarUrl} isToday={currentDayNum === day.day_number} canManage={canManage} onLogged={onRefresh} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function LiftingPrograms({
   playerId, playerName, avatarUrl, canManage,
   programs, archivedPrograms, days, dayExercises, allPlayerLogs,
@@ -143,29 +207,58 @@ export default function LiftingPrograms({
               />
             ) : logsLoading ? (
               <div style={{ textAlign: "center", color: "var(--muted)", padding: "20px 0" }}>Loading…</div>
-            ) : progDays.map(day => (
-              <div key={day.id}>
-                {canManage && (
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
-                    <button onClick={() => setEditingDay(day)}
-                      style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>
-                      ✏️ Edit Day
-                    </button>
-                  </div>
-                )}
-                <LiftingDayCard
-                  day={day}
-                  exercises={dayExercises[day.id] ?? []}
-                  logs={programLogs.filter((l: any) => (dayExercises[day.id] ?? []).some(de => de.exercise?.id === l.exercise_id))}
+            ) : (() => {
+              // Group days by week using name, same logic as builder
+              const hasWeekNames = progDays.some((d: LiftingDay) => /week\s*\d+/i.test(d.name));
+              const weekMap: Record<string, { weekNum: number; label: string; days: LiftingDay[] }> = {};
+
+              progDays.forEach((day: LiftingDay, di: number) => {
+                let key: string;
+                let label: string;
+                let weekNum: number;
+
+                if (hasWeekNames) {
+                  const match = day.name.match(/week\s*(\d+)/i);
+                  if (match) {
+                    weekNum = parseInt(match[1]);
+                    key = `week-${weekNum}`;
+                    label = `Week ${weekNum}`;
+                  } else {
+                    // Pre/post test days — own group
+                    key = `special-${di}`;
+                    label = day.name;
+                    weekNum = day.day_number === 0 ? -1 : 999;
+                  }
+                } else {
+                  weekNum = Math.floor(di / 7) + 1;
+                  key = `week-${weekNum}`;
+                  label = `Week ${weekNum}`;
+                }
+
+                if (!weekMap[key]) weekMap[key] = { weekNum, label, days: [] };
+                weekMap[key].days.push(day);
+              });
+
+              const sorted = Object.values(weekMap).sort((a, b) => a.weekNum - b.weekNum);
+
+              return sorted.map(({ label, days: weekDays }, idx) => (
+                <ProgramWeekGroup
+                  key={label}
+                  label={label}
+                  days={weekDays}
+                  dayExercises={dayExercises}
+                  programLogs={programLogs}
                   playerId={playerId}
                   playerName={playerName}
                   avatarUrl={avatarUrl}
-                  isToday={currentDayNum === day.day_number}
+                  currentDayNum={currentDayNum}
                   canManage={canManage}
-                  onLogged={onRefresh}
+                  onRefresh={onRefresh}
+                  onEditDay={setEditingDay}
+                  defaultOpen={idx === 0}
                 />
-              </div>
-            ))}
+              ));
+            })()}
           </div>
         )}
       </div>
