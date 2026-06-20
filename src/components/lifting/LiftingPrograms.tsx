@@ -209,7 +209,7 @@ export default function LiftingPrograms({
               <div style={{ textAlign: "center", color: "var(--muted)", padding: "20px 0" }}>Loading…</div>
             ) : (() => {
               // Group days by week using name, same logic as builder
-              const hasWeekNames = progDays.some((d: LiftingDay) => /week\s*\d+/i.test(d.name));
+              const hasWeekNames = progDays.some((d: LiftingDay) => /^week\s*\d+/i.test(d.name));
               const weekMap: Record<string, { weekNum: number; label: string; days: LiftingDay[] }> = {};
 
               progDays.forEach((day: LiftingDay, di: number) => {
@@ -217,7 +217,7 @@ export default function LiftingPrograms({
                 let label: string;
                 let weekNum: number;
 
-                const weekMatch = day.name.match(/week\s*(\d+)/i);
+                const weekMatch = day.name.match(/^week\s*(\d+)/i);
                 if (hasWeekNames && weekMatch) {
                   weekNum = parseInt(weekMatch[1]);
                   key = `week-${weekNum}`;
