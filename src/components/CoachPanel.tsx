@@ -36,6 +36,8 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
   const [secondPts, setSecondPts] = useState("3");
   const [thirdPts, setThirdPts]   = useState("1");
   const [flatPoints, setFlatPoints]     = useState("50");
+  const [timerDuration, setTimerDuration] = useState<number | null>(null);
+  const [publishDate, setPublishDate]     = useState("");
   const [groupName, setGroupName]       = useState("");
   const [isActive, setIsActive]         = useState(true);
   const [deadline, setDeadline]         = useState("");
@@ -158,6 +160,8 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
     setSecondPts(w.second_place_pts?.toString() ?? "2");
     setThirdPts(w.third_place_pts?.toString() ?? "1");
     setFlatPoints(w.flat_points?.toString() ?? "50");
+    setTimerDuration((w as any).timer_duration ?? null);
+    setPublishDate((w as any).publish_date ?? "");
     setGroupName(w.group_name ?? "");
     setIsActive(w.is_active ?? true);
     setDeadline(w.deadline ? new Date(w.deadline).toISOString().split("T")[0] : "");
@@ -194,6 +198,8 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
         scoring_type: scoringType,
         scoring_metric: scoringType === "competitive" ? scoringMetric : undefined,
         flat_points: scoringType === "flat" ? parseInt(flatPoints) : undefined,
+        timer_duration: timerDuration,
+        publish_date: publishDate || undefined,
         first_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(firstPts) || 3 : undefined,
         second_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(secondPts) || 2 : undefined,
         third_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(thirdPts) || 1 : undefined,
@@ -219,6 +225,8 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
         scoring_type: scoringType,
         scoring_metric: scoringType === "competitive" ? scoringMetric : null,
         flat_points: scoringType === "flat" ? parseInt(flatPoints) : null,
+        timer_duration: timerDuration,
+        publish_date: publishDate || null,
         first_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(firstPts) || 3 : null,
         second_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(secondPts) || 2 : null,
         third_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(thirdPts) || 1 : null,
@@ -313,6 +321,17 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
             min={new Date().toISOString().split("T")[0]}
             style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
           {deadline && <div style={{ fontSize: 11, color: "var(--gold)", marginTop: 4 }}>⏰ Players will see a countdown to this date</div>}
+        </div>
+
+        <div style={{ marginBottom: 4 }}>
+          <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Publish Date (optional)</label>
+          <input type="date" value={publishDate} onChange={e => setPublishDate(e.target.value)}
+            style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+          {publishDate ? (
+            <div style={{ fontSize: 11, color: "#93b4ff", marginTop: 4 }}>📅 Hidden from players until {new Date(publishDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
+          ) : (
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Leave blank to show immediately (when visible toggle is on)</div>
+          )}
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)" }}>
@@ -464,6 +483,32 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
           <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, lineHeight: 1.5 }}>
             Paste any link — Google Doc, Google Sheet, PDF, Dropbox, etc. Make sure it's set to "Anyone with the link can view."
           </div>
+        </div>
+
+        {/* Timer toggle */}
+        <div>
+          <label>⏱ Drill Timer <span style={{ fontWeight: 400, color: "var(--muted)" }}>(optional)</span></label>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Show a countdown timer in the drill — great for timed drills like 17s, ball handling, conditioning</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: timerDuration !== null ? 10 : 0 }}>
+            <div onClick={() => setTimerDuration(timerDuration !== null ? null : 30)}
+              style={{ width: 46, height: 26, borderRadius: 13, cursor: "pointer", flexShrink: 0, background: timerDuration !== null ? "var(--royal)" : "var(--surface2)", position: "relative", transition: "background .2s", border: "1px solid var(--border)" }}>
+              <div style={{ position: "absolute", top: 3, left: timerDuration !== null ? 22 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .2s" }} />
+            </div>
+            <span style={{ fontSize: 12, color: timerDuration !== null ? "#5de098" : "var(--muted)", fontWeight: 600 }}>{timerDuration !== null ? "Timer On" : "No Timer"}</span>
+          </div>
+          {timerDuration !== null && (
+            <div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Default duration</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {[15, 30, 45, 60, 90, 120].map(s => (
+                  <button key={s} onClick={() => setTimerDuration(s)} type="button"
+                    style={{ background: timerDuration === s ? "rgba(147,180,255,0.2)" : "var(--surface2)", border: `1px solid ${timerDuration === s ? "#93b4ff" : "var(--border)"}`, color: timerDuration === s ? "#93b4ff" : "var(--muted)", borderRadius: 8, padding: "5px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>
+                    {s < 60 ? `${s}s` : `${s/60}m`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {error && <div className="error-msg">{error}</div>}
