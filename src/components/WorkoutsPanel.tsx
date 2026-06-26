@@ -1,6 +1,7 @@
 // src/components/WorkoutsPanel.tsx
 import { useState, useEffect, useRef } from "react";
 import { supabase, Workout, Score, submitScore as _submitScore, getVideoId, updateStreak, STREAK_BONUS_DAYS, STREAK_BONUS_PTS } from "../lib/supabase";
+import DrillTimer from "./DrillTimer";
 
 interface Props {
   workouts: Workout[];
@@ -22,7 +23,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
   async function loadRankedCompletion() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const activeWorkouts = workouts.filter(w => w.is_active !== false);
+    const activeWorkouts = workouts.filter(w => w.is_active !== false && (!(w as any).publish_date || (w as any).publish_date <= new Date().toISOString().split('T')[0]));
     const groupNames = Array.from(new Set(activeWorkouts.map(w => w.group_name).filter(Boolean)));
     const currentGroup = groupNames.length === 1 ? groupNames[0] : null;
     const rankedWorkouts = activeWorkouts.filter(w =>
@@ -224,7 +225,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
         )}
 
         {(() => {
-          const activeWorkouts = workouts.filter(w => w.is_active !== false);
+          const activeWorkouts = workouts.filter(w => w.is_active !== false && (!(w as any).publish_date || (w as any).publish_date <= new Date().toISOString().split('T')[0]));
           const groupNames = Array.from(new Set(activeWorkouts.map(w => w.group_name).filter(Boolean)));
           return groupNames.length === 1 ? (
             <div style={{ marginBottom: 16, padding: "8px 14px", background: "rgba(26,63,168,0.15)", borderRadius: 8, fontSize: 13, color: "#93b4ff", fontWeight: 600, border: "1px solid rgba(26,63,168,0.25)" }}>📁 {groupNames[0]}</div>
@@ -248,7 +249,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
         )}
 
         <div className="workout-grid">
-          {[...workouts.filter(w => w.is_active !== false)].sort((a, b) => {
+          {[...workouts.filter(w => w.is_active !== false && (!(w as any).publish_date || (w as any).publish_date <= new Date().toISOString().split('T')[0]))].sort((a, b) => {
             const ranked = (t: string) => t === "competitive" || t === "multi_spot" ? 0 : 1;
             return ranked(a.scoring_type) - ranked(b.scoring_type);
           }).map(w => {
@@ -360,6 +361,15 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
             )}
 
             <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0 16px", opacity: 0.5 }} />
+
+            {/* Drill Timer — shown if coach enabled it for this workout */}
+            {(activeWorkout as any).timer_duration && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>⏱ Drill Timer</div>
+                <DrillTimer defaultSeconds={(activeWorkout as any).timer_duration} compact={true} />
+              </div>
+            )}
+
             <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>📊 Log Your Score</div>
 
             {scoreFor(activeWorkout.id) && activeWorkout.scoring_type !== "multi_spot" && (() => {
