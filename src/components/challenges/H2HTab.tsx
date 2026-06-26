@@ -1,7 +1,7 @@
 // src/components/H2HTab.tsx
 import { useState, useEffect, useCallback } from "react";
-import { supabase, Score, Workout, submitScore, awardChallengeWinBonus, awardXp, XP_CHALLENGE_SENT, XP_CHALLENGE_DONE, getXpPerks } from "../lib/supabase";
-import { useLeaderboard } from "../hooks/useLeaderboard";
+import { supabase, Score, Workout, submitScore, awardChallengeWinBonus, awardXp, XP_CHALLENGE_SENT, XP_CHALLENGE_DONE, getXpPerks } from "../../lib/supabase";
+import { useLeaderboard } from "../../hooks/useLeaderboard";
 
 interface Props {
   currentUserId: string;
@@ -47,7 +47,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
   const activeWorkouts = workouts.filter(w => w.is_active !== false && w.scoring_type === "competitive");
   const challengesThreshold = xpPerks.length > 0
     ? (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) : 150;
-  const opponents = leaderboard.filter(e => e.id !== currentUserId && (e.total_xp ?? 0) >= challengesThreshold);
+  const opponents = leaderboard.filter((e: any) => e.id !== currentUserId && (e.total_xp ?? 0) >= challengesThreshold);
 
   const expireChallenges = useCallback(async () => {
     const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
@@ -89,7 +89,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
     setSending(true);
     try {
       const workout  = workouts.find(w => w.id === selectedWorkout);
-      const opponent = leaderboard.find(e => e.id === selectedOpponent);
+      const opponent = leaderboard.find((e: any) => e.id === selectedOpponent);
       const since24h = new Date(Date.now() - 86400000).toISOString();
       const { data: recentAttempts } = await supabase.from("score_attempts").select("*")
         .eq("player_id", currentUserId).eq("workout_id", selectedWorkout).gte("attempted_at", since24h);
@@ -111,7 +111,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
     setSending(true);
     try {
       const workout  = workouts.find(w => w.id === selectedWorkout);
-      const opponent = leaderboard.find(e => e.id === selectedOpponent);
+      const opponent = leaderboard.find((e: any) => e.id === selectedOpponent);
       await submitScore({ player_id: currentUserId, workout_id: selectedWorkout, made: score, attempts: 0, sprint_secs: 0, reps: 0, self_points: 0 }).catch(console.warn);
       await createChallenge(selectedOpponent, opponent?.name ?? "Unknown", selectedWorkout, workout?.title ?? "Unknown", score);
       setNeedsScore(false); setChallengeScore(""); onScoreLogged?.();
@@ -276,7 +276,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
               <select value={selectedOpponent} onChange={e => setSelectedOpponent(e.target.value)}
                 style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
                 <option value="">Select a player…</option>
-                {opponents.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                {opponents.map((o: any) => <option key={o.id} value={o.id}>{o.name}</option>)}
               </select>
               {opponents.length === 0 && <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)", padding: "8px 12px", background: "rgba(255,107,107,0.08)", border: "1px solid rgba(255,107,107,0.2)", borderRadius: 8 }}>No eligible opponents yet — other players need to reach {challengesThreshold} XP to unlock challenges.</div>}
             </div>
