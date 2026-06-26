@@ -20,8 +20,8 @@ import PerkTutorial from "./components/PerkTutorial";
 import LiftingPanel from "./components/lifting";
 
 type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "more";
-type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "profile";
-type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "profile";
+type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "profile";
+type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "profile";
 
 export default function App() {
   const { user, profile, authState } = useAuth();
@@ -230,6 +230,7 @@ export default function App() {
                 {pendingApprovals > 0 && <span style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{pendingApprovals}</span>}
               </div>
               <div className={`nav-item ${coachTab==="hof"?"active":""}`} onClick={()=>{setCoachTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👑</span> Hall of Fame</div>
+              <div className={`nav-item ${coachTab==="challenges"?"active":""}`} onClick={()=>{setCoachTab("challenges");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">⚔️</span> Challenges</div>
               <div className={`nav-item ${coachTab==="profile"?"active":""}`} onClick={()=>{setCoachTab("profile");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👤</span> My Profile</div>
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
               <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)" }}><span className="nav-icon">🚪</span> Sign Out</div>
@@ -245,6 +246,7 @@ export default function App() {
               </div>
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
               <div className={`nav-item ${adminTab==="hof"?"active":""}`} onClick={()=>{setAdminTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="hof" ? "var(--gold)" : undefined }}><span className="nav-icon">👑</span> Hall of Fame</div>
+              <div className={`nav-item ${adminTab==="challenges"?"active":""}`} onClick={()=>{setAdminTab("challenges");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="challenges" ? "var(--gold)" : undefined }}><span className="nav-icon">⚔️</span> Challenges</div>
               <div className={`nav-item ${adminTab==="admin"?"active":""}`} onClick={()=>{setAdminTab("admin");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="admin" ? "var(--gold)" : undefined }}><span className="nav-icon">👑</span> Admin</div>
               <div className={`nav-item ${adminTab==="settings"?"active":""}`} onClick={()=>{setAdminTab("settings");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="settings" ? "var(--gold)" : undefined }}><span className="nav-icon">⚙️</span> Settings</div>
               <div className={`nav-item ${adminTab==="profile"?"active":""}`} onClick={()=>{setAdminTab("profile");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="profile" ? "var(--gold)" : undefined }}><span className="nav-icon">👤</span> My Profile</div>
@@ -321,6 +323,9 @@ export default function App() {
           {isCoach && coachTab === "leaderboard" && <Leaderboard />}
           {isCoach && coachTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isCoach={true} />}
           {isCoach && coachTab === "hof" && <HallOfFame canDelete={true} />}
+          {isCoach && coachTab === "challenges" && (
+            <ChallengesPanel currentUserId={user.id} currentUserName={displayProfile.name} workouts={workouts} myScores={myScores} onScoreLogged={loadMyScores} canManage={true} />
+          )}
           {isCoach && coachTab === "players" && <PlayersPanel allScores={allScores} workouts={workouts} />}
           {isCoach && coachTab === "profile" && (
             <div className="panel active">
@@ -335,6 +340,9 @@ export default function App() {
           {isAdmin && adminTab === "leaderboard" && <Leaderboard />}
           {isAdmin && adminTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isAdmin={true} />}
           {isAdmin && adminTab === "hof" && <HallOfFame canDelete={true} />}
+          {isAdmin && adminTab === "challenges" && (
+            <ChallengesPanel currentUserId={user.id} currentUserName={displayProfile.name} workouts={workouts} myScores={myScores} onScoreLogged={loadMyScores} canManage={true} />
+          )}
           {isAdmin && adminTab === "players" && <PlayersPanel allScores={allScores} workouts={workouts} />}
           {isAdmin && adminTab === "admin" && <AdminPanel />}
           {isAdmin && adminTab === "settings" && (
