@@ -1,6 +1,6 @@
 // src/components/TeamsTab.tsx
 import { useState, useEffect } from "react";
-import { supabase, getActiveTeamCompetition, getTeams, TeamCompetition, Team } from "../lib/supabase";
+import { supabase, getActiveTeamCompetition, getTeams, TeamCompetition, Team } from "../../lib/supabase";
 
 interface Props { currentUserId: string; }
 
@@ -31,7 +31,7 @@ export default function TeamsTab({ currentUserId }: Props) {
     setTeamProfiles(profs ?? []);
     const me = (profs ?? []).find((p: any) => p.id === currentUserId);
     if (me?.team_id) {
-      const mine = t.find(tm => tm.id === me.team_id) ?? null;
+      const mine = t.find((tm: any) => tm.id === me.team_id) ?? null;
       setMyTeam(mine);
       const createdAt = (comp as any).created_at;
       if (createdAt) {
