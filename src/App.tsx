@@ -15,7 +15,7 @@ import AdminPanel from "./components/AdminPanel";
 import AdminSettings from "./components/AdminSettings";
 import InstallPrompt from "./components/InstallPrompt";
 import ChangePassword from "./components/ChangePassword";
-import HeadToHead from "./components/HeadToHead";
+import ChallengesPanel from "./components/challenges/ChallengesPanel";
 import PerkTutorial from "./components/PerkTutorial";
 import LiftingPanel from "./components/lifting";
 
@@ -282,7 +282,14 @@ export default function App() {
               </div>
             </div>
           ) : isPlayer && playerTab === "h2h" && (
-            <HeadToHead currentUserId={user.id} currentUserName={displayProfile.name} workouts={workouts} myScores={myScores} onScoreLogged={loadMyScores} />
+            <ChallengesPanel
+              currentUserId={user.id}
+              currentUserName={displayProfile.name}
+              workouts={workouts}
+              myScores={myScores}
+              onScoreLogged={loadMyScores}
+              canManage={false}
+            />
           )}
           {isPlayer && playerTab === "more" && (
             <div className="panel active">
