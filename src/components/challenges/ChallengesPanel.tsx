@@ -1,7 +1,7 @@
 // src/components/ChallengesPanel.tsx
 // Thin wrapper — tabs + routing only. Logic lives in sub-components.
 import { useState, useEffect } from "react";
-import { Score, Workout } from "../lib/supabase";
+import { Score, Workout } from "../../lib/supabase";
 import H2HTab from "./H2HTab";
 import TeamsTab from "./TeamsTab";
 import StatsTab from "./StatsTab";
