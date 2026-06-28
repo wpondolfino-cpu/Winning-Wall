@@ -142,14 +142,25 @@ export async function submitScore(
       saved = existing as Score;
     }
 
-    // Rerank everyone on this workout
-    const { error: rankError } = await supabase.rpc("rerank_workout", {
-      p_workout_id: score.workout_id,
-      p_first_pts:  firstPts,
-      p_second_pts: secondPts,
-      p_third_pts:  thirdPts,
-    });
-    if (rankError) console.error("Re-rank error:", rankError);
+    // Only rerank if workout belongs to an active group (or has no group)
+    // Previous group workouts still accept logs + personal bests but don't affect ranking
+    const { data: groupData } = await supabase
+      .from("workouts")
+      .select("group_id, workout_groups(status)")
+      .eq("id", score.workout_id)
+      .maybeSingle();
+    const groupStatus = (groupData as any)?.workout_groups?.status ?? null;
+    const shouldRerank = groupStatus === null || groupStatus === "active";
+
+    if (shouldRerank) {
+      const { error: rankError } = await supabase.rpc("rerank_workout", {
+        p_workout_id: score.workout_id,
+        p_first_pts:  firstPts,
+        p_second_pts: secondPts,
+        p_third_pts:  thirdPts,
+      });
+      if (rankError) console.error("Re-rank error:", rankError);
+    }
 
     // Personal best bonus point (+1) when genuinely beating a previous score
     if (isPersonalBest && previousBest !== null) {
