@@ -22,6 +22,81 @@ const TAG_COLORS: Record<string, string> = {
 };
 
 export default function CoachPanel({ workouts, onPublished }: Props) {
+  // ── Group management ──────────────────────────────────────
+  const [groups, setGroups]             = useState<any[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(true);
+  const [showGroupForm, setShowGroupForm] = useState(false);
+  const [newGroupName, setNewGroupName]   = useState("");
+  const [newGroupDesc, setNewGroupDesc]   = useState("");
+  const [savingGroup, setSavingGroup]     = useState(false);
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+
+  useEffect(() => { loadGroups(); }, []);
+
+  async function loadGroups() {
+    setGroupsLoading(true);
+    const { data } = await supabase
+      .from("workout_groups")
+      .select("*")
+      .order("created_at", { ascending: false });
+    setGroups(data ?? []);
+    setGroupsLoading(false);
+  }
+
+  async function createGroup() {
+    if (!newGroupName.trim()) return;
+    setSavingGroup(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error } = await supabase.from("workout_groups").insert({
+        name: newGroupName.trim(),
+        description: newGroupDesc.trim() || null,
+        status: "draft",
+        created_by: user?.id,
+      });
+      if (error) throw error;
+      setNewGroupName(""); setNewGroupDesc(""); setShowGroupForm(false);
+      await loadGroups();
+    } catch (e: any) { alert("Error: " + e.message); }
+    finally { setSavingGroup(false); }
+  }
+
+  async function publishGroup(groupId: string) {
+    if (!window.confirm("Publish this group? All workouts in it will become visible to players immediately.")) return;
+    // Deactivate any currently active group first
+    const currentActive = groups.find(g => g.status === "active");
+    if (currentActive && currentActive.id !== groupId) {
+      await supabase.from("workout_groups").update({ status: "archived" }).eq("id", currentActive.id);
+      await supabase.from("workouts").update({ is_active: false }).eq("group_id", currentActive.id);
+    }
+    await supabase.from("workout_groups").update({ status: "active" }).eq("id", groupId);
+    await supabase.from("workouts").update({ is_active: true }).eq("group_id", groupId);
+    await loadGroups();
+    onPublished();
+  }
+
+  async function archiveGroup(groupId: string) {
+    if (!window.confirm("Archive this group? Workouts will be hidden from players but all scores are preserved.")) return;
+    await supabase.from("workout_groups").update({ status: "archived" }).eq("id", groupId);
+    await supabase.from("workouts").update({ is_active: false }).eq("group_id", groupId);
+    await loadGroups();
+    onPublished();
+  }
+
+  async function deleteGroup(groupId: string, groupName: string) {
+    if (!window.confirm(`Delete group "${groupName}"?\n\nWorkouts in this group will be unlinked but not deleted. This cannot be undone.`)) return;
+    await supabase.from("workouts").update({ group_id: null }).eq("group_id", groupId);
+    await supabase.from("workout_groups").delete().eq("id", groupId);
+    await loadGroups();
+    onPublished();
+  }
+
+  const STATUS_COLOR: Record<string, { bg: string; color: string; label: string }> = {
+    draft:    { bg: "rgba(240,192,64,0.12)",  color: "var(--gold)",  label: "📝 Draft"    },
+    active:   { bg: "rgba(40,180,80,0.12)",   color: "#5de098",      label: "🌐 Live"     },
+    archived: { bg: "rgba(255,255,255,0.06)", color: "var(--muted)", label: "📦 Archived" },
+  };
+
   const [showBuilder, setShowBuilder]   = useState(false);
   const [editWorkout, setEditWorkout]   = useState<Workout | null>(null);
   const [title, setTitle]               = useState("");
@@ -39,6 +114,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
   const [timerDuration, setTimerDuration] = useState<number | null>(null);
   const [publishDate, setPublishDate]     = useState("");
   const [groupName, setGroupName]       = useState("");
+  const [groupId, setGroupId]           = useState<string | null>(null);
   const [isActive, setIsActive]         = useState(true);
   const [deadline, setDeadline]         = useState("");
   const [spotNames, setSpotNames] = useState<string[]>(["Spot 1", "Spot 2", "Spot 3", "Spot 4", "Spot 5"]);
@@ -140,7 +216,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
     setTitle(""); setDesc(""); setVideoUrl(""); setResourceUrl(""); setEmoji("🏀");
     setCategory("Shooting"); setScoringType("competitive");
     setScoringMetric("shots made"); setFlatPoints("50");
-    setGroupName(""); setIsActive(true); setDeadline(""); setError("");
+    setGroupName(""); setGroupId(null); setIsActive(true); setDeadline(""); setError("");
     setSpotNames(["Spot 1", "Spot 2", "Spot 3", "Spot 4", "Spot 5"]);
     setShowBuilder(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -163,6 +239,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
     setTimerDuration((w as any).timer_duration ?? null);
     setPublishDate((w as any).publish_date ?? "");
     setGroupName(w.group_name ?? "");
+    setGroupId((w as any).group_id ?? null);
     setIsActive(w.is_active ?? true);
     setDeadline(w.deadline ? new Date(w.deadline).toISOString().split("T")[0] : "");
     setSpotNames((w as any).spot_config ?? ["Spot 1", "Spot 2", "Spot 3", "Spot 4", "Spot 5"]);
@@ -204,6 +281,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
         second_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(secondPts) || 2 : undefined,
         third_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(thirdPts) || 1 : undefined,
         group_name: groupName.trim() || undefined,
+        group_id: groupId ?? undefined,
         is_active: isActive,
         deadline: deadline ? new Date(deadline + "T23:59:59").toISOString() : undefined,
         ...(scoringType === "multi_spot" ? { spot_config: spotNames.filter(s => s.trim()) } : {}),
@@ -231,6 +309,7 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
         second_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(secondPts) || 2 : null,
         third_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(thirdPts) || 1 : null,
         group_name: groupName.trim() || null,
+        group_id: groupId ?? null,
         is_active: isActive,
         deadline: deadline ? new Date(deadline + "T23:59:59").toISOString() : null,
         spot_config: scoringType === "multi_spot" ? spotNames.filter(s => s.trim()) : null,
@@ -311,8 +390,27 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
         </div>
 
         <div>
-          <label>Workout Group <span style={{ color: "var(--muted)", fontWeight: 400 }}>(e.g. "Week 1 & 2")</span></label>
-          <input value={groupName} onChange={e => setGroupName(e.target.value)} placeholder="e.g. Week 1 & 2" />
+          <label>Workout Group <span style={{ color: "var(--muted)", fontWeight: 400 }}>(assigns this workout to a group)</span></label>
+          <select value={groupId ?? ""} onChange={e => {
+            const val = e.target.value;
+            setGroupId(val || null);
+            const g = groups.find(g => g.id === val);
+            setGroupName(g?.name ?? "");
+          }} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+            <option value="">No group (ungrouped)</option>
+            {groups.filter(g => g.status !== "archived").map(g => (
+              <option key={g.id} value={g.id}>{g.name} — {g.status === "active" ? "🌐 Live" : "📝 Draft"}</option>
+            ))}
+          </select>
+          {groupId && (() => {
+            const g = groups.find(g => g.id === groupId);
+            if (!g) return null;
+            return (
+              <div style={{ fontSize: 11, marginTop: 4, color: g.status === "active" ? "#5de098" : "var(--gold)" }}>
+                {g.status === "active" ? "🌐 This workout will be visible to players immediately" : "📝 Draft — hidden from players until you publish the group"}
+              </div>
+            );
+          })()}
         </div>
 
         <div style={{ marginBottom: 4 }}>
@@ -577,6 +675,90 @@ export default function CoachPanel({ workouts, onPublished }: Props) {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Group Manager ── */}
+      <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: "16px 20px", marginBottom: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1 }}>📁 Workout Groups</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Create groups, build workouts in draft, publish when ready</div>
+          </div>
+          <button onClick={() => setShowGroupForm(s => !s)}
+            style={{ background: showGroupForm ? "var(--surface)" : "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+            {showGroupForm ? "✕ Cancel" : "+ New Group"}
+          </button>
+        </div>
+
+        {/* Create group form */}
+        {showGroupForm && (
+          <div style={{ background: "var(--surface)", border: "1px solid rgba(26,63,168,0.3)", borderRadius: 10, padding: 14, marginBottom: 14 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <input value={newGroupName} onChange={e => setNewGroupName(e.target.value)} placeholder="Group name (e.g. Week 3 & 4)"
+                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+              <input value={newGroupDesc} onChange={e => setNewGroupDesc(e.target.value)} placeholder="Description (optional)"
+                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+              <div style={{ fontSize: 11, color: "var(--muted)", padding: "8px 10px", background: "rgba(240,192,64,0.06)", borderRadius: 8, border: "1px solid rgba(240,192,64,0.15)" }}>
+                📝 Groups start as <strong style={{ color: "var(--gold)" }}>Draft</strong> — invisible to players. Add workouts to the group, then hit <strong style={{ color: "#5de098" }}>Publish</strong> when ready.
+              </div>
+              <button onClick={createGroup} disabled={savingGroup || !newGroupName.trim()}
+                style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                {savingGroup ? "Creating…" : "Create Group"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Group list */}
+        {groupsLoading ? (
+          <div style={{ textAlign: "center", color: "var(--muted)", padding: "20px 0", fontSize: 13 }}>Loading…</div>
+        ) : groups.length === 0 ? (
+          <div style={{ textAlign: "center", color: "var(--muted)", padding: "20px 0", fontSize: 13 }}>No groups yet. Create one above to get started.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {groups.map(g => {
+              const sc = STATUS_COLOR[g.status] ?? STATUS_COLOR.draft;
+              const groupWorkouts = workouts.filter(w => (w as any).group_id === g.id);
+              return (
+                <div key={g.id} style={{ background: "var(--surface)", border: `1px solid ${g.status === "active" ? "rgba(40,180,80,0.3)" : "var(--border)"}`, borderRadius: 10, padding: "12px 14px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{g.name}</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: sc.bg, color: sc.color }}>{sc.label}</span>
+                      </div>
+                      {g.description && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{g.description}</div>}
+                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
+                        {groupWorkouts.length} workout{groupWorkouts.length !== 1 ? "s" : ""}
+                        {groupWorkouts.length > 0 && ` · ${groupWorkouts.map(w => w.title).join(", ").slice(0, 60)}${groupWorkouts.map(w => w.title).join(", ").length > 60 ? "…" : ""}`}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                      {g.status === "draft" && (
+                        <button onClick={() => publishGroup(g.id)}
+                          style={{ background: "rgba(40,180,80,0.12)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                          🌐 Publish
+                        </button>
+                      )}
+                      {g.status === "active" && (
+                        <button onClick={() => archiveGroup(g.id)}
+                          style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.25)", color: "#ff7b7b", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                          📦 Archive
+                        </button>
+                      )}
+                      {g.status !== "active" && (
+                        <button onClick={() => deleteGroup(g.id, g.name)}
+                          style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 7, padding: "5px 8px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>
+                          🗑
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
