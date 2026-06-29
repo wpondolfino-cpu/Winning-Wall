@@ -28,9 +28,7 @@ export default function GroupManager({ workouts, onChanged }: Props) {
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase
-      .from("workout_groups").select("*")
-      .order("created_at", { ascending: false });
+    const { data } = await supabase.from("workout_groups").select("*").order("created_at", { ascending: false });
     setGroups(data ?? []);
     setLoading(false);
   }
@@ -41,13 +39,25 @@ export default function GroupManager({ workouts, onChanged }: Props) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from("workout_groups").insert({
-        name: newName.trim(),
-        description: newDesc.trim() || null,
-        status: "draft",
-        created_by: user?.id,
+        name: newName.trim(), description: newDesc.trim() || null,
+        status: "draft", created_by: user?.id,
       });
       if (error) throw error;
       setNewName(""); setNewDesc(""); setShowForm(false);
+      await load();
+    } catch (e: any) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function saveEdit() {
+    if (!editingGroup || !editName.trim()) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from("workout_groups").update({
+        name: editName.trim(), description: editDesc.trim() || null,
+      }).eq("id", editingGroup.id);
+      if (error) throw error;
+      setEditingGroup(null);
       await load();
     } catch (e: any) { alert("Error: " + e.message); }
     finally { setSaving(false); }
@@ -77,21 +87,6 @@ export default function GroupManager({ workouts, onChanged }: Props) {
     await supabase.from("workouts").update({ group_id: null }).eq("group_id", groupId);
     await supabase.from("workout_groups").delete().eq("id", groupId);
     await load(); onChanged();
-  }
-
-  async function saveEdit() {
-    if (!editingGroup || !editName.trim()) return;
-    setSaving(true);
-    try {
-      const { error } = await supabase.from("workout_groups").update({
-        name: editName.trim(),
-        description: editDesc.trim() || null,
-      }).eq("id", editingGroup.id);
-      if (error) throw error;
-      setEditingGroup(null);
-      await load();
-    } catch (e: any) { alert("Error: " + e.message); }
-    finally { setSaving(false); }
   }
 
   return (
@@ -133,10 +128,11 @@ export default function GroupManager({ workouts, onChanged }: Props) {
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {groups.map(g => {
             const sc = STATUS_COLOR[g.status] ?? STATUS_COLOR.draft;
-            const groupWorkouts = workouts.filter(w => (w as any).group_id === g.id);
+            const groupWorkouts = workouts.filter((w: any) => w.group_id === g.id);
+            const isEditing = editingGroup?.id === g.id;
             return (
               <div key={g.id} style={{ background: "var(--surface)", border: `1px solid ${g.status === "active" ? "rgba(40,180,80,0.3)" : "var(--border)"}`, borderRadius: 10, padding: "12px 14px" }}>
-                {editingGroup?.id === g.id ? (
+                {isEditing ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     <input value={editName} onChange={e => setEditName(e.target.value)}
                       style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
@@ -163,7 +159,7 @@ export default function GroupManager({ workouts, onChanged }: Props) {
                       {g.description && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{g.description}</div>}
                       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
                         {groupWorkouts.length} workout{groupWorkouts.length !== 1 ? "s" : ""}
-                        {groupWorkouts.length > 0 && ` · ${groupWorkouts.map(w => w.title).join(", ").slice(0, 60)}${groupWorkouts.map(w => w.title).join(", ").length > 60 ? "…" : ""}`}
+                        {groupWorkouts.length > 0 && ` · ${groupWorkouts.map((w: any) => w.title).join(", ").slice(0, 60)}${groupWorkouts.map((w: any) => w.title).join(", ").length > 60 ? "…" : ""}`}
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
@@ -192,6 +188,7 @@ export default function GroupManager({ workouts, onChanged }: Props) {
                     </div>
                   </div>
                 )}
+              </div>
             );
           })}
         </div>
@@ -200,10 +197,7 @@ export default function GroupManager({ workouts, onChanged }: Props) {
   );
 }
 
-// Export groups loader so WorkoutBuilder can use it
 export async function loadGroupsForBuilder() {
-  const { data } = await supabase
-    .from("workout_groups").select("*")
-    .order("created_at", { ascending: false });
+  const { data } = await supabase.from("workout_groups").select("*").order("created_at", { ascending: false });
   return data ?? [];
 }
