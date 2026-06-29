@@ -347,36 +347,22 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
             <div style={{ fontSize: 12, color: "var(--silver-light)" }}>{Math.ceil((periodEnd.getTime() - Date.now()) / 86400000)} days left</div>
           </div>
 
-          {/* Subtab: Overall + group drill tabs */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-              <button onClick={() => setDrillView("overall")} style={{
-                padding: "6px 14px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600,
-                border: `1px solid ${drillView === "overall" ? "var(--royal-light)" : "var(--border)"}`,
-                background: drillView === "overall" ? "rgba(26,63,168,0.2)" : "var(--surface2)",
-                color: drillView === "overall" ? "#93b4ff" : "var(--muted)",
-              }}>🏆 Overall</button>
-              {groups.map(g => (
-                <button key={g} onClick={() => { setSelectedGroup(g); const first = workouts.find(w => w.group_name === g); if (first) setDrillView(first.id); }} style={{
-                  padding: "6px 14px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
-                  border: `1px solid ${activeGroup === g && drillView !== "overall" ? "var(--royal-light)" : "var(--border)"}`,
-                  background: activeGroup === g && drillView !== "overall" ? "rgba(26,63,168,0.2)" : "var(--surface2)",
-                  color: activeGroup === g && drillView !== "overall" ? "#93b4ff" : "var(--muted)",
-                }}>📋 {g}</button>
-              ))}
-            </div>
-            {drillView !== "overall" && visibleWorkouts.length > 0 && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", paddingLeft: 8, borderLeft: "2px solid var(--border)" }}>
-                {visibleWorkouts.map(w => (
-                  <button key={w.id} onClick={() => setDrillView(w.id)} style={{
-                    padding: "5px 12px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap",
-                    border: `1px solid ${drillView === w.id ? "var(--royal-light)" : "var(--border)"}`,
-                    background: drillView === w.id ? "rgba(26,63,168,0.2)" : "transparent",
-                    color: drillView === w.id ? "#93b4ff" : "var(--muted)",
-                  }}>{w.emoji} {w.title}</button>
-                ))}
-              </div>
-            )}
+          {/* Subtab: Overall + drills from active group only */}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+            <button onClick={() => setDrillView("overall")} style={{
+              padding: "6px 14px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600,
+              border: `1px solid ${drillView === "overall" ? "var(--royal-light)" : "var(--border)"}`,
+              background: drillView === "overall" ? "rgba(26,63,168,0.2)" : "var(--surface2)",
+              color: drillView === "overall" ? "#93b4ff" : "var(--muted)",
+            }}>🏆 Overall</button>
+            {visibleWorkouts.map(w => (
+              <button key={w.id} onClick={() => setDrillView(w.id)} style={{
+                padding: "6px 14px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
+                border: `1px solid ${drillView === w.id ? "var(--royal-light)" : "var(--border)"}`,
+                background: drillView === w.id ? "rgba(26,63,168,0.2)" : "var(--surface2)",
+                color: drillView === w.id ? "#93b4ff" : "var(--muted)",
+              }}>{w.emoji} {w.title}</button>
+            ))}
           </div>
 
           {/* My period stats */}
