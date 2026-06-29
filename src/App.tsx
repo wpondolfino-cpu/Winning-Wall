@@ -320,7 +320,7 @@ export default function App() {
 
           {/* Coach panels */}
           {isCoach && coachTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={false} />}
-          {isCoach && coachTab === "leaderboard" && <Leaderboard />}
+          {isCoach && coachTab === "leaderboard" && <Leaderboard canManage={true} />}
           {isCoach && coachTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isCoach={true} />}
           {isCoach && coachTab === "hof" && <HallOfFame canDelete={true} />}
           {isCoach && coachTab === "challenges" && (
@@ -337,7 +337,7 @@ export default function App() {
 
           {/* Admin panels */}
           {isAdmin && adminTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={true} />}
-          {isAdmin && adminTab === "leaderboard" && <Leaderboard />}
+          {isAdmin && adminTab === "leaderboard" && <Leaderboard canManage={true} />}
           {isAdmin && adminTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isAdmin={true} />}
           {isAdmin && adminTab === "hof" && <HallOfFame canDelete={true} />}
           {isAdmin && adminTab === "challenges" && (
