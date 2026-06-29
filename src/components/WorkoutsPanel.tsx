@@ -1,7 +1,7 @@
 // src/components/WorkoutsPanel.tsx
 import { useState, useEffect, useRef } from "react";
 import { supabase, Workout, Score, submitScore as _submitScore, getVideoId, updateStreak, STREAK_BONUS_DAYS, STREAK_BONUS_PTS } from "../lib/supabase";
-import DrillTimer from "./DrillTimer";
+import DrillTimer, { Stopwatch } from "./DrillTimer";
 
 interface Props {
   workouts: Workout[];
@@ -190,6 +190,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
         <div className="score-grid" style={{ gridTemplateColumns: "1fr" }}>
           {isTime ? (
             <div className="score-input-wrap">
+              <Stopwatch onUseTime={(secs) => setSprintSecs(secs.toString())} />
               <label>Your Time (seconds)</label>
               <input type="number" inputMode="decimal" value={sprintSecs} onChange={e => setSprintSecs(e.target.value)} placeholder="e.g. 4.5" step="0.1" />
             </div>
