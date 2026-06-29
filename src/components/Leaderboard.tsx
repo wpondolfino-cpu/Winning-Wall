@@ -207,7 +207,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
     const wAttempts = periodScores.filter((s: any) => s.workout_id === workoutId);
     const gf = gradeTab === ALL ? wAttempts : wAttempts.filter((s: any) => profiles.find(p => p.id === s.player_id)?.grade_category === gradeTab);
     const bestMap: Record<string, any> = {};
-    for (const a of gf) { if (!bestMap[a.player_id] || a.raw_score > bestMap[a.player_id].raw_score) bestMap[a.player_id] = a; }
+    for (const a of gf) { if (!(bestMap as any)[a.player_id] || (a as any).raw_score > (bestMap as any)[a.player_id].raw_score) (bestMap as any)[a.player_id] = a; }
     return Object.values(bestMap).map((s: any) => {
       const p = profiles.find(pr => pr.id === s.player_id);
       return { playerId: s.player_id, name: p?.name ?? "Unknown", rawScore: s.raw_score ?? 0, display: (s.raw_score ?? 0).toString(), points: s.raw_score ?? 0 };
