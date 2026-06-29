@@ -6,7 +6,7 @@ import ProfileEditor from "./components/ProfileEditor";
 import ProfilePage from "./components/ProfilePage";
 import LoginPage from "./pages/LoginPage";
 import WorkoutsPanel from "./components/WorkoutsPanel";
-import CoachPanel from "./components/CoachPanel";
+import CoachPanel from "./components/coach/CoachPanel";
 import Leaderboard from "./components/Leaderboard";
 import HallOfFame from "./components/HallOfFame";
 import ProgressPanel from "./components/ProgressPanel";
@@ -319,7 +319,7 @@ export default function App() {
           )}
 
           {/* Coach panels */}
-          {isCoach && coachTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} />}
+          {isCoach && coachTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={false} />}
           {isCoach && coachTab === "leaderboard" && <Leaderboard />}
           {isCoach && coachTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isCoach={true} />}
           {isCoach && coachTab === "hof" && <HallOfFame canDelete={true} />}
@@ -336,7 +336,7 @@ export default function App() {
           )}
 
           {/* Admin panels */}
-          {isAdmin && adminTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} />}
+          {isAdmin && adminTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={true} />}
           {isAdmin && adminTab === "leaderboard" && <Leaderboard />}
           {isAdmin && adminTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isAdmin={true} />}
           {isAdmin && adminTab === "hof" && <HallOfFame canDelete={true} />}
