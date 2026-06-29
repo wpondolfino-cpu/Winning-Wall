@@ -197,3 +197,88 @@ export default function DrillTimer({ defaultSeconds = 30, compact = false, onCom
     </div>
   );
 }
+
+// ── Stopwatch component ───────────────────────────────────────
+interface StopwatchProps {
+  onUseTime: (seconds: number) => void;
+}
+
+export function Stopwatch({ onUseTime }: StopwatchProps) {
+  const [running, setRunning]   = useState(false);
+  const [elapsed, setElapsed]   = useState(0); // milliseconds
+  const [stopped, setStopped]   = useState(false);
+  const startRef                = useRef<number | null>(null);
+  const frameRef                = useRef<number | null>(null);
+
+  function tick() {
+    if (startRef.current === null) return;
+    setElapsed(Date.now() - startRef.current);
+    frameRef.current = requestAnimationFrame(tick);
+  }
+
+  function start() {
+    startRef.current = Date.now() - elapsed;
+    setRunning(true);
+    setStopped(false);
+    frameRef.current = requestAnimationFrame(tick);
+  }
+
+  function stop() {
+    if (frameRef.current) cancelAnimationFrame(frameRef.current);
+    setRunning(false);
+    setStopped(true);
+  }
+
+  function reset() {
+    if (frameRef.current) cancelAnimationFrame(frameRef.current);
+    setRunning(false);
+    setStopped(false);
+    setElapsed(0);
+    startRef.current = null;
+  }
+
+  useEffect(() => () => { if (frameRef.current) cancelAnimationFrame(frameRef.current); }, []);
+
+  const totalSecs = elapsed / 1000;
+  const mins = Math.floor(totalSecs / 60);
+  const secs = Math.floor(totalSecs % 60);
+  const ms   = Math.floor((elapsed % 1000) / 10);
+  const display = mins > 0
+    ? `${mins}:${secs.toString().padStart(2,"0")}.${ms.toString().padStart(2,"0")}`
+    : `${secs}.${ms.toString().padStart(2,"0")}`;
+
+  return (
+    <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>⏱ Stopwatch</div>
+      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 52, color: stopped ? "var(--gold)" : running ? "#5de098" : "var(--text)", textAlign: "center", letterSpacing: 2, lineHeight: 1, marginBottom: 14 }}>
+        {display}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: stopped ? 10 : 0 }}>
+        {!running && !stopped && (
+          <button onClick={start}
+            style={{ flex: 1, background: "#5de098", color: "#000", border: "none", borderRadius: 8, padding: "10px", fontSize: 14, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+            ▶ Start
+          </button>
+        )}
+        {running && (
+          <button onClick={stop}
+            style={{ flex: 1, background: "var(--gold)", color: "#000", border: "none", borderRadius: 8, padding: "10px", fontSize: 14, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+            ⏹ Stop
+          </button>
+        )}
+        {(stopped || elapsed > 0) && !running && (
+          <button onClick={reset}
+            style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "10px 16px", fontSize: 14, fontFamily: "inherit", cursor: "pointer" }}>
+            ↺ Reset
+          </button>
+        )}
+      </div>
+      {stopped && (
+        <button onClick={() => onUseTime(parseFloat(totalSecs.toFixed(2)))}
+          style={{ width: "100%", background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+          ✓ Use this time ({totalSecs.toFixed(2)}s)
+        </button>
+      )}
+    </div>
+  );
+}
