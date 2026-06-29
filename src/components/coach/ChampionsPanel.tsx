@@ -19,11 +19,39 @@ export default function ChampionsPanel() {
   }
 
   async function handleCrown() {
+    const periodName = window.prompt(
+      "Name this period for the History tab:",
+      `Week ${new Date(periodStart).toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${new Date(periodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+    );
+    if (periodName === null) return; // cancelled
     setCrowning(true);
     try {
       await crownBiweeklyWinners(leaderboard);
+
+      // Auto-save snapshot to History tab
+      try {
+        const snapshotData = leaderboard.map((e, i) => ({
+          rank: i + 1,
+          player_id: e.id,
+          name: e.name,
+          grade_category: e.grade_category,
+          total_points: e.total_points,
+          workouts_completed: e.workouts_completed,
+          avatar_url: (e as any).avatar_url,
+          is_period_champion: e.is_period_champion,
+        }));
+        await supabase.from("period_snapshots").insert({
+          period_name: periodName || `Period ${new Date().toLocaleDateString()}`,
+          period_start: periodStart.toISOString().split("T")[0],
+          period_end: new Date().toISOString().split("T")[0],
+          snapshot: snapshotData,
+        });
+      } catch (snapErr) {
+        console.error("Snapshot save failed (non-critical):", snapErr);
+      }
+
       await loadChampions();
-      alert("👑 Biweekly champions have been crowned!");
+      alert("👑 Biweekly champions have been crowned and leaderboard snapshot saved to History!");
     } catch (e: any) { alert("Error: " + e.message); }
     finally { setCrowning(false); }
   }
