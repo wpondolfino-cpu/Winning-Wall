@@ -147,7 +147,7 @@ export default function LiftingLogModal({ dayExercise, playerId, playerName, ava
 
         {/* Sets */}
         <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Your Sets</div>
-        <div style={{ display: "grid", gridTemplateColumns: "28px 1fr 1fr 36px auto", gap: 6, marginBottom: 5, padding: "0 2px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "24px 1fr 1fr 32px 24px", gap: 6, marginBottom: 5, padding: "0 2px" }}>
           <div style={{ fontSize: 9, color: "var(--muted)", textAlign: "center" }}>#</div>
           <div style={{ fontSize: 9, color: "var(--muted)", textAlign: "center" }}>REPS</div>
           <div style={{ fontSize: 9, color: "var(--muted)", textAlign: "center" }}>WEIGHT (lbs)</div>
@@ -156,12 +156,12 @@ export default function LiftingLogModal({ dayExercise, playerId, playerName, ava
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
           {sets.map((s, i) => (
-            <div key={i} style={{ display: "grid", gridTemplateColumns: "28px 1fr 1fr 36px auto", gap: 6, alignItems: "center" }}>
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "24px 1fr 1fr 32px 24px", gap: 6, alignItems: "center" }}>
               <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 700, textAlign: "center" }}>{i + 1}</div>
               <input type="number" inputMode="numeric" value={s.reps} onChange={e => updateSet(i, "reps", e.target.value)} placeholder="0"
-                style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 6px", color: "var(--text)", fontSize: 15, fontWeight: 600, fontFamily: "inherit", outline: "none", textAlign: "center" }} />
+                style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 4px", color: "var(--text)", fontSize: 14, fontWeight: 600, fontFamily: "inherit", outline: "none", textAlign: "center", boxSizing: "border-box" as const, width: "100%" }} />
               <input type="number" inputMode="decimal" value={s.weight} onChange={e => updateSet(i, "weight", e.target.value)} placeholder="0"
-                style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 6px", color: "var(--text)", fontSize: 15, fontWeight: 600, fontFamily: "inherit", outline: "none", textAlign: "center" }} />
+                style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 4px", color: "var(--text)", fontSize: 14, fontWeight: 600, fontFamily: "inherit", outline: "none", textAlign: "center", boxSizing: "border-box" as const, width: "100%" }} />
               <button onClick={() => startRest(i)} title="Mark complete & start rest"
                 style={{ background: s.reps && s.weight ? "rgba(40,180,80,0.2)" : "var(--surface2)", border: `1px solid ${s.reps && s.weight ? "rgba(40,180,80,0.4)" : "var(--border)"}`, color: s.reps && s.weight ? "#5de098" : "var(--muted)", borderRadius: 7, padding: "8px 4px", fontSize: 14, cursor: "pointer" }}>
                 ✓
