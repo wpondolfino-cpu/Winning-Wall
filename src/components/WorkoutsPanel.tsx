@@ -14,6 +14,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [rankedCompletion, setRankedCompletion] = useState({ completed: 0, total: 0, bonusEarned: false });
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const modalDragY = useRef(0);
   const [modalOffset, setModalOffset] = useState(0);
 
@@ -226,34 +227,55 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
         )}
 
         {(() => {
-          const activeWorkouts = workouts.filter(w => w.is_active !== false && (!(w as any).publish_date || (w as any).publish_date <= new Date().toISOString().split('T')[0]));
-          const groupNames = Array.from(new Set(activeWorkouts.map(w => w.group_name).filter(Boolean)));
-          return groupNames.length === 1 ? (
-            <div style={{ marginBottom: 16, padding: "8px 14px", background: "rgba(26,63,168,0.15)", borderRadius: 8, fontSize: 13, color: "#93b4ff", fontWeight: 600, border: "1px solid rgba(26,63,168,0.25)" }}>📁 {groupNames[0]}</div>
-          ) : null;
-        })()}
+          const allVisible = workouts.filter(w => w.is_active !== false && (!(w as any).publish_date || (w as any).publish_date <= new Date().toISOString().split('T')[0]));
+          // Get all unique groups from visible workouts, most recent first
+          const groupNames = Array.from(new Set(allVisible.map(w => w.group_name).filter(Boolean))) as string[];
+          const ungrouped = allVisible.filter(w => !w.group_name);
+          // Default to first group (current active)
+          const activeGroup = selectedGroup ?? (groupNames[0] ?? null);
+          const displayWorkouts = activeGroup
+            ? allVisible.filter(w => w.group_name === activeGroup)
+            : ungrouped.length > 0 ? ungrouped : allVisible;
 
-        {rankedCompletion.total > 0 && (
-          <div style={{ marginBottom: 16, padding: "12px 16px", background: rankedCompletion.bonusEarned ? "rgba(40,180,80,0.08)" : "rgba(26,63,168,0.1)", border: `1px solid ${rankedCompletion.bonusEarned ? "rgba(40,180,80,0.3)" : "rgba(26,63,168,0.35)"}`, borderRadius: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: rankedCompletion.bonusEarned ? "#5de098" : "var(--gold)" }}>
-                {rankedCompletion.bonusEarned ? "✅ Bonus point earned today!" : `🏆 Ranked Workouts: ${rankedCompletion.completed}/${rankedCompletion.total}`}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                {rankedCompletion.bonusEarned ? "+1 pt" : rankedCompletion.completed === rankedCompletion.total - 1 ? "1 more to earn +1 pt!" : `${rankedCompletion.total - rankedCompletion.completed} more to earn +1 pt`}
-              </div>
-            </div>
-            <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 6, height: 8, overflow: "hidden" }}>
-              <div style={{ height: "100%", borderRadius: 6, background: rankedCompletion.bonusEarned ? "#5de098" : "var(--royal)", width: `${Math.min(100, (rankedCompletion.completed / rankedCompletion.total) * 100)}%`, transition: "width 0.4s ease" }} />
-            </div>
-          </div>
-        )}
+          return (
+            <>
+              {/* Group tab bar — only show if multiple groups */}
+              {groupNames.length > 1 && (
+                <div style={{ display: "flex", gap: 6, marginBottom: 16, overflowX: "auto", paddingBottom: 4 }}>
+                  {groupNames.map((g, i) => (
+                    <button key={g} onClick={() => setSelectedGroup(g)}
+                      style={{ flexShrink: 0, padding: "6px 14px", borderRadius: 20, border: `1px solid ${(activeGroup === g) ? "var(--royal)" : "var(--border)"}`, background: (activeGroup === g) ? "var(--royal)" : "var(--surface2)", color: (activeGroup === g) ? "#fff" : "var(--muted)", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
+                      {i === 0 ? `📁 ${g}` : g}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {/* Single group label */}
+              {groupNames.length === 1 && (
+                <div style={{ marginBottom: 16, padding: "8px 14px", background: "rgba(26,63,168,0.15)", borderRadius: 8, fontSize: 13, color: "#93b4ff", fontWeight: 600, border: "1px solid rgba(26,63,168,0.25)" }}>📁 {groupNames[0]}</div>
+              )}
 
-        <div className="workout-grid">
-          {[...workouts.filter(w => w.is_active !== false && (!(w as any).publish_date || (w as any).publish_date <= new Date().toISOString().split('T')[0]))].sort((a, b) => {
-            const ranked = (t: string) => t === "competitive" || t === "multi_spot" ? 0 : 1;
-            return ranked(a.scoring_type) - ranked(b.scoring_type);
-          }).map(w => {
+              {rankedCompletion.total > 0 && (
+                <div style={{ marginBottom: 16, padding: "12px 16px", background: rankedCompletion.bonusEarned ? "rgba(40,180,80,0.08)" : "rgba(26,63,168,0.1)", border: `1px solid ${rankedCompletion.bonusEarned ? "rgba(40,180,80,0.3)" : "rgba(26,63,168,0.35)"}`, borderRadius: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: rankedCompletion.bonusEarned ? "#5de098" : "var(--gold)" }}>
+                      {rankedCompletion.bonusEarned ? "✅ Bonus point earned today!" : `🏆 Ranked Workouts: ${rankedCompletion.completed}/${rankedCompletion.total}`}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                      {rankedCompletion.bonusEarned ? "+1 pt" : rankedCompletion.completed === rankedCompletion.total - 1 ? "1 more to earn +1 pt!" : `${rankedCompletion.total - rankedCompletion.completed} more to earn +1 pt`}
+                    </div>
+                  </div>
+                  <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 6, height: 8, overflow: "hidden" }}>
+                    <div style={{ height: "100%", borderRadius: 6, background: rankedCompletion.bonusEarned ? "#5de098" : "var(--royal)", width: `${Math.min(100, (rankedCompletion.completed / rankedCompletion.total) * 100)}%`, transition: "width 0.4s ease" }} />
+                  </div>
+                </div>
+              )}
+
+              <div className="workout-grid">
+                {[...displayWorkouts].sort((a, b) => {
+                  const ranked = (t: string) => t === "competitive" || t === "multi_spot" ? 0 : 1;
+                  return ranked(a.scoring_type) - ranked(b.scoring_type);
+                }).map(w => {
             const vid = getVideoId(w.video_url);
             const logged = scoreFor(w.id);
             const resourceUrl = (w as any).resource_url;
@@ -317,6 +339,9 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
             );
           })}
         </div>
+            </>
+          );
+        })()}
       </div>
 
       {activeWorkout && (
