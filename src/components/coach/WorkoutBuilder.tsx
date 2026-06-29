@@ -301,13 +301,39 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel }: Props
             <span style={{ fontSize: 12, color: timerDuration !== null ? "#5de098" : "var(--muted)", fontWeight: 600 }}>{timerDuration !== null ? "Timer On" : "No Timer"}</span>
           </div>
           {timerDuration !== null && (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {[15, 30, 45, 60, 90, 120].map(s => (
-                <button key={s} onClick={() => setTimerDuration(s)} type="button"
-                  style={{ background: timerDuration === s ? "rgba(147,180,255,0.2)" : "var(--surface2)", border: `1px solid ${timerDuration === s ? "#93b4ff" : "var(--border)"}`, color: timerDuration === s ? "#93b4ff" : "var(--muted)", borderRadius: 8, padding: "5px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>
-                  {s < 60 ? `${s}s` : `${s/60}m`}
-                </button>
-              ))}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input
+                  type="number"
+                  value={Math.floor(timerDuration / 60)}
+                  onChange={e => {
+                    const mins = parseInt(e.target.value) || 0;
+                    const secs = timerDuration % 60;
+                    setTimerDuration(mins * 60 + secs);
+                  }}
+                  min="0" max="99" placeholder="0"
+                  style={{ width: 60, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 10px", color: "var(--text)", fontSize: 15, fontFamily: "inherit", outline: "none", textAlign: "center" }}
+                />
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>min</span>
+              </div>
+              <span style={{ color: "var(--muted)" }}>:</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input
+                  type="number"
+                  value={timerDuration % 60}
+                  onChange={e => {
+                    const secs = Math.min(59, parseInt(e.target.value) || 0);
+                    const mins = Math.floor(timerDuration / 60);
+                    setTimerDuration(mins * 60 + secs);
+                  }}
+                  min="0" max="59" placeholder="0"
+                  style={{ width: 60, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 10px", color: "var(--text)", fontSize: 15, fontFamily: "inherit", outline: "none", textAlign: "center" }}
+                />
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>sec</span>
+              </div>
+              <div style={{ fontSize: 12, color: "#93b4ff", marginLeft: 4 }}>
+                = {timerDuration}s total
+              </div>
             </div>
           )}
         </div>
