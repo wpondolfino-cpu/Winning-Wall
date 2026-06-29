@@ -20,6 +20,9 @@ export default function GroupManager({ workouts, onChanged }: Props) {
   const [newName, setNewName]           = useState("");
   const [newDesc, setNewDesc]           = useState("");
   const [saving, setSaving]             = useState(false);
+  const [editingGroup, setEditingGroup] = useState<any | null>(null);
+  const [editName, setEditName]         = useState("");
+  const [editDesc, setEditDesc]         = useState("");
 
   useEffect(() => { load(); }, []);
 
@@ -76,6 +79,21 @@ export default function GroupManager({ workouts, onChanged }: Props) {
     await load(); onChanged();
   }
 
+  async function saveEdit() {
+    if (!editingGroup || !editName.trim()) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from("workout_groups").update({
+        name: editName.trim(),
+        description: editDesc.trim() || null,
+      }).eq("id", editingGroup.id);
+      if (error) throw error;
+      setEditingGroup(null);
+      await load();
+    } catch (e: any) { alert("Error: " + e.message); }
+    finally { setSaving(false); }
+  }
+
   return (
     <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: "16px 20px", marginBottom: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -118,40 +136,62 @@ export default function GroupManager({ workouts, onChanged }: Props) {
             const groupWorkouts = workouts.filter(w => (w as any).group_id === g.id);
             return (
               <div key={g.id} style={{ background: "var(--surface)", border: `1px solid ${g.status === "active" ? "rgba(40,180,80,0.3)" : "var(--border)"}`, borderRadius: 10, padding: "12px 14px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{g.name}</span>
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: sc.bg, color: sc.color }}>{sc.label}</span>
-                    </div>
-                    {g.description && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{g.description}</div>}
-                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
-                      {groupWorkouts.length} workout{groupWorkouts.length !== 1 ? "s" : ""}
-                      {groupWorkouts.length > 0 && ` · ${groupWorkouts.map(w => w.title).join(", ").slice(0, 60)}${groupWorkouts.map(w => w.title).join(", ").length > 60 ? "…" : ""}`}
+                {editingGroup?.id === g.id ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <input value={editName} onChange={e => setEditName(e.target.value)}
+                      style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    <input value={editDesc} onChange={e => setEditDesc(e.target.value)} placeholder="Description (optional)"
+                      style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={saveEdit} disabled={saving}
+                        style={{ flex: 1, background: "var(--royal)", color: "#fff", border: "none", borderRadius: 7, padding: "7px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                        {saving ? "Saving…" : "Save"}
+                      </button>
+                      <button onClick={() => setEditingGroup(null)}
+                        style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 7, padding: "7px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>
+                        Cancel
+                      </button>
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                    {g.status === "draft" && (
-                      <button onClick={() => publishGroup(g.id)}
-                        style={{ background: "rgba(40,180,80,0.12)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
-                        🌐 Publish
-                      </button>
-                    )}
-                    {g.status === "active" && (
-                      <button onClick={() => archiveGroup(g.id)}
-                        style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.25)", color: "#ff7b7b", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
-                        📦 Archive
-                      </button>
-                    )}
-                    {g.status !== "active" && (
-                      <button onClick={() => deleteGroup(g.id, g.name)}
+                ) : (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{g.name}</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: sc.bg, color: sc.color }}>{sc.label}</span>
+                      </div>
+                      {g.description && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{g.description}</div>}
+                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
+                        {groupWorkouts.length} workout{groupWorkouts.length !== 1 ? "s" : ""}
+                        {groupWorkouts.length > 0 && ` · ${groupWorkouts.map(w => w.title).join(", ").slice(0, 60)}${groupWorkouts.map(w => w.title).join(", ").length > 60 ? "…" : ""}`}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                      <button onClick={() => { setEditingGroup(g); setEditName(g.name); setEditDesc(g.description ?? ""); }}
                         style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 7, padding: "5px 8px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>
-                        🗑
+                        ✏️
                       </button>
-                    )}
+                      {g.status === "draft" && (
+                        <button onClick={() => publishGroup(g.id)}
+                          style={{ background: "rgba(40,180,80,0.12)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                          🌐 Publish
+                        </button>
+                      )}
+                      {g.status === "active" && (
+                        <button onClick={() => archiveGroup(g.id)}
+                          style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.25)", color: "#ff7b7b", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                          📦 Archive
+                        </button>
+                      )}
+                      {g.status !== "active" && (
+                        <button onClick={() => deleteGroup(g.id, g.name)}
+                          style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 7, padding: "5px 8px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>
+                          🗑
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </div>
+                )}
             );
           })}
         </div>
