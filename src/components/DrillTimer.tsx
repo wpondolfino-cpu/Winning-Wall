@@ -55,6 +55,8 @@ export default function DrillTimer({ defaultSeconds = 30, compact = false, onCom
           setDone(true);
           playAlarm();
           onComplete?.();
+          releaseWakeLock();
+          alarmAtRef.current = null;
           return 0;
         }
         return prev - 1;
@@ -63,9 +65,24 @@ export default function DrillTimer({ defaultSeconds = 30, compact = false, onCom
     return () => clearInterval(intervalRef.current!);
   }, [running]);
 
-  function handleStart() { setDone(false); setRunning(true); }
-  function handlePause() { setRunning(false); }
-  function handleReset() { setRunning(false); setDone(false); setRemaining(duration); }
+  function handleStart() {
+    setDone(false);
+    setRunning(true);
+    alarmAtRef.current = Date.now() + remaining * 1000;
+    acquireWakeLock();
+  }
+  function handlePause() {
+    setRunning(false);
+    alarmAtRef.current = null;
+    releaseWakeLock();
+  }
+  function handleReset() {
+    setRunning(false);
+    setDone(false);
+    setRemaining(duration);
+    alarmAtRef.current = null;
+    releaseWakeLock();
+  }
 
   function handleSetTime() {
     const mins = parseInt(inputMin) || 0;
@@ -83,30 +100,85 @@ export default function DrillTimer({ defaultSeconds = 30, compact = false, onCom
   const pct = duration > 0 ? (remaining / duration) * 100 : 0;
   const color = done ? "#5de098" : remaining <= 5 ? "#ff7b7b" : remaining <= 10 ? "var(--gold)" : "#93b4ff";
 
+  // Use wall clock for background-safe timing
+  const alarmAtRef = useRef<number | null>(null);
+  const wakeLockRef = useRef<any>(null);
+
+  async function acquireWakeLock() {
+    try {
+      if ("wakeLock" in navigator) {
+        wakeLockRef.current = await (navigator as any).wakeLock.request("screen");
+      }
+    } catch (e) { /* wake lock not available, silently ignore */ }
+  }
+
+  function releaseWakeLock() {
+    if (wakeLockRef.current) {
+      wakeLockRef.current.release().catch(() => {});
+      wakeLockRef.current = null;
+    }
+  }
+
+  // Re-acquire wake lock if page becomes visible while timer is running
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.visibilityState === "visible") {
+        if (alarmAtRef.current && !done) {
+          if (Date.now() >= alarmAtRef.current) {
+            setRemaining(0); setRunning(false); setDone(true);
+            playAlarm(); onComplete?.();
+            alarmAtRef.current = null;
+            releaseWakeLock();
+          } else {
+            const left = Math.ceil((alarmAtRef.current - Date.now()) / 1000);
+            setRemaining(Math.max(0, left));
+            acquireWakeLock();
+          }
+        }
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [done]);
+
+  // Release wake lock on unmount
+  useEffect(() => () => releaseWakeLock(), []);
+
   if (compact) {
+    const ringSize = 72;
+    const r = 28;
     return (
-      <div style={{ background: "var(--surface2)", border: `1px solid ${done ? "rgba(93,224,152,0.4)" : "var(--border)"}`, borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", gap: 12 }}>
-        {/* Progress ring — small */}
-        <div style={{ position: "relative", width: 44, height: 44, flexShrink: 0 }}>
-          <svg width="44" height="44" style={{ transform: "rotate(-90deg)" }}>
-            <circle cx="22" cy="22" r="18" fill="none" stroke="var(--border)" strokeWidth="3" />
-            <circle cx="22" cy="22" r="18" fill="none" stroke={color} strokeWidth="3"
-              strokeDasharray={`${2 * Math.PI * 18}`}
-              strokeDashoffset={`${2 * Math.PI * 18 * (1 - pct / 100)}`}
-              style={{ transition: "stroke-dashoffset 0.5s, stroke 0.3s" }} />
-          </svg>
-          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: 13, color, lineHeight: 1 }}>
-            {done ? "✓" : formatTime(remaining)}
+      <div style={{ background: "var(--surface2)", border: `1px solid ${done ? "rgba(93,224,152,0.4)" : "var(--border)"}`, borderRadius: 12, padding: "14px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {/* Progress ring — larger */}
+          <div style={{ position: "relative", width: ringSize, height: ringSize, flexShrink: 0 }}>
+            <svg width={ringSize} height={ringSize} style={{ transform: "rotate(-90deg)" }}>
+              <circle cx={ringSize/2} cy={ringSize/2} r={r} fill="none" stroke="var(--border)" strokeWidth="4" />
+              <circle cx={ringSize/2} cy={ringSize/2} r={r} fill="none" stroke={color} strokeWidth="4"
+                strokeDasharray={`${2 * Math.PI * r}`}
+                strokeDashoffset={`${2 * Math.PI * r * (1 - pct / 100)}`}
+                style={{ transition: "stroke-dashoffset 0.5s, stroke 0.3s" }} />
+            </svg>
+            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: done ? 16 : 14, color, lineHeight: 1, textAlign: "center" }}>
+              {done ? "✓" : formatTime(remaining)}
+            </div>
           </div>
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>
-            {done ? "⏱ Time's up!" : running ? "⏱ Running…" : `⏱ ${formatTime(duration)}`}
-          </div>
-          <div style={{ display: "flex", gap: 6 }}>
-            {!running && !done && <button onClick={handleStart} style={{ background: color, color: "#000", border: "none", borderRadius: 6, padding: "4px 12px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>▶ Start</button>}
-            {running && <button onClick={handlePause} style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "4px 12px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>⏸ Pause</button>}
-            {(done || remaining < duration) && <button onClick={handleReset} style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "4px 12px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>↺ Reset</button>}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color, marginBottom: 6 }}>
+              {done ? "⏱ Time's up!" : running ? `⏱ ${formatTime(remaining)} left` : `⏱ ${formatTime(duration)}`}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {!running && !done && (
+                <button onClick={handleStart} style={{ flex: 1, background: color, color: "#000", border: "none", borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>▶ Start</button>
+              )}
+              {running && (
+                <button onClick={handlePause} style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 0", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>⏸ Pause</button>
+              )}
+              {(done || remaining < duration) && (
+                <button onClick={handleReset} style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 0", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>↺ Reset</button>
+              )}
+            </div>
+            {done && <div style={{ fontSize: 12, color: "#5de098", marginTop: 6, fontWeight: 600 }}>🔔 Tap Reset to go again</div>}
           </div>
         </div>
       </div>
@@ -205,10 +277,20 @@ interface StopwatchProps {
 
 export function Stopwatch({ onUseTime }: StopwatchProps) {
   const [running, setRunning]   = useState(false);
-  const [elapsed, setElapsed]   = useState(0); // milliseconds
+  const [elapsed, setElapsed]   = useState(0);
   const [stopped, setStopped]   = useState(false);
   const startRef                = useRef<number | null>(null);
   const frameRef                = useRef<number | null>(null);
+  const wakeLockRef             = useRef<any>(null);
+
+  async function acquireWakeLock() {
+    try {
+      if ("wakeLock" in navigator) wakeLockRef.current = await (navigator as any).wakeLock.request("screen");
+    } catch (e) {}
+  }
+  function releaseWakeLock() {
+    if (wakeLockRef.current) { wakeLockRef.current.release().catch(() => {}); wakeLockRef.current = null; }
+  }
 
   function tick() {
     if (startRef.current === null) return;
@@ -218,26 +300,28 @@ export function Stopwatch({ onUseTime }: StopwatchProps) {
 
   function start() {
     startRef.current = Date.now() - elapsed;
-    setRunning(true);
-    setStopped(false);
+    setRunning(true); setStopped(false);
     frameRef.current = requestAnimationFrame(tick);
+    acquireWakeLock();
   }
 
   function stop() {
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
-    setRunning(false);
-    setStopped(true);
+    setRunning(false); setStopped(true);
+    releaseWakeLock();
   }
 
   function reset() {
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
-    setRunning(false);
-    setStopped(false);
-    setElapsed(0);
+    setRunning(false); setStopped(false); setElapsed(0);
     startRef.current = null;
+    releaseWakeLock();
   }
 
-  useEffect(() => () => { if (frameRef.current) cancelAnimationFrame(frameRef.current); }, []);
+  useEffect(() => () => {
+    if (frameRef.current) cancelAnimationFrame(frameRef.current);
+    releaseWakeLock();
+  }, []);
 
   const totalSecs = elapsed / 1000;
   const mins = Math.floor(totalSecs / 60);
@@ -246,6 +330,9 @@ export function Stopwatch({ onUseTime }: StopwatchProps) {
   const display = mins > 0
     ? `${mins}:${secs.toString().padStart(2,"0")}.${ms.toString().padStart(2,"0")}`
     : `${secs}.${ms.toString().padStart(2,"0")}`;
+
+  // For saving — always store as total seconds
+  const totalSecsForSave = parseFloat(totalSecs.toFixed(2));
 
   return (
     <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
@@ -274,9 +361,9 @@ export function Stopwatch({ onUseTime }: StopwatchProps) {
         )}
       </div>
       {stopped && (
-        <button onClick={() => onUseTime(parseFloat(totalSecs.toFixed(2)))}
+        <button onClick={() => onUseTime(totalSecsForSave)}
           style={{ width: "100%", background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
-          ✓ Use this time ({totalSecs.toFixed(2)}s)
+          ✓ Use this time ({display})
         </button>
       )}
     </div>
