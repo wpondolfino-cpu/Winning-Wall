@@ -10,6 +10,7 @@ interface Props {
 
 // Persistent audio context — must be created and resumed on a user gesture
 let sharedAudioCtx: AudioContext | null = null;
+let alarmBuffer: AudioBuffer | null = null;
 
 function getAudioCtx(): AudioContext {
   if (!sharedAudioCtx) {
@@ -18,15 +19,40 @@ function getAudioCtx(): AudioContext {
   return sharedAudioCtx;
 }
 
+// Generate a beep buffer programmatically and cache it
+function getAlarmBuffer(ctx: AudioContext): AudioBuffer {
+  if (alarmBuffer) return alarmBuffer;
+  const sampleRate = ctx.sampleRate;
+  const duration = 0.25;
+  const numBeeps = 3;
+  const gap = 0.3;
+  const totalLen = Math.floor(sampleRate * (duration * numBeeps + gap * (numBeeps - 1)));
+  const buf = ctx.createBuffer(1, totalLen, sampleRate);
+  const data = buf.getChannelData(0);
+  for (let b = 0; b < numBeeps; b++) {
+    const start = Math.floor(b * (duration + gap) * sampleRate);
+    const end = Math.floor(start + duration * sampleRate);
+    for (let i = start; i < end; i++) {
+      const t = (i - start) / sampleRate;
+      const envelope = Math.min(1, (end - i) / (sampleRate * 0.05)); // fade out
+      data[i] = Math.sin(2 * Math.PI * 880 * t) * 0.8 * envelope;
+    }
+  }
+  alarmBuffer = buf;
+  return buf;
+}
+
 // Call this on any user tap to unlock audio on iOS
 function unlockAudio() {
   try {
     const ctx = getAudioCtx();
     if (ctx.state === "suspended") ctx.resume();
-    // Play a silent buffer to unlock
-    const buf = ctx.createBuffer(1, 1, 22050);
+    // Pre-generate and cache the alarm buffer while we have a user gesture
+    getAlarmBuffer(ctx);
+    // Play silent buffer to fully unlock
+    const silent = ctx.createBuffer(1, 1, 22050);
     const src = ctx.createBufferSource();
-    src.buffer = buf;
+    src.buffer = silent;
     src.connect(ctx.destination);
     src.start(0);
   } catch (e) {}
@@ -35,22 +61,23 @@ function unlockAudio() {
 function playAlarm() {
   try {
     const ctx = getAudioCtx();
-    if (ctx.state === "suspended") ctx.resume();
-    // Play 3 beeps
-    [0, 0.3, 0.6].forEach(offset => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.value = 880;
-      osc.type = "sine";
-      gain.gain.setValueAtTime(0.8, ctx.currentTime + offset);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.25);
-      osc.start(ctx.currentTime + offset);
-      osc.stop(ctx.currentTime + offset + 0.25);
-    });
-    // Vibrate if supported
-    if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
+    // Resume if suspended — on iOS this may silently fail without prior user gesture
+    // but unlockAudio() called on Start tap should have already unlocked it
+    if (ctx.state === "suspended") {
+      ctx.resume().then(() => {
+        const src = ctx.createBufferSource();
+        src.buffer = getAlarmBuffer(ctx);
+        src.connect(ctx.destination);
+        src.start(0);
+      });
+    } else {
+      const src = ctx.createBufferSource();
+      src.buffer = getAlarmBuffer(ctx);
+      src.connect(ctx.destination);
+      src.start(0);
+    }
+    // Vibrate regardless of audio
+    if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300]);
   } catch (e) { console.warn("Audio not available:", e); }
 }
 
