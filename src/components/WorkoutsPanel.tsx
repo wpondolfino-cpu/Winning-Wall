@@ -10,6 +10,35 @@ interface Props {
   onScoreLogged: () => void;
 }
 
+// ── Spot Personal Bests Display ───────────────────────────────
+function SpotPBDisplay({ playerId, workoutId, spotConfig, totalBest }: { playerId: string; workoutId: string; spotConfig: string[]; totalBest: number }) {
+  const [spotPBs, setSpotPBs] = useState<any[]>([]);
+  useEffect(() => {
+    supabase.from("spot_personal_bests")
+      .select("*").eq("player_id", playerId).eq("workout_id", workoutId)
+      .order("spot_index")
+      .then(({ data }) => setSpotPBs(data ?? []));
+  }, [playerId, workoutId]);
+
+  if (spotPBs.length === 0) return null;
+
+  return (
+    <div style={{ padding: "10px 14px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, marginBottom: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", marginBottom: 8 }}>
+        🏆 Personal Best: {totalBest} total
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {spotPBs.map(pb => (
+          <div key={pb.spot_index} style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
+            <span style={{ color: "var(--muted)" }}>{pb.spot_name}</span>
+            <span style={{ color: "#93b4ff", fontWeight: 700 }}>{pb.best_score}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLogged }: Props) {
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
   const [announcements, setAnnouncements] = useState<any[]>([]);
@@ -97,6 +126,34 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
       }
       const localDate = new Date().toLocaleDateString("en-CA");
       const result = await _submitScore({ player_id: playerId, workout_id: activeWorkout.id, made: finalMade, attempts: 0, sprint_secs: parseFloat(sprintSecs) || 0, reps: finalReps, self_points: finalSelfPoints, local_date: localDate } as any);
+
+      // Save per-spot personal bests for multi-spot workouts
+      if (activeWorkout.scoring_type === "multi_spot") {
+        const spots: string[] = (activeWorkout as any).spot_config ?? [];
+        for (let si = 0; si < spots.length; si++) {
+          const spotScore = parseInt(spotScores[si] ?? "") || 0;
+          if (spotScore > 0) {
+            // Check existing PB for this spot
+            const { data: existing } = await supabase
+              .from("spot_personal_bests")
+              .select("best_score")
+              .eq("player_id", playerId)
+              .eq("workout_id", activeWorkout.id)
+              .eq("spot_index", si)
+              .maybeSingle();
+            if (!existing || spotScore > existing.best_score) {
+              await supabase.from("spot_personal_bests").upsert({
+                player_id: playerId,
+                workout_id: activeWorkout.id,
+                spot_index: si,
+                spot_name: spots[si],
+                best_score: spotScore,
+                achieved_at: new Date().toISOString(),
+              }, { onConflict: "player_id,workout_id,spot_index" });
+            }
+          }
+        }
+      }
       const isPersonalBest: boolean = result.isPersonalBest;
       const previousBest: number | null = result.previousBest;
       const { newStreak, bonusAwarded } = await updateStreak(playerId);
@@ -408,6 +465,11 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
                 </div>
               );
             })()}
+
+            {/* Multi-spot personal bests */}
+            {activeWorkout.scoring_type === "multi_spot" && scoreFor(activeWorkout.id) && (
+              <SpotPBDisplay playerId={playerId} workoutId={activeWorkout.id} spotConfig={(activeWorkout as any).spot_config ?? []} totalBest={scoreFor(activeWorkout.id)!.made} />
+            )}
 
             {getLogFields(activeWorkout)}
             <button className="btn-primary" onClick={handleSubmitScore} disabled={saving} style={{ marginTop: 16 }}>
