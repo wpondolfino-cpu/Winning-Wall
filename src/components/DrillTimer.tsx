@@ -8,9 +8,34 @@ interface Props {
   onComplete?: () => void;
 }
 
+// Persistent audio context — must be created and resumed on a user gesture
+let sharedAudioCtx: AudioContext | null = null;
+
+function getAudioCtx(): AudioContext {
+  if (!sharedAudioCtx) {
+    sharedAudioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  }
+  return sharedAudioCtx;
+}
+
+// Call this on any user tap to unlock audio on iOS
+function unlockAudio() {
+  try {
+    const ctx = getAudioCtx();
+    if (ctx.state === "suspended") ctx.resume();
+    // Play a silent buffer to unlock
+    const buf = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start(0);
+  } catch (e) {}
+}
+
 function playAlarm() {
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const ctx = getAudioCtx();
+    if (ctx.state === "suspended") ctx.resume();
     // Play 3 beeps
     [0, 0.3, 0.6].forEach(offset => {
       const osc = ctx.createOscillator();
@@ -66,6 +91,7 @@ export default function DrillTimer({ defaultSeconds = 30, compact = false, onCom
   }, [running]);
 
   function handleStart() {
+    unlockAudio(); // unlock iOS audio on user gesture BEFORE timer starts
     setDone(false);
     setRunning(true);
     alarmAtRef.current = Date.now() + remaining * 1000;
@@ -299,6 +325,7 @@ export function Stopwatch({ onUseTime }: StopwatchProps) {
   }
 
   function start() {
+    unlockAudio(); // unlock iOS audio on user gesture
     startRef.current = Date.now() - elapsed;
     setRunning(true); setStopped(false);
     frameRef.current = requestAnimationFrame(tick);
