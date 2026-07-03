@@ -4,6 +4,7 @@ import { useWorkouts } from "./hooks/useWorkouts";
 import { getMyScores, getAllScores, signOut, Score, Profile, getPlayerXp, getXpPerks, checkUnseenPerks, loadPeriodAnchor } from "./lib/supabase";
 import ProfileEditor from "./components/ProfileEditor";
 import ProfilePage from "./components/ProfilePage";
+import NotificationOptIn from "./components/NotificationOptIn";
 import LoginPage from "./pages/LoginPage";
 import WorkoutsPanel from "./components/WorkoutsPanel";
 import CoachPanel from "./components/coach/CoachPanel";
@@ -267,6 +268,9 @@ export default function App() {
               {refreshing ? <><span style={{ display: "inline-block", animation: "spin 0.8s linear infinite" }}>🔄</span> Refreshing…</> : pullDistance > 40 ? "↑ Release to refresh" : "↓ Pull to refresh"}
             </div>
           )}
+
+          {isPlayer && <NotificationOptIn playerId={user.id} />}
+
 
           {/* Player panels */}
           {isPlayer && playerTab === "workouts" && <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} />}
