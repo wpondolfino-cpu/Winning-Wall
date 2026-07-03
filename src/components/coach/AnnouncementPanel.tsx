@@ -31,6 +31,21 @@ export default function AnnouncementPanel({ isAdmin, coachId, coachName }: Props
       coach_id: coachId, coach_name: coachName,
       message: newMsg.trim(), is_pinned: isPinned,
     });
+
+    // Notify all subscribed players
+    try {
+      await supabase.functions.invoke("send-push", {
+        body: {
+          title: isPinned ? "📌 New pinned announcement" : "📢 New announcement from Coach",
+          message: newMsg.trim(),
+          allPlayers: true,
+        },
+      });
+    } catch (e) {
+      console.error("Push notification failed to send:", e);
+      // Don't block the UI on push failure — the announcement itself still posted fine.
+    }
+
     setNewMsg(""); setIsPinned(false); setShowForm(false);
     await load();
     setPosting(false);
