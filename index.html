@@ -22,6 +22,22 @@
     <meta property="og:image" content="/icons/icon-512.png" />
 
     <title>AHS Winning Wall</title>
+
+    <!-- OneSignal Push Notifications -->
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+    <script>
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      OneSignalDeferred.push(async function (OneSignal) {
+        await OneSignal.init({
+          appId: "d888dd8c-4145-422f-a725-76679060e8e9",
+          // Point OneSignal at our existing service worker (which already
+          // handles PWA offline caching) instead of registering a second
+          // service worker file at the same scope.
+          serviceWorkerParam: { scope: "/" },
+          serviceWorkerPath: "sw.js",
+        });
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>
