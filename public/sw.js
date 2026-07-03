@@ -1,5 +1,9 @@
 // public/sw.js
-// Service Worker — enables PWA install + offline fallback
+// Service Worker — enables PWA install + offline fallback + push (via OneSignal)
+
+// Pulls in OneSignal's push/notificationclick handling so we don't need a
+// second service worker file registered at the same scope.
+importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
 
 const CACHE_NAME = "ahs-winning-wall-v1";
 
@@ -55,28 +59,6 @@ self.addEventListener("fetch", (event) => {
   );
 });
 
-// Push notifications
-self.addEventListener("push", (event) => {
-  const data = event.data?.json() ?? {};
-  event.waitUntil(
-    self.registration.showNotification(data.title ?? "AHS Winning Wall", {
-      body: data.body ?? "Check the leaderboard — your teammates are grinding! 🏀",
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
-      data: { url: data.url ?? "/" },
-    })
-  );
-});
-
-// Notification click — open the app
-self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
-  event.waitUntil(
-    clients.matchAll({ type: "window" }).then((clientList) => {
-      for (const client of clientList) {
-        if (client.url === "/" && "focus" in client) return client.focus();
-      }
-      if (clients.openWindow) return clients.openWindow("/");
-    })
-  );
-});
+// Push notifications and notification-click handling are now provided by
+// the imported OneSignalSDK.sw.js above — no need to handle "push" or
+// "notificationclick" ourselves.
