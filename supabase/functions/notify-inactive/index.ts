@@ -73,18 +73,20 @@ serve(async () => {
 
     // ── Send Push via OneSignal ──────────────────────────────
     try {
-      const pushRes = await fetch("https://onesignal.com/api/v1/notifications", {
+      const pushRes = await fetch("https://api.onesignal.com/notifications", {
         method: "POST",
         headers: {
-          "Authorization": `Basic ${ONE_SIGNAL_API_KEY}`,
+          "Authorization": `Key ${ONE_SIGNAL_API_KEY}`,
           "Content-Type": "application/json",
+          "Accept": "application/json",
         },
         body: JSON.stringify({
           app_id: ONE_SIGNAL_APP_ID,
+          target_channel: "push",
           filters: [{ field: "tag", key: "player_id", relation: "=", value: player.id }],
           headings: { en: "🏀 Get back in the gym!" },
           contents: { en: message },
-          url: "https://ahswinningwall.com",
+          url: "https://attleborowinningwall.vercel.app",
         }),
       });
       results.push({ player: player.name, push: pushRes.ok ? "sent" : "failed" });
