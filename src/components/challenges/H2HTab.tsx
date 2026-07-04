@@ -130,6 +130,15 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
       setShowNew(false); setSelectedOpponent(""); setSelectedWorkout("");
       showToast("Challenge sent! ⚔️");
       try { const { data } = await supabase.from("xp_settings").select("xp_required").eq("perk_key","_xp_challenge_sent").single(); await awardXp(currentUserId, data?.xp_required ?? XP_CHALLENGE_SENT, "challenge_sent"); } catch(e) { console.error(e); }
+      try {
+        await supabase.functions.invoke("send-push", {
+          body: {
+            title: "⚔️ You've been challenged!",
+            message: `${currentUserName} challenged you in ${workoutTitle}`,
+            playerIds: [opponentId],
+          },
+        });
+      } catch (e) { console.error("Push notification failed to send:", e); }
       loadChallenges();
     }
   }
@@ -159,14 +168,36 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
         challenger_score: rematchScore, opponent_score: null,
         status: "pending", opponent_seen: false, winner_id: null,
       });
-      if (!error) { showToast(`Rematch sent to ${rivalName}! 🔄`); loadChallenges(); }
+      if (!error) {
+        showToast(`Rematch sent to ${rivalName}! 🔄`);
+        try {
+          await supabase.functions.invoke("send-push", {
+            body: {
+              title: "⚔️ Rematch!",
+              message: `${currentUserName} sent you a rematch in ${c.workout_title}`,
+              playerIds: [rivalId],
+            },
+          });
+        } catch (e) { console.error("Push notification failed to send:", e); }
+        loadChallenges();
+      }
     } finally { setRematching(null); }
   }
 
   async function respondToChallenge(challenge: Challenge, accept: boolean) {
     if (!accept) {
       await supabase.from("challenges").update({ status: "declined" }).eq("id", challenge.id);
-      showToast("Challenge declined."); loadChallenges(); return;
+      showToast("Challenge declined.");
+      try {
+        await supabase.functions.invoke("send-push", {
+          body: {
+            title: "Challenge declined",
+            message: `${currentUserName} declined your challenge in ${challenge.workout_title}`,
+            playerIds: [challenge.challenger_id],
+          },
+        });
+      } catch (e) { console.error("Push notification failed to send:", e); }
+      loadChallenges(); return;
     }
     setResponding(challenge.id);
   }
@@ -180,6 +211,20 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
     if (finalScore > 0) {
       try { await submitScore({ player_id: currentUserId, workout_id: challenge.workout_id, made: finalScore, attempts: 0, sprint_secs: 0, reps: 0, self_points: 0 }); onScoreLogged?.(); } catch(e) { console.warn(e); }
     }
+    try {
+      const resultMsg = winnerId === challenge.challenger_id
+        ? `You beat ${currentUserName} in ${challenge.workout_title}! 🏆`
+        : winnerId === currentUserId
+        ? `${currentUserName} beat you in ${challenge.workout_title}!`
+        : `Your challenge with ${currentUserName} ended in a tie in ${challenge.workout_title}!`;
+      await supabase.functions.invoke("send-push", {
+        body: {
+          title: "🏀 Challenge complete!",
+          message: resultMsg,
+          playerIds: [challenge.challenger_id],
+        },
+      });
+    } catch (e) { console.error("Push notification failed to send:", e); }
     setResponding(null); setMyResponse("");
     showToast(winnerId === currentUserId ? "🏆 You won!" : "Response submitted! 🏀");
     loadChallenges();
