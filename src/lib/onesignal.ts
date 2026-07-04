@@ -39,6 +39,10 @@ export function requestPushPermission(playerId: string): Promise<boolean> {
         await OneSignal.Notifications.requestPermission();
         const granted = !!OneSignal.Notifications.permission;
         if (granted) {
+          // Custom (non-default) permission flows like ours need this
+          // explicit opt-in call, or OneSignal may grant browser permission
+          // without fully marking the subscription as "subscribed" server-side.
+          await OneSignal.User.PushSubscription.optIn();
           await OneSignal.User.addTag("player_id", playerId);
         }
         resolve(granted);
@@ -59,6 +63,9 @@ export function ensurePushTag(playerId: string) {
   withOneSignal(async (OneSignal) => {
     try {
       if (OneSignal.Notifications.permission) {
+        // Self-heal subscriptions that granted browser permission earlier
+        // (e.g. during testing) but never got fully opted in server-side.
+        await OneSignal.User.PushSubscription.optIn();
         await OneSignal.User.addTag("player_id", playerId);
       }
     } catch (e) {
