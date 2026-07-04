@@ -13,6 +13,7 @@
 import { supabase, Score, ScoreAttempt, PersonalBest, XP_PER_ATTEMPT } from "./supabase";
 import { awardXp } from "./xp";
 import { checkAndUpdateRecords, refreshGlobalRecords } from "./records";
+import { getLeaderboard } from "./leaderboard";
 
 // ── Raw score calculation ─────────────────────────────────────
 // Single function used everywhere — never inline this logic
@@ -39,6 +40,14 @@ export async function submitScore(
   // Always strip local_date — it's not a DB column, just used for dedup logic
   const { local_date: localDate, ...cleanScore } = score as any;
   const today = localDate ?? new Date().toISOString().split("T")[0];
+
+  // Snapshot all-time standings before any writes — used at the end to
+  // detect if this submission caused the player to pass anyone.
+  let oldAllTimeTotal = 0;
+  try {
+    const beforeBoard = await getLeaderboard();
+    oldAllTimeTotal = beforeBoard.find(e => e.id === score.player_id)?.total_points ?? 0;
+  } catch (e) { console.error("Leaderboard snapshot (before) failed:", e); }
 
   // Fetch workout to get scoring type and point values
   const { data: workout } = await supabase
@@ -191,12 +200,43 @@ export async function submitScore(
 
   // ── Update personal_bests table (survives season resets) ──
   if (isPersonalBest) {
+    // Snapshot the current #1 for this drill (excluding this player) and
+    // this player's own prior raw score, before we overwrite it — used to
+    // detect if this submission just took over the #1 spot from someone.
+    let ownPreviousRaw: number | null = null;
+    let topOther: { player_id: string; raw_score: number } | null = null;
+    try {
+      const { data: ownRow } = await supabase.from("personal_bests")
+        .select("raw_score").eq("player_id", score.player_id).eq("workout_id", score.workout_id).maybeSingle();
+      ownPreviousRaw = ownRow?.raw_score ?? null;
+
+      const { data: topRow } = await supabase.from("personal_bests")
+        .select("player_id, raw_score").eq("workout_id", score.workout_id).neq("player_id", score.player_id)
+        .order("raw_score", { ascending: false }).limit(1).maybeSingle();
+      topOther = topRow ?? null;
+    } catch (e) { console.error("Drill PB snapshot failed:", e); }
+
     await supabase.from("personal_bests").upsert({
       player_id:   score.player_id,
       workout_id:  score.workout_id,
       raw_score:   newRaw,
       achieved_at: new Date().toISOString(),
     }, { onConflict: "player_id,workout_id" });
+
+    // Only notify if this submission is what pushed us past them — not if
+    // we were already #1 and just padded our own lead further.
+    if (topOther && newRaw > topOther.raw_score && (ownPreviousRaw === null || ownPreviousRaw <= topOther.raw_score)) {
+      try {
+        const { data: wo } = await supabase.from("workouts").select("title").eq("id", score.workout_id).single();
+        await supabase.functions.invoke("send-push", {
+          body: {
+            title: "😤 Personal best overtaken!",
+            message: `Someone just beat your personal best in ${wo?.title ?? "a drill"}!`,
+            playerIds: [topOther.player_id],
+          },
+        });
+      } catch (e) { console.error("Push notification failed to send:", e); }
+    }
   }
 
   // ── Award XP on every attempt ─────────────────────────────
@@ -219,6 +259,29 @@ export async function submitScore(
       ).catch(console.error);
     }
   }
+
+  // ── All-time leaderboard overtaken check ──────────────────
+  try {
+    const afterBoard = await getLeaderboard();
+    const newAllTimeTotal = afterBoard.find(e => e.id === score.player_id)?.total_points ?? 0;
+    if (newAllTimeTotal > oldAllTimeTotal) {
+      const overtaken = afterBoard.filter(e =>
+        e.id !== score.player_id &&
+        e.total_points > oldAllTimeTotal &&
+        e.total_points < newAllTimeTotal
+      );
+      if (overtaken.length > 0) {
+        const { data: prof } = await supabase.from("profiles").select("name").eq("id", score.player_id).single();
+        await supabase.functions.invoke("send-push", {
+          body: {
+            title: "😤 You've been passed!",
+            message: `${prof?.name ?? "Someone"} just passed you on the All-Time leaderboard!`,
+            playerIds: overtaken.map(e => e.id),
+          },
+        });
+      }
+    }
+  } catch (e) { console.error("All-time overtaken check failed:", e); }
 
   return { saved, isPersonalBest, previousBest };
 }
