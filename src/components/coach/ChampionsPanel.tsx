@@ -51,6 +51,15 @@ export default function ChampionsPanel() {
       }
 
       await loadChampions();
+      try {
+        await supabase.functions.invoke("send-push", {
+          body: {
+            title: "👑 Biweekly champions crowned!",
+            message: "The leaderboard has reset — check who took the crown this period!",
+            allPlayers: true,
+          },
+        });
+      } catch (e) { console.error("Push notification failed to send:", e); }
       alert("👑 Biweekly champions have been crowned and leaderboard snapshot saved to History!");
     } catch (e: any) { alert("Error: " + e.message); }
     finally { setCrowning(false); }
