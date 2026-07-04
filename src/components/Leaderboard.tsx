@@ -418,7 +418,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                         );
                       })}
                       {periodBonuses.filter(b => b.player_id === entry.player_id).map((b, bi) => {
-                        const label = b.reason === "daily_completion" ? "✅ Daily Bonus" : b.reason === "challenge_win" ? "⚔️ Challenge Win" : b.reason === "streak" ? "🔥 Streak" : "⭐ Bonus";
+                        const label = b.reason === "daily_completion" ? "✅ Daily Bonus" : b.reason === "challenge_win" ? "⚔️ Challenge Win" : b.reason === "streak" ? "🔥 Streak" : b.reason === "personal_best" ? "🎯 Personal Best" : "⭐ Bonus";
                         return <div key={bi} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}><div style={{ fontSize: 12, color: "#ff8c42" }}>{label}</div><span style={{ fontSize: 13, fontWeight: 700, color: "#ff8c42" }}>+{b.points}</span></div>;
                       })}
                       <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
