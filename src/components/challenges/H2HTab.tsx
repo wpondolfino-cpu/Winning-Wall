@@ -40,6 +40,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
   const [challengeScore, setChallengeScore]   = useState("");
   const [responding, setResponding]           = useState<string | null>(null);
   const [myResponse, setMyResponse]           = useState("");
+  const [submittingResponse, setSubmittingResponse] = useState(false);
   const [toast, setToast]                     = useState("");
   const [xpPerks, setXpPerks]                 = useState<any[]>([]);
   const { leaderboard } = useLeaderboard();
@@ -57,7 +58,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
     if (expired && expired.length > 0) {
       for (const c of expired) {
         await supabase.from("challenges").update({ status: "completed", winner_id: currentUserId, opponent_score: -1 }).eq("id", c.id);
-        await awardChallengeWinBonus(currentUserId).catch(console.warn);
+        await awardChallengeWinBonus(currentUserId, c.id).catch(console.warn);
       }
     }
   }, [currentUserId]);
@@ -203,31 +204,37 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
   }
 
   async function submitResponse(challenge: Challenge) {
-    const finalScore = parseInt(myResponse) || 0;
-    const winnerId = finalScore > challenge.challenger_score ? currentUserId : challenge.challenger_score > finalScore ? challenge.challenger_id : null;
-    await supabase.from("challenges").update({ opponent_score: finalScore, status: "completed", winner_id: winnerId }).eq("id", challenge.id);
-    if (winnerId) await awardChallengeWinBonus(winnerId).catch(console.error);
-    try { const { data } = await supabase.from("xp_settings").select("xp_required").eq("perk_key","_xp_challenge_done").single(); await awardXp(currentUserId, data?.xp_required ?? XP_CHALLENGE_DONE, "challenge_completed"); } catch(e) { console.error(e); }
-    if (finalScore > 0) {
-      try { await submitScore({ player_id: currentUserId, workout_id: challenge.workout_id, made: finalScore, attempts: 0, sprint_secs: 0, reps: 0, self_points: 0 }); onScoreLogged?.(); } catch(e) { console.warn(e); }
-    }
+    if (submittingResponse) return; // blocks re-entry from double-clicks
+    setSubmittingResponse(true);
     try {
-      const resultMsg = winnerId === challenge.challenger_id
-        ? `You beat ${currentUserName} in ${challenge.workout_title}! 🏆`
-        : winnerId === currentUserId
-        ? `${currentUserName} beat you in ${challenge.workout_title}!`
-        : `Your challenge with ${currentUserName} ended in a tie in ${challenge.workout_title}!`;
-      await supabase.functions.invoke("send-push", {
-        body: {
-          title: "🏀 Challenge complete!",
-          message: resultMsg,
-          playerIds: [challenge.challenger_id],
-        },
-      });
-    } catch (e) { console.error("Push notification failed to send:", e); }
-    setResponding(null); setMyResponse("");
-    showToast(winnerId === currentUserId ? "🏆 You won!" : "Response submitted! 🏀");
-    loadChallenges();
+      const finalScore = parseInt(myResponse) || 0;
+      const winnerId = finalScore > challenge.challenger_score ? currentUserId : challenge.challenger_score > finalScore ? challenge.challenger_id : null;
+      await supabase.from("challenges").update({ opponent_score: finalScore, status: "completed", winner_id: winnerId }).eq("id", challenge.id);
+      if (winnerId) await awardChallengeWinBonus(winnerId, challenge.id).catch(console.error);
+      try { const { data } = await supabase.from("xp_settings").select("xp_required").eq("perk_key","_xp_challenge_done").single(); await awardXp(currentUserId, data?.xp_required ?? XP_CHALLENGE_DONE, "challenge_completed"); } catch(e) { console.error(e); }
+      if (finalScore > 0) {
+        try { await submitScore({ player_id: currentUserId, workout_id: challenge.workout_id, made: finalScore, attempts: 0, sprint_secs: 0, reps: 0, self_points: 0 }); onScoreLogged?.(); } catch(e) { console.warn(e); }
+      }
+      try {
+        const resultMsg = winnerId === challenge.challenger_id
+          ? `You beat ${currentUserName} in ${challenge.workout_title}! 🏆`
+          : winnerId === currentUserId
+          ? `${currentUserName} beat you in ${challenge.workout_title}!`
+          : `Your challenge with ${currentUserName} ended in a tie in ${challenge.workout_title}!`;
+        await supabase.functions.invoke("send-push", {
+          body: {
+            title: "🏀 Challenge complete!",
+            message: resultMsg,
+            playerIds: [challenge.challenger_id],
+          },
+        });
+      } catch (e) { console.error("Push notification failed to send:", e); }
+      setResponding(null); setMyResponse("");
+      showToast(winnerId === currentUserId ? "🏆 You won!" : "Response submitted! 🏀");
+      loadChallenges();
+    } finally {
+      setSubmittingResponse(false);
+    }
   }
 
   const pending   = challenges.filter(c => c.status === "pending");
@@ -292,7 +299,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
               <div style={{ display: "flex", gap: 8 }}>
                 <input type="number" value={myResponse} onChange={e => setMyResponse(e.target.value)} placeholder="Your score" min="0"
                   style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", color: "var(--text)", fontSize: 14, fontFamily: "inherit", outline: "none" }} />
-                <button onClick={() => submitResponse(c)} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Submit</button>
+                <button onClick={() => submitResponse(c)} disabled={submittingResponse} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{submittingResponse ? "Submitting…" : "Submit"}</button>
                 <button onClick={() => setResponding(null)} style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>Cancel</button>
               </div>
             </div>
