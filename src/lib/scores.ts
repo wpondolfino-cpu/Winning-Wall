@@ -363,12 +363,16 @@ export async function upsertScore(score: Omit<Score, "id" | "points" | "logged_a
   return data as Score;
 }
 
-export async function awardChallengeWinBonus(playerId: string): Promise<void> {
-  await supabase.from("streak_bonuses").insert({
+export async function awardChallengeWinBonus(playerId: string, challengeId: string): Promise<void> {
+  const { error } = await supabase.from("streak_bonuses").insert({
     player_id:     playerId,
     points:        1,
     streak_length: 0,
     awarded_at:    new Date().toISOString(),
     reason:        "challenge_win",
+    challenge_id:  challengeId,
   });
+  // 23505 = unique_violation — this challenge already paid out its bonus.
+  // That's expected on a double-click/retry, not a real error.
+  if (error && error.code !== "23505") throw error;
 }
