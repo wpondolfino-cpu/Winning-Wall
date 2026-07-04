@@ -5,6 +5,7 @@ import { getMyScores, getAllScores, signOut, Score, Profile, getPlayerXp, getXpP
 import ProfileEditor from "./components/ProfileEditor";
 import ProfilePage from "./components/ProfilePage";
 import NotificationOptIn from "./components/NotificationOptIn";
+import { ensurePushTag } from "./lib/onesignal";
 import LoginPage from "./pages/LoginPage";
 import WorkoutsPanel from "./components/WorkoutsPanel";
 import CoachPanel from "./components/coach/CoachPanel";
@@ -84,6 +85,13 @@ export default function App() {
   useEffect(() => {
     if (user && profile?.role === "player") loadMyScores();
     if (user && (profile?.role === "coach" || profile?.role === "admin")) loadAllScores();
+  }, [user, profile]);
+
+  // Self-heal push subscriptions: if this device already granted browser
+  // notification permission but never got fully opted in on OneSignal's
+  // backend (e.g. from earlier testing), fix it silently on load.
+  useEffect(() => {
+    if (user && profile?.role === "player") ensurePushTag(user.id);
   }, [user, profile]);
 
   const checkNewPerks = useCallback(async () => {
