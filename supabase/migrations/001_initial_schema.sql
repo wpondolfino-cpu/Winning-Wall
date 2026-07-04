@@ -1,7 +1,10 @@
 -- ============================================================
---  AHS Winning Wall — Supabase Schema
---  Run this in your Supabase SQL Editor or via CLI:
---    supabase db push
+--  AHS Winning Wall — Supabase Schema (original, from GitHub)
+--  This is the true foundation every later migration builds on.
+--  Some pieces here (role check, generated points column) were
+--  later superseded — e.g. role gains 'admin' in later migrations,
+--  and the generated `points` column is superseded once
+--  self-reported/multi-spot scoring is added (see scoring_cleanup).
 -- ============================================================
 
 -- ── Extensions ──────────────────────────────────────────────
@@ -68,12 +71,10 @@ alter table public.workouts    enable row level security;
 alter table public.scores      enable row level security;
 alter table public.notifications enable row level security;
 
--- profiles: everyone can read, users can update their own row
 create policy "profiles_read_all"   on public.profiles for select using (true);
 create policy "profiles_insert_own" on public.profiles for insert with check (auth.uid() = id);
 create policy "profiles_update_own" on public.profiles for update using (auth.uid() = id);
 
--- workouts: everyone can read; only coaches can insert/update/delete
 create policy "workouts_read_all"    on public.workouts for select using (true);
 create policy "workouts_coach_write" on public.workouts for insert
   with check (exists (select 1 from public.profiles where id = auth.uid() and role = 'coach'));
@@ -82,25 +83,25 @@ create policy "workouts_coach_update" on public.workouts for update
 create policy "workouts_coach_delete" on public.workouts for delete
   using (coach_id = auth.uid());
 
--- scores: everyone can read; players can only write/update their own row
 create policy "scores_read_all"      on public.scores for select using (true);
 create policy "scores_player_insert" on public.scores for insert
   with check (player_id = auth.uid());
 create policy "scores_player_update" on public.scores for update
   using (player_id = auth.uid());
 
--- notifications: only service role (edge functions) can insert; users see own
 create policy "notif_read_own" on public.notifications for select
   using (player_id = auth.uid());
 
 -- ============================================================
---  REALTIME — enable broadcast on scores & workouts
+--  REALTIME
 -- ============================================================
 alter publication supabase_realtime add table public.scores;
 alter publication supabase_realtime add table public.workouts;
 
 -- ============================================================
---  HELPER VIEW — leaderboard (pre-aggregated per player)
+--  HELPER VIEW — leaderboard (superseded by later migrations —
+--  see 011_leaderboard_active.sql, 024_fix_leaderboard_view.sql,
+--  and 035_leaderboard_view_bonus_fix_v2.sql for the current version)
 -- ============================================================
 create or replace view public.leaderboard as
   select
@@ -122,11 +123,8 @@ create or replace view public.leaderboard as
   group by p.id, p.name, p.position, p.jersey, p.avatar_url;
 
 -- ============================================================
---  EDGE FUNCTION TRIGGER — auto-notify inactive players
---  (wire this to a pg_cron job or Supabase Edge Function cron)
+--  inactive_players — surfaces who needs a nudge
 -- ============================================================
--- The Edge Function at /supabase/functions/notify-inactive/index.ts
--- handles the actual sending. This view surfaces who needs a nudge.
 create or replace view public.inactive_players as
   select
     p.id,

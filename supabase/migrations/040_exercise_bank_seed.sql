@@ -1,0 +1,77 @@
+-- Pre-populate exercise bank with 65 exercises
+-- Run AFTER 005_lifting_phase2.sql
+-- Safe to run multiple times (ON CONFLICT DO NOTHING)
+
+INSERT INTO public.lifting_exercise_bank (name, muscle_group, video_url, default_rest_secs) VALUES
+-- CHEST
+('Bench Press','Chest','https://youtube.com/watch?v=vcBig73ojpE',180),
+('Incline Bench Press','Chest','https://youtube.com/watch?v=wWWzn2l_830',180),
+('Dumbbell Bench Press','Chest','https://youtube.com/watch?v=VmB1G1K7v94',120),
+('Incline DB Press','Chest','https://youtube.com/watch?v=8iPEnn-ltC8',120),
+('Cable Fly','Chest','https://youtube.com/watch?v=QENKPHhQVi4',90),
+('Push-Up','Chest','https://youtube.com/watch?v=IODxDxX7oi4',60),
+('Chest Dip','Chest','https://youtube.com/watch?v=2z8JmcrW-As',90),
+-- BACK
+('Pull-Up','Back','https://youtube.com/watch?v=eGo4IYlbE5g',120),
+('Chin-Up','Back','https://youtube.com/watch?v=brhRXlOhsAM',120),
+('Barbell Row','Back','https://youtube.com/watch?v=T3N-TO4reLQ',150),
+('Dumbbell Row','Back','https://youtube.com/watch?v=pYcpY20QaE8',90),
+('Lat Pulldown','Back','https://youtube.com/watch?v=CAwf7n6Luuc',90),
+('Cable Row','Back','https://youtube.com/watch?v=GZbfZ033f74',90),
+('Face Pull','Back','https://youtube.com/watch?v=V8dZ3pyiCBo',60),
+('T-Bar Row','Back','https://youtube.com/watch?v=j3Igk5nyZE4',120),
+('Weighted Chin-Up','Back','https://youtube.com/watch?v=brhRXlOhsAM',150),
+-- LEGS
+('Barbell Squat','Legs','https://youtube.com/watch?v=bEv6CCg2BC8',180),
+('Box Squat','Legs','https://youtube.com/watch?v=iRQDZa5y5K4',180),
+('Front Squat','Legs','https://youtube.com/watch?v=m4ytaCJZpl0',180),
+('Goblet Squat','Legs','https://youtube.com/watch?v=MeIiIdhvXT4',90),
+('Trap Bar Deadlift','Legs','https://youtube.com/watch?v=p4C7LWRNnc0',180),
+('Romanian Deadlift','Legs','https://youtube.com/watch?v=5bJEigM5iVg',150),
+('Leg Press','Legs','https://youtube.com/watch?v=IZxyjW7MPJQ',120),
+('Bulgarian Split Squat','Legs','https://youtube.com/watch?v=2C-uNgKwPLE',120),
+('Lunges','Legs','https://youtube.com/watch?v=QOVaHwm-Q6U',90),
+('Nordic Curl','Legs','https://youtube.com/watch?v=_e9vFU9-tkc',120),
+('Leg Curl','Legs','https://youtube.com/watch?v=1Tq3QdYUuHs',90),
+('Leg Extension','Legs','https://youtube.com/watch?v=YyvSfVjQeL0',60),
+('Calf Raise','Legs','https://youtube.com/watch?v=JbyjNymZOt0',60),
+('Hip Thrust','Legs','https://youtube.com/watch?v=xDmFkJxPzeM',90),
+('Single Leg Press','Legs','https://youtube.com/watch?v=IZxyjW7MPJQ',90),
+('Step Up','Legs','https://youtube.com/watch?v=dQqApCGd5Ss',90),
+-- SHOULDERS
+('Overhead Press','Shoulders','https://youtube.com/watch?v=2yjwXTZQDDI',150),
+('Dumbbell Shoulder Press','Shoulders','https://youtube.com/watch?v=qEwKCR5JCog',120),
+('Lateral Raise','Shoulders','https://youtube.com/watch?v=XPPfnSEATJA',60),
+('Front Raise','Shoulders','https://youtube.com/watch?v=gkrOaRwCsIE',60),
+('Rear Delt Fly','Shoulders','https://youtube.com/watch?v=EA7u4Q_8HQ0',60),
+('Arnold Press','Shoulders','https://youtube.com/watch?v=68UqhZ_QMkI',90),
+('Upright Row','Shoulders','https://youtube.com/watch?v=UKB5oKKWRx4',90),
+-- ARMS
+('Barbell Curl','Arms','https://youtube.com/watch?v=kwG2ipFRgfo',90),
+('Dumbbell Curl','Arms','https://youtube.com/watch?v=sAq_ocpRh_I',60),
+('Hammer Curl','Arms','https://youtube.com/watch?v=TwD-YGVP4Bk',60),
+('Preacher Curl','Arms','https://youtube.com/watch?v=fIWP-FRFNU0',90),
+('Tricep Pushdown','Arms','https://youtube.com/watch?v=2-LAMcpzODU',60),
+('Skull Crusher','Arms','https://youtube.com/watch?v=ir5PsbniVSc',90),
+('Overhead Tricep Extension','Arms','https://youtube.com/watch?v=YbX7Wd8jQ-Q',60),
+('Close Grip Bench Press','Arms','https://youtube.com/watch?v=nEF0bv2FW94',120),
+('Tricep Dip','Arms','https://youtube.com/watch?v=2z8JmcrW-As',90),
+-- CORE
+('Plank','Core','https://youtube.com/watch?v=pSHjTRCQxIw',60),
+('Ab Wheel Rollout','Core','https://youtube.com/watch?v=XJXkDNEjY8E',60),
+('Cable Crunch','Core','https://youtube.com/watch?v=2fbujeH3F0E',60),
+('Hanging Leg Raise','Core','https://youtube.com/watch?v=Pr1ieGZ5ATk',60),
+('Russian Twist','Core','https://youtube.com/watch?v=wkD8rjkodUI',45),
+('Dead Bug','Core','https://youtube.com/watch?v=4XLEnwUr1d8',45),
+('Pallof Press','Core','https://youtube.com/watch?v=AH_QZLm_0-s',60),
+-- ATHLETIC
+('Power Clean','Athletic','https://youtube.com/watch?v=E2z5zK5V-MM',180),
+('Box Jump','Athletic','https://youtube.com/watch?v=52lowV7_oSo',120),
+('Broad Jump','Athletic','https://youtube.com/watch?v=HNl0S0tqOek',120),
+('Lateral Band Walk','Athletic','https://youtube.com/watch?v=YkP_RlXSt4s',60),
+('Depth Jump','Athletic','https://youtube.com/watch?v=5mNNXbNKS24',120),
+('Medicine Ball Slam','Athletic','https://youtube.com/watch?v=5bkS7_E6BoA',60),
+('Resistance Band Sprint','Athletic','https://youtube.com/watch?v=6vMkxlIFVAQ',120),
+('Single Leg Box Jump','Athletic','https://youtube.com/watch?v=yqnb7jVzI3w',120),
+('Vertical Jump','Athletic','https://youtube.com/watch?v=G5CjHJYMvJI',90)
+ON CONFLICT (name) DO NOTHING;
