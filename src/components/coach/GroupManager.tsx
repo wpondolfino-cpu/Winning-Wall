@@ -65,6 +65,7 @@ export default function GroupManager({ workouts, onChanged }: Props) {
 
   async function publishGroup(groupId: string) {
     if (!window.confirm("Publish this group? All workouts in it will become visible to players immediately.")) return;
+    const group = groups.find(g => g.id === groupId);
     const currentActive = groups.find(g => g.status === "active");
     if (currentActive && currentActive.id !== groupId) {
       await supabase.from("workout_groups").update({ status: "archived" }).eq("id", currentActive.id);
@@ -72,6 +73,15 @@ export default function GroupManager({ workouts, onChanged }: Props) {
     }
     await supabase.from("workout_groups").update({ status: "active" }).eq("id", groupId);
     await supabase.from("workouts").update({ is_active: true }).eq("group_id", groupId);
+    try {
+      await supabase.functions.invoke("send-push", {
+        body: {
+          title: "🏀 New workouts are live!",
+          message: `${group?.name ?? "New workouts"} just dropped — get in the gym!`,
+          allPlayers: true,
+        },
+      });
+    } catch (e) { console.error("Push notification failed to send:", e); }
     await load(); onChanged();
   }
 
