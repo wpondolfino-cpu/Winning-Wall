@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Score, Workout } from "../../lib/supabase";
 import H2HTab from "./H2HTab";
+import H2HOversight from "./H2HOversight";
 import TeamsTab from "./TeamsTab";
 import StatsTab from "./StatsTab";
 import ClassClash from "./ClassClash";
@@ -57,17 +58,21 @@ export default function ChallengesPanel({ currentUserId, currentUserName, workou
       </div>
 
       {activeTab === "h2h" && (
-        <H2HTab
-          currentUserId={currentUserId}
-          currentUserName={currentUserName}
-          workouts={workouts}
-          myScores={myScores}
-          onScoreLogged={onScoreLogged}
-          onPendingCount={setPendingCount}
-        />
+        canManage ? (
+          <H2HOversight />
+        ) : (
+          <H2HTab
+            currentUserId={currentUserId}
+            currentUserName={currentUserName}
+            workouts={workouts}
+            myScores={myScores}
+            onScoreLogged={onScoreLogged}
+            onPendingCount={setPendingCount}
+          />
+        )
       )}
       {activeTab === "clash" && (
-        <ClassClash currentUserId={currentUserId} canManage={canManage} />
+        <ClassClash currentUserId={currentUserId} canManage={false} />
       )}
       {activeTab === "teams" && (
         <TeamsTab currentUserId={currentUserId} />
