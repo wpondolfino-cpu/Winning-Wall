@@ -180,6 +180,7 @@ export async function submitScore(
           streak_length: 0,
           awarded_at:    new Date().toISOString(),
           reason:        "personal_best",
+          workout_id:    score.workout_id,
         });
       } catch (e) { console.error("Personal best bonus error:", e); }
     }
