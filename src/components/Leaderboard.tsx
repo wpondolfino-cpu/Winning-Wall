@@ -34,7 +34,7 @@ interface Snapshot {
 
 export default function Leaderboard({ currentUserId, canManage = false }: Props) {
   const { leaderboard, loading, lastUpdated } = useLeaderboard();
-  const [mainTab, setMainTab]           = useState<MainTab>("overall");
+  const [mainTab, setMainTab]           = useState<MainTab>("current");
   const [gradeTab, setGradeTab]         = useState<GradeTab>(ALL);
   const [drillView, setDrillView]       = useState<string>("overall");
   const [workouts, setWorkouts]         = useState<Workout[]>([]);
@@ -43,7 +43,6 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
   const [profiles, setProfiles]         = useState<any[]>([]);
   const [periodEntries, setPeriodEntries] = useState<PeriodEntry[]>([]);
   const [periodBonuses, setPeriodBonuses] = useState<any[]>([]);
-  const [allBonuses, setAllBonuses] = useState<any[]>([]);
   const [expandedPlayer, setExpandedPlayer] = useState<string | null>(null);
   const [xpData, setXpData]             = useState<Record<string, number>>({});
   const [xpPerks, setXpPerks]           = useState<XpPerk[]>([]);
@@ -79,7 +78,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
   }
 
   async function loadData() {
-    const [{ data: ws }, { data: sc }, { data: pr }, { data: psc }, { data: bon }, { data: bonAll }] = await Promise.all([
+    const [{ data: ws }, { data: sc }, { data: pr }, { data: psc }, { data: bon }] = await Promise.all([
       supabase.from("workouts").select("*").eq("is_active", true).order("created_at", { ascending: false }),
       supabase.from("scores").select("*"),
       supabase.from("profiles").select("id,name,grade_category,is_period_champion,avatar_url").eq("role", "player"),
@@ -89,7 +88,6 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
       supabase.from("streak_bonuses").select("*")
         .gte("awarded_at", periodStart.toISOString())
         .lte("awarded_at", periodEnd.toISOString()),
-      supabase.from("streak_bonuses").select("*"), // unfiltered — every bonus ever, for the All-Time breakdown
     ]);
     const allWorkouts = ws ?? [];
     setWorkouts(allWorkouts);
@@ -98,7 +96,6 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
     setProfiles(pr ?? []);
     setPeriodScores(psc ?? []);
     setPeriodBonuses(bon ?? []);
-    setAllBonuses(bonAll ?? []);
   }
 
   async function loadSnapshots() {
@@ -243,8 +240,8 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
       {/* ── Main tabs: Overall | Current Period | History ── */}
       <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 12, padding: 4, marginBottom: 16, border: "1px solid var(--border)" }}>
         {([
-          { key: "overall", label: "📊 Overall" },
           { key: "current", label: "📅 Current" },
+          { key: "overall", label: "📊 Overall" },
           { key: "history", label: "📋 History" },
         ] as const).map(t => (
           <button key={t.key} onClick={() => setMainTab(t.key)} style={{
@@ -321,10 +318,6 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                           </div>
                         </div>
                       );
-                    })}
-                    {allBonuses.filter(b => b.player_id === entry.id).map((b, bi) => {
-                      const label = b.reason === "daily_completion" ? "✅ Daily Bonus" : b.reason === "challenge_win" ? "⚔️ Challenge Win" : b.reason === "streak" ? "🔥 Streak" : b.reason === "personal_best" ? "🎯 Personal Best" : "⭐ Bonus";
-                      return <div key={`bonus-${bi}`} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}><div style={{ fontSize: 12, color: "#ff8c42" }}>{label}</div><span style={{ fontSize: 13, fontWeight: 700, color: "#ff8c42" }}>+{b.points}</span></div>;
                     })}
                     <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
                       <span style={{ color: "var(--muted)" }}>Total</span>
@@ -425,7 +418,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                         );
                       })}
                       {periodBonuses.filter(b => b.player_id === entry.player_id).map((b, bi) => {
-                        const label = b.reason === "daily_completion" ? "✅ Daily Bonus" : b.reason === "challenge_win" ? "⚔️ Challenge Win" : b.reason === "streak" ? "🔥 Streak" : b.reason === "personal_best" ? "🎯 Personal Best" : "⭐ Bonus";
+                        const label = b.reason === "daily_completion" ? "✅ Daily Bonus" : b.reason === "challenge_win" ? "⚔️ Challenge Win" : b.reason === "streak" ? "🔥 Streak" : "⭐ Bonus";
                         return <div key={bi} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}><div style={{ fontSize: 12, color: "#ff8c42" }}>{label}</div><span style={{ fontSize: 13, fontWeight: 700, color: "#ff8c42" }}>+{b.points}</span></div>;
                       })}
                       <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
