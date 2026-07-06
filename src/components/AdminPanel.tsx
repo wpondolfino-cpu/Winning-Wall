@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { supabase, approveUser, rejectUser, Profile, TEAM_CATEGORIES, TEAM_COLORS, saveTeamCompetition, endTeamCompetition, getActiveTeamCompetition, TeamCompetition, getTeams, Team, getXpPerks, XpPerk } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
+import ClassClash from "./challenges/ClassClash";
 
 interface Props {
 }
@@ -42,7 +43,9 @@ export default function AdminPanel({}: Props) {
   const [approvingCoach, setApprovingCoach] = useState<string | null>(null);
   const [resetRequests, setResetRequests] = useState<any[]>([]);
   const [resettingPw, setResettingPw] = useState<string | null>(null);
-  const [adminTab, setAdminTab]     = useState<"badges"|"xp"|"teams">("badges");
+  const [adminTab, setAdminTab]     = useState<"badges"|"xp"|"teams"|"clash">("badges");
+  const [myUserId, setMyUserId]     = useState<string>("");
+  useEffect(() => { supabase.auth.getUser().then(({ data }) => setMyUserId(data.user?.id ?? "")); }, []);
 
   // Badge state
   const [badges, setBadges]         = useState<Badge[]>([]);
@@ -385,7 +388,7 @@ export default function AdminPanel({}: Props) {
 
       {/* ── Admin Tabs ── */}
       <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 10, padding: 4, marginBottom: 20, border: "1px solid var(--border)" }}>
-        {([["badges","🏅 Badges"],["xp","⚡ XP"],["teams","🏆 Teams"]] as const).map(([tab, label]) => (
+        {([["badges","🏅 Badges"],["xp","⚡ XP"],["teams","🏆 Teams"],["clash","🥊 Class Clash"]] as const).map(([tab, label]) => (
           <button key={tab} onClick={() => setAdminTab(tab)} style={{
             flex: 1, padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer",
             fontFamily: "inherit", fontSize: 13, fontWeight: 600,
@@ -846,6 +849,12 @@ export default function AdminPanel({}: Props) {
         </div>
       </div>
       </div>
+      )}
+
+      {adminTab === "clash" && myUserId && (
+        <div style={{ marginTop: 8 }}>
+          <ClassClash currentUserId={myUserId} canManage={true} />
+        </div>
       )}
 
       {toast && <div className="toast show">{toast}</div>}
