@@ -20,10 +20,40 @@ import ChangePassword from "./components/ChangePassword";
 import ChallengesPanel from "./components/challenges/ChallengesPanel";
 import PerkTutorial from "./components/PerkTutorial";
 import LiftingPanel from "./components/lifting";
+import AnnouncementPanel from "./components/coach/AnnouncementPanel";
+import SendNotificationPanel from "./components/coach/SendNotificationPanel";
+import ChampionsPanel from "./components/coach/ChampionsPanel";
+import NavReorderModal, { NavItemConfig } from "./components/NavReorderModal";
 
 type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "more";
-type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "profile";
-type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "profile";
+type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "profile";
+type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "profile";
+
+const COACH_NAV_CONFIG: NavItemConfig[] = [
+  { key: "workouts",      icon: "➕", label: "Manage Workouts" },
+  { key: "leaderboard",   icon: "🏆", label: "Leaderboard" },
+  { key: "lifting",       icon: "💪", label: "Lifting Programs" },
+  { key: "players",       icon: "👥", label: "Players & Coaches" },
+  { key: "hof",           icon: "👑", label: "Hall of Fame" },
+  { key: "challenges",    icon: "⚔️", label: "Challenges" },
+  { key: "announcements", icon: "📢", label: "Announcements" },
+  { key: "profile",       icon: "👤", label: "My Profile" },
+];
+const COACH_NAV_DEFAULT_ORDER = COACH_NAV_CONFIG.map(i => i.key);
+
+const ADMIN_NAV_CONFIG: NavItemConfig[] = [
+  { key: "workouts",      icon: "➕", label: "Manage Workouts" },
+  { key: "leaderboard",   icon: "🏆", label: "Leaderboard" },
+  { key: "lifting",       icon: "💪", label: "Lifting Programs" },
+  { key: "players",       icon: "👥", label: "Players & Coaches" },
+  { key: "hof",           icon: "👑", label: "Hall of Fame" },
+  { key: "challenges",    icon: "⚔️", label: "Challenges" },
+  { key: "announcements", icon: "📢", label: "Announcements" },
+  { key: "admin",         icon: "👑", label: "Admin" },
+  { key: "settings",      icon: "⚙️", label: "Settings" },
+  { key: "profile",       icon: "👤", label: "My Profile" },
+];
+const ADMIN_NAV_DEFAULT_ORDER = ADMIN_NAV_CONFIG.map(i => i.key);
 
 export default function App() {
   const { user, profile, authState } = useAuth();
@@ -72,6 +102,9 @@ export default function App() {
 
   const [coachTab, setCoachTab]     = useState<CoachTab>("workouts");
   const [adminTab, setAdminTab]     = useState<AdminTab>("workouts");
+  const [coachNavOrder, setCoachNavOrder] = useState<string[]>(COACH_NAV_DEFAULT_ORDER);
+  const [adminNavOrder, setAdminNavOrder] = useState<string[]>(ADMIN_NAV_DEFAULT_ORDER);
+  const [showReorderModal, setShowReorderModal] = useState(false);
   const [pendingChallenges, setPendingChallenges] = useState(0);
   const [pendingApprovals, setPendingApprovals]   = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -82,14 +115,23 @@ export default function App() {
 
   useEffect(() => { loadPeriodAnchor().catch(console.error); }, []);
 
-  // Reset XP/perks state the instant the logged-in user changes, so a newly
-  // created account can never briefly inherit stale XP/perk data left over
-  // from a previous session in the same tab (which could otherwise cause
-  // PerkTutorial to fire incorrectly before the new account's real data loads).
   useEffect(() => {
-    setPlayerXp(0);
-    setXpPerks([]);
-  }, [user?.id]);
+    if (!profile) return;
+    const saved = (profile as any).nav_order as string[] | null;
+    if (profile.role === "coach") {
+      const validKeys = new Set(COACH_NAV_DEFAULT_ORDER);
+      const merged = saved
+        ? [...saved.filter(k => validKeys.has(k)), ...COACH_NAV_DEFAULT_ORDER.filter(k => !saved.includes(k))]
+        : COACH_NAV_DEFAULT_ORDER;
+      setCoachNavOrder(merged);
+    } else if (profile.role === "admin") {
+      const validKeys = new Set(ADMIN_NAV_DEFAULT_ORDER);
+      const merged = saved
+        ? [...saved.filter(k => validKeys.has(k)), ...ADMIN_NAV_DEFAULT_ORDER.filter(k => !saved.includes(k))]
+        : ADMIN_NAV_DEFAULT_ORDER;
+      setAdminNavOrder(merged);
+    }
+  }, [profile]);
 
   useEffect(() => {
     if (user && profile?.role === "player") loadMyScores();
@@ -100,14 +142,13 @@ export default function App() {
   // notification permission but never got fully opted in on OneSignal's
   // backend (e.g. from earlier testing), fix it silently on load.
   useEffect(() => {
-    if (user && profile?.role === "player") ensurePushTag(user.id);
+    if (user && (profile?.role === "player" || profile?.role === "coach" || profile?.role === "admin")) ensurePushTag(user.id);
   }, [user, profile]);
 
   const checkNewPerks = useCallback(async () => {
     if (!user || profile?.role !== "player") return;
     try {
       const [xp, perks] = await Promise.all([getPlayerXp(user.id), getXpPerks()]);
-      setPlayerXp(xp); setXpPerks(perks); // keep PerkTutorial's props live as XP actually changes
       const unseen = await checkUnseenPerks(user.id, xp, perks);
       if (unseen.length > 0) {
         setNewPerkCount(unseen.length);
@@ -242,33 +283,36 @@ export default function App() {
           )}
           {isCoach && (
             <>
-              <div className={`nav-item ${coachTab==="workouts"?"active":""}`} onClick={()=>{setCoachTab("workouts");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">➕</span> Manage Workouts</div>
-              <div className={`nav-item ${coachTab==="leaderboard"?"active":""}`} onClick={()=>{setCoachTab("leaderboard");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏆</span> Leaderboard</div>
-              <div className={`nav-item ${coachTab==="lifting"?"active":""}`} onClick={()=>{setCoachTab("lifting");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">💪</span> Lifting Programs</div>
-              <div className={`nav-item ${coachTab==="players"?"active":""}`} onClick={()=>{setCoachTab("players");setPendingApprovals(0);if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Players & Coaches
-                {pendingApprovals > 0 && <span style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{pendingApprovals}</span>}
-              </div>
-              <div className={`nav-item ${coachTab==="hof"?"active":""}`} onClick={()=>{setCoachTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👑</span> Hall of Fame</div>
-              <div className={`nav-item ${coachTab==="challenges"?"active":""}`} onClick={()=>{setCoachTab("challenges");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">⚔️</span> Challenges</div>
-              <div className={`nav-item ${coachTab==="profile"?"active":""}`} onClick={()=>{setCoachTab("profile");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👤</span> My Profile</div>
+              {coachNavOrder.map(key => {
+                const item = COACH_NAV_CONFIG.find(i => i.key === key);
+                if (!item) return null;
+                return (
+                  <div key={key} className={`nav-item ${coachTab===key?"active":""}`}
+                    onClick={()=>{ setCoachTab(key as CoachTab); if (key==="players") setPendingApprovals(0); if(window.innerWidth<768)setSidebarOpen(false); }}>
+                    <span className="nav-icon">{item.icon}</span> {item.label}
+                    {key === "players" && pendingApprovals > 0 && <span style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{pendingApprovals}</span>}
+                  </div>
+                );
+              })}
+              <div className="nav-item" onClick={() => setShowReorderModal(true)} style={{ color: "var(--muted)" }}><span className="nav-icon">🔀</span> Reorder Menu</div>
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
               <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)" }}><span className="nav-icon">🚪</span> Sign Out</div>
             </>
           )}
           {isAdmin && (
             <>
-              <div className={`nav-item ${adminTab==="workouts"?"active":""}`} onClick={()=>{setAdminTab("workouts");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">➕</span> Manage Workouts</div>
-              <div className={`nav-item ${adminTab==="leaderboard"?"active":""}`} onClick={()=>{setAdminTab("leaderboard");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏆</span> Leaderboard</div>
-              <div className={`nav-item ${adminTab==="lifting"?"active":""}`} onClick={()=>{setAdminTab("lifting");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">💪</span> Lifting Programs</div>
-              <div className={`nav-item ${adminTab==="players"?"active":""}`} onClick={()=>{setAdminTab("players");setPendingApprovals(0);if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👥</span> Players & Coaches
-                {pendingApprovals > 0 && <span style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{pendingApprovals}</span>}
-              </div>
-              <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
-              <div className={`nav-item ${adminTab==="hof"?"active":""}`} onClick={()=>{setAdminTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="hof" ? "var(--gold)" : undefined }}><span className="nav-icon">👑</span> Hall of Fame</div>
-              <div className={`nav-item ${adminTab==="challenges"?"active":""}`} onClick={()=>{setAdminTab("challenges");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="challenges" ? "var(--gold)" : undefined }}><span className="nav-icon">⚔️</span> Challenges</div>
-              <div className={`nav-item ${adminTab==="admin"?"active":""}`} onClick={()=>{setAdminTab("admin");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="admin" ? "var(--gold)" : undefined }}><span className="nav-icon">👑</span> Admin</div>
-              <div className={`nav-item ${adminTab==="settings"?"active":""}`} onClick={()=>{setAdminTab("settings");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="settings" ? "var(--gold)" : undefined }}><span className="nav-icon">⚙️</span> Settings</div>
-              <div className={`nav-item ${adminTab==="profile"?"active":""}`} onClick={()=>{setAdminTab("profile");if(window.innerWidth<768)setSidebarOpen(false);}} style={{ color: adminTab==="profile" ? "var(--gold)" : undefined }}><span className="nav-icon">👤</span> My Profile</div>
+              {adminNavOrder.map(key => {
+                const item = ADMIN_NAV_CONFIG.find(i => i.key === key);
+                if (!item) return null;
+                return (
+                  <div key={key} className={`nav-item ${adminTab===key?"active":""}`}
+                    onClick={()=>{ setAdminTab(key as AdminTab); if (key==="players") setPendingApprovals(0); if(window.innerWidth<768)setSidebarOpen(false); }}>
+                    <span className="nav-icon">{item.icon}</span> {item.label}
+                    {key === "players" && pendingApprovals > 0 && <span style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{pendingApprovals}</span>}
+                  </div>
+                );
+              })}
+              <div className="nav-item" onClick={() => setShowReorderModal(true)} style={{ color: "var(--muted)" }}><span className="nav-icon">🔀</span> Reorder Menu</div>
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
               <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)" }}><span className="nav-icon">🚪</span> Sign Out</div>
             </>
@@ -287,7 +331,7 @@ export default function App() {
             </div>
           )}
 
-          {isPlayer && <NotificationOptIn playerId={user.id} />}
+          {(isPlayer || isCoach || isAdmin) && <NotificationOptIn playerId={user.id} />}
 
 
           {/* Player panels */}
@@ -342,7 +386,8 @@ export default function App() {
 
           {/* Coach panels */}
           {isCoach && coachTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={false} />}
-          {isCoach && coachTab === "leaderboard" && <Leaderboard canManage={true} />}
+          {isCoach && coachTab === "leaderboard" && (<><Leaderboard canManage={true} /><ChampionsPanel /></>)}
+          {isCoach && coachTab === "announcements" && (<><AnnouncementPanel isAdmin={false} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
           {isCoach && coachTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isCoach={true} />}
           {isCoach && coachTab === "hof" && <HallOfFame canDelete={true} />}
           {isCoach && coachTab === "challenges" && (
@@ -359,7 +404,8 @@ export default function App() {
 
           {/* Admin panels */}
           {isAdmin && adminTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={true} />}
-          {isAdmin && adminTab === "leaderboard" && <Leaderboard canManage={true} />}
+          {isAdmin && adminTab === "leaderboard" && (<><Leaderboard canManage={true} /><ChampionsPanel /></>)}
+          {isAdmin && adminTab === "announcements" && (<><AnnouncementPanel isAdmin={true} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
           {isAdmin && adminTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isAdmin={true} />}
           {isAdmin && adminTab === "hof" && <HallOfFame canDelete={true} />}
           {isAdmin && adminTab === "challenges" && (
@@ -430,6 +476,15 @@ export default function App() {
 
       {isPlayer && user && (
         <PerkTutorial playerId={user.id} currentXp={playerXp} perks={xpPerks} onTutorialSeen={() => checkNewPerks()} />
+
+        {showReorderModal && (isCoach || isAdmin) && (
+          <NavReorderModal
+            userId={user.id}
+            items={(isAdmin ? adminNavOrder : coachNavOrder).map(k => (isAdmin ? ADMIN_NAV_CONFIG : COACH_NAV_CONFIG).find(i => i.key === k)!).filter(Boolean)}
+            onSaved={(newOrder) => { if (isAdmin) setAdminNavOrder(newOrder); else setCoachNavOrder(newOrder); }}
+            onClose={() => setShowReorderModal(false)}
+          />
+        )}
       )}
 
       <InstallPrompt />
