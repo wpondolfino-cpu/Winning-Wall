@@ -44,6 +44,18 @@ export default function LoginPage() {
           email: email.trim(),
           status: "pending",
         });
+        try {
+          const { data: staff } = await supabase.from("profiles").select("id").in("role", ["coach", "admin"]);
+          if (staff && staff.length > 0) {
+            await supabase.functions.invoke("send-push", {
+              body: {
+                title: "🔑 Password reset requested",
+                message: `${name.trim()} requested a password reset.`,
+                playerIds: staff.map(s => s.id),
+              },
+            });
+          }
+        } catch (e) { console.error("Push notification failed to send:", e); }
         setResetSent(true);
         return;
       } else {
@@ -52,6 +64,18 @@ export default function LoginPage() {
           role,
           grade_category: role === "player" ? gradeCategory : undefined,
         });
+        try {
+          const { data: staff } = await supabase.from("profiles").select("id").in("role", ["coach", "admin"]);
+          if (staff && staff.length > 0) {
+            await supabase.functions.invoke("send-push", {
+              body: {
+                title: "🆕 New signup needs approval",
+                message: `${name.trim()} signed up as a ${role} and is waiting for approval.`,
+                playerIds: staff.map(s => s.id),
+              },
+            });
+          }
+        } catch (e) { console.error("Push notification failed to send:", e); }
         setSubmitted(true);
         return;
       }
