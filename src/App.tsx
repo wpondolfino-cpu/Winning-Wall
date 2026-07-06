@@ -115,6 +115,15 @@ export default function App() {
 
   useEffect(() => { loadPeriodAnchor().catch(console.error); }, []);
 
+  // Reset XP/perks state the instant the logged-in user changes, so a newly
+  // created account can never briefly inherit stale XP/perk data left over
+  // from a previous session in the same tab (which could otherwise cause
+  // PerkTutorial to fire incorrectly before the new account's real data loads).
+  useEffect(() => {
+    setPlayerXp(0);
+    setXpPerks([]);
+  }, [user?.id]);
+
   useEffect(() => {
     if (!profile) return;
     const saved = (profile as any).nav_order as string[] | null;
@@ -149,6 +158,7 @@ export default function App() {
     if (!user || profile?.role !== "player") return;
     try {
       const [xp, perks] = await Promise.all([getPlayerXp(user.id), getXpPerks()]);
+      setPlayerXp(xp); setXpPerks(perks); // keep PerkTutorial's props live as XP actually changes
       const unseen = await checkUnseenPerks(user.id, xp, perks);
       if (unseen.length > 0) {
         setNewPerkCount(unseen.length);
