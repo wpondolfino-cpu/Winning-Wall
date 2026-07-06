@@ -36,8 +36,13 @@ export function useLeaderboard() {
     // aggregated leaderboard view on every such event.
     let channel: RealtimeChannel;
 
+    // Unique per hook instance — prevents a crash when two components
+    // (e.g. Leaderboard + ChampionsPanel) use this hook on the same page
+    // at the same time, which would otherwise collide on the same channel name.
+    const channelName = `leaderboard-sync-${Math.random().toString(36).slice(2)}`;
+
     channel = supabase
-      .channel("leaderboard-sync")                        // named channel
+      .channel(channelName)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "scores" },
