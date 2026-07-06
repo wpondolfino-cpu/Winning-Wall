@@ -1,6 +1,6 @@
 // src/components/H2HTab.tsx
 import { useState, useEffect, useCallback } from "react";
-import { supabase, Score, Workout, submitScore, awardChallengeWinBonus, awardXp, XP_CHALLENGE_SENT, XP_CHALLENGE_DONE, getXpPerks } from "../../lib/supabase";
+import { supabase, Score, Workout, submitScore, awardChallengeWinBonus, awardXp, XP_CHALLENGE_SENT, XP_CHALLENGE_DONE, getXpPerks, updateStreak } from "../../lib/supabase";
 import { useLeaderboard } from "../../hooks/useLeaderboard";
 
 interface Props {
@@ -114,6 +114,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
       const workout  = workouts.find(w => w.id === selectedWorkout);
       const opponent = leaderboard.find((e: any) => e.id === selectedOpponent);
       await submitScore({ player_id: currentUserId, workout_id: selectedWorkout, made: score, attempts: 0, sprint_secs: 0, reps: 0, self_points: 0 }).catch(console.warn);
+      await updateStreak(currentUserId).catch(console.error);
       await createChallenge(selectedOpponent, opponent?.name ?? "Unknown", selectedWorkout, workout?.title ?? "Unknown", score);
       setNeedsScore(false); setChallengeScore(""); onScoreLogged?.();
     } finally { setSending(false); }
@@ -213,7 +214,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
       if (winnerId) await awardChallengeWinBonus(winnerId, challenge.id).catch(console.error);
       try { const { data } = await supabase.from("xp_settings").select("xp_required").eq("perk_key","_xp_challenge_done").single(); await awardXp(currentUserId, data?.xp_required ?? XP_CHALLENGE_DONE, "challenge_completed"); } catch(e) { console.error(e); }
       if (finalScore > 0) {
-        try { await submitScore({ player_id: currentUserId, workout_id: challenge.workout_id, made: finalScore, attempts: 0, sprint_secs: 0, reps: 0, self_points: 0 }); onScoreLogged?.(); } catch(e) { console.warn(e); }
+        try { await submitScore({ player_id: currentUserId, workout_id: challenge.workout_id, made: finalScore, attempts: 0, sprint_secs: 0, reps: 0, self_points: 0 }); await updateStreak(currentUserId).catch(console.error); onScoreLogged?.(); } catch(e) { console.warn(e); }
       }
       try {
         const resultMsg = winnerId === challenge.challenger_id
