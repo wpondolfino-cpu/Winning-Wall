@@ -3,9 +3,6 @@
 import { useState } from "react";
 import { supabase, Workout, getEmbedUrl, getVideoId } from "../../lib/supabase";
 import GroupManager from "./GroupManager";
-import AnnouncementPanel from "./AnnouncementPanel";
-import ChampionsPanel from "./ChampionsPanel";
-import SendNotificationPanel from "./SendNotificationPanel";
 import WorkoutBuilder from "./WorkoutBuilder";
 
 interface Props {
@@ -82,10 +79,7 @@ export default function CoachPanel({ workouts, onPublished, coachId, coachName, 
   return (
     <div className="panel active">
 
-      <AnnouncementPanel isAdmin={isAdmin} coachId={coachId} coachName={coachName} />
-      <SendNotificationPanel />
       <GroupManager workouts={workouts} onChanged={onPublished} />
-      <ChampionsPanel />
 
       {/* Header + builder */}
       <div className="flex-between">
