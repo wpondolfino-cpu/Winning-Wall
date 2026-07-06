@@ -476,15 +476,15 @@ export default function App() {
 
       {isPlayer && user && (
         <PerkTutorial playerId={user.id} currentXp={playerXp} perks={xpPerks} onTutorialSeen={() => checkNewPerks()} />
+      )}
 
-        {showReorderModal && (isCoach || isAdmin) && (
-          <NavReorderModal
-            userId={user.id}
-            items={(isAdmin ? adminNavOrder : coachNavOrder).map(k => (isAdmin ? ADMIN_NAV_CONFIG : COACH_NAV_CONFIG).find(i => i.key === k)!).filter(Boolean)}
-            onSaved={(newOrder) => { if (isAdmin) setAdminNavOrder(newOrder); else setCoachNavOrder(newOrder); }}
-            onClose={() => setShowReorderModal(false)}
-          />
-        )}
+      {showReorderModal && (isCoach || isAdmin) && user && (
+        <NavReorderModal
+          userId={user.id}
+          items={(isAdmin ? adminNavOrder : coachNavOrder).map(k => (isAdmin ? ADMIN_NAV_CONFIG : COACH_NAV_CONFIG).find(i => i.key === k)!).filter(Boolean)}
+          onSaved={(newOrder) => { if (isAdmin) setAdminNavOrder(newOrder); else setCoachNavOrder(newOrder); }}
+          onClose={() => setShowReorderModal(false)}
+        />
       )}
 
       <InstallPrompt />
