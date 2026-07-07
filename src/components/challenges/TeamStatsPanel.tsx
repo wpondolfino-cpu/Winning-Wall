@@ -59,29 +59,32 @@ export default function TeamStatsPanel() {
     return (b[sortKey] as number) - (a[sortKey] as number);
   });
 
-  const sortBtn = (key: SortKey, label: string) => (
-    <button onClick={() => setSortKey(key)} style={{
-      background: sortKey === key ? "var(--royal)" : "transparent",
-      color: sortKey === key ? "#fff" : "var(--muted)",
-      border: "1px solid var(--border)", borderRadius: 8, padding: "6px 12px",
-      fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
-    }}>{label}</button>
+  const headerCell = (key: SortKey, label: string, align: "left" | "center" = "center") => (
+    <span
+      onClick={() => setSortKey(key)}
+      style={{
+        textAlign: align, cursor: "pointer", userSelect: "none",
+        color: sortKey === key ? "var(--text)" : "var(--muted)",
+        fontWeight: sortKey === key ? 800 : 700,
+      }}
+    >
+      {label}{sortKey === key ? " ▾" : ""}
+    </span>
   );
 
   if (loading) return <div style={{ color: "var(--muted)", fontSize: 13, padding: "20px 0" }}>Loading…</div>;
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        Sort by: {sortBtn("h2hWins", "⚔️ H2H Wins")} {sortBtn("clashWins", "🏆 Clash Wins")} {sortBtn("teamWins", "👥 Team Wins")} {sortBtn("name", "🔤 Name")}
-      </div>
-
       {sorted.length === 0 ? (
         <div style={{ textAlign: "center", padding: "40px 0", color: "var(--muted)" }}>No players yet.</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px", gap: 8, padding: "0 12px 6px", fontSize: 11, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>
-            <span>Player</span><span style={{ textAlign: "center" }}>H2H</span><span style={{ textAlign: "center" }}>Clash</span><span style={{ textAlign: "center" }}>Team</span>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px", gap: 8, padding: "0 12px 6px", fontSize: 11, textTransform: "uppercase" }}>
+            {headerCell("name", "Player", "left")}
+            {headerCell("h2hWins", "H2H")}
+            {headerCell("clashWins", "Clash")}
+            {headerCell("teamWins", "Team")}
           </div>
           {sorted.map(r => (
             <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px", gap: 8, alignItems: "center", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px" }}>
