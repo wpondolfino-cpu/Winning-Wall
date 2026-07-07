@@ -6,6 +6,7 @@ import H2HTab from "./H2HTab";
 import H2HOversight from "./H2HOversight";
 import TeamsTab from "./TeamsTab";
 import StatsTab from "./StatsTab";
+import TeamStatsPanel from "./TeamStatsPanel";
 import ClassClash from "./ClassClash";
 
 interface Props {
@@ -34,7 +35,7 @@ export default function ChallengesPanel({ currentUserId, currentUserName, workou
     { key: "h2h",   label: mobile ? "⚔️ H2H" : "⚔️ Head to Head", badge: pendingCount > 0 ? pendingCount : null },
     { key: "clash", label: "🏆 Clash" },
     { key: "teams", label: "👥 Teams" },
-    { key: "stats", label: mobile ? "📊 Stats" : "📊 My Stats" },
+    { key: "stats", label: mobile ? "📊 Stats" : canManage ? "📊 Team Stats" : "📊 My Stats", badge: null },
   ] as const;
 
   return (
@@ -78,7 +79,7 @@ export default function ChallengesPanel({ currentUserId, currentUserName, workou
         <TeamsTab currentUserId={currentUserId} />
       )}
       {activeTab === "stats" && (
-        <StatsTab currentUserId={currentUserId} />
+        canManage ? <TeamStatsPanel /> : <StatsTab currentUserId={currentUserId} />
       )}
     </div>
   );
