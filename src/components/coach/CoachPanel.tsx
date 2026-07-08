@@ -1,6 +1,6 @@
 // src/components/coach/CoachPanel.tsx
 // Thin wrapper — layout + workout list. Logic lives in sub-components.
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase, Workout, getEmbedUrl, getVideoId } from "../../lib/supabase";
 import GroupManager from "./GroupManager";
 import WorkoutBuilder from "./WorkoutBuilder";
@@ -11,6 +11,8 @@ interface Props {
   coachId: string;
   coachName: string;
   isAdmin: boolean;
+  openWorkoutId?: string | null;
+  onDeepLinkHandled?: () => void;
 }
 
 const TAG_COLORS: Record<string, string> = {
@@ -18,13 +20,23 @@ const TAG_COLORS: Record<string, string> = {
   Shooting: "tag-blue", Competing: "tag-green", Strength: "tag-blue",
 };
 
-export default function CoachPanel({ workouts, onPublished, coachId, coachName, isAdmin }: Props) {
+export default function CoachPanel({ workouts, onPublished, coachId, coachName, isAdmin, openWorkoutId, onDeepLinkHandled }: Props) {
   const [showBuilder, setShowBuilder]     = useState(false);
   const [editWorkout, setEditWorkout]     = useState<Workout | null>(null);
   const [previewWorkout, setPreviewWorkout] = useState<Workout | null>(null);
   const [deleting, setDeleting]           = useState<string | null>(null);
   const [deactivatingGroup, setDeactivatingGroup] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState("all");
+
+  // Deep-link support (e.g. clicking a drill from Hall of Fame) — open
+  // that specific drill's read-only preview, even if it's not part of
+  // the currently active/published group.
+  useEffect(() => {
+    if (!openWorkoutId) return;
+    const match = workouts.find(w => w.id === openWorkoutId);
+    if (match) setPreviewWorkout(match);
+    onDeepLinkHandled?.();
+  }, [openWorkoutId, workouts]);
 
   const groupFilters = ["all", ...Array.from(new Set(workouts.map(w => w.group_name).filter(Boolean))) as string[]];
   const filteredWorkouts = selectedGroup === "all" ? workouts : workouts.filter(w => w.group_name === selectedGroup);
