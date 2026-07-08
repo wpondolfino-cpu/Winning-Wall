@@ -105,6 +105,7 @@ export default function App() {
   const [coachNavOrder, setCoachNavOrder] = useState<string[]>(COACH_NAV_DEFAULT_ORDER);
   const [adminNavOrder, setAdminNavOrder] = useState<string[]>(ADMIN_NAV_DEFAULT_ORDER);
   const [showReorderModal, setShowReorderModal] = useState(false);
+  const [deepLinkWorkoutId, setDeepLinkWorkoutId] = useState<string | null>(null);
   const [pendingChallenges, setPendingChallenges] = useState(0);
   const [pendingApprovals, setPendingApprovals]   = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -345,11 +346,11 @@ export default function App() {
 
 
           {/* Player panels */}
-          {isPlayer && playerTab === "workouts" && <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} />}
+          {isPlayer && playerTab === "workouts" && <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
           {isPlayer && playerTab === "leaderboard" && <Leaderboard currentUserId={user.id} />}
           {isPlayer && playerTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} />}
           {isPlayer && playerTab === "progress" && <ProgressPanel profile={displayProfile} myScores={myScores} workouts={workouts} />}
-          {isPlayer && playerTab === "hof" && <HallOfFame />}
+          {isPlayer && playerTab === "hof" && <HallOfFame onViewWorkout={(id) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} />}
           {isPlayer && playerTab === "profile" && <ProfilePage profile={displayProfile} onUpdated={handleProfileUpdated} myScores={allScores.filter((s: any) => s.player_id === user?.id)} workouts={workouts} xpEnabled={xpEnabled} />}
           {isPlayer && playerTab === "h2h" && xpEnabled && xpPerks.length > 0 && playerXp < (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) ? (
             <div className="panel active" style={{ textAlign: "center", padding: "60px 20px" }}>
@@ -395,11 +396,11 @@ export default function App() {
           )}
 
           {/* Coach panels */}
-          {isCoach && coachTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={false} />}
+          {isCoach && coachTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={false} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
           {isCoach && coachTab === "leaderboard" && (<><Leaderboard canManage={true} /><ChampionsPanel /></>)}
           {isCoach && coachTab === "announcements" && (<><AnnouncementPanel isAdmin={false} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
           {isCoach && coachTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isCoach={true} />}
-          {isCoach && coachTab === "hof" && <HallOfFame canDelete={true} />}
+          {isCoach && coachTab === "hof" && <HallOfFame canDelete={true} onViewWorkout={(id) => { setCoachTab("workouts"); setDeepLinkWorkoutId(id); }} />}
           {isCoach && coachTab === "challenges" && (
             <ChallengesPanel currentUserId={user.id} currentUserName={displayProfile.name} workouts={workouts} myScores={myScores} onScoreLogged={loadMyScores} canManage={true} />
           )}
@@ -413,11 +414,11 @@ export default function App() {
           )}
 
           {/* Admin panels */}
-          {isAdmin && adminTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={true} />}
+          {isAdmin && adminTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={true} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
           {isAdmin && adminTab === "leaderboard" && (<><Leaderboard canManage={true} /><ChampionsPanel /></>)}
           {isAdmin && adminTab === "announcements" && (<><AnnouncementPanel isAdmin={true} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
           {isAdmin && adminTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isAdmin={true} />}
-          {isAdmin && adminTab === "hof" && <HallOfFame canDelete={true} />}
+          {isAdmin && adminTab === "hof" && <HallOfFame canDelete={true} onViewWorkout={(id) => { setAdminTab("workouts"); setDeepLinkWorkoutId(id); }} />}
           {isAdmin && adminTab === "challenges" && (
             <ChallengesPanel currentUserId={user.id} currentUserName={displayProfile.name} workouts={workouts} myScores={myScores} onScoreLogged={loadMyScores} canManage={true} />
           )}
