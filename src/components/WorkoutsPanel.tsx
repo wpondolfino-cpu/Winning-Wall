@@ -8,6 +8,8 @@ interface Props {
   myScores: Score[];
   playerId: string;
   onScoreLogged: () => void;
+  openWorkoutId?: string | null;
+  onDeepLinkHandled?: () => void;
 }
 
 // ── Spot Personal Bests Display ───────────────────────────────
@@ -39,8 +41,18 @@ function SpotPBDisplay({ playerId, workoutId, spotConfig, totalBest }: { playerI
   );
 }
 
-export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLogged }: Props) {
+export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLogged, openWorkoutId, onDeepLinkHandled }: Props) {
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
+
+  // Deep-link support (e.g. clicking a drill from Hall of Fame) — open
+  // that specific workout's detail modal directly, even if it's not part
+  // of the currently active/published group.
+  useEffect(() => {
+    if (!openWorkoutId) return;
+    const match = workouts.find(w => w.id === openWorkoutId);
+    if (match) setActiveWorkout(match);
+    onDeepLinkHandled?.();
+  }, [openWorkoutId, workouts]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [rankedCompletion, setRankedCompletion] = useState({ completed: 0, total: 0, bonusEarned: false });
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
