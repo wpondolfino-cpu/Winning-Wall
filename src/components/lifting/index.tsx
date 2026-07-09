@@ -10,6 +10,7 @@ import { LiftingProgressPanel } from "./LiftingCharts";
 import LiftingPrograms from "./LiftingPrograms";
 import LiftingBuilder from "./LiftingBuilder";
 import ExerciseBank from "./ExerciseBank";
+import TeamProgressPanel from "./TeamProgressPanel";
 
 interface Props {
   playerId: string;
@@ -128,11 +129,9 @@ export default function LiftingPanel({ playerId, playerName, avatarUrl, isCoach 
         <button onClick={() => setActiveTab("bank")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "bank" ? "var(--royal)" : "transparent", color: activeTab === "bank" ? "#fff" : "var(--muted)", transition: "all .2s" }}>
           📚 {canManage ? "Exercise Bank" : "Exercises"}
         </button>
-        {!canManage && (
-          <button onClick={() => setActiveTab("progress")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "progress" ? "var(--royal)" : "transparent", color: activeTab === "progress" ? "#fff" : "var(--muted)", transition: "all .2s" }}>
-            📈 Progress
-          </button>
-        )}
+        <button onClick={() => setActiveTab("progress")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "progress" ? "var(--royal)" : "transparent", color: activeTab === "progress" ? "#fff" : "var(--muted)", transition: "all .2s" }}>
+          📈 {canManage ? "Team Progress" : "Progress"}
+        </button>
       </div>
 
       {activeTab === "programs" && (
@@ -156,16 +155,20 @@ export default function LiftingPanel({ playerId, playerName, avatarUrl, isCoach 
         <ExerciseBank playerId={playerId} canManage={canManage} />
       )}
 
-      {activeTab === "progress" && !canManage && (
-        <div>
-          <div className="section-title" style={{ marginBottom: 4 }}>📈 My Progress</div>
-          <div className="section-sub" style={{ marginBottom: 20 }}>Estimated 1RM over time — requires 2+ sessions per exercise</div>
-          <LiftingProgressPanel
-            playerId={playerId}
-            allLogs={allPlayerLogs}
-            exerciseNames={exerciseNames}
-          />
-        </div>
+      {activeTab === "progress" && (
+        canManage ? (
+          <TeamProgressPanel programs={programs} days={days} dayExercises={dayExercises} />
+        ) : (
+          <div>
+            <div className="section-title" style={{ marginBottom: 4 }}>📈 My Progress</div>
+            <div className="section-sub" style={{ marginBottom: 20 }}>Estimated 1RM over time — requires 2+ sessions per exercise</div>
+            <LiftingProgressPanel
+              playerId={playerId}
+              allLogs={allPlayerLogs}
+              exerciseNames={exerciseNames}
+            />
+          </div>
+        )
       )}
     </div>
   );
