@@ -24,10 +24,11 @@ import AnnouncementPanel from "./components/coach/AnnouncementPanel";
 import SendNotificationPanel from "./components/coach/SendNotificationPanel";
 import ChampionsPanel from "./components/coach/ChampionsPanel";
 import NavReorderModal, { NavItemConfig } from "./components/NavReorderModal";
+import DrillLibrary from "./components/DrillLibrary";
 
-type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "more";
-type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "profile";
-type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "profile";
+type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "more";
+type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "profile";
+type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "profile";
 
 const COACH_NAV_CONFIG: NavItemConfig[] = [
   { key: "workouts",      icon: "➕", label: "Manage Workouts" },
@@ -37,6 +38,7 @@ const COACH_NAV_CONFIG: NavItemConfig[] = [
   { key: "hof",           icon: "👑", label: "Hall of Fame" },
   { key: "challenges",    icon: "⚔️", label: "Challenges" },
   { key: "announcements", icon: "📢", label: "Announcements" },
+  { key: "library",       icon: "📚", label: "Drill Library" },
   { key: "profile",       icon: "👤", label: "My Profile" },
 ];
 const COACH_NAV_DEFAULT_ORDER = COACH_NAV_CONFIG.map(i => i.key);
@@ -49,6 +51,7 @@ const ADMIN_NAV_CONFIG: NavItemConfig[] = [
   { key: "hof",           icon: "👑", label: "Hall of Fame" },
   { key: "challenges",    icon: "⚔️", label: "Challenges" },
   { key: "announcements", icon: "📢", label: "Announcements" },
+  { key: "library",       icon: "📚", label: "Drill Library" },
   { key: "admin",         icon: "👑", label: "Admin" },
   { key: "settings",      icon: "⚙️", label: "Settings" },
   { key: "profile",       icon: "👤", label: "My Profile" },
@@ -351,6 +354,7 @@ export default function App() {
           {isPlayer && playerTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} />}
           {isPlayer && playerTab === "progress" && <ProgressPanel profile={displayProfile} myScores={myScores} workouts={workouts} />}
           {isPlayer && playerTab === "hof" && <HallOfFame onViewWorkout={(id) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} />}
+          {isPlayer && playerTab === "library" && <DrillLibrary canManage={false} onPractice={(id) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} />}
           {isPlayer && playerTab === "profile" && <ProfilePage profile={displayProfile} onUpdated={handleProfileUpdated} myScores={allScores.filter((s: any) => s.player_id === user?.id)} workouts={workouts} xpEnabled={xpEnabled} />}
           {isPlayer && playerTab === "h2h" && xpEnabled && xpPerks.length > 0 && playerXp < (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) ? (
             <div className="panel active" style={{ textAlign: "center", padding: "60px 20px" }}>
@@ -378,6 +382,10 @@ export default function App() {
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>📈</span><span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>My Progress</span></div>
                   <span style={{ color: "var(--muted)" }}>›</span>
                 </div>
+                <div onClick={() => setPlayerTab("library")} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>📚</span><span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>Drill Library</span></div>
+                  <span style={{ color: "var(--muted)" }}>›</span>
+                </div>
                 <div onClick={() => setPlayerTab("hof")} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>👑</span><span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>Hall of Fame</span></div>
                   <span style={{ color: "var(--muted)" }}>›</span>
@@ -397,6 +405,7 @@ export default function App() {
 
           {/* Coach panels */}
           {isCoach && coachTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={false} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
+          {isCoach && coachTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} />}
           {isCoach && coachTab === "leaderboard" && (<><Leaderboard canManage={true} /><ChampionsPanel /></>)}
           {isCoach && coachTab === "announcements" && (<><AnnouncementPanel isAdmin={false} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
           {isCoach && coachTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isCoach={true} />}
@@ -415,6 +424,7 @@ export default function App() {
 
           {/* Admin panels */}
           {isAdmin && adminTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={true} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
+          {isAdmin && adminTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} />}
           {isAdmin && adminTab === "leaderboard" && (<><Leaderboard canManage={true} /><ChampionsPanel /></>)}
           {isAdmin && adminTab === "announcements" && (<><AnnouncementPanel isAdmin={true} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
           {isAdmin && adminTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isAdmin={true} />}
