@@ -39,15 +39,25 @@ export default function TeamProgressPanel({ programs, days, dayExercises }: Prop
   async function load(programId: string) {
     setLoading(true);
     try {
+      const program = assignablePrograms.find(p => p.id === programId);
       const programDayIds = (days[programId] ?? []).map(d => d.id);
       const bankIds = [...new Set(
         programDayIds.flatMap(dId => (dayExercises[dId] ?? []).map(de => de.exercise?.id).filter(Boolean))
       )] as string[];
 
-      const assignedIds = await getAssignedPlayers(programId);
-      if (assignedIds.length === 0) { setEntries([]); return; }
+      // "Everyone" (public) programs have no explicit assignment rows —
+      // every player has access implicitly. Anything else uses the real
+      // assignment list.
+      let relevantIds: string[];
+      if (program?.visibility === "public") {
+        const { data: allPlayers } = await supabase.from("profiles").select("id").eq("role", "player");
+        relevantIds = (allPlayers ?? []).map((p: any) => p.id);
+      } else {
+        relevantIds = await getAssignedPlayers(programId);
+      }
+      if (relevantIds.length === 0) { setEntries([]); return; }
 
-      const { data: profiles } = await supabase.from("profiles").select("id,name,avatar_url").in("id", assignedIds);
+      const { data: profiles } = await supabase.from("profiles").select("id,name,avatar_url").in("id", relevantIds);
       const map: Record<string, Entry> = {};
       (profiles ?? []).forEach((p: any) => {
         map[p.id] = { playerId: p.id, playerName: p.name, avatarUrl: p.avatar_url ?? null, sessionsLogged: 0, lastLoggedAt: null };
