@@ -11,9 +11,10 @@ interface Props {
   editWorkout: Workout | null;
   onSaved: () => void;
   onCancel: () => void;
+  defaultIsActive?: boolean; // only applies when creating a new drill (editWorkout is null)
 }
 
-export default function WorkoutBuilder({ editWorkout, onSaved, onCancel }: Props) {
+export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, defaultIsActive }: Props) {
   const [title, setTitle]               = useState("");
   const [category, setCategory]         = useState<Category>("Shooting");
   const [desc, setDesc]                 = useState("");
@@ -30,7 +31,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel }: Props
   const [publishDate, setPublishDate]   = useState("");
   const [groupName, setGroupName]       = useState("");
   const [groupId, setGroupId]           = useState<string | null>(null);
-  const [isActive, setIsActive]         = useState(true);
+  const [isActive, setIsActive]         = useState(defaultIsActive ?? true);
   const [deadline, setDeadline]         = useState("");
   const [spotNames, setSpotNames]       = useState<string[]>(["Spot 1","Spot 2","Spot 3","Spot 4","Spot 5"]);
   const [saving, setSaving]             = useState(false);
