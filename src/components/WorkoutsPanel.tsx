@@ -1,6 +1,6 @@
 // src/components/WorkoutsPanel.tsx
 import { useState, useEffect, useRef } from "react";
-import { supabase, Workout, Score, submitScore as _submitScore, getVideoId, updateStreak, STREAK_BONUS_DAYS, STREAK_BONUS_PTS } from "../lib/supabase";
+import { supabase, Workout, Score, submitScore as _submitScore, submitLibraryPracticeScore as _submitLibraryPracticeScore, getVideoId, updateStreak, STREAK_BONUS_DAYS, STREAK_BONUS_PTS } from "../lib/supabase";
 import DrillTimer, { Stopwatch } from "./DrillTimer";
 
 interface Props {
@@ -137,6 +137,27 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
         return;
       }
       const localDate = new Date().toLocaleDateString("en-CA");
+
+      // Library practice — this drill isn't part of the currently active
+      // group, so it goes through the flat-point practice pipeline instead
+      // of the normal competitive/flat/self-reported scoring pipeline.
+      if (activeWorkout.is_active === false) {
+        const libResult = await _submitLibraryPracticeScore(playerId, activeWorkout.id, {
+          made: finalMade, reps: finalReps, sprint_secs: parseFloat(sprintSecs) || 0, self_points: finalSelfPoints,
+        });
+        setActiveWorkout(null);
+        onScoreLogged();
+        showToast(
+          libResult.isPersonalBest
+            ? "🎯 New personal best! Great work."
+            : libResult.creditedToday
+            ? "✅ Practice logged! +1 point"
+            : "✅ Practice logged! (Already credited today, but still counts for personal bests.)"
+        );
+        setSaving(false);
+        return;
+      }
+
       const result = await _submitScore({ player_id: playerId, workout_id: activeWorkout.id, made: finalMade, attempts: 0, sprint_secs: parseFloat(sprintSecs) || 0, reps: finalReps, self_points: finalSelfPoints, local_date: localDate } as any);
 
       // Save per-spot personal bests for multi-spot workouts
