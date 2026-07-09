@@ -21,9 +21,10 @@ type HofTab = "champions" | "records";
 
 interface Props {
   canDelete?: boolean;
+  onViewWorkout?: (workoutId: string) => void;
 }
 
-export default function HallOfFame({ canDelete = false }: Props) {
+export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) {
   const [tab, setTab]               = useState<HofTab>("champions");
   const [champions, setChampions]   = useState<any[]>([]);
   const [allRecords, setAllRecords] = useState<any[]>([]);
@@ -273,7 +274,17 @@ export default function HallOfFame({ canDelete = false }: Props) {
                   <div key={rec.id} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)" }}>{rec.workout_title}</div>
+                        <div
+                          onClick={() => rec.workout_id && onViewWorkout?.(rec.workout_id)}
+                          style={{
+                            fontWeight: 700, fontSize: 13, color: "var(--text)",
+                            cursor: rec.workout_id && onViewWorkout ? "pointer" : "default",
+                            textDecoration: rec.workout_id && onViewWorkout ? "underline" : "none",
+                            textDecorationColor: "rgba(176,184,200,0.35)",
+                          }}
+                        >
+                          {rec.workout_title}
+                        </div>
                         {rec.workout_desc && (
                           <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3, lineHeight: 1.4 }}>{rec.workout_desc}</div>
                         )}
