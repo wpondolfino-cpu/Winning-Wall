@@ -21,6 +21,7 @@ export default function DrillLibrary({ canManage, onPractice, onChanged }: Props
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
+  const [subcategoryFilter, setSubcategoryFilter] = useState<string>("All");
   const [showArchived, setShowArchived] = useState(false);
   const [showBuilder, setShowBuilder] = useState(false);
   const [editDrill, setEditDrill] = useState<Workout | null>(null);
@@ -38,9 +39,17 @@ export default function DrillLibrary({ canManage, onPractice, onChanged }: Props
   const filtered = drills.filter(d => {
     const matchArchived = showArchived ? (d as any).library_archived === true : (d as any).library_archived !== true;
     const matchCategory = categoryFilter === "All" || d.category === categoryFilter;
+    const matchSubcategory = subcategoryFilter === "All" || (d as any).subcategory === subcategoryFilter;
     const matchSearch = search === "" || d.title.toLowerCase().includes(search.toLowerCase());
-    return matchArchived && matchCategory && matchSearch;
+    return matchArchived && matchCategory && matchSubcategory && matchSearch;
   });
+
+  // Only meaningful once a specific category is selected — subcategories
+  // are scoped within a category (e.g. "1v1" only makes sense under Competing).
+  const availableSubcategories = categoryFilter === "All" ? [] : [...new Set(
+    drills.filter(d => d.category === categoryFilter && (d as any).subcategory)
+      .map(d => (d as any).subcategory as string)
+  )].sort();
 
   const grouped = CATEGORIES.reduce((acc, cat) => {
     const ds = filtered.filter(d => d.category === cat);
@@ -131,14 +140,25 @@ export default function DrillLibrary({ canManage, onPractice, onChanged }: Props
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search drills…"
         style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", marginBottom: 10 }} />
 
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: canManage ? 10 : 16 }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: availableSubcategories.length > 0 ? 6 : (canManage ? 10 : 16) }}>
         {(["All", ...CATEGORIES] as const).map(c => (
-          <button key={c} onClick={() => setCategoryFilter(c)}
+          <button key={c} onClick={() => { setCategoryFilter(c); setSubcategoryFilter("All"); }}
             style={{ padding: "5px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600, background: categoryFilter === c ? "var(--royal)" : "var(--surface2)", color: categoryFilter === c ? "#fff" : "var(--muted)" }}>
             {c}
           </button>
         ))}
       </div>
+
+      {availableSubcategories.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: canManage ? 10 : 16, paddingLeft: 8 }}>
+          {(["All", ...availableSubcategories]).map(sc => (
+            <button key={sc} onClick={() => setSubcategoryFilter(sc)}
+              style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid var(--border)", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, background: subcategoryFilter === sc ? "var(--gold)" : "transparent", color: subcategoryFilter === sc ? "#1a1a1a" : "var(--muted)" }}>
+              {sc}
+            </button>
+          ))}
+        </div>
+      )}
 
       {canManage && (
         <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
@@ -168,7 +188,10 @@ export default function DrillLibrary({ canManage, onPractice, onChanged }: Props
                       <span style={{ fontSize: 18 }}>{d.emoji ?? "🏀"}</span>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{d.title}</div>
-                        {(d as any).library_archived && <span style={{ fontSize: 10, color: "var(--muted)" }}>📦 Archived</span>}
+                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          {(d as any).subcategory && <span style={{ fontSize: 10, color: "var(--gold)" }}>🏷️ {(d as any).subcategory}</span>}
+                          {(d as any).library_archived && <span style={{ fontSize: 10, color: "var(--muted)" }}>📦 Archived</span>}
+                        </div>
                       </div>
                       {vid && <span style={{ fontSize: 11, color: "var(--gold)" }}>📹</span>}
                       {canManage && (
