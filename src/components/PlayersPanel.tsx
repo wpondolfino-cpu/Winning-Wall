@@ -354,14 +354,23 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const now = Date.now();
   const FOURTEEN_DAYS = 14 * 24 * 60 * 60 * 1000;
 
+  const [pushStatus, setPushStatus] = useState<Record<string, boolean>>({});
+
   const playersWithStatus = leaderboard.map(entry => {
     const lastLog = entry.last_logged_at ? new Date(entry.last_logged_at).getTime() : 0;
     const daysInactive = lastLog > 0 ? Math.round((now - lastLog) / 86400000) : null;
     const isInactive = !lastLog || (now - lastLog) > FOURTEEN_DAYS;
-    return { ...entry, daysInactive, isInactive };
+    return { ...entry, daysInactive, isInactive, pushSubscribed: pushStatus[entry.id] ?? false };
   });
 
-  useState(() => { loadPending(); loadCoaches(); loadPasswordResets(); });
+  useState(() => { loadPending(); loadCoaches(); loadPasswordResets(); loadPushStatus(); });
+
+  async function loadPushStatus() {
+    const { data } = await supabase.from("profiles").select("id,push_subscribed").eq("role", "player");
+    const map: Record<string, boolean> = {};
+    (data ?? []).forEach((p: any) => { map[p.id] = !!p.push_subscribed; });
+    setPushStatus(map);
+  }
 
   async function loadPending() {
     const { data } = await supabase.from("profiles")
@@ -676,7 +685,10 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                   {p.avatar_url ? <img src={p.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>{p.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}</span>}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14, color: "#93b4ff", textDecoration: "underline dotted", cursor: "pointer" }} onClick={() => setViewingPlayer({ id: p.id, name: p.name })}>{p.name}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontWeight: 600, fontSize: 14, color: "#93b4ff", textDecoration: "underline dotted", cursor: "pointer" }} onClick={() => setViewingPlayer({ id: p.id, name: p.name })}>{p.name}</span>
+                    <span title={p.pushSubscribed ? "Notifications on" : "Notifications not enabled"} style={{ fontSize: 12 }}>{p.pushSubscribed ? "🔔" : "🔕"}</span>
+                  </div>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.grade_category}{p.daysInactive ? ` · ${p.daysInactive}d ago` : ""}</div>
                 </div>
                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
