@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { supabase, Workout, createWorkout, getEmbedUrl, ScoringType } from "../../lib/supabase";
 import { loadGroupsForBuilder } from "./GroupManager";
+import LibraryDrillPicker from "./LibraryDrillPicker";
 
 type Category = "Dribbling" | "Finishing" | "Shooting" | "Competing" | "Strength";
 const CATEGORIES: Category[] = ["Dribbling", "Finishing", "Shooting", "Competing", "Strength"];
@@ -15,8 +16,10 @@ interface Props {
 }
 
 export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, defaultIsActive }: Props) {
+  const [attaching, setAttaching] = useState(false);
   const [title, setTitle]               = useState("");
   const [category, setCategory]         = useState<Category>("Shooting");
+  const [subcategory, setSubcategory]   = useState("");
   const [desc, setDesc]                 = useState("");
   const [videoUrl, setVideoUrl]         = useState("");
   const [resourceUrl, setResourceUrl]   = useState("");
@@ -44,6 +47,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
     if (editWorkout) {
       setTitle(editWorkout.title);
       setCategory((editWorkout.category as Category) ?? "Shooting");
+      setSubcategory((editWorkout as any).subcategory ?? "");
       setDesc(editWorkout.description ?? "");
       setVideoUrl(editWorkout.video_url ?? "");
       setResourceUrl((editWorkout as any).resource_url ?? "");
@@ -68,6 +72,25 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
   function removeSpot(i: number) { setSpotNames(p => p.filter((_, idx) => idx !== i)); }
   function updateSpot(i: number, val: string) { setSpotNames(p => p.map((s, idx) => idx === i ? val : s)); }
 
+  async function attachExistingDrill(drill: Workout) {
+    setAttaching(true);
+    setError("");
+    try {
+      const { error: err } = await supabase.from("workouts").update({
+        group_name: groupName.trim() || null,
+        group_id: groupId ?? null,
+        is_active: isActive,
+        deadline: deadline ? new Date(deadline + "T23:59:59").toISOString() : null,
+      }).eq("id", drill.id);
+      if (err) throw err;
+      onSaved();
+    } catch (e: any) {
+      setError(e.message ?? "Failed to attach drill");
+    } finally {
+      setAttaching(false);
+    }
+  }
+
   async function handleSave() {
     if (!title.trim()) { setError("Please enter a workout title."); return; }
     if (scoringType === "flat" && parseInt(flatPoints) <= 0) { setError("Please enter a point value greater than 0."); return; }
@@ -75,7 +98,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
     setSaving(true); setError("");
     try {
       const base = {
-        title, category, description: desc,
+        title, category, subcategory: subcategory.trim() || undefined, description: desc,
         video_url: videoUrl || undefined, emoji,
         scoring_type: scoringType,
         scoring_metric: scoringType === "competitive" ? scoringMetric : undefined,
@@ -96,6 +119,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
       if (editWorkout) {
         const { error: err } = await supabase.from("workouts").update({
           ...base,
+          subcategory: subcategory.trim() || null,
           flat_points: scoringType === "flat" ? parseInt(flatPoints) : null,
           scoring_metric: scoringType === "competitive" ? scoringMetric : null,
           first_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(firstPts) || 3 : null,
@@ -136,6 +160,14 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
           </div>
         </div>
 
+        <div style={{ marginBottom: 4 }}>
+          <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>
+            Subcategory (optional) <span style={{ fontWeight: 400, textTransform: "none" }}>— e.g. "1v1", "2v2" under Competing. Only organizes the Drill Library, doesn't affect Manage Workouts.</span>
+          </label>
+          <input value={subcategory} onChange={e => setSubcategory(e.target.value)} placeholder="e.g. 1v1"
+            style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+        </div>
+
         <div>
           <label>Workout Group <span style={{ color: "var(--muted)", fontWeight: 400 }}>(assigns this workout to a group)</span></label>
           <select value={groupId ?? ""} onChange={e => {
@@ -156,6 +188,10 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
               {g.status === "active" ? "🌐 Visible to players immediately" : "📝 Draft — hidden until group is published"}
             </div>;
           })()}
+          {!editWorkout && (
+            <LibraryDrillPicker onSelect={attachExistingDrill} />
+          )}
+          {attaching && <div style={{ fontSize: 12, color: "var(--gold)", marginTop: 6 }}>Attaching…</div>}
         </div>
 
         <div style={{ marginBottom: 4 }}>
