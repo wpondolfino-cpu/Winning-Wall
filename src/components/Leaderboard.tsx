@@ -7,6 +7,7 @@ import {
   getXpPerks,
 } from "../lib/supabase";
 import type { XpPerk } from "../lib/supabase";
+import ChampionsPanel from "./coach/ChampionsPanel";
 
 interface Props { currentUserId?: string; canManage?: boolean; }
 
@@ -239,6 +240,8 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
         </div>
         <span className="live-badge"><span className="live-dot" /> LIVE</span>
       </div>
+
+      {canManage && <ChampionsPanel />}
 
       {/* ── Main tabs: Overall | Current Period | History ── */}
       <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 12, padding: 4, marginBottom: 16, border: "1px solid var(--border)" }}>
