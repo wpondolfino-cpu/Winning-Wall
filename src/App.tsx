@@ -22,7 +22,6 @@ import PerkTutorial from "./components/PerkTutorial";
 import LiftingPanel from "./components/lifting";
 import AnnouncementPanel from "./components/coach/AnnouncementPanel";
 import SendNotificationPanel from "./components/coach/SendNotificationPanel";
-import ChampionsPanel from "./components/coach/ChampionsPanel";
 import NavReorderModal, { NavItemConfig } from "./components/NavReorderModal";
 import DrillLibrary from "./components/DrillLibrary";
 
@@ -406,7 +405,7 @@ export default function App() {
           {/* Coach panels */}
           {isCoach && coachTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={false} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
           {isCoach && coachTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} />}
-          {isCoach && coachTab === "leaderboard" && (<><Leaderboard canManage={true} /><ChampionsPanel /></>)}
+          {isCoach && coachTab === "leaderboard" && <Leaderboard canManage={true} />}
           {isCoach && coachTab === "announcements" && (<><AnnouncementPanel isAdmin={false} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
           {isCoach && coachTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isCoach={true} />}
           {isCoach && coachTab === "hof" && <HallOfFame canDelete={true} onViewWorkout={(id) => { setCoachTab("workouts"); setDeepLinkWorkoutId(id); }} />}
@@ -425,7 +424,7 @@ export default function App() {
           {/* Admin panels */}
           {isAdmin && adminTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={true} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
           {isAdmin && adminTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} />}
-          {isAdmin && adminTab === "leaderboard" && (<><Leaderboard canManage={true} /><ChampionsPanel /></>)}
+          {isAdmin && adminTab === "leaderboard" && <Leaderboard canManage={true} />}
           {isAdmin && adminTab === "announcements" && (<><AnnouncementPanel isAdmin={true} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
           {isAdmin && adminTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isAdmin={true} />}
           {isAdmin && adminTab === "hof" && <HallOfFame canDelete={true} onViewWorkout={(id) => { setAdminTab("workouts"); setDeepLinkWorkoutId(id); }} />}
