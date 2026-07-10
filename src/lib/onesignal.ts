@@ -7,6 +7,8 @@
 // So requestPushPermission() below must always be called from an onClick,
 // never from a useEffect.
 
+import { supabase } from "./supabase";
+
 declare global {
   interface Window {
     OneSignalDeferred?: any[];
@@ -44,6 +46,8 @@ export function requestPushPermission(playerId: string): Promise<boolean> {
           // without fully marking the subscription as "subscribed" server-side.
           await OneSignal.User.PushSubscription.optIn();
           await OneSignal.User.addTag("player_id", playerId);
+          supabase.from("profiles").update({ push_subscribed: true }).eq("id", playerId)
+            .then(({ error }) => { if (error) console.error("Failed to record push_subscribed:", error); });
         }
         resolve(granted);
       } catch (e) {
@@ -67,6 +71,8 @@ export function ensurePushTag(playerId: string) {
         // (e.g. during testing) but never got fully opted in server-side.
         await OneSignal.User.PushSubscription.optIn();
         await OneSignal.User.addTag("player_id", playerId);
+        supabase.from("profiles").update({ push_subscribed: true }).eq("id", playerId)
+          .then(({ error }) => { if (error) console.error("Failed to record push_subscribed:", error); });
       }
     } catch (e) {
       console.error("Failed to tag push subscriber:", e);
