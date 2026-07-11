@@ -20,6 +20,16 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
   const [title, setTitle]               = useState("");
   const [category, setCategory]         = useState<Category>("Shooting");
   const [subcategory, setSubcategory]   = useState("");
+  const [subcategoryOptions, setSubcategoryOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    supabase.from("workouts").select("subcategory")
+      .eq("category", category).not("subcategory", "is", null)
+      .then(({ data }) => {
+        const unique = [...new Set((data ?? []).map((r: any) => r.subcategory as string).filter(Boolean))].sort();
+        setSubcategoryOptions(unique);
+      });
+  }, [category]);
   const [desc, setDesc]                 = useState("");
   const [videoUrl, setVideoUrl]         = useState("");
   const [resourceUrl, setResourceUrl]   = useState("");
@@ -165,8 +175,11 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
           <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>
             Subcategory (optional) <span style={{ fontWeight: 400, textTransform: "none" }}>— e.g. "1v1", "2v2" under Competing. Only organizes the Drill Library, doesn't affect Manage Workouts.</span>
           </label>
-          <input value={subcategory} onChange={e => setSubcategory(e.target.value)} placeholder="e.g. 1v1"
+          <input value={subcategory} onChange={e => setSubcategory(e.target.value)} placeholder="e.g. 1v1" list="subcategory-options"
             style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+          <datalist id="subcategory-options">
+            {subcategoryOptions.map(opt => <option key={opt} value={opt} />)}
+          </datalist>
         </div>
 
         <div>
