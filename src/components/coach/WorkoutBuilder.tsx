@@ -127,6 +127,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
           third_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(thirdPts) || 1 : null,
           group_name: groupName.trim() || null,
           group_id: groupId ?? null,
+          video_url: videoUrl.trim() || null,
           deadline: deadline ? new Date(deadline + "T23:59:59").toISOString() : null,
           spot_config: scoringType === "multi_spot" ? spotNames.filter(s => s.trim()) : null,
           resource_url: resourceUrl.trim() || null,
