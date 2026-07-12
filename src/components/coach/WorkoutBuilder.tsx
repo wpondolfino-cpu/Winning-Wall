@@ -19,17 +19,26 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
   const [attaching, setAttaching] = useState(false);
   const [title, setTitle]               = useState("");
   const [category, setCategory]         = useState<Category>("Shooting");
-  const [subcategory, setSubcategory]   = useState("");
-  const [subcategoryOptions, setSubcategoryOptions] = useState<string[]>([]);
+  const [tags, setTags]                 = useState<string[]>([]);
+  const [tagInput, setTagInput]         = useState("");
+  const [tagOptions, setTagOptions]     = useState<string[]>([]);
 
   useEffect(() => {
-    supabase.from("workouts").select("subcategory")
-      .eq("category", category).not("subcategory", "is", null)
+    supabase.from("workouts").select("tags")
       .then(({ data }) => {
-        const unique = [...new Set((data ?? []).map((r: any) => r.subcategory as string).filter(Boolean))].sort();
-        setSubcategoryOptions(unique);
+        const unique = [...new Set((data ?? []).flatMap((r: any) => r.tags ?? []).filter(Boolean))].sort();
+        setTagOptions(unique);
       });
-  }, [category]);
+  }, []);
+
+  function addTag(raw: string) {
+    const t = raw.trim();
+    if (t && !tags.includes(t)) setTags(prev => [...prev, t]);
+    setTagInput("");
+  }
+  function removeTag(t: string) {
+    setTags(prev => prev.filter(x => x !== t));
+  }
   const [desc, setDesc]                 = useState("");
   const [videoUrl, setVideoUrl]         = useState("");
   const [resourceUrl, setResourceUrl]   = useState("");
@@ -57,7 +66,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
     if (editWorkout) {
       setTitle(editWorkout.title);
       setCategory((editWorkout.category as Category) ?? "Shooting");
-      setSubcategory((editWorkout as any).subcategory ?? "");
+      setTags((editWorkout as any).tags ?? []);
       setDesc(editWorkout.description ?? "");
       setVideoUrl(editWorkout.video_url ?? "");
       setResourceUrl((editWorkout as any).resource_url ?? "");
@@ -107,8 +116,9 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
     if (scoringType === "multi_spot" && spotNames.filter(s => s.trim()).length < 1) { setError("Please add at least one spot."); return; }
     setSaving(true); setError("");
     try {
+      const finalTags = tagInput.trim() && !tags.includes(tagInput.trim()) ? [...tags, tagInput.trim()] : tags;
       const base = {
-        title, category, subcategory: subcategory.trim() || undefined, description: desc,
+        title, category, tags: finalTags, description: desc,
         video_url: videoUrl || undefined, emoji,
         scoring_type: scoringType,
         scoring_metric: scoringType === "competitive" ? scoringMetric : undefined,
@@ -129,7 +139,6 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
       if (editWorkout) {
         const { error: err } = await supabase.from("workouts").update({
           ...base,
-          subcategory: subcategory.trim() || null,
           flat_points: scoringType === "flat" ? parseInt(flatPoints) : null,
           scoring_metric: scoringType === "competitive" ? scoringMetric : null,
           first_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(firstPts) || 3 : null,
@@ -173,13 +182,27 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
 
         <div style={{ marginBottom: 4 }}>
           <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>
-            Subcategory (optional) <span style={{ fontWeight: 400, textTransform: "none" }}>— e.g. "1v1", "2v2" under Competing. Only organizes the Drill Library, doesn't affect Manage Workouts.</span>
+            Tags (optional) <span style={{ fontWeight: 400, textTransform: "none" }}>— e.g. "Movement", "2+ People". Independent of category — a drill can carry any number of tags. Only organizes the Drill Library, doesn't affect Manage Workouts.</span>
           </label>
-          <input value={subcategory} onChange={e => setSubcategory(e.target.value)} placeholder="e.g. 1v1" list="subcategory-options"
-            style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
-          <datalist id="subcategory-options">
-            {subcategoryOptions.map(opt => <option key={opt} value={opt} />)}
-          </datalist>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: 8 }}>
+            {tags.map(t => (
+              <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, padding: "4px 8px 4px 10px", borderRadius: 14, background: "var(--royal)", color: "#fff" }}>
+                {t}
+                <span onClick={() => removeTag(t)} style={{ cursor: "pointer", fontSize: 12, lineHeight: 1 }}>×</span>
+              </span>
+            ))}
+            <input
+              value={tagInput}
+              onChange={e => setTagInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTag(tagInput); } }}
+              placeholder={tags.length === 0 ? "Type a tag, press Enter…" : "Add another…"}
+              list="tag-options"
+              style={{ border: "none", background: "transparent", flex: 1, minWidth: 140, padding: 4, color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}
+            />
+            <datalist id="tag-options">
+              {tagOptions.filter(t => !tags.includes(t)).map(t => <option key={t} value={t} />)}
+            </datalist>
+          </div>
         </div>
 
         <div>
