@@ -22,6 +22,8 @@ export default function DrillLibrary({ canManage, onPractice, onChanged }: Props
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [tagSearchOpen, setTagSearchOpen] = useState(false);
+  const [tagSearchQuery, setTagSearchQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [showBuilder, setShowBuilder] = useState(false);
   const [editDrill, setEditDrill] = useState<Workout | null>(null);
@@ -44,8 +46,14 @@ export default function DrillLibrary({ canManage, onPractice, onChanged }: Props
     return matchArchived && matchCategory && matchTag && matchSearch;
   });
 
-  // Tags are independent of category — computed across every drill, not scoped.
-  const availableTags = [...new Set(drills.flatMap(d => (d as any).tags ?? []))].sort();
+  // Scoped to the current category so irrelevant tags (e.g. "1v1" while
+  // viewing Dribbling) never show up as options — except on "All", where
+  // we show the full set via the collapsed search instead of flat chips.
+  const availableTags = [...new Set(
+    drills
+      .filter(d => categoryFilter === "All" || d.category === categoryFilter)
+      .flatMap(d => (d as any).tags ?? [])
+  )].sort();
 
   const grouped = CATEGORIES.reduce((acc, cat) => {
     const ds = filtered.filter(d => d.category === cat);
@@ -138,14 +146,43 @@ export default function DrillLibrary({ canManage, onPractice, onChanged }: Props
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: availableTags.length > 0 ? 6 : (canManage ? 10 : 16) }}>
         {(["All", ...CATEGORIES] as const).map(c => (
-          <button key={c} onClick={() => setCategoryFilter(c)}
+          <button key={c} onClick={() => { setCategoryFilter(c); setTagFilter(null); setTagSearchOpen(false); setTagSearchQuery(""); }}
             style={{ padding: "5px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600, background: categoryFilter === c ? "var(--royal)" : "var(--surface2)", color: categoryFilter === c ? "#fff" : "var(--muted)" }}>
             {c}
           </button>
         ))}
       </div>
 
-      {availableTags.length > 0 && (
+      {availableTags.length > 0 && categoryFilter === "All" && (
+        <div style={{ marginBottom: canManage ? 10 : 16, paddingLeft: 8 }}>
+          {tagFilter ? (
+            <button onClick={() => setTagFilter(null)}
+              style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid var(--border)", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, background: "var(--gold)", color: "#1a1a1a" }}>
+              🏷️ {tagFilter} ✕
+            </button>
+          ) : !tagSearchOpen ? (
+            <button onClick={() => setTagSearchOpen(true)}
+              style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid var(--border)", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, background: "transparent", color: "var(--muted)" }}>
+              🏷️ Filter by tag
+            </button>
+          ) : (
+            <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, maxWidth: 320 }}>
+              <input value={tagSearchQuery} onChange={e => setTagSearchQuery(e.target.value)} placeholder="Search tags…" autoFocus
+                style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 9px", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box", marginBottom: 6 }} />
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {availableTags.filter(t => t.toLowerCase().includes(tagSearchQuery.toLowerCase())).map(t => (
+                  <button key={t} onClick={() => { setTagFilter(t); setTagSearchOpen(false); setTagSearchQuery(""); }}
+                    style={{ padding: "4px 9px", borderRadius: 6, border: "1px solid var(--border)", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, background: "transparent", color: "var(--muted)" }}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {availableTags.length > 0 && categoryFilter !== "All" && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: canManage ? 10 : 16, paddingLeft: 8 }}>
           {availableTags.map(t => (
             <button key={t} onClick={() => setTagFilter(f => f === t ? null : t)}
