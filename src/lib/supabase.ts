@@ -83,6 +83,7 @@ export interface Workout {
   deadline?: string;
   leaderboard_active?: boolean;
   library_archived?: boolean;
+  tags?: string[];
   created_at: string;
 }
 
