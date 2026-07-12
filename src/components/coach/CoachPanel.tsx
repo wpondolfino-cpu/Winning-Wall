@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { supabase, Workout, getEmbedUrl, getVideoId } from "../../lib/supabase";
 import GroupManager from "./GroupManager";
 import WorkoutBuilder from "./WorkoutBuilder";
+import FindDrillModal from "./FindDrillModal";
 
 interface Props {
   workouts: Workout[];
@@ -27,6 +28,7 @@ export default function CoachPanel({ workouts, onPublished, coachId, coachName, 
   const [deleting, setDeleting]           = useState<string | null>(null);
   const [deactivatingGroup, setDeactivatingGroup] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState("all");
+  const [showFindDrill, setShowFindDrill] = useState(false);
 
   // Deep-link support (e.g. clicking a drill from Hall of Fame) — open
   // that specific drill's read-only preview, even if it's not part of
@@ -99,7 +101,15 @@ export default function CoachPanel({ workouts, onPublished, coachId, coachName, 
           <div className="section-title">Manage Workouts</div>
           <div className="section-sub">Post and manage drills for players</div>
         </div>
-        {!showBuilder && <button className="coach-add-btn" onClick={openNew}>+ New Workout</button>}
+        {!showBuilder && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="coach-add-btn" onClick={openNew}>+ New Workout</button>
+            <button className="coach-add-btn" onClick={() => setShowFindDrill(true)} style={{ background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }}>🔍 Find Drill</button>
+          </div>
+        )}
+        {showFindDrill && (
+          <FindDrillModal onClose={() => setShowFindDrill(false)} onAttached={onPublished} />
+        )}
       </div>
 
       {showBuilder && (
