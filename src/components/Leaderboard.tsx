@@ -8,6 +8,7 @@ import {
 } from "../lib/supabase";
 import type { XpPerk } from "../lib/supabase";
 import ChampionsPanel from "./coach/ChampionsPanel";
+import { formatDuration } from "../lib/time";
 
 interface Props { currentUserId?: string; canManage?: boolean; }
 
@@ -199,7 +200,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
     return gf.map(s => {
       const p = profiles.find(pr => pr.id === s.player_id);
       const raw = s.self_points > 0 ? s.self_points : (s.made + s.reps);
-      const display = s.sprint_secs > 0 && s.made === 0 && s.reps === 0 ? `${s.sprint_secs}s` : raw.toString();
+      const display = s.sprint_secs > 0 && s.made === 0 && s.reps === 0 ? formatDuration(s.sprint_secs) : raw.toString();
       return { playerId: s.player_id, name: p?.name ?? "Unknown", rawScore: s.sprint_secs > 0 && s.made === 0 ? -s.sprint_secs : raw, display, points: s.points ?? 0 };
     }).sort((a, b) => b.rawScore - a.rawScore).map((r, i) => {
       let pts = r.points;
@@ -214,14 +215,26 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
   }
 
   function getPeriodWorkoutBoard(workoutId: string) {
+    const workout = workouts.find(w => w.id === workoutId);
     const wAttempts = periodScores.filter((s: any) => s.workout_id === workoutId);
     const gf = gradeTab === ALL ? wAttempts : wAttempts.filter((s: any) => profiles.find(p => p.id === s.player_id)?.grade_category === gradeTab);
     const bestMap: Record<string, any> = {};
     for (const a of gf) { if (!(bestMap as any)[a.player_id] || (a as any).raw_score > (bestMap as any)[a.player_id].raw_score) (bestMap as any)[a.player_id] = a; }
     return Object.values(bestMap).map((s: any) => {
       const p = profiles.find(pr => pr.id === s.player_id);
-      return { playerId: s.player_id, name: p?.name ?? "Unknown", rawScore: s.raw_score ?? 0, display: (s.raw_score ?? 0).toString(), points: s.raw_score ?? 0 };
-    }).sort((a, b) => b.rawScore - a.rawScore).map((r, i) => ({ ...r, rank: i + 1 }));
+      const rawScore = s.raw_score ?? 0;
+      const display = rawScore < 0 ? formatDuration(-rawScore) : rawScore.toString();
+      return { playerId: s.player_id, name: p?.name ?? "Unknown", rawScore, display };
+    }).sort((a, b) => b.rawScore - a.rawScore).map((r, i) => {
+      let pts = 0;
+      if (workout?.scoring_type === "competitive" || workout?.scoring_type === "multi_spot") {
+        if (i === 0) pts = workout.first_place_pts ?? 3;
+        else if (i === 1) pts = workout.second_place_pts ?? 2;
+        else if (i === 2) pts = workout.third_place_pts ?? 1;
+        else pts = 0;
+      }
+      return { ...r, points: pts, rank: i + 1 };
+    });
   }
 
   if (loading) return <div className="loading">Loading leaderboard…</div>;
