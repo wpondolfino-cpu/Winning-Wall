@@ -107,6 +107,12 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
     setSnapshots(data ?? []);
   }
 
+  async function deleteSnapshot(snapId: string) {
+    if (!window.confirm("Delete this snapshot? This can't be undone.")) return;
+    await supabase.from("period_snapshots").delete().eq("id", snapId);
+    setSnapshots(prev => prev.filter(s => s.id !== snapId));
+  }
+
   async function saveSnapshot(periodName: string) {
     if (!window.confirm(`Save a snapshot of the current leaderboard as "${periodName}"?\n\nThis freezes the current standings for the History tab.`)) return;
     setSavingSnap(true);
@@ -532,7 +538,15 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                           </div>
                         )}
                       </div>
-                      <span style={{ color: "var(--muted)", fontSize: 16, flexShrink: 0 }}>{isOpen ? "▲" : "▼"}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                        {canManage && (
+                          <button onClick={(e) => { e.stopPropagation(); deleteSnapshot(snap.id); }}
+                            style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 7, padding: "4px 9px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>
+                            🗑
+                          </button>
+                        )}
+                        <span style={{ color: "var(--muted)", fontSize: 16 }}>{isOpen ? "▲" : "▼"}</span>
+                      </div>
                     </div>
                     {/* Full ranked list */}
                     {isOpen && (
