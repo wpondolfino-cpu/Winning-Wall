@@ -2,6 +2,8 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase, Workout, Score, submitScore as _submitScore, submitLibraryPracticeScore as _submitLibraryPracticeScore, getVideoId, updateStreak, STREAK_BONUS_DAYS, STREAK_BONUS_PTS } from "../lib/supabase";
 import DrillTimer, { Stopwatch } from "./DrillTimer";
+import DurationInput from "./DurationInput";
+import { formatDuration } from "../lib/time";
 
 interface Props {
   workouts: Workout[];
@@ -13,7 +15,7 @@ interface Props {
 }
 
 // ── Spot Personal Bests Display ───────────────────────────────
-function SpotPBDisplay({ playerId, workoutId, spotConfig, totalBest }: { playerId: string; workoutId: string; spotConfig: string[]; totalBest: number }) {
+function SpotPBDisplay({ playerId, workoutId, spotConfig, totalBest, isTime = false }: { playerId: string; workoutId: string; spotConfig: string[]; totalBest: number; isTime?: boolean }) {
   const [spotPBs, setSpotPBs] = useState<any[]>([]);
   useEffect(() => {
     supabase.from("spot_personal_bests")
@@ -27,13 +29,13 @@ function SpotPBDisplay({ playerId, workoutId, spotConfig, totalBest }: { playerI
   return (
     <div style={{ padding: "10px 14px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, marginBottom: 14 }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", marginBottom: 8 }}>
-        🏆 Personal Best: {totalBest} total
+        🏆 Personal Best: {isTime ? formatDuration(totalBest) : totalBest} total
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         {spotPBs.map(pb => (
           <div key={pb.spot_index} style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
             <span style={{ color: "var(--muted)" }}>{pb.spot_name}</span>
-            <span style={{ color: "#93b4ff", fontWeight: 700 }}>{pb.best_score}</span>
+            <span style={{ color: "#93b4ff", fontWeight: 700 }}>{isTime ? formatDuration(pb.best_score) : pb.best_score}</span>
           </div>
         ))}
       </div>
@@ -114,10 +116,16 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
     setSpotScores({});
   }
 
+  function isMultiSpotTime(w: Workout | null): boolean {
+    const metric = ((w as any)?.scoring_metric ?? "shots made") as string;
+    return metric.toLowerCase().includes("fastest") || metric.toLowerCase().includes("second");
+  }
+
   function multiSpotTotal(): number {
     if (!activeWorkout) return 0;
     const spots: string[] = (activeWorkout as any).spot_config ?? [];
-    return spots.reduce((sum, _, i) => sum + (parseInt(spotScores[i] ?? "") || 0), 0);
+    const isTime = isMultiSpotTime(activeWorkout);
+    return spots.reduce((sum, _, i) => sum + ((isTime ? parseFloat(spotScores[i] ?? "") : parseInt(spotScores[i] ?? "")) || 0), 0);
   }
 
   async function handleSubmitScore() {
@@ -126,11 +134,15 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
     try {
       let finalMade = parseInt(made) || 0;
       let finalReps = parseInt(reps) || 0;
+      let finalSprintsFromSpots = 0;
       const finalSelfPoints = activeWorkout.scoring_type === "flat" ? (activeWorkout.flat_points ?? 0) : parseInt(selfPoints) || 0;
-      if (activeWorkout.scoring_type === "multi_spot") { finalMade = multiSpotTotal(); finalReps = 0; }
+      if (activeWorkout.scoring_type === "multi_spot") {
+        if (isMultiSpotTime(activeWorkout)) { finalSprintsFromSpots = multiSpotTotal(); finalMade = 0; finalReps = 0; }
+        else { finalMade = multiSpotTotal(); finalReps = 0; }
+      }
 
       // Guard: don't submit if all values are zero (nothing entered)
-      const finalSprints = parseFloat(sprintSecs) || 0;
+      const finalSprints = finalSprintsFromSpots || parseFloat(sprintSecs) || 0;
       if (activeWorkout.scoring_type !== "flat" && finalMade === 0 && finalReps === 0 && finalSprints === 0 && finalSelfPoints === 0) {
         showToast("Please enter a score before submitting.");
         setSaving(false);
@@ -143,7 +155,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
       // of the normal competitive/flat/self-reported scoring pipeline.
       if (activeWorkout.is_active === false) {
         const libResult = await _submitLibraryPracticeScore(playerId, activeWorkout.id, {
-          made: finalMade, reps: finalReps, sprint_secs: parseFloat(sprintSecs) || 0, self_points: finalSelfPoints,
+          made: finalMade, reps: finalReps, sprint_secs: finalSprints, self_points: finalSelfPoints,
         });
         setActiveWorkout(null);
         onScoreLogged();
@@ -158,13 +170,14 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
         return;
       }
 
-      const result = await _submitScore({ player_id: playerId, workout_id: activeWorkout.id, made: finalMade, attempts: 0, sprint_secs: parseFloat(sprintSecs) || 0, reps: finalReps, self_points: finalSelfPoints, local_date: localDate } as any);
+      const result = await _submitScore({ player_id: playerId, workout_id: activeWorkout.id, made: finalMade, attempts: 0, sprint_secs: finalSprints, reps: finalReps, self_points: finalSelfPoints, local_date: localDate } as any);
 
       // Save per-spot personal bests for multi-spot workouts
       if (activeWorkout.scoring_type === "multi_spot") {
         const spots: string[] = (activeWorkout as any).spot_config ?? [];
+        const isTime = isMultiSpotTime(activeWorkout);
         for (let si = 0; si < spots.length; si++) {
-          const spotScore = parseInt(spotScores[si] ?? "") || 0;
+          const spotScore = (isTime ? parseFloat(spotScores[si] ?? "") : parseInt(spotScores[si] ?? "")) || 0;
           if (spotScore > 0) {
             // Check existing PB for this spot
             const { data: existing } = await supabase
@@ -174,7 +187,8 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
               .eq("workout_id", activeWorkout.id)
               .eq("spot_index", si)
               .maybeSingle();
-            if (!existing || spotScore > existing.best_score) {
+            const isNewBest = !existing || (isTime ? spotScore < existing.best_score : spotScore > existing.best_score);
+            if (isNewBest) {
               await supabase.from("spot_personal_bests").upsert({
                 player_id: playerId,
                 workout_id: activeWorkout.id,
@@ -231,10 +245,11 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
     if (w.scoring_type === "multi_spot") {
       const spots: string[] = (w as any).spot_config ?? [];
       const total = multiSpotTotal();
+      const isTime = isMultiSpotTime(w);
       return (
         <>
           <div style={{ padding: "10px 14px", background: "rgba(26,63,168,0.1)", border: "1px solid rgba(26,63,168,0.25)", borderRadius: 8, fontSize: 12, color: "var(--silver-light)", marginBottom: 14, lineHeight: 1.6 }}>
-            🎯 <strong style={{ color: "#93b4ff" }}>Multi-Spot</strong> — enter your score at each spot. Total is ranked in your grade group.
+            🎯 <strong style={{ color: "#93b4ff" }}>Multi-Spot</strong> — enter your {isTime ? "time" : "score"} at each spot. Total is ranked in your grade group{isTime ? " — fastest total wins" : ""}.
             <br />
             <span style={{ color: "var(--gold)" }}>🥇 1st = {w.first_place_pts ?? 3} pts</span>{" · "}
             <span style={{ color: "var(--silver)" }}>🥈 2nd = {w.second_place_pts ?? 2} pts</span>{" · "}
@@ -244,14 +259,18 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
             {spots.map((spotName, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{ flex: 1, fontSize: 14, color: "var(--text)", fontWeight: 500 }}>{spotName}</div>
-                <input type="number" inputMode="numeric" value={spotScores[i] ?? ""} onChange={e => setSpotScores(prev => ({ ...prev, [i]: e.target.value }))} placeholder="0" min="0"
-                  style={{ width: 80, textAlign: "center", fontSize: 18, fontWeight: 600, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 8px", color: "var(--text)", fontFamily: "inherit", outline: "none" }} />
+                {isTime ? (
+                  <DurationInput valueSeconds={spotScores[i] ?? ""} onChange={v => setSpotScores(prev => ({ ...prev, [i]: v }))} />
+                ) : (
+                  <input type="number" inputMode="numeric" value={spotScores[i] ?? ""} onChange={e => setSpotScores(prev => ({ ...prev, [i]: e.target.value }))} placeholder="0" min="0"
+                    style={{ width: 80, textAlign: "center", fontSize: 18, fontWeight: 600, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 8px", color: "var(--text)", fontFamily: "inherit", outline: "none" }} />
+                )}
               </div>
             ))}
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.25)", borderRadius: 10 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--muted)" }}>Total score</div>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: "var(--gold)", lineHeight: 1 }}>{total}</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--muted)" }}>Total {isTime ? "time" : "score"}</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: "var(--gold)", lineHeight: 1 }}>{isTime ? formatDuration(total) : total}</div>
           </div>
         </>
       );
@@ -282,8 +301,8 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
           {isTime ? (
             <div className="score-input-wrap">
               <Stopwatch onUseTime={(secs) => setSprintSecs(secs.toString())} />
-              <label>Your Time (seconds)</label>
-              <input type="number" inputMode="decimal" value={sprintSecs} onChange={e => setSprintSecs(e.target.value)} placeholder="e.g. 4.5" step="0.1" />
+              <label>Your Time (min:sec)</label>
+              <DurationInput valueSeconds={sprintSecs} onChange={setSprintSecs} />
             </div>
           ) : (
             <div className="score-input-wrap">
@@ -417,8 +436,8 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
                       <div className="score-badge" style={{ flex: 1 }}>
                         ✓ {w.scoring_type === "flat" ? `${w.flat_points} pts earned`
                           : w.scoring_type === "self_reported" ? `${logged.self_points} pts logged`
-                          : w.scoring_type === "multi_spot" ? `${logged.made} total`
-                          : [logged.made > 0 && `${logged.made} ${w.scoring_metric ?? "made"}`, logged.sprint_secs > 0 && `${logged.sprint_secs}s`].filter(Boolean).join(" · ")
+                          : w.scoring_type === "multi_spot" ? (isMultiSpotTime(w) ? `${formatDuration(logged.sprint_secs)} total` : `${logged.made} total`)
+                          : [logged.made > 0 && `${logged.made} ${w.scoring_metric ?? "made"}`, logged.sprint_secs > 0 && formatDuration(logged.sprint_secs)].filter(Boolean).join(" · ")
                         }
                       </div>
                       <button onClick={e => { e.stopPropagation(); openLog(w); }} style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "4px 9px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>✏️ Update</button>
@@ -501,7 +520,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
 
             {/* Multi-spot personal bests */}
             {activeWorkout.scoring_type === "multi_spot" && scoreFor(activeWorkout.id) && (
-              <SpotPBDisplay playerId={playerId} workoutId={activeWorkout.id} spotConfig={(activeWorkout as any).spot_config ?? []} totalBest={scoreFor(activeWorkout.id)!.made} />
+              <SpotPBDisplay playerId={playerId} workoutId={activeWorkout.id} spotConfig={(activeWorkout as any).spot_config ?? []} totalBest={isMultiSpotTime(activeWorkout) ? scoreFor(activeWorkout.id)!.sprint_secs : scoreFor(activeWorkout.id)!.made} isTime={isMultiSpotTime(activeWorkout)} />
             )}
 
             {getLogFields(activeWorkout)}
