@@ -121,7 +121,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
         title, category, tags: finalTags, description: desc,
         video_url: videoUrl || undefined, emoji,
         scoring_type: scoringType,
-        scoring_metric: scoringType === "competitive" ? scoringMetric : undefined,
+        scoring_metric: (scoringType === "competitive" || scoringType === "multi_spot") ? scoringMetric : undefined,
         flat_points: scoringType === "flat" ? parseInt(flatPoints) : undefined,
         timer_duration: timerDuration,
         publish_date: publishDate || undefined,
@@ -140,7 +140,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
         const { error: err } = await supabase.from("workouts").update({
           ...base,
           flat_points: scoringType === "flat" ? parseInt(flatPoints) : null,
-          scoring_metric: scoringType === "competitive" ? scoringMetric : null,
+          scoring_metric: (scoringType === "competitive" || scoringType === "multi_spot") ? scoringMetric : null,
           first_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(firstPts) || 3 : null,
           second_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(secondPts) || 2 : null,
           third_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(thirdPts) || 1 : null,
@@ -296,9 +296,9 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
           </div>
         )}
 
-        {scoringType === "competitive" && (
+        {(scoringType === "competitive" || scoringType === "multi_spot") && (
           <div>
-            <label>What are players measuring?</label>
+            <label>What are players measuring?{scoringType === "multi_spot" ? " (applies to every spot)" : ""}</label>
             <select value={scoringMetric} onChange={e => setScoringMetric(e.target.value)}>
               <option value="shots made">Shots Made</option>
               <option value="reps completed">Reps Completed</option>
