@@ -104,11 +104,21 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   function eraseNear(x: number, y: number) {
     pushHistory();
     const near = (a: { x: number; y: number }, r: number) => Math.hypot(a.x - x, a.y - y) < r;
+    // Distance from the click to the closest point ANYWHERE along the
+    // action's line — using only the midpoint meant you had to click one
+    // exact tiny spot in the middle of a pass/screen line to erase it.
+    const distToSegment = (x1: number, y1: number, x2: number, y2: number) => {
+      const dx = x2 - x1, dy = y2 - y1;
+      const lenSq = dx * dx + dy * dy;
+      const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / lenSq));
+      const cx = x1 + t * dx, cy = y1 + t * dy;
+      return Math.hypot(x - cx, y - cy);
+    };
     updateFrame((f) => ({
       players: f.players.filter((p) => !near(p, 16)),
       defenders: f.defenders.filter((d) => !near(d, 16)),
       ball: f.ball && near(f.ball, 12) ? null : f.ball,
-      actions: f.actions.filter((a) => !near({ x: (a.x1 + a.x2) / 2, y: (a.y1 + a.y2) / 2 }, 14)),
+      actions: f.actions.filter((a) => distToSegment(a.x1, a.y1, a.x2, a.y2) >= 14),
     }));
   }
 
@@ -213,7 +223,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           <button onClick={() => setAvatarsDefault((v) => !v)} style={{ padding: "6px 10px" }}>
             Avatars: {avatarsDefault ? "on" : "off"}
           </button>
-          <button onClick={() => setPlaySignal((s) => s + 1)} style={{ padding: "6px 10px", border: "2px solid var(--gold)", color: "var(--gold)" }}>▶ Play frame</button>
+          <button onClick={() => setPlaySignal((s) => s + 1)} className="coach-add-btn">▶ Play frame</button>
         </div>
 
         {stampAction && (
@@ -263,7 +273,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         </div>
 
         <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-          <button onClick={handleSave} disabled={saving} style={{ padding: "8px 14px", border: "2px solid var(--gold)", color: "var(--gold)" }}>
+          <button onClick={handleSave} disabled={saving} className="coach-add-btn">
             {saving ? "Saving…" : "Save play"}
           </button>
           {currentUserRole === "player" && (
