@@ -126,6 +126,17 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     updateFrame((f) => ({ ...f, actions: f.actions.map((a, i) => i === idx ? { ...a, x1, y1, x2, y2 } : a) }));
   }, [frames, frameIdx]);
 
+  function previewAllBeats() {
+    setFrameIdx(0);
+    setTimeout(() => setPlaySignal((s) => s + 1), 50);
+  }
+  function handlePreviewBeatDone() {
+    if (frameIdx < frames.length - 1) {
+      setFrameIdx((i) => i + 1);
+      setTimeout(() => setPlaySignal((s) => s + 1), 150);
+    }
+  }
+
   function eraseNear(x: number, y: number) {
     pushHistory();
     const near = (a: { x: number; y: number }, r: number) => Math.hypot(a.x - x, a.y - y) < r;
@@ -249,6 +260,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             Avatars: {avatarsDefault ? "on" : "off"}
           </button>
           <button onClick={() => setPlaySignal((s) => s + 1)} className="coach-add-btn">▶ Play frame</button>
+          {frames.length > 1 && <button onClick={previewAllBeats} style={{ padding: "6px 10px" }}>▶▶ Preview full play</button>}
         </div>
 
         {stampAction && (
@@ -287,6 +299,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onMoveActionPoint={moveActionPoint}
             onMoveActionWhole={moveActionWhole}
             playSignal={playSignal}
+            onPlayDone={handlePreviewBeatDone}
           />
         </div>
 
