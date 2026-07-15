@@ -4,7 +4,7 @@
 // by RLS on the plays table, not by role checks here).
 
 import { useState, useEffect, useCallback } from "react";
-import PlayCanvas, { CANVAS_W } from "./PlayCanvas";
+import PlayCanvas, { CANVAS_W, CANVAS_H } from "./PlayCanvas";
 import {
   Play, PlayData, PlayFrame, PlayPlayer, PlayAction, ActionType,
   CourtTemplate, COURT_TEMPLATES, COURT_TEMPLATE_LABELS,
