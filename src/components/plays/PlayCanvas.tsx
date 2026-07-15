@@ -31,6 +31,8 @@ interface Props {
   /** Bump this number to play the current frame's actions once. */
   playSignal?: number;
   onPlayDone?: () => void;
+  /** Override the court's background fill — used by PlayPrintView for a lighter, ink-friendly tone. */
+  courtBg?: string;
 }
 
 function courtBackground(template: CourtTemplate) {
@@ -166,7 +168,7 @@ function PlayerIcon({ p, showAvatar, avatarUrl, onDoubleClick }: {
 export default function PlayCanvas({
   frame, courtTemplate, avatarsDefault, roster = {}, edit = false, tool = null,
   onAddPlayer, onAddDefender, onSetBall, onAddAction, onErase, onToggleAvatar,
-  playSignal, onPlayDone,
+  playSignal, onPlayDone, courtBg = "#3a2a17",
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
@@ -224,7 +226,7 @@ export default function PlayCanvas({
     <svg
       ref={svgRef}
       viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`}
-      style={{ width: "100%", height: "auto", display: "block", background: "#c98a4b1a", borderRadius: 8, cursor: edit && tool ? "crosshair" : "default" }}
+      style={{ width: "100%", height: "auto", display: "block", background: courtBg, borderRadius: 8, cursor: edit && tool ? "crosshair" : "default" }}
       onMouseDown={handleMouseDown}
       onMouseUp={handleMouseUp}
     >
