@@ -35,6 +35,25 @@ interface Props {
   courtBg?: string;
 }
 
+// Shared half-court markings (key, free-throw circle, hoop, 3PT line) used
+// by "half", "baseline_oob", and "sideline_oob" — those three are the same
+// physical half-court, just with a different boundary highlighted.
+// The 3PT line is built as two straight corner segments (baseline out to
+// where the arc begins) plus one arc — a plain single arc from baseline to
+// baseline was cutting through the free-throw lane because its radius was
+// too small for that chord width; this shape keeps the arc's apex well
+// below (deeper than) the free-throw line so it never crosses the lane.
+function halfCourtMarkings() {
+  return (
+    <>
+      <rect x={220} y={4} width={160} height={190} fill="none" stroke="var(--silver)" strokeWidth={1.5} />
+      <circle cx={300} cy={194} r={45} fill="none" stroke="var(--silver)" strokeWidth={1.5} />
+      <path d="M 45 4 L 45 150 A 331 331 0 0 0 555 150 L 555 4" fill="none" stroke="var(--silver)" strokeWidth={1.5} />
+      <circle cx={300} cy={40} r={7} fill="none" stroke="var(--silver)" strokeWidth={2} />
+    </>
+  );
+}
+
 function courtBackground(template: CourtTemplate) {
   // All variants share the outer boundary; only the paint/arc placement changes.
   switch (template) {
@@ -44,28 +63,32 @@ function courtBackground(template: CourtTemplate) {
           <rect x={4} y={4} width={592} height={412} fill="none" stroke="var(--silver)" strokeWidth={2} />
           <line x1={300} y1={4} x2={300} y2={416} stroke="var(--silver)" strokeWidth={1.5} />
           <circle cx={300} cy={210} r={35} fill="none" stroke="var(--silver)" strokeWidth={1.5} />
+          {/* Left basket */}
           <rect x={4} y={135} width={80} height={150} fill="none" stroke="var(--silver)" strokeWidth={1.5} />
+          <circle cx={84} cy={210} r={45} fill="none" stroke="var(--silver)" strokeWidth={1.5} />
+          <circle cx={40} cy={210} r={7} fill="none" stroke="var(--silver)" strokeWidth={2} />
+          <path d="M 4 36 L 108 36 A 219 219 0 0 1 108 384 L 4 384" fill="none" stroke="var(--silver)" strokeWidth={1.5} />
+          {/* Right basket (mirrored) */}
           <rect x={516} y={135} width={80} height={150} fill="none" stroke="var(--silver)" strokeWidth={1.5} />
-          <path d="M 40 60 A 190 190 0 0 1 40 360" fill="none" stroke="var(--silver)" strokeWidth={1.5} />
-          <path d="M 560 60 A 190 190 0 0 0 560 360" fill="none" stroke="var(--silver)" strokeWidth={1.5} />
+          <circle cx={516} cy={210} r={45} fill="none" stroke="var(--silver)" strokeWidth={1.5} />
+          <circle cx={560} cy={210} r={7} fill="none" stroke="var(--silver)" strokeWidth={2} />
+          <path d="M 596 36 L 492 36 A 219 219 0 0 0 492 384 L 596 384" fill="none" stroke="var(--silver)" strokeWidth={1.5} />
         </>
       );
     case "baseline_oob":
       return (
         <>
           <rect x={4} y={4} width={592} height={412} fill="none" stroke="var(--silver)" strokeWidth={2} />
-          <rect x={220} y={4} width={160} height={190} fill="none" stroke="var(--silver)" strokeWidth={1.5} />
+          {halfCourtMarkings()}
           <line x1={4} y1={4} x2={596} y2={4} stroke="var(--gold)" strokeWidth={3} />
-          <circle cx={300} cy={194} r={45} fill="none" stroke="var(--silver)" strokeWidth={1.5} />
         </>
       );
     case "sideline_oob":
       return (
         <>
           <rect x={4} y={4} width={592} height={412} fill="none" stroke="var(--silver)" strokeWidth={2} />
-          <rect x={220} y={4} width={160} height={190} fill="none" stroke="var(--silver)" strokeWidth={1.5} />
+          {halfCourtMarkings()}
           <line x1={4} y1={4} x2={4} y2={416} stroke="var(--gold)" strokeWidth={3} />
-          <circle cx={300} cy={194} r={45} fill="none" stroke="var(--silver)" strokeWidth={1.5} />
         </>
       );
     case "half":
@@ -73,10 +96,7 @@ function courtBackground(template: CourtTemplate) {
       return (
         <>
           <rect x={4} y={4} width={592} height={412} fill="none" stroke="var(--silver)" strokeWidth={2} />
-          <rect x={220} y={4} width={160} height={190} fill="none" stroke="var(--silver)" strokeWidth={1.5} />
-          <circle cx={300} cy={194} r={45} fill="none" stroke="var(--silver)" strokeWidth={1.5} />
-          <path d="M 50 4 A 260 260 0 0 0 550 4" fill="none" stroke="var(--silver)" strokeWidth={1.5} />
-          <circle cx={300} cy={40} r={7} fill="none" stroke="var(--silver)" strokeWidth={2} />
+          {halfCourtMarkings()}
         </>
       );
   }
