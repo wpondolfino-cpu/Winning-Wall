@@ -438,4 +438,42 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   cursor: pointer;
 }
 
+/* Baseline dark-theme button — a plain element selector, so any class
+   (e.g. .bottom-tab, .nav-item) or inline style still wins. This exists
+   because several newer components rely on the browser default when they
+   don't set background/color explicitly, which looks like a stray white
+   button against this dark theme. */
+button {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* Play/playbook PDF export — a coach hits "Print / Save as PDF" and the
+   browser's print dialog (Save as PDF) produces the file. No app chrome,
+   just the play diagrams. See PlayPrintView.tsx. */
+@media print {
+  .app-header, .sidebar, .sidebar-overlay, .bottom-tab-bar, .no-print {
+    display: none !important;
+  }
+  .main-content {
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+  }
+  .print-page {
+    page-break-after: always;
+  }
+  .print-page:last-child {
+    page-break-after: auto;
+  }
+}
