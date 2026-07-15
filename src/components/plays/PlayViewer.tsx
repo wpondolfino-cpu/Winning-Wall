@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from "react";
 import PlayCanvas from "./PlayCanvas";
+import PlayPrintView from "./PlayPrintView";
 import {
   Play, RosterPlayer, getMyPlays, getPlaysSharedWithMe, getMyAssignedPlaybooks,
   getPlaybookPlays, getPlayShares, revokePlayShare, markPlayViewed, markPlaybookViewed,
@@ -18,6 +19,12 @@ interface Props {
 
 type Tab = "mine" | "shared" | "playbooks";
 
+function filterPlays<T extends { title: string; tags: string[] }>(plays: T[], search: string): T[] {
+  const q = search.trim().toLowerCase();
+  if (!q) return plays;
+  return plays.filter((p) => p.title.toLowerCase().includes(q) || p.tags.some((t) => t.toLowerCase().includes(q)));
+}
+
 export default function PlayViewer({ onEdit, onCreateNew }: Props) {
   const [tab, setTab] = useState<Tab>("mine");
   const [myPlays, setMyPlays] = useState<Play[]>([]);
@@ -28,6 +35,9 @@ export default function PlayViewer({ onEdit, onCreateNew }: Props) {
   const [openPlaybook, setOpenPlaybook] = useState<{ pb: Playbook & { share_id: string }; plays: Play[] } | null>(null);
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
   const [toast, setToast] = useState("");
+
+  const [printPlays, setPrintPlays] = useState<{ plays: Play[]; playbookName?: string } | null>(null);
+  const [search, setSearch] = useState("");
 
   useEffect(() => { load(); getRoster().then(setRoster).catch(console.error); }, []);
 
@@ -61,6 +71,10 @@ export default function PlayViewer({ onEdit, onCreateNew }: Props) {
 
   const rosterMap: Record<string, RosterPlayer> = Object.fromEntries(roster.map((r) => [r.id, r]));
 
+  if (printPlays) {
+    return <PlayPrintView plays={printPlays.plays} playbookName={printPlays.playbookName} roster={rosterMap} onBack={() => setPrintPlays(null)} />;
+  }
+
   if (openPlay) {
     return (
       <PlayDetail
@@ -71,6 +85,7 @@ export default function PlayViewer({ onEdit, onCreateNew }: Props) {
         onBack={() => { setOpenPlay(null); setOpenShareId(null); }}
         onEdit={onEdit}
         onFork={handleFork}
+        onPrint={() => setPrintPlays({ plays: [openPlay] })}
       />
     );
   }
@@ -81,6 +96,11 @@ export default function PlayViewer({ onEdit, onCreateNew }: Props) {
         <button onClick={() => setOpenPlaybook(null)} style={{ marginBottom: 10 }}>← Back</button>
         <h2 style={{ fontSize: 18, marginBottom: 4 }}>{openPlaybook.pb.name}</h2>
         {openPlaybook.pb.description && <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>{openPlaybook.pb.description}</p>}
+        {openPlaybook.plays.length > 0 && (
+          <button onClick={() => setPrintPlays({ plays: openPlaybook.plays, playbookName: openPlaybook.pb.name })} style={{ marginBottom: 10, padding: "6px 12px" }}>
+            🖨️ Print / export this playbook
+          </button>
+        )}
         {openPlaybook.plays.map((p) => (
           <button key={p.id} onClick={() => setOpenPlay(p)} style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 12px", marginBottom: 6, border: "1px solid var(--border)", borderRadius: "8px" }}>
             {p.title}
@@ -93,28 +113,38 @@ export default function PlayViewer({ onEdit, onCreateNew }: Props) {
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-        <button onClick={() => setTab("mine")} style={{ flex: 1, padding: 10, border: tab === "mine" ? "2px solid var(--gold)" : "1px solid var(--border)" }}>My plays</button>
-        <button onClick={() => setTab("shared")} style={{ flex: 1, padding: 10, border: tab === "shared" ? "2px solid var(--gold)" : "1px solid var(--border)" }}>Shared with me</button>
-        <button onClick={() => setTab("playbooks")} style={{ flex: 1, padding: 10, border: tab === "playbooks" ? "2px solid var(--gold)" : "1px solid var(--border)" }}>Playbooks</button>
+      <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 12, padding: 5, marginBottom: 20, border: "1px solid var(--border)" }}>
+        <button onClick={() => setTab("mine")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "mine" ? "var(--royal)" : "transparent", color: tab === "mine" ? "#fff" : "var(--muted)", transition: "all .2s" }}>My plays</button>
+        <button onClick={() => setTab("shared")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "shared" ? "var(--royal)" : "transparent", color: tab === "shared" ? "#fff" : "var(--muted)", transition: "all .2s" }}>Shared with me</button>
+        <button onClick={() => setTab("playbooks")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "playbooks" ? "var(--royal)" : "transparent", color: tab === "playbooks" ? "#fff" : "var(--muted)", transition: "all .2s" }}>Playbooks</button>
       </div>
+
+      {(tab === "mine" || tab === "shared") && (
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by title or tag (inbounds, press break, BLOB...)"
+          style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
+        />
+      )}
 
       {tab === "mine" && (
         <>
-          {onCreateNew && <button onClick={onCreateNew} style={{ width: "100%", padding: 12, marginBottom: 10, border: "2px solid var(--gold)", color: "var(--gold)" }}>+ Draw a new play</button>}
-          {myPlays.map((p) => (
+          {onCreateNew && <button onClick={onCreateNew} className="coach-add-btn" style={{ width: "100%", justifyContent: "center", marginBottom: 10 }}>+ Draw a new play</button>}
+          {filterPlays(myPlays, search).map((p) => (
             <button key={p.id} onClick={() => setOpenPlay(p)} style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 12px", marginBottom: 6, border: "1px solid var(--border)", borderRadius: "8px" }}>
               {p.title}
               {p.tags.length > 0 && <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 8 }}>{p.tags.join(", ")}</span>}
             </button>
           ))}
           {myPlays.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>No plays yet.</p>}
+          {myPlays.length > 0 && filterPlays(myPlays, search).length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>No plays match "{search}".</p>}
         </>
       )}
 
       {tab === "shared" && (
         <>
-          {sharedPlays.map((p) => (
+          {filterPlays(sharedPlays, search).map((p) => (
             <button key={p.share_id} onClick={() => openSharedPlay(p)} style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 12px", marginBottom: 6, border: "1px solid var(--border)", borderRadius: "8px" }}>
               {p.title}
             </button>
@@ -139,9 +169,9 @@ export default function PlayViewer({ onEdit, onCreateNew }: Props) {
   );
 }
 
-function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit, onFork }: {
+function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit, onFork, onPrint }: {
   play: Play; shareId: string | null; rosterMap: Record<string, RosterPlayer>; canManageShares: boolean;
-  onBack: () => void; onEdit?: (p: Play) => void; onFork: (p: Play) => void;
+  onBack: () => void; onEdit?: (p: Play) => void; onFork: (p: Play) => void; onPrint: () => void;
 }) {
   const [frameIdx, setFrameIdx] = useState(0);
   const [playSignal, setPlaySignal] = useState(0);
@@ -186,11 +216,12 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
             Beat {i + 1}
           </button>
         ))}
-        <button onClick={() => { setFrameIdx(0); playAll(); }} style={{ padding: "8px 14px", border: "2px solid var(--gold)", color: "var(--gold)", marginLeft: "auto" }}>▶ Watch play</button>
+        <button onClick={() => { setFrameIdx(0); playAll(); }} className="coach-add-btn" style={{ marginLeft: "auto" }}>▶ Watch play</button>
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button onClick={() => onFork(play)} style={{ padding: "8px 12px" }}>Duplicate as my own</button>
+        <button onClick={onPrint} style={{ padding: "8px 12px" }}>🖨️ Print / export</button>
         {onEdit && canManageShares && <button onClick={() => onEdit(play)} style={{ padding: "8px 12px" }}>Edit</button>}
         {canManageShares && <button onClick={() => setShowShares((v) => !v)} style={{ padding: "8px 12px" }}>Manage sharing</button>}
       </div>
