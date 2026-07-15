@@ -350,6 +350,10 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                         : b.reason === "challenge_win" ? "⚔️ Challenge Win"
                         : b.reason === "streak" ? "🔥 Streak"
                         : b.reason === "personal_best" ? `🎯 Personal Best${bw ? ` – ${bw.title}` : ""}`
+                        : b.reason === "extra_reps" ? `📚 Extra Reps${bw ? ` – ${bw.title}` : ""}`
+                        : b.reason === "team_win" ? "👥 Team Competition Win"
+                        : b.reason === "class_clash_1st" ? "🏆 Class Clash — 1st Place"
+                        : b.reason === "class_clash_2nd" ? "🥈 Class Clash — 2nd Place"
                         : "⭐ Bonus";
                       return <div key={`bonus-${bi}`} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}><div style={{ fontSize: 12, color: "#ff8c42" }}>{label}</div><span style={{ fontSize: 13, fontWeight: 700, color: "#ff8c42" }}>+{b.points}</span></div>;
                     })}
@@ -457,6 +461,10 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                           : b.reason === "challenge_win" ? "⚔️ Challenge Win"
                           : b.reason === "streak" ? "🔥 Streak"
                           : b.reason === "personal_best" ? `🎯 Personal Best${bw ? ` – ${bw.title}` : ""}`
+                        : b.reason === "extra_reps" ? `📚 Extra Reps${bw ? ` – ${bw.title}` : ""}`
+                        : b.reason === "team_win" ? "👥 Team Competition Win"
+                        : b.reason === "class_clash_1st" ? "🏆 Class Clash — 1st Place"
+                        : b.reason === "class_clash_2nd" ? "🥈 Class Clash — 2nd Place"
                           : "⭐ Bonus";
                         return <div key={bi} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}><div style={{ fontSize: 12, color: "#ff8c42" }}>{label}</div><span style={{ fontSize: 13, fontWeight: 700, color: "#ff8c42" }}>+{b.points}</span></div>;
                       })}
