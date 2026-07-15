@@ -3,9 +3,13 @@
 // "Shared with me", and "My playbooks", then plays back a single play
 // frame-by-frame. No drawing tools live here — see PlayEditor for that.
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import PlayCanvas from "./PlayCanvas";
 import PlayPrintView from "./PlayPrintView";
+// Lazy-loaded: three.js is a large dependency, and most people watching a
+// play never open the 3D view — this keeps it out of everyone's initial
+// page load and only fetches it the first time "Watch in 3D" is clicked.
+const Play3DViewer = lazy(() => import("./Play3DViewer"));
 import {
   Play, RosterPlayer, getMyPlays, getPlaysSharedWithMe, getMyAssignedPlaybooks,
   getPlaybookPlays, getPlayShares, revokePlayShare, markPlayViewed, markPlaybookViewed,
@@ -177,6 +181,7 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
   const [playSignal, setPlaySignal] = useState(0);
   const [shares, setShares] = useState<any[]>([]);
   const [showShares, setShowShares] = useState(false);
+  const [show3D, setShow3D] = useState(false);
   const frame = play.data.frames[frameIdx];
 
   useEffect(() => { if (canManageShares) getPlayShares(play.id).then(setShares).catch(console.error); }, [canManageShares, play.id]);
@@ -191,6 +196,14 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
       setFrameIdx((i) => i + 1);
       setTimeout(() => setPlaySignal((s) => s + 1), 150);
     }
+  }
+
+  if (show3D) {
+    return (
+      <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Loading 3D view…</div>}>
+        <Play3DViewer play={play} roster={rosterMap} onBack={() => setShow3D(false)} />
+      </Suspense>
+    );
   }
 
   return (
@@ -217,6 +230,7 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
           </button>
         ))}
         <button onClick={() => { setFrameIdx(0); playAll(); }} className="coach-add-btn" style={{ marginLeft: "auto" }}>▶ Watch play</button>
+        <button onClick={() => setShow3D(true)} className="coach-add-btn">🧊 Watch in 3D</button>
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
