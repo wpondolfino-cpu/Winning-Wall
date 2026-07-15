@@ -23,9 +23,10 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tool = "player" | "defender" | "ball" | ActionType | "erase" | null;
+type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | null;
 
 const TOOL_LABELS: { tool: Tool; label: string; icon: string }[] = [
+  { tool: "select", label: "Move", icon: "✥" },
   { tool: "player", label: "Player", icon: "⬤" },
   { tool: "defender", label: "Defender", icon: "✕" },
   { tool: "ball", label: "Ball", icon: "●" },
@@ -100,6 +101,30 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     pushHistory();
     updateFrame((f) => ({ ...f, players: f.players.map((p, i) => i === idx ? { ...p, showAvatar: !(p.showAvatar ?? avatarsDefault) } : p) }));
   }, [frames, frameIdx, avatarsDefault]);
+
+  const movePlayer = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, players: f.players.map((p, i) => i === idx ? { ...p, x, y } : p) }));
+  }, [frames, frameIdx]);
+  const moveDefender = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, defenders: f.defenders.map((d, i) => i === idx ? { x, y } : d) }));
+  }, [frames, frameIdx]);
+  const moveBall = useCallback((x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, ball: { x, y } }));
+  }, [frames, frameIdx]);
+  const moveActionPoint = useCallback((idx: number, which: "start" | "end", x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({
+      ...f,
+      actions: f.actions.map((a, i) => i === idx ? (which === "start" ? { ...a, x1: x, y1: y } : { ...a, x2: x, y2: y }) : a),
+    }));
+  }, [frames, frameIdx]);
+  const moveActionWhole = useCallback((idx: number, x1: number, y1: number, x2: number, y2: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, actions: f.actions.map((a, i) => i === idx ? { ...a, x1, y1, x2, y2 } : a) }));
+  }, [frames, frameIdx]);
 
   function eraseNear(x: number, y: number) {
     pushHistory();
@@ -256,6 +281,11 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onAddAction={addAction}
             onErase={eraseNear}
             onToggleAvatar={toggleAvatar}
+            onMovePlayer={movePlayer}
+            onMoveDefender={moveDefender}
+            onMoveBall={moveBall}
+            onMoveActionPoint={moveActionPoint}
+            onMoveActionWhole={moveActionWhole}
             playSignal={playSignal}
           />
         </div>
