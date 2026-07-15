@@ -21,13 +21,19 @@ interface Props {
   roster?: Record<string, RosterPlayer>;
   /** When true, clicks/drags on the court edit the frame via the callbacks below. */
   edit?: boolean;
-  tool?: "player" | "defender" | "ball" | ActionType | "erase" | null;
+  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | null;
   onAddPlayer?: (p: PlayPlayer) => void;
   onAddDefender?: (x: number, y: number) => void;
   onSetBall?: (x: number, y: number) => void;
   onAddAction?: (a: PlayAction) => void;
   onErase?: (x: number, y: number) => void;
   onToggleAvatar?: (index: number) => void;
+  /** "select" tool — drag an existing player/defender/ball, or either end (or the whole line) of an existing action. */
+  onMovePlayer?: (index: number, x: number, y: number) => void;
+  onMoveDefender?: (index: number, x: number, y: number) => void;
+  onMoveBall?: (x: number, y: number) => void;
+  onMoveActionPoint?: (index: number, which: "start" | "end", x: number, y: number) => void;
+  onMoveActionWhole?: (index: number, x1: number, y1: number, x2: number, y2: number) => void;
   /** Bump this number to play the current frame's actions once. */
   playSignal?: number;
   onPlayDone?: () => void;
@@ -148,6 +154,14 @@ function ActionShape({ a }: { a: PlayAction }) {
   );
 }
 
+function distToSegment(px: number, py: number, x1: number, y1: number, x2: number, y2: number) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+  const cx = x1 + t * dx, cy = y1 + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+
 const FACE_COLORS = ["#378ADD", "#639922", "#D85A30", "#D4537E", "#7F77DD"];
 
 function PlayerIcon({ p, showAvatar, avatarUrl, onDoubleClick }: {
@@ -188,12 +202,21 @@ function PlayerIcon({ p, showAvatar, avatarUrl, onDoubleClick }: {
 export default function PlayCanvas({
   frame, courtTemplate, avatarsDefault, roster = {}, edit = false, tool = null,
   onAddPlayer, onAddDefender, onSetBall, onAddAction, onErase, onToggleAvatar,
+  onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole,
   playSignal, onPlayDone, courtBg = "#3a2a17",
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [animT, setAnimT] = useState<number | null>(null); // 0..1 while animating, null when idle
   const nextNum = (frame.players.length % 5) + 1;
+
+  type MoveDrag =
+    | { kind: "player" | "defender"; index: number }
+    | { kind: "ball" }
+    | { kind: "actionStart" | "actionEnd"; index: number }
+    | { kind: "actionWhole"; index: number; startX: number; startY: number; origA: PlayAction };
+  const [moveDrag, setMoveDrag] = useState<MoveDrag | null>(null);
+  const [movePos, setMovePos] = useState<{ x: number; y: number } | null>(null);
 
   function pointFromEvent(e: ReactMouseEvent): { x: number; y: number } {
     const svg = svgRef.current!;
@@ -211,10 +234,55 @@ export default function PlayCanvas({
     if (tool === "defender") { onAddDefender?.(p.x, p.y); return; }
     if (tool === "ball") { onSetBall?.(p.x, p.y); return; }
     if (tool === "erase") { onErase?.(p.x, p.y); return; }
+    if (tool === "select") {
+      const within = (a: { x: number; y: number }, r: number) => Math.hypot(a.x - p.x, a.y - p.y) < r;
+      for (let i = 0; i < frame.players.length; i++) {
+        if (within(frame.players[i], 16)) { setMoveDrag({ kind: "player", index: i }); setMovePos(p); return; }
+      }
+      for (let i = 0; i < frame.defenders.length; i++) {
+        if (within(frame.defenders[i], 16)) { setMoveDrag({ kind: "defender", index: i }); setMovePos(p); return; }
+      }
+      if (frame.ball && within(frame.ball, 12)) { setMoveDrag({ kind: "ball" }); setMovePos(p); return; }
+      for (let i = 0; i < frame.actions.length; i++) {
+        const a = frame.actions[i];
+        if (within({ x: a.x1, y: a.y1 }, 11)) { setMoveDrag({ kind: "actionStart", index: i }); setMovePos(p); return; }
+        if (within({ x: a.x2, y: a.y2 }, 11)) { setMoveDrag({ kind: "actionEnd", index: i }); setMovePos(p); return; }
+      }
+      for (let i = 0; i < frame.actions.length; i++) {
+        const a = frame.actions[i];
+        if (distToSegment(p.x, p.y, a.x1, a.y1, a.x2, a.y2) < 14) {
+          setMoveDrag({ kind: "actionWhole", index: i, startX: p.x, startY: p.y, origA: { ...a } });
+          setMovePos(p);
+          return;
+        }
+      }
+      return;
+    }
     setDragStart(p);
   }
 
+  function handleMouseMove(e: ReactMouseEvent) {
+    if (!moveDrag) return;
+    setMovePos(pointFromEvent(e));
+  }
+
   function handleMouseUp(e: ReactMouseEvent) {
+    if (moveDrag) {
+      const p = pointFromEvent(e);
+      if (moveDrag.kind === "player") onMovePlayer?.(moveDrag.index, p.x, p.y);
+      else if (moveDrag.kind === "defender") onMoveDefender?.(moveDrag.index, p.x, p.y);
+      else if (moveDrag.kind === "ball") onMoveBall?.(p.x, p.y);
+      else if (moveDrag.kind === "actionStart") onMoveActionPoint?.(moveDrag.index, "start", p.x, p.y);
+      else if (moveDrag.kind === "actionEnd") onMoveActionPoint?.(moveDrag.index, "end", p.x, p.y);
+      else if (moveDrag.kind === "actionWhole") {
+        const dx = p.x - moveDrag.startX, dy = p.y - moveDrag.startY;
+        const a = moveDrag.origA;
+        onMoveActionWhole?.(moveDrag.index, a.x1 + dx, a.y1 + dy, a.x2 + dx, a.y2 + dy);
+      }
+      setMoveDrag(null);
+      setMovePos(null);
+      return;
+    }
     if (!edit || !dragStart || !tool) return;
     if (["move", "pass", "dribble", "screen"].includes(tool)) {
       const p = pointFromEvent(e);
@@ -242,13 +310,37 @@ export default function PlayCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playSignal]);
 
+  // While dragging (select tool), render a preview with the dragged
+  // element's position updated live — the actual frame only gets updated
+  // once, on mouseup, via the onMove* callbacks.
+  let displayFrame = frame;
+  if (moveDrag && movePos) {
+    if (moveDrag.kind === "player") {
+      displayFrame = { ...frame, players: frame.players.map((p, i) => i === moveDrag.index ? { ...p, x: movePos.x, y: movePos.y } : p) };
+    } else if (moveDrag.kind === "defender") {
+      displayFrame = { ...frame, defenders: frame.defenders.map((d, i) => i === moveDrag.index ? { x: movePos.x, y: movePos.y } : d) };
+    } else if (moveDrag.kind === "ball") {
+      displayFrame = { ...frame, ball: { x: movePos.x, y: movePos.y } };
+    } else if (moveDrag.kind === "actionStart") {
+      displayFrame = { ...frame, actions: frame.actions.map((a, i) => i === moveDrag.index ? { ...a, x1: movePos.x, y1: movePos.y } : a) };
+    } else if (moveDrag.kind === "actionEnd") {
+      displayFrame = { ...frame, actions: frame.actions.map((a, i) => i === moveDrag.index ? { ...a, x2: movePos.x, y2: movePos.y } : a) };
+    } else if (moveDrag.kind === "actionWhole") {
+      const dx = movePos.x - moveDrag.startX, dy = movePos.y - moveDrag.startY;
+      const orig = moveDrag.origA;
+      displayFrame = { ...frame, actions: frame.actions.map((a, i) => i === moveDrag.index ? { ...a, x1: orig.x1 + dx, y1: orig.y1 + dy, x2: orig.x2 + dx, y2: orig.y2 + dy } : a) };
+    }
+  }
+
   return (
     <svg
       ref={svgRef}
       viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`}
-      style={{ width: "100%", height: "auto", display: "block", background: courtBg, borderRadius: 8, cursor: edit && tool ? "crosshair" : "default" }}
+      style={{ width: "100%", height: "auto", display: "block", background: courtBg, borderRadius: 8, cursor: !edit || !tool ? "default" : tool === "select" ? (moveDrag ? "grabbing" : "grab") : "crosshair" }}
       onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
+      onMouseLeave={() => { setMoveDrag(null); setMovePos(null); }}
     >
       <defs>
         <marker id="pc-arrow-solid" markerWidth={8} markerHeight={8} refX={6} refY={4} orient="auto">
@@ -260,9 +352,9 @@ export default function PlayCanvas({
       </defs>
       {courtBackground(courtTemplate)}
 
-      {frame.actions.map((a, i) => <ActionShape key={i} a={a} />)}
+      {displayFrame.actions.map((a, i) => <ActionShape key={i} a={a} />)}
 
-      {frame.players.map((p, i) => {
+      {displayFrame.players.map((p, i) => {
         const rp = p.profile_id ? roster[p.profile_id] : undefined;
         const showAvatar = p.showAvatar ?? avatarsDefault;
         return (
@@ -276,16 +368,23 @@ export default function PlayCanvas({
         );
       })}
 
-      {frame.defenders.map((d, i) => (
+      {displayFrame.defenders.map((d, i) => (
         <g key={i}>
           <line x1={d.x - 9} y1={d.y - 9} x2={d.x + 9} y2={d.y + 9} stroke="#993C1D" strokeWidth={3} />
           <line x1={d.x - 9} y1={d.y + 9} x2={d.x + 9} y2={d.y - 9} stroke="#993C1D" strokeWidth={3} />
         </g>
       ))}
 
-      {frame.ball && (
-        <circle cx={frame.ball.x} cy={frame.ball.y} r={8} fill="#EF9F27" stroke="#854F0B" strokeWidth={1.5} />
+      {displayFrame.ball && (
+        <circle cx={displayFrame.ball.x} cy={displayFrame.ball.y} r={8} fill="#EF9F27" stroke="#854F0B" strokeWidth={1.5} />
       )}
+
+      {edit && tool === "select" && displayFrame.actions.map((a, i) => (
+        <g key={i}>
+          <circle cx={a.x1} cy={a.y1} r={6} fill="var(--gold)" opacity={0.85} />
+          <circle cx={a.x2} cy={a.y2} r={6} fill="var(--gold)" opacity={0.85} />
+        </g>
+      ))}
 
       {animT !== null && frame.actions.map((a, i) => {
         if (a.type === "screen") return null;
