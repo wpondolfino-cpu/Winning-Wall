@@ -46,6 +46,7 @@ export async function updateStreak(
       points:        STREAK_BONUS_PTS,
       streak_length: newStreak,
       awarded_at:    new Date().toISOString(),
+      reason:        "streak",
     });
   }
 
