@@ -411,18 +411,13 @@ export async function submitLibraryPracticeScore(
   } catch (e) { console.error("Library practice credit check failed:", e); }
 
   if (creditedToday) {
-    const { data: existing } = await supabase.from("scores").select("*")
-      .eq("player_id", playerId).eq("workout_id", workoutId).maybeSingle();
-    if (existing) {
-      await supabase.from("scores").update({ points: (existing.points ?? 0) + 1 })
-        .eq("player_id", playerId).eq("workout_id", workoutId);
-    } else {
-      await supabase.from("scores").insert({
-        player_id: playerId, workout_id: workoutId, points: 1,
-        made: 0, attempts: 0, sprint_secs: 0, reps: 0, self_points: 0,
-        last_logged_date: today,
+    try {
+      await supabase.from("streak_bonuses").insert({
+        player_id: playerId, points: 1, streak_length: 0,
+        awarded_at: new Date().toISOString(),
+        reason: "extra_reps", workout_id: workoutId,
       });
-    }
+    } catch (e) { console.error("Extra reps bonus error:", e); }
   }
 
   // Always log the attempt (streak tracking + history), regardless of
