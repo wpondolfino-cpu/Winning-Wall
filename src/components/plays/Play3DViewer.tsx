@@ -26,7 +26,7 @@ const toWorld = (x: number, y: number) => ({ x: (x - 300) / SCALE, z: (y - 210) 
 
 const PRESETS: { label: string; pos: [number, number, number] }[] = [
   { label: "Half court", pos: [0, 4, 9] },
-  { label: "Baseline", pos: [11, 3, -5] },
+  { label: "Baseline", pos: [15, 3, -5] },
   { label: "Sideline", pos: [11, 4, 0] },
   { label: "Top-down", pos: [0, 13, 0.5] },
   { label: "Full court", pos: [0, 11, 15] },
