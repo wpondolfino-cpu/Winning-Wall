@@ -31,6 +31,8 @@ export interface PlayAction {
   type: ActionType;
   x1: number; y1: number;
   x2: number; y2: number;
+  /** Optional curve control point — drag the line's midpoint handle (Move tool) to bow it into a curl. Straight when absent. */
+  curve?: { x: number; y: number };
 }
 
 /** A freehand-drawn stroke — a raw list of points, for annotations that don't fit the straight-line action types. */
