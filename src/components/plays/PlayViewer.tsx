@@ -4,6 +4,8 @@
 // frame-by-frame. No drawing tools live here — see PlayEditor for that.
 
 import { useState, useEffect, lazy, Suspense, Component, type ComponentType, type ReactNode } from "react";
+import { supabase } from "../../lib/supabase";
+import { getProfile } from "../../lib/auth";
 import PlayCanvas from "./PlayCanvas";
 import PlayPrintView from "./PlayPrintView";
 import {
@@ -205,7 +207,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
                   </span>
                 )}
               </button>
-              <button title="Watch in 3D" onClick={() => { setOpenPlay(p); setOpenIn3D(true); }} style={{ padding: "8px 10px", fontSize: 15, marginRight: 2 }}>🧊</button>
+              <button title="Watch live" onClick={() => { setOpenPlay(p); setOpenIn3D(true); }} style={{ padding: "8px 10px", fontSize: 15, marginRight: 2 }}>🧊</button>
               <button title="Share" onClick={() => setSharePopupPlay(p)} style={{ padding: "8px 10px", fontSize: 15, marginRight: 2, display: "inline-flex", alignItems: "center" }}><ShareIcon /></button>
               <span style={{ width: 1, alignSelf: "stretch", background: "var(--border)", margin: "4px 4px" }} />
               {onEdit && <button title="Edit" onClick={() => onEdit(p)} style={{ padding: "8px 10px", fontSize: 15, marginRight: 2 }}>✏️</button>}
@@ -253,6 +255,26 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
   const [frameIdx, setFrameIdx] = useState(0);
   const [playSignal, setPlaySignal] = useState(0);
   const [show3D, setShow3D] = useState(!!startIn3D);
+  const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
+  const [selfPlayerId, setSelfPlayerId] = useState<string | null>(() => {
+    try { return localStorage.getItem(`ww_self_${play.id}`); } catch { return null; }
+  });
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data.user) return;
+      getProfile(data.user.id).then((p) => setMyAvatarUrl(p?.avatar_url ?? null));
+    });
+  }, []);
+
+  function chooseSelf(playerId: string | null) {
+    setSelfPlayerId(playerId);
+    try {
+      if (playerId) localStorage.setItem(`ww_self_${play.id}`, playerId);
+      else localStorage.removeItem(`ww_self_${play.id}`);
+    } catch { /* localStorage unavailable — the choice just won't persist across visits */ }
+  }
+  const selfOverride = selfPlayerId ? { playerId: selfPlayerId, avatarUrl: myAvatarUrl } : null;
   const [showSharePopup, setShowSharePopup] = useState(false);
   const frame = play.data.frames[frameIdx];
 
@@ -280,11 +302,11 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-        <button onClick={onBack} style={{ padding: "8px 12px" }}>← Back</button>
-        <h2 style={{ fontSize: 18, margin: 0, flex: "1 1 auto", minWidth: 120 }}>{play.title}</h2>
-        <button onClick={() => { setFrameIdx(0); playAll(); }} className="coach-add-btn">▶ Watch play</button>
-        <button onClick={() => setShow3D(true)} className="coach-add-btn">🧊 Watch in 3D</button>
+      <h2 style={{ fontSize: 18, margin: "0 0 8px" }}>{play.title}</h2>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+        <button onClick={onBack} style={{ padding: "8px 10px", fontSize: 13, flexShrink: 0 }}>← Back</button>
+        <button onClick={() => { setFrameIdx(0); playAll(); }} className="coach-add-btn" style={{ flex: 1, justifyContent: "center", padding: "8px 6px", fontSize: 13 }}>▶ Watch play</button>
+        <button onClick={() => setShow3D(true)} className="coach-add-btn" style={{ flex: 1, justifyContent: "center", padding: "8px 6px", fontSize: 13 }}>🧊 Watch live</button>
       </div>
 
       <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 12, marginBottom: 10 }}>
@@ -296,6 +318,7 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
           edit={false}
           playSignal={playSignal}
           onPlayDone={handleAnimDone}
+          selfOverride={selfOverride}
         />
       </div>
 
@@ -306,6 +329,20 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
               Step {i + 1}
             </button>
           ))}
+        </div>
+      )}
+
+      {(play.data.frames[0]?.players.length ?? 0) > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>🙋 Watch as yourself — pick which player is you (only changes what you see)</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <button onClick={() => chooseSelf(null)} style={{ padding: "6px 10px", fontSize: 12, border: !selfPlayerId ? "2px solid var(--gold)" : "1px solid var(--border)" }}>None</button>
+            {play.data.frames[0].players.map((p) => p.id && (
+              <button key={p.id} onClick={() => chooseSelf(p.id!)} style={{ padding: "6px 10px", fontSize: 12, border: selfPlayerId === p.id ? "2px solid var(--gold)" : "1px solid var(--border)" }}>
+                #{p.num}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
