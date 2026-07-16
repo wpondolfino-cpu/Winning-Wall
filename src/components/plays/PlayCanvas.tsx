@@ -9,6 +9,7 @@
 import { useRef, useState, useEffect, type MouseEvent as ReactMouseEvent } from "react";
 import type { CourtTemplate, PlayFrame, PlayPlayer, PlayAction, ActionType, PlayText, PlayZone } from "../../lib/plays";
 import type { RosterPlayer } from "../../lib/plays";
+import { genPlayerId } from "../../lib/plays";
 
 export const CANVAS_W = 600;
 export const CANVAS_H = 420;
@@ -123,6 +124,15 @@ function courtBackground(template: CourtTemplate) {
         </>
       );
   }
+}
+
+/** The ball's effective position — follows its holder (by id) when one is set, otherwise its own stored x/y. Shared by rendering and hit-testing so a click always lands where the ball is actually drawn. */
+function getBallPos(f: PlayFrame): { x: number; y: number } | null {
+  if (f.ballHolderId) {
+    const holder = f.players.find((p) => p.id === f.ballHolderId);
+    if (holder) return { x: holder.x, y: holder.y };
+  }
+  return f.ball;
 }
 
 function pointsToPath(points: { x: number; y: number }[]) {
@@ -302,6 +312,7 @@ export default function PlayCanvas({
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [dragCurrent, setDragCurrent] = useState<{ x: number; y: number } | null>(null);
+  const [justLinked, setJustLinked] = useState<string[]>([]);
   const [drawPoints, setDrawPoints] = useState<{ x: number; y: number }[] | null>(null);
   const [animT, setAnimT] = useState<number | null>(null); // 0..1 while animating, null when idle
   const nextNum = (frame.players.length % 5) + 1;
@@ -328,7 +339,7 @@ export default function PlayCanvas({
   function handleMouseDown(e: ReactMouseEvent) {
     if (!edit || !tool) return;
     const p = pointFromEvent(e);
-    if (tool === "player") { onAddPlayer?.({ num: nextNum, x: p.x, y: p.y }); return; }
+    if (tool === "player") { onAddPlayer?.({ id: genPlayerId(), num: nextNum, x: p.x, y: p.y }); return; }
     if (tool === "defender") { onAddDefender?.(p.x, p.y); return; }
     if (tool === "ball") { onSetBall?.(p.x, p.y); return; }
     if (tool === "erase") { onErase?.(p.x, p.y); return; }
@@ -351,7 +362,8 @@ export default function PlayCanvas({
       for (let i = 0; i < frame.defenders.length; i++) {
         if (within(frame.defenders[i], 16)) { setMoveDrag({ kind: "defender", index: i }); setMovePos(p); return; }
       }
-      if (frame.ball && within(frame.ball, 12)) { setMoveDrag({ kind: "ball" }); setMovePos(p); return; }
+      const ballHit = getBallPos(frame);
+      if (ballHit && within(ballHit, 12)) { setMoveDrag({ kind: "ball" }); setMovePos(p); return; }
       for (let i = 0; i < frame.actions.length; i++) {
         const a = frame.actions[i];
         if ((a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen") && within(curveHandlePos(a), 11)) {
@@ -425,7 +437,25 @@ export default function PlayCanvas({
     if (["move", "pass", "dribble", "screen"].includes(tool)) {
       const p = pointFromEvent(e);
       if (Math.hypot(p.x - dragStart.x, p.y - dragStart.y) > 8) {
-        onAddAction?.({ type: tool as ActionType, x1: dragStart.x, y1: dragStart.y, x2: p.x, y2: p.y });
+        const nearestPlayer = (x: number, y: number) => {
+          let best = -1, bestDist = 22;
+          frame.players.forEach((pl, i) => {
+            const d = Math.hypot(pl.x - x, pl.y - y);
+            if (d < bestDist) { best = i; bestDist = d; }
+          });
+          return best >= 0 ? frame.players[best] : null;
+        };
+        const source = nearestPlayer(dragStart.x, dragStart.y);
+        const target = tool === "pass" ? nearestPlayer(p.x, p.y) : null;
+        onAddAction?.({
+          type: tool as ActionType, x1: dragStart.x, y1: dragStart.y, x2: p.x, y2: p.y,
+          sourcePlayerId: source?.id, targetPlayerId: target?.id,
+        });
+        const linked = [source?.id, target?.id].filter(Boolean) as string[];
+        if (linked.length) {
+          setJustLinked(linked);
+          setTimeout(() => setJustLinked([]), 700);
+        }
       }
     } else if (tool === "zone") {
       const p = pointFromEvent(e);
@@ -487,6 +517,10 @@ export default function PlayCanvas({
     }
   }
 
+  // The ball follows whoever currently holds it (even mid-drag), instead of
+  // its own stored position — dragging the ball-carrier brings the ball along.
+  const ballPos = getBallPos(displayFrame);
+
   return (
     <svg
       ref={svgRef}
@@ -541,6 +575,13 @@ export default function PlayCanvas({
         );
       })}
 
+      {displayFrame.players.map((p, i) => p.id && justLinked.includes(p.id) && (
+        <circle key={"link-" + i} cx={p.x} cy={p.y} r={22} fill="none" stroke="var(--gold)" strokeWidth={2.5} opacity={0.8}>
+          <animate attributeName="r" values="16;24;16" dur="0.7s" repeatCount="1" />
+          <animate attributeName="opacity" values="0.9;0.2;0.9" dur="0.7s" repeatCount="1" />
+        </circle>
+      ))}
+
       {displayFrame.defenders.map((d, i) => (
         <g key={i}>
           <line x1={d.x - 9} y1={d.y - 9} x2={d.x + 9} y2={d.y + 9} stroke="#993C1D" strokeWidth={3} />
@@ -548,8 +589,8 @@ export default function PlayCanvas({
         </g>
       ))}
 
-      {displayFrame.ball && (
-        <circle cx={displayFrame.ball.x} cy={displayFrame.ball.y} r={8} fill="#EF9F27" stroke="#854F0B" strokeWidth={1.5} />
+      {ballPos && (
+        <circle cx={ballPos.x} cy={ballPos.y} r={8} fill="#EF9F27" stroke="#854F0B" strokeWidth={1.5} />
       )}
 
       {(displayFrame.texts ?? []).map((t, i) => {
@@ -568,8 +609,8 @@ export default function PlayCanvas({
       {selected && selected.kind === "defender" && displayFrame.defenders[selected.index] && (
         <circle cx={displayFrame.defenders[selected.index].x} cy={displayFrame.defenders[selected.index].y} r={17} fill="none" stroke="var(--gold)" strokeWidth={2} strokeDasharray="4,3" />
       )}
-      {selected && selected.kind === "ball" && displayFrame.ball && (
-        <circle cx={displayFrame.ball.x} cy={displayFrame.ball.y} r={14} fill="none" stroke="var(--gold)" strokeWidth={2} strokeDasharray="4,3" />
+      {selected && selected.kind === "ball" && ballPos && (
+        <circle cx={ballPos.x} cy={ballPos.y} r={14} fill="none" stroke="var(--gold)" strokeWidth={2} strokeDasharray="4,3" />
       )}
       {selected && selected.kind === "action" && displayFrame.actions[selected.index] && (
         <path d={linePath(displayFrame.actions[selected.index])} fill="none" stroke="var(--gold)" strokeWidth={6} opacity={0.35} />
