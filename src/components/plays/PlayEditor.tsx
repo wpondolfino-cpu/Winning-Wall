@@ -264,7 +264,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     updateFrame((f) => ({
       players: f.players.filter((p) => !near(p, 16)),
       defenders: f.defenders.filter((d) => !near(d, 16)),
-      ball: f.ball && near(f.ball, 12) ? null : f.ball,
+      ball: f.ball && near(f.ball, 14) ? null : f.ball,
       actions: f.actions.filter((a) => {
         if (!a.curve) return distToSegment(a.x1, a.y1, a.x2, a.y2) >= 14;
         // Curved line — sample points along the quadratic curve and check
@@ -301,7 +301,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     // everyone else keeps their prior spot. Handoff markers clear each step
     // since they mark a one-time moment, not a persistent state.
     const players = last.players.map((p) => {
-      const sourced = p.id && last.actions.find((a) => a.sourcePlayerId === p.id && (a.type === "move" || a.type === "dribble"));
+      const sourced = p.id && last.actions.find((a) => a.sourcePlayerId === p.id && (a.type === "move" || a.type === "dribble" || a.type === "screen"));
       const base = sourced ? { ...p, x: sourced.x2, y: sourced.y2 } : { ...p };
       return { ...base, handoff: false };
     });
@@ -393,7 +393,17 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   }
 
   function assignRoster(playerIdx: number, profileId: string) {
-    updateFrame((f) => ({ ...f, players: f.players.map((p, i) => i === playerIdx ? { ...p, profile_id: profileId || null } : p) }));
+    const playerId = frame.players[playerIdx]?.id;
+    pushHistory();
+    if (!playerId) {
+      // No stable id (shouldn't normally happen) — fall back to updating just this step.
+      updateFrame((f) => ({ ...f, players: f.players.map((p, i) => i === playerIdx ? { ...p, profile_id: profileId || null } : p) }));
+      return;
+    }
+    setFrames((fr) => fr.map((f) => ({
+      ...f,
+      players: f.players.map((p) => p.id === playerId ? { ...p, profile_id: profileId || null } : p),
+    })));
   }
 
   async function saveCurrentFrameAsAction() {
