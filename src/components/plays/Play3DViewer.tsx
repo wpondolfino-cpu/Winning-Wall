@@ -1,385 +1,660 @@
-// src/components/plays/Play3DViewer.tsx
-// "Watch in 3D" — renders the same play data PlayCanvas draws in 2D, but
-// as a Three.js scene. Desktop gets free-orbit camera controls; mobile
-// gets a row of preset camera angles instead (easier with a finger than
-// a drag-to-orbit gesture). Player avatars show their roster photo on a
-// billboard "head" sprite when available, falling back to a plain
-// colored sphere otherwise.
-//
-// Requires the `three` package: npm install three && npm install -D @types/three
+// src/components/plays/PlayEditor.tsx
+// Desktop-optimized play editor (coach/admin primary use, but also used by
+// players drawing up their own plays — same component, access is governed
+// by RLS on the plays table, not by role checks here).
 
-import { useEffect, useRef, useState } from "react";
-import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { Play, RosterPlayer, PlayFrame } from "../../lib/plays";
-import { courtLines, hoopPositions } from "./courtGeometry";
+import { useState, useEffect, useCallback } from "react";
+import PlayCanvas, { CANVAS_W, CANVAS_H } from "./PlayCanvas";
+import {
+  Play, PlayData, PlayFrame, PlayPlayer, PlayAction, ActionType,
+  CourtTemplate, COURT_TEMPLATES, COURT_TEMPLATE_LABELS,
+  SavedAction, RosterPlayer, PlayShareTarget,
+  emptyPlayData, createPlay, updatePlay, deletePlay, genPlayerId,
+  getMySavedActions, createSavedAction, deleteSavedAction,
+  getRoster, getStaff, sharePlay,
+} from "../../lib/plays";
 
 interface Props {
-  play: Play;
-  roster: Record<string, RosterPlayer>;
-  onBack: () => void;
+  /** Pass an existing play to edit it; omit to start a new blank play. */
+  existingPlay?: Play;
+  /** "player" sees a "share with coach" option; "coach"/"admin" don't need it here (they use Playbooks instead). */
+  currentUserRole: "player" | "coach" | "admin";
+  onSaved?: (play: Play) => void;
+  onClose?: () => void;
 }
 
-const FACE_COLORS = [0x378add, 0x639922, 0xd85a30, 0xd4537e, 0x7f77dd];
-const SCALE = 40; // divides the 600x420 2D coordinate space down to world units
-const toWorld = (x: number, y: number) => ({ x: (x - 300) / SCALE, z: (y - 210) / SCALE });
+type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | null;
 
-const PRESETS: { label: string; pos: [number, number, number] }[] = [
-  { label: "Baseline", pos: [0, 4, 9] },
-  { label: "Sideline", pos: [11, 4, 0] },
-  { label: "Top-down", pos: [0, 13, 0.5] },
+const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
+  { tool: "select", label: "Move", icon: "✥" },
+  { tool: "player", label: "Player", icon: "⬤" },
+  { tool: "ball", label: "Ball", icon: "●" },
+  { tool: "move", label: "Cut", icon: "→" },
+  { tool: "pass", label: "Pass", icon: "┄" },
+  { tool: "dribble", label: "Dribble", icon: "〜" },
+  { tool: "screen", label: "Screen", icon: "⊥" },
+  { tool: "handoff", label: "Handoff", icon: "✱" },
+  { tool: "text", label: "Text", icon: "T" },
+  { tool: "erase", label: "Erase", icon: "⌫" },
+];
+// Used less often — tucked behind "More tools" instead of permanently
+// taking up space in the main row.
+const MORE_TOOLS: { tool: Tool; label: string; icon: string }[] = [
+  { tool: "defender", label: "Defender", icon: "✕" },
+  { tool: "draw", label: "Draw", icon: "✎" },
+  { tool: "zone", label: "Zone shading", icon: "▦" },
 ];
 
-export default function Play3DViewer({ play, roster, onBack }: Props) {
-  const mountRef = useRef<HTMLDivElement>(null);
+function cloneFrames(frames: PlayFrame[]): PlayFrame[] { return JSON.parse(JSON.stringify(frames)); }
+
+export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onClose }: Props) {
+  const [title, setTitle] = useState(existingPlay?.title ?? "");
+  const [tagsInput, setTagsInput] = useState((existingPlay?.tags ?? []).join(", "));
+  const [courtTemplate, setCourtTemplate] = useState<CourtTemplate>(existingPlay?.court_template ?? "half");
+  const [avatarsDefault, setAvatarsDefault] = useState(existingPlay?.data?.avatarsDefault ?? false);
+  const [frames, setFrames] = useState<PlayFrame[]>(() => {
+    const initial = existingPlay?.data?.frames ?? emptyPlayData().frames;
+    // Plays saved before player identity existed have no `id` on their
+    // players — assign one based on array position (the same assumption
+    // the app already made implicitly elsewhere) so the new carry-forward
+    // logic has something to work with going forward.
+    return initial.map((f) => ({
+      ...f,
+      players: f.players.map((p, i) => (p.id ? p : { ...p, id: `legacy-${i}` })),
+    }));
+  });
   const [frameIdx, setFrameIdx] = useState(0);
+  const [tool, setTool] = useState<Tool>("player");
+  const [showMoreTools, setShowMoreTools] = useState(false);
+  const [selected, setSelected] = useState<{ kind: "player" | "defender" | "ball" | "action" | "text" | "zone"; index: number } | null>(null);
+  const [history, setHistory] = useState<PlayFrame[][]>([]);
+  const [future, setFuture] = useState<PlayFrame[][]>([]);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState("");
+  const [playSignal, setPlaySignal] = useState(0);
 
-  // Mutable refs so the render loop (set up once) can read current props/state.
-  const stateRef = useRef({ play, roster, frameIdx });
-  stateRef.current = { play, roster, frameIdx };
-
-  const [isPlaying, setIsPlaying] = useState(false);
-  const isPlayingRef = useRef(false);
+  const [roster, setRoster] = useState<RosterPlayer[]>([]);
+  const [savedActions, setSavedActions] = useState<SavedAction[]>([]);
+  const [stampAction, setStampAction] = useState<SavedAction | null>(null);
+  const [staff, setStaff] = useState<PlayShareTarget[]>([]);
+  const [showShare, setShowShare] = useState(false);
 
   useEffect(() => {
-    const mount = mountRef.current!;
-    const width = mount.clientWidth;
-    const height = mount.clientHeight;
+    getRoster().then(setRoster).catch(console.error);
+    getMySavedActions().then(setSavedActions).catch(console.error);
+    if (currentUserRole === "player") getStaff().then(setStaff).catch(console.error);
+  }, [currentUserRole]);
 
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-    camera.position.set(...PRESETS[0].pos);
-    camera.lookAt(0, 0, 0);
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    mount.appendChild(renderer.domElement);
-
-    scene.add(new THREE.AmbientLight(0xffffff, 0.75));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.55);
-    dirLight.position.set(5, 10, 5);
-    scene.add(dirLight);
-
-    // Floor
-    const floorW = 592 / SCALE, floorD = 412 / SCALE;
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(floorW, floorD),
-      new THREE.MeshStandardMaterial({ color: 0x3a2a17 })
-    );
-    floor.rotation.x = -Math.PI / 2;
-    scene.add(floor);
-
-    // Court markings, converted from the shared 2D geometry
-    const lineMat = new THREE.LineBasicMaterial({ color: 0xb0b8c8 });
-    courtLines(play.court_template).forEach((poly) => {
-      const pts = poly.map((p) => { const w = toWorld(p.x, p.y); return new THREE.Vector3(w.x, 0.02, w.z); });
-      scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lineMat));
-    });
-
-    // Hoops (a raised rim so the court reads as a real court, not just lines)
-    hoopPositions(play.court_template).forEach((hp) => {
-      const w = toWorld(hp.x, hp.y);
-      // Direction from court center out to the hoop — the backboard sits
-      // further along this same direction, facing back toward center.
-      const dist = Math.hypot(w.x, w.z) || 1;
-      const dirX = w.x / dist, dirZ = w.z / dist;
-      const rimHeight = 2.0;
-
-      const hoopGroup = new THREE.Group();
-
-      // Support pole + arm (floor to backboard)
-      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, rimHeight, 8), new THREE.MeshStandardMaterial({ color: 0x555555 }));
-      pole.position.set(w.x + dirX * 0.45, rimHeight / 2, w.z + dirZ * 0.45);
-      hoopGroup.add(pole);
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.05), new THREE.MeshStandardMaterial({ color: 0x555555 }));
-      arm.position.set(w.x + dirX * 0.22, rimHeight, w.z + dirZ * 0.22);
-      arm.rotation.y = Math.atan2(dirZ, dirX);
-      hoopGroup.add(arm);
-
-      // Backboard (a bit further out than the rim, facing back toward center)
-      const backboard = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.65, 1.1), new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }));
-      backboard.position.set(w.x + dirX * 0.42, rimHeight + 0.15, w.z + dirZ * 0.42);
-      backboard.rotation.y = Math.atan2(dirZ, dirX);
-      hoopGroup.add(backboard);
-      const backboardStripe = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.3, 0.5), new THREE.MeshStandardMaterial({ color: 0xdd3333 }));
-      backboardStripe.position.copy(backboard.position);
-      backboardStripe.position.y -= 0.05;
-      backboardStripe.rotation.y = backboard.rotation.y;
-      hoopGroup.add(backboardStripe);
-
-      // Rim
-      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.025, 8, 24), new THREE.MeshStandardMaterial({ color: 0xff6a1a }));
-      rim.position.set(w.x, rimHeight, w.z);
-      rim.rotation.x = Math.PI / 2;
-      hoopGroup.add(rim);
-
-      // Net — a loose wireframe cone hanging from the rim. ConeGeometry
-      // defaults to apex-up/base-down; rotated 180° so the wide opening
-      // faces up into the rim and it narrows to a point hanging below.
-      const net = new THREE.Mesh(
-        new THREE.ConeGeometry(0.3, 0.42, 12, 1, true),
-        new THREE.MeshBasicMaterial({ color: 0xf2f2f2, wireframe: true, transparent: true, opacity: 0.8 })
-      );
-      net.rotation.x = Math.PI;
-      net.position.set(w.x, rimHeight - 0.21, w.z);
-      hoopGroup.add(net);
-
-      scene.add(hoopGroup);
-    });
-
-    // Free orbit is available everywhere now; presets give a quick way to
-    // snap to a good angle first, then fine-tune by dragging from there.
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
-    controls.maxPolarAngle = Math.PI * 0.49; // don't let the camera dip below the floor
-    controls.target.set(0, 0, 0);
-
-    // Entity groups, rebuilt whenever the current frame changes
-    let playerGroups: THREE.Group[] = [];
-    let defenderGroups: THREE.Group[] = [];
-    let ballMesh: THREE.Mesh | null = null;
-    const textureLoader = new THREE.TextureLoader();
-
-    function clearEntities() {
-      [...playerGroups, ...defenderGroups].forEach((g) => scene.remove(g));
-      if (ballMesh) scene.remove(ballMesh);
-      playerGroups = []; defenderGroups = []; ballMesh = null;
-    }
-
-    // Mirrors the 2D canvas's getBallPos — the ball follows whoever holds
-    // it (by id) rather than relying only on its own stored x/y, which can
-    // go stale if the holder was moved without the stored ball position
-    // being touched.
-    function getBallWorldPos(f: PlayFrame) {
-      if (f.ballHolderId) {
-        const holder = f.players.find((p) => p.id === f.ballHolderId);
-        if (holder) return toWorld(holder.x, holder.y);
-      }
-      return f.ball ? toWorld(f.ball.x, f.ball.y) : null;
-    }
-
-    function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>) {
-      clearEntities();
-      frame.players.forEach((p, i) => {
-        const color = FACE_COLORS[(p.num - 1 + 5) % 5];
-        const g = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.9, 12), new THREE.MeshStandardMaterial({ color }));
-        body.position.y = 0.55;
-        g.add(body);
-
-        const avatarUrl = p.profile_id ? rosterMap[p.profile_id]?.avatar_url : null;
-        if (avatarUrl) {
-          const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffffff }));
-          sprite.position.y = 1.2;
-          sprite.scale.set(0.5, 0.5, 0.5);
-          textureLoader.load(avatarUrl, (tex) => { (sprite.material as THREE.SpriteMaterial).map = tex; (sprite.material as THREE.SpriteMaterial).needsUpdate = true; });
-          g.add(sprite);
-        } else {
-          const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 12), new THREE.MeshStandardMaterial({ color }));
-          head.position.y = 1.15;
-          g.add(head);
-        }
-
-        const w = toWorld(p.x, p.y);
-        g.position.set(w.x, 0, w.z);
-        scene.add(g);
-        playerGroups[i] = g;
-      });
-      frame.defenders.forEach((d, i) => {
-        const g = new THREE.Group();
-        const bar1 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.7, 0.06), new THREE.MeshStandardMaterial({ color: 0x993c1d }));
-        bar1.rotation.z = Math.PI / 4; bar1.position.y = 0.4;
-        const bar2 = bar1.clone(); bar2.rotation.z = -Math.PI / 4;
-        g.add(bar1, bar2);
-        const w = toWorld(d.x, d.y);
-        g.position.set(w.x, 0, w.z);
-        scene.add(g);
-        defenderGroups[i] = g;
-      });
-      const ballW = getBallWorldPos(frame);
-      if (ballW) {
-        ballMesh = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 12), new THREE.MeshStandardMaterial({ color: 0xff9a1f, emissive: 0x552200, emissiveIntensity: 0.4 }));
-        ballMesh.position.set(ballW.x, 0.5, ballW.z);
-        scene.add(ballMesh);
-      }
-    }
-
-    buildEntities(stateRef.current.play.data.frames[stateRef.current.frameIdx], stateRef.current.roster);
-
-    // Animation: tween from the current beat to the next while playing.
-    // Uses elapsed-time-so-far rather than a fixed start timestamp, so
-    // pausing/resuming doesn't need to fuss with clock offsets — elapsed
-    // just stops accumulating while paused.
-    let animFromFrame: PlayFrame | null = null;
-    let animToFrame: PlayFrame | null = null;
-    let elapsed = 0;
-    let lastTickTime = performance.now();
-
-    function beginNextBeat(): boolean {
-      const { play: p, frameIdx: idx } = stateRef.current;
-      const nextIdx = idx + 1;
-      if (nextIdx >= p.data.frames.length) return false;
-      animFromFrame = p.data.frames[idx];
-      animToFrame = p.data.frames[nextIdx];
-      elapsed = 0;
-      return true;
-    }
-
-    function startOrResume() {
-      if (!animFromFrame) {
-        // Sitting idle — if we're already on the last beat, restart from the top.
-        if (stateRef.current.frameIdx >= stateRef.current.play.data.frames.length - 1) {
-          stateRef.current = { ...stateRef.current, frameIdx: 0 };
-          setFrameIdx(0);
-        }
-        beginNextBeat();
-      }
-      isPlayingRef.current = true;
-      setIsPlaying(true);
-    }
-    function pause() {
-      isPlayingRef.current = false;
-      setIsPlaying(false);
-    }
-    function togglePlayPause() {
-      if (isPlayingRef.current) pause(); else startOrResume();
-    }
-
-    let raf = 0;
-    function tick(now: number) {
-      raf = requestAnimationFrame(tick);
-      const dt = now - lastTickTime;
-      lastTickTime = now;
-      if (animFromFrame && animToFrame) {
-        if (isPlayingRef.current) elapsed += dt;
-        const t = Math.min(1, elapsed / 1500);
-        animFromFrame.players.forEach((fp, i) => {
-          const tp = animToFrame!.players[i];
-          if (!tp || !playerGroups[i]) return;
-          // If this player's movement was drawn as a curl (curve set on
-          // their cut/dribble/screen), follow that curve instead of
-          // cutting straight from A to B — otherwise curved routes look
-          // right in 2D but players run straight through each other in 3D.
-          const sourced = fp.id && animFromFrame!.actions.find(
-            (a) => a.sourcePlayerId === fp.id && (a.type === "move" || a.type === "dribble" || a.type === "screen")
-          );
-          let x: number, z: number;
-          if (sourced?.curve) {
-            const mt = 1 - t;
-            const w1 = toWorld(sourced.x1, sourced.y1), wc = toWorld(sourced.curve.x, sourced.curve.y), w2 = toWorld(sourced.x2, sourced.y2);
-            x = mt * mt * w1.x + 2 * mt * t * wc.x + t * t * w2.x;
-            z = mt * mt * w1.z + 2 * mt * t * wc.z + t * t * w2.z;
-          } else {
-            const from = toWorld(fp.x, fp.y), to = toWorld(tp.x, tp.y);
-            x = from.x + (to.x - from.x) * t;
-            z = from.z + (to.z - from.z) * t;
-          }
-          playerGroups[i].position.x = x;
-          playerGroups[i].position.z = z;
-        });
-        if (ballMesh) {
-          const fromBall = getBallWorldPos(animFromFrame);
-          const toBall = getBallWorldPos(animToFrame);
-          if (fromBall && toBall) {
-            const passAction = [...animFromFrame.actions].reverse().find((a) => a.type === "pass" && a.targetPlayerId && a.curve);
-            if (passAction?.curve) {
-              const mt = 1 - t;
-              const w1 = toWorld(passAction.x1, passAction.y1), wc = toWorld(passAction.curve.x, passAction.curve.y), w2 = toWorld(passAction.x2, passAction.y2);
-              ballMesh.position.x = mt * mt * w1.x + 2 * mt * t * wc.x + t * t * w2.x;
-              ballMesh.position.z = mt * mt * w1.z + 2 * mt * t * wc.z + t * t * w2.z;
-            } else {
-              ballMesh.position.x = fromBall.x + (toBall.x - fromBall.x) * t;
-              ballMesh.position.z = fromBall.z + (toBall.z - fromBall.z) * t;
-            }
-          }
-        }
-        if (t >= 1) {
-          const nextIdx = stateRef.current.frameIdx + 1;
-          setFrameIdx(nextIdx);
-          stateRef.current = { ...stateRef.current, frameIdx: nextIdx };
-          const more = isPlayingRef.current && beginNextBeat();
-          if (!more) {
-            animFromFrame = null; animToFrame = null; elapsed = 0;
-            if (isPlayingRef.current) pause();
-          }
-        }
-      }
-      controls.update();
-      renderer.render(scene, camera);
-    }
-    raf = requestAnimationFrame(tick);
-
-    // Spacebar and a plain click on the scene both toggle play/pause,
-    // matching standard video-player conventions.
+  // Keyboard shortcuts. Skipped while typing in a text field so native
+  // undo/redo in the title/tags inputs still works normally.
+  useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.code !== "Space" && e.key !== " ") return;
       const target = e.target as HTMLElement;
-      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
-      e.preventDefault();
-      togglePlayPause();
+      const typing = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
+      if (typing) return;
+      const cmdOrCtrl = e.metaKey || e.ctrlKey;
+      if (cmdOrCtrl && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo(); else undo();
+      } else if (cmdOrCtrl && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        redo();
+      } else if ((e.key === "Delete" || e.key === "Backspace") && selected) {
+        e.preventDefault();
+        deleteSelected();
+      } else if (e.key === "Escape") {
+        setTool(null);
+        setStampAction(null);
+        setSelected(null);
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
-    renderer.domElement.addEventListener("click", togglePlayPause);
-
-    function handleResize() {
-      const w = mount.clientWidth, h = mount.clientHeight;
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
-    }
-    window.addEventListener("resize", handleResize);
-
-    (mount as any)._rebuildForFrame = () => buildEntities(stateRef.current.play.data.frames[stateRef.current.frameIdx], stateRef.current.roster);
-    (mount as any)._setPreset = (pos: [number, number, number]) => { camera.position.set(...pos); camera.lookAt(0, 0, 0); };
-    (mount as any)._togglePlayPause = togglePlayPause;
-
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", handleResize);
-      window.removeEventListener("keydown", handleKeyDown);
-      renderer.domElement.removeEventListener("click", togglePlayPause);
-      controls.dispose();
-      renderer.dispose();
-      mount.removeChild(renderer.domElement);
-    };
+    return () => window.removeEventListener("keydown", handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [history, future, frames, selected]);
 
-  // When the user picks a different beat manually (not via play animation), rebuild entities at that frame.
-  useEffect(() => {
-    (mountRef.current as any)?._rebuildForFrame?.();
-  }, [frameIdx]);
+  function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(""), 3000); }
 
-  function handlePlayPauseClick() {
-    (mountRef.current as any)?._togglePlayPause?.();
+  const frame = frames[frameIdx];
+
+  useEffect(() => { setSelected(null); }, [frameIdx]);
+
+  function pushHistory() {
+    setHistory((h) => [...h.slice(-49), cloneFrames(frames)]);
+    setFuture([]);
   }
 
+  function updateFrame(mutator: (f: PlayFrame) => PlayFrame) {
+    setFrames((fr) => fr.map((f, i) => (i === frameIdx ? mutator(f) : f)));
+  }
+
+  function undo() {
+    if (!history.length) return;
+    setFuture((f) => [...f, cloneFrames(frames)]);
+    const prev = history[history.length - 1];
+    setHistory((h) => h.slice(0, -1));
+    setFrames(prev);
+  }
+  function redo() {
+    if (!future.length) return;
+    setHistory((h) => [...h, cloneFrames(frames)]);
+    const next = future[future.length - 1];
+    setFuture((f) => f.slice(0, -1));
+    setFrames(next);
+  }
+
+  const addPlayer = useCallback((p: PlayPlayer) => { pushHistory(); updateFrame((f) => ({ ...f, players: [...f.players, p] })); }, [frames, frameIdx]);
+  const addDefender = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, defenders: [...f.defenders, { x, y }] })); }, [frames, frameIdx]);
+  const setBall = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, ball: { x, y }, ballHolderId: null })); }, [frames, frameIdx]);
+  const addAction = useCallback((a: PlayAction) => { pushHistory(); updateFrame((f) => ({ ...f, actions: [...f.actions, a] })); }, [frames, frameIdx]);
+  const addDrawing = useCallback((points: { x: number; y: number }[]) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, drawings: [...(f.drawings ?? []), { points }] }));
+  }, [frames, frameIdx]);
+  const toggleAvatar = useCallback((idx: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, players: f.players.map((p, i) => i === idx ? { ...p, showAvatar: !(p.showAvatar ?? avatarsDefault) } : p) }));
+  }, [frames, frameIdx, avatarsDefault]);
+  const toggleHandoff = useCallback((idx: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, players: f.players.map((p, i) => i === idx ? { ...p, handoff: !p.handoff } : p) }));
+  }, [frames, frameIdx]);
+
+  const movePlayer = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => {
+      const players = f.players.map((p, i) => i === idx ? { ...p, x, y } : p);
+      // If this player is the current ball-holder, keep the ball's stored
+      // position in sync too — this matters for the beat-to-beat animation,
+      // which reads ball.x/y directly rather than re-deriving from the holder.
+      const movedId = f.players[idx]?.id;
+      const ball = (movedId && f.ballHolderId === movedId) ? { x, y } : f.ball;
+      return { ...f, players, ball };
+    });
+  }, [frames, frameIdx]);
+  const moveDefender = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, defenders: f.defenders.map((d, i) => i === idx ? { x, y } : d) }));
+  }, [frames, frameIdx]);
+  const moveBall = useCallback((x: number, y: number) => {
+    pushHistory();
+    // Manually dragging the ball is an explicit override — it's no longer
+    // "held" by whoever it was tracking, it's just sitting at this spot.
+    updateFrame((f) => ({ ...f, ball: { x, y }, ballHolderId: null }));
+  }, [frames, frameIdx]);
+  const moveActionPoint = useCallback((idx: number, which: "start" | "end", x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({
+      ...f,
+      actions: f.actions.map((a, i) => i === idx ? (which === "start" ? { ...a, x1: x, y1: y } : { ...a, x2: x, y2: y }) : a),
+    }));
+  }, [frames, frameIdx]);
+  const moveActionWhole = useCallback((idx: number, x1: number, y1: number, x2: number, y2: number, curve?: { x: number; y: number }) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, actions: f.actions.map((a, i) => i === idx ? { ...a, x1, y1, x2, y2, curve } : a) }));
+  }, [frames, frameIdx]);
+  const setActionCurve = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, actions: f.actions.map((a, i) => i === idx ? { ...a, curve: { x, y } } : a) }));
+  }, [frames, frameIdx]);
+
+  function addText(x: number, y: number) {
+    const text = window.prompt("Text for this label (e.g. \"wait for screen\")");
+    if (!text || !text.trim()) return;
+    pushHistory();
+    updateFrame((f) => ({ ...f, texts: [...(f.texts ?? []), { x, y, text: text.trim() }] }));
+  }
+  const moveText = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, texts: (f.texts ?? []).map((t, i) => i === idx ? { ...t, x, y } : t) }));
+  }, [frames, frameIdx]);
+  function editText(idx: number) {
+    const current = frame.texts?.[idx]?.text ?? "";
+    const next = window.prompt("Edit label text (leave blank to keep unchanged):", current);
+    if (next === null || !next.trim()) return;
+    pushHistory();
+    updateFrame((f) => ({ ...f, texts: (f.texts ?? []).map((t, i) => i === idx ? { ...t, text: next.trim() } : t) }));
+  }
+
+  function addZone(x: number, y: number, w: number, h: number) {
+    pushHistory();
+    updateFrame((f) => ({ ...f, zones: [...(f.zones ?? []), { x, y, w, h }] }));
+  }
+  const moveZone = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, zones: (f.zones ?? []).map((z, i) => i === idx ? { ...z, x, y } : z) }));
+  }, [frames, frameIdx]);
+
+  function deleteSelected() {
+    if (!selected) return;
+    pushHistory();
+    if (selected.kind === "player") updateFrame((f) => ({ ...f, players: f.players.filter((_, i) => i !== selected.index) }));
+    else if (selected.kind === "defender") updateFrame((f) => ({ ...f, defenders: f.defenders.filter((_, i) => i !== selected.index) }));
+    else if (selected.kind === "ball") updateFrame((f) => ({ ...f, ball: null }));
+    else if (selected.kind === "action") updateFrame((f) => ({ ...f, actions: f.actions.filter((_, i) => i !== selected.index) }));
+    else if (selected.kind === "text") updateFrame((f) => ({ ...f, texts: (f.texts ?? []).filter((_, i) => i !== selected.index) }));
+    else if (selected.kind === "zone") updateFrame((f) => ({ ...f, zones: (f.zones ?? []).filter((_, i) => i !== selected.index) }));
+    setSelected(null);
+  }
+
+  function previewAllBeats() {
+    setFrameIdx(0);
+    setTimeout(() => setPlaySignal((s) => s + 1), 50);
+  }
+  function handlePreviewBeatDone() {
+    if (frameIdx < frames.length - 1) {
+      setFrameIdx((i) => i + 1);
+      setTimeout(() => setPlaySignal((s) => s + 1), 150);
+    }
+  }
+
+  function eraseNear(x: number, y: number) {
+    pushHistory();
+    const near = (a: { x: number; y: number }, r: number) => Math.hypot(a.x - x, a.y - y) < r;
+    // Distance from the click to the closest point ANYWHERE along the
+    // action's line — using only the midpoint meant you had to click one
+    // exact tiny spot in the middle of a pass/screen line to erase it.
+    const distToSegment = (x1: number, y1: number, x2: number, y2: number) => {
+      const dx = x2 - x1, dy = y2 - y1;
+      const lenSq = dx * dx + dy * dy;
+      const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / lenSq));
+      const cx = x1 + t * dx, cy = y1 + t * dy;
+      return Math.hypot(x - cx, y - cy);
+    };
+    updateFrame((f) => ({
+      players: f.players.filter((p) => !near(p, 16)),
+      defenders: f.defenders.filter((d) => !near(d, 16)),
+      ball: f.ball && near(f.ball, 12) ? null : f.ball,
+      actions: f.actions.filter((a) => {
+        if (!a.curve) return distToSegment(a.x1, a.y1, a.x2, a.y2) >= 14;
+        // Curved line — sample points along the quadratic curve and check
+        // each segment, so clicking anywhere on the visible curve erases it.
+        const steps = 12;
+        for (let i = 0; i < steps; i++) {
+          const t1 = i / steps, t2 = (i + 1) / steps;
+          const mt1 = 1 - t1, mt2 = 1 - t2;
+          const p1x = mt1 * mt1 * a.x1 + 2 * mt1 * t1 * a.curve.x + t1 * t1 * a.x2;
+          const p1y = mt1 * mt1 * a.y1 + 2 * mt1 * t1 * a.curve.y + t1 * t1 * a.y2;
+          const p2x = mt2 * mt2 * a.x1 + 2 * mt2 * t2 * a.curve.x + t2 * t2 * a.x2;
+          const p2y = mt2 * mt2 * a.y1 + 2 * mt2 * t2 * a.curve.y + t2 * t2 * a.y2;
+          if (distToSegment(p1x, p1y, p2x, p2y) < 14) return false;
+        }
+        return true;
+      }),
+      drawings: (f.drawings ?? []).filter((d) => {
+        for (let i = 0; i < d.points.length - 1; i++) {
+          const a = d.points[i], b = d.points[i + 1];
+          if (distToSegment(a.x, a.y, b.x, b.y) < 14) return false;
+        }
+        return true;
+      }),
+      texts: (f.texts ?? []).filter((t) => !near(t, 20)),
+      zones: (f.zones ?? []).filter((z) => !(x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h)),
+    }));
+  }
+
+  function addFrame() {
+    pushHistory();
+    const last = frames[frames.length - 1];
+
+    // Cuts/dribbles carry their player forward to the action's endpoint;
+    // everyone else keeps their prior spot. Handoff markers clear each step
+    // since they mark a one-time moment, not a persistent state.
+    const players = last.players.map((p) => {
+      const sourced = p.id ? last.actions.find((a) => a.sourcePlayerId === p.id && (a.type === "move" || a.type === "dribble" || a.type === "screen")) : undefined;
+      const base = sourced ? { ...p, x: sourced.x2, y: sourced.y2 } : { ...p };
+      return { ...base, handoff: false };
+    });
+
+    // Ball possession carries forward: an explicit handoff marker wins,
+    // then whoever a pass targeted, then a continuing dribbler, then
+    // whoever already held it.
+    let ballHolderId: string | null = last.ballHolderId ?? null;
+    const handoffPlayer = last.players.find((p) => p.handoff);
+    if (handoffPlayer?.id) {
+      ballHolderId = handoffPlayer.id;
+    } else {
+      const passTarget = [...last.actions].reverse().find((a) => a.type === "pass" && a.targetPlayerId);
+      if (passTarget?.targetPlayerId) {
+        ballHolderId = passTarget.targetPlayerId;
+      } else {
+        const dribbler = [...last.actions].reverse().find((a) => a.type === "dribble" && a.sourcePlayerId);
+        if (dribbler?.sourcePlayerId) ballHolderId = dribbler.sourcePlayerId;
+      }
+    }
+
+    let ball = last.ball ? { ...last.ball } : null;
+    if (ballHolderId) {
+      const holder = players.find((p) => p.id === ballHolderId);
+      if (holder) ball = { x: holder.x, y: holder.y };
+    }
+
+    const copy: PlayFrame = {
+      players,
+      defenders: JSON.parse(JSON.stringify(last.defenders)),
+      ball,
+      ballHolderId,
+      actions: [],
+    };
+    setFrames((fr) => [...fr, copy]);
+    setFrameIdx(frames.length);
+  }
+  function deleteFrame(i: number) {
+    if (frames.length <= 1) return;
+    pushHistory();
+    setFrames((fr) => fr.filter((_, idx) => idx !== i));
+    setFrameIdx((idx) => Math.max(0, idx >= i ? idx - 1 : idx));
+  }
+
+  function duplicateFrame() {
+    pushHistory();
+    const copy: PlayFrame = JSON.parse(JSON.stringify(frames[frameIdx]));
+    setFrames((fr) => [...fr.slice(0, frameIdx + 1), copy, ...fr.slice(frameIdx + 1)]);
+    setFrameIdx(frameIdx + 1);
+    setSelected(null);
+  }
+
+  function flipFrameData(f: PlayFrame): PlayFrame {
+    return {
+      ...f,
+      players: f.players.map((p) => ({ ...p, x: CANVAS_W - p.x })),
+      defenders: f.defenders.map((d) => ({ ...d, x: CANVAS_W - d.x })),
+      ball: f.ball ? { ...f.ball, x: CANVAS_W - f.ball.x } : null,
+      actions: f.actions.map((a) => ({
+        ...a, x1: CANVAS_W - a.x1, x2: CANVAS_W - a.x2,
+        curve: a.curve ? { ...a.curve, x: CANVAS_W - a.curve.x } : undefined,
+      })),
+      drawings: (f.drawings ?? []).map((d) => ({ points: d.points.map((pt) => ({ ...pt, x: CANVAS_W - pt.x })) })),
+      texts: (f.texts ?? []).map((t) => ({ ...t, x: CANVAS_W - t.x })),
+      zones: (f.zones ?? []).map((z) => ({ ...z, x: CANVAS_W - z.x - z.w })),
+    };
+  }
+  function flipCurrentStep() {
+    pushHistory();
+    setFrames((fr) => fr.map((f, i) => (i === frameIdx ? flipFrameData(f) : f)));
+    setSelected(null);
+  }
+  function flipEntirePlay() {
+    if (!window.confirm("Flip every step in this play left-to-right?")) return;
+    pushHistory();
+    setFrames((fr) => fr.map((f) => flipFrameData(f)));
+    setSelected(null);
+  }
+
+  function duplicateSelectedPlayer() {
+    if (!selected || selected.kind !== "player") return;
+    pushHistory();
+    updateFrame((f) => {
+      const orig = f.players[selected.index];
+      if (!orig) return f;
+      const nextNumVal = (f.players.length % 5) + 1;
+      return { ...f, players: [...f.players, { ...orig, id: genPlayerId(), x: orig.x + 20, y: orig.y + 20, num: nextNumVal, handoff: false }] };
+    });
+  }
+
+  function assignRoster(playerIdx: number, profileId: string) {
+    const playerId = frame.players[playerIdx]?.id;
+    pushHistory();
+    if (!playerId) {
+      // No stable id (shouldn't normally happen) — fall back to updating just this step.
+      updateFrame((f) => ({ ...f, players: f.players.map((p, i) => i === playerIdx ? { ...p, profile_id: profileId || null } : p) }));
+      return;
+    }
+    setFrames((fr) => fr.map((f) => ({
+      ...f,
+      players: f.players.map((p) => p.id === playerId ? { ...p, profile_id: profileId || null } : p),
+    })));
+  }
+
+  async function saveCurrentFrameAsAction() {
+    const name = window.prompt("Name this action (e.g. \"Flare screen\")");
+    if (!name) return;
+    try {
+      const saved = await createSavedAction(name, frame);
+      setSavedActions((a) => [saved, ...a]);
+      showToast(`Saved "${name}"`);
+    } catch (e: any) { showToast("Error: " + e.message); }
+  }
+
+  function stampActionAt(action: SavedAction, x: number, y: number) {
+    pushHistory();
+    const d = action.data;
+    // Anchor to the first available point in the saved action so the stamp
+    // lands with that point under the click.
+    const anchor = d.players[0] ?? d.ball ?? d.defenders[0] ?? (d.actions[0] ? { x: d.actions[0].x1, y: d.actions[0].y1 } : { x: 0, y: 0 });
+    const dx = x - anchor.x, dy = y - anchor.y;
+    const baseCount = frame.players.length;
+    // Stamped players are new, distinct players — give each a fresh id
+    // rather than reusing whatever the saved template's players had (which
+    // could collide with existing players, or with another copy of this
+    // same stamp used elsewhere). Remap the stamped actions' source/target
+    // links through the same table so they still point at the right player.
+    const idMap = new Map<string, string>();
+    const newPlayers = d.players.map((p, i) => {
+      const newId = genPlayerId();
+      if (p.id) idMap.set(p.id, newId);
+      return { ...p, id: newId, x: p.x + dx, y: p.y + dy, num: ((baseCount + i) % 5) + 1 };
+    });
+    const newActions = d.actions.map((a) => ({
+      ...a, x1: a.x1 + dx, y1: a.y1 + dy, x2: a.x2 + dx, y2: a.y2 + dy,
+      sourcePlayerId: a.sourcePlayerId ? idMap.get(a.sourcePlayerId) : undefined,
+      targetPlayerId: a.targetPlayerId ? idMap.get(a.targetPlayerId) : undefined,
+    }));
+    updateFrame((f) => ({
+      players: [...f.players, ...newPlayers],
+      defenders: [...f.defenders, ...d.defenders.map((def) => ({ x: def.x + dx, y: def.y + dy }))],
+      ball: f.ball ?? (d.ball ? { x: d.ball.x + dx, y: d.ball.y + dy } : null),
+      actions: [...f.actions, ...newActions],
+    }));
+    setStampAction(null);
+  }
+
+  async function handleSave() {
+    if (!title.trim()) { showToast("Give the play a title first"); return; }
+    setSaving(true);
+    const data: PlayData = { avatarsDefault, frames };
+    const tags = tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
+    try {
+      if (existingPlay) {
+        await updatePlay(existingPlay.id, { title: title.trim(), tags, court_template: courtTemplate, data });
+        showToast("Saved");
+        onSaved?.({ ...existingPlay, title: title.trim(), tags, court_template: courtTemplate, data });
+      } else {
+        const created = await createPlay({ title: title.trim(), tags, court_template: courtTemplate, data });
+        showToast("Play saved");
+        onSaved?.(created);
+      }
+    } catch (e: any) { showToast("Error: " + e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function handleShare(staffId: string) {
+    if (!existingPlay) { showToast("Save the play first, then share it"); return; }
+    try {
+      await sharePlay(existingPlay.id, staffId);
+      showToast("Shared");
+      setShowShare(false);
+    } catch (e: any) { showToast("Error: " + e.message); }
+  }
+
+  async function handleDelete() {
+    if (!existingPlay) return;
+    if (!window.confirm(`Delete "${existingPlay.title}"? This can't be undone.`)) return;
+    try {
+      await deletePlay(existingPlay.id);
+      onClose?.();
+    } catch (e: any) { showToast("Error: " + e.message); }
+  }
+
+  const rosterMap: Record<string, RosterPlayer> = Object.fromEntries(roster.map((r) => [r.id, r]));
+
   return (
-    <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <button onClick={onBack} style={{ padding: "8px 14px" }}>← Back to 2D</button>
-        <button onClick={handlePlayPauseClick} className="coach-add-btn">{isPlaying ? "⏸ Pause" : "▶ Play"}</button>
-        <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
-          {PRESETS.map((preset) => (
-            <button key={preset.label} onClick={() => (mountRef.current as any)?._setPreset?.(preset.pos)} style={{ padding: "6px 10px", fontSize: 12 }}>
-              {preset.label}
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 260px", gap: 16 }}>
+      <div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Play title"
+            style={{ flex: "1 1 200px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+          <select value={courtTemplate} onChange={(e) => setCourtTemplate(e.target.value as CourtTemplate)}
+            style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+            {COURT_TEMPLATES.map((c) => <option key={c} value={c}>{COURT_TEMPLATE_LABELS[c]}</option>)}
+          </select>
+        </div>
+        <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder="Tags (comma separated: inbounds, press break, BLOB...)"
+          style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: showMoreTools ? 6 : 8 }}>
+          {PRIMARY_TOOLS.map(({ tool: t, label, icon }) => (
+            <button key={label} onClick={() => { setTool(t); setStampAction(null); }}
+              style={{ padding: "6px 10px", fontSize: 13, border: tool === t ? "2px solid var(--gold)" : "1px solid var(--border)", borderRadius: "8px", background: tool === t ? "rgba(240,192,64,0.12)" : "transparent" }}>
+              {icon} {label}
             </button>
           ))}
+          <span style={{ width: 1, alignSelf: "stretch", background: "var(--border)", margin: "0 2px" }} />
+          <button onClick={() => setShowMoreTools((v) => !v)}
+            style={{ padding: "6px 10px", fontSize: 13, border: "1px solid var(--border)", borderRadius: "8px", background: showMoreTools ? "var(--surface2)" : "transparent" }}>
+            {showMoreTools ? "▴" : "▾"} More tools
+          </button>
         </div>
-        <span style={{ fontSize: 12, color: "var(--muted)" }}>Drag to orbit, scroll to zoom</span>
-      </div>
-      <div ref={mountRef} style={{ width: "100%", height: 420, borderRadius: 12, overflow: "hidden", background: "#1a2235" }} />
-      {play.data.frames.length > 1 && (
-        <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-          {play.data.frames.map((_, i) => (
-            <button key={i} onClick={() => setFrameIdx(i)} style={{ padding: "6px 10px", border: i === frameIdx ? "2px solid var(--gold)" : "1px solid var(--border)" }}>
+
+        {showMoreTools && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, padding: "8px 8px", background: "var(--surface2)", borderRadius: 8 }}>
+            {MORE_TOOLS.map(({ tool: t, label, icon }) => (
+              <button key={label} onClick={() => { setTool(t); setStampAction(null); setShowMoreTools(false); }}
+                style={{ padding: "6px 10px", fontSize: 13, border: tool === t ? "2px solid var(--gold)" : "1px solid var(--border)", borderRadius: "8px", background: tool === t ? "rgba(240,192,64,0.12)" : "var(--surface)" }}>
+                {icon} {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+          <button onClick={undo} disabled={!history.length} style={{ padding: "6px 10px" }}>↩ Undo</button>
+          <button onClick={redo} disabled={!future.length} style={{ padding: "6px 10px" }}>↪ Redo</button>
+          {selected && <button onClick={deleteSelected} style={{ padding: "6px 10px" }}>🗑 Delete selected</button>}
+          {selected && selected.kind === "player" && <button onClick={duplicateSelectedPlayer} style={{ padding: "6px 10px" }}>⧉ Duplicate player</button>}
+          <button onClick={flipCurrentStep} style={{ padding: "6px 10px" }}>↔ Flip step</button>
+          <button onClick={flipEntirePlay} style={{ padding: "6px 10px" }}>↔ Flip entire play</button>
+          <button onClick={() => setAvatarsDefault((v) => !v)} style={{ padding: "6px 10px" }}>
+            Avatars: {avatarsDefault ? "on" : "off"}
+          </button>
+          <button onClick={() => setPlaySignal((s) => s + 1)} className="coach-add-btn">▶ Play frame</button>
+          {frames.length > 1 && <button onClick={previewAllBeats} style={{ padding: "6px 10px" }}>▶▶ Preview full play</button>}
+        </div>
+
+        {stampAction && (
+          <p style={{ fontSize: 13, color: "var(--gold)", marginBottom: 6 }}>
+            Click the court to stamp in "{stampAction.name}" — <button onClick={() => setStampAction(null)} style={{ fontSize: 12 }}>cancel</button>
+          </p>
+        )}
+
+        <div
+          onClickCapture={(e) => {
+            if (!stampAction) return;
+            const svg = (e.currentTarget as HTMLDivElement).querySelector("svg")!;
+            const rect = svg.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
+            const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
+            stampActionAt(stampAction, x, y);
+          }}
+          style={{ background: "var(--surface2)", borderRadius: 12, padding: 12 }}
+        >
+          <PlayCanvas
+            frame={frame}
+            courtTemplate={courtTemplate}
+            avatarsDefault={avatarsDefault}
+            roster={rosterMap}
+            edit={!stampAction}
+            tool={tool}
+            onAddPlayer={addPlayer}
+            onAddDefender={addDefender}
+            onSetBall={setBall}
+            onAddAction={addAction}
+            onErase={eraseNear}
+            onToggleAvatar={toggleAvatar}
+            onToggleHandoff={toggleHandoff}
+            onMovePlayer={movePlayer}
+            onMoveDefender={moveDefender}
+            onMoveBall={moveBall}
+            onMoveActionPoint={moveActionPoint}
+            onMoveActionWhole={moveActionWhole}
+            onSetActionCurve={setActionCurve}
+            onAddText={addText}
+            onMoveText={moveText}
+            onEditText={editText}
+            onAddZone={addZone}
+            onMoveZone={moveZone}
+            selected={selected}
+            onSelect={setSelected}
+            onAddDrawing={addDrawing}
+            playSignal={playSignal}
+            onPlayDone={handlePreviewBeatDone}
+          />
+        </div>
+
+        <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+          {frames.map((_, i) => (
+            <button key={i} onClick={() => setFrameIdx(i)}
+              style={{ padding: "6px 10px", border: i === frameIdx ? "2px solid var(--gold)" : "1px solid var(--border)", borderRadius: "8px" }}>
               Step {i + 1}
             </button>
           ))}
+          <button onClick={addFrame} style={{ padding: "6px 10px" }}>+ Add step</button>
+          <button onClick={duplicateFrame} style={{ padding: "6px 10px" }}>⧉ Duplicate step</button>
+          {frames.length > 1 && <button onClick={() => deleteFrame(frameIdx)} style={{ padding: "6px 10px" }}>Delete step</button>}
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>A play can be several sequential steps — e.g. "screen sets" then "cut".</span>
         </div>
-      )}
+
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+          <button onClick={handleSave} disabled={saving} className="coach-add-btn">
+            {saving ? "Saving…" : "Save play"}
+          </button>
+          {currentUserRole === "player" && (
+            <button onClick={() => setShowShare((v) => !v)} style={{ padding: "8px 14px" }}>Share with coach</button>
+          )}
+          {onClose && <button onClick={onClose} style={{ padding: "8px 14px" }}>Close</button>}
+          {existingPlay && <button onClick={handleDelete} style={{ padding: "8px 14px", color: "#ff7b7b" }}>🗑 Delete play</button>}
+        </div>
+
+        {showShare && (
+          <div style={{ marginTop: 8, padding: 10, background: "var(--surface2)", borderRadius: "8px" }}>
+            {staff.map((s) => (
+              <button key={s.id} onClick={() => handleShare(s.id)} style={{ display: "block", padding: "6px 10px", marginBottom: 4 }}>{s.name}</button>
+            ))}
+            {staff.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>No coaches found.</p>}
+          </div>
+        )}
+
+        {toast && <p style={{ fontSize: 13, color: "var(--gold)", marginTop: 8 }}>{toast}</p>}
+      </div>
+
+      <div>
+        <h3 style={{ fontSize: 14, marginBottom: 8 }}>Saved actions</h3>
+        {savedActions.map((a) => (
+          <div key={a.id} style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+            <button onClick={() => setStampAction(a)} style={{ flex: 1, textAlign: "left", padding: "6px 8px", fontSize: 13 }}>
+              🔖 {a.name}
+            </button>
+            <button onClick={async () => { await deleteSavedAction(a.id); setSavedActions((s) => s.filter((x) => x.id !== a.id)); }} style={{ padding: "6px 8px", fontSize: 12 }}>✕</button>
+          </div>
+        ))}
+        {savedActions.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>None yet.</p>}
+        <button onClick={saveCurrentFrameAsAction} style={{ width: "100%", padding: "6px 8px", fontSize: 13, marginTop: 6 }}>
+          + Save current step as action
+        </button>
+
+        <h3 style={{ fontSize: 14, margin: "16px 0 8px" }}>Link players to roster</h3>
+        {frame.players.map((p, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+            <span style={{ fontSize: 12, width: 20 }}>#{p.num}</span>
+            <select value={p.profile_id ?? ""} onChange={(e) => assignRoster(i, e.target.value)}
+              style={{ flex: 1, fontSize: 12, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", color: "var(--text)", fontFamily: "inherit", outline: "none" }}>
+              <option value="">— unassigned —</option>
+              {roster.map((r) => <option key={r.id} value={r.id}>{r.name}{r.jersey != null ? ` (#${r.jersey})` : ""}</option>)}
+            </select>
+          </div>
+        ))}
+        {frame.players.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>Place players on the court to link them.</p>}
+      </div>
     </div>
   );
 }
