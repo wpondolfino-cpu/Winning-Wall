@@ -3,7 +3,7 @@
 // "Shared with me", and "My playbooks", then plays back a single play
 // frame-by-frame. No drawing tools live here — see PlayEditor for that.
 
-import { useState, useEffect, lazy, Suspense, type ComponentType } from "react";
+import { useState, useEffect, lazy, Suspense, Component, type ComponentType, type ReactNode } from "react";
 import PlayCanvas from "./PlayCanvas";
 import PlayPrintView from "./PlayPrintView";
 import {
@@ -31,6 +31,28 @@ interface Props {
 }
 
 type Tab = "mine" | "shared" | "playbooks";
+
+// Catches any runtime error inside the 3D viewer and shows it directly,
+// instead of an unexplained blank/wrong screen if something in there throws.
+class ThreeDErrorBoundary extends Component<{ children: ReactNode; onBack: () => void }, { error: Error | null }> {
+  constructor(props: { children: ReactNode; onBack: () => void }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: any) { console.error("3D viewer crashed:", error, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 20 }}>
+          <button onClick={this.props.onBack} style={{ padding: "8px 14px", marginBottom: 12 }}>← Back to 2D</button>
+          <p style={{ color: "#ff7b7b", fontSize: 13 }}>The 3D view hit an error: {this.state.error.message}</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function filterPlays<T extends { title: string; tags: string[] }>(plays: T[], search: string): T[] {
   const q = search.trim().toLowerCase();
@@ -172,10 +194,11 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
                 {p.title}
                 {p.tags.length > 0 && <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 8 }}>{p.tags.join(", ")}</span>}
               </button>
-              <button title="Watch in 3D" onClick={() => { setOpenPlay(p); setOpenIn3D(true); }} style={{ padding: "6px 8px", fontSize: 13 }}>🧊</button>
-              <button title="Share" onClick={() => { setOpenPlay(p); setOpenSharesDirect(true); }} style={{ padding: "6px 8px", fontSize: 13 }}>🔗</button>
-              {onEdit && <button title="Edit" onClick={() => onEdit(p)} style={{ padding: "6px 8px", fontSize: 13 }}>✏️</button>}
-              <button title="Delete" onClick={() => handleDeleteFromList(p)} style={{ padding: "6px 8px", fontSize: 13, marginRight: 4 }}>🗑</button>
+              <button title="Watch in 3D" onClick={() => { setOpenPlay(p); setOpenIn3D(true); }} style={{ padding: "8px 10px", fontSize: 15, marginRight: 2 }}>🧊</button>
+              <button title="Share" onClick={() => { setOpenPlay(p); setOpenSharesDirect(true); }} style={{ padding: "8px 10px", fontSize: 15, marginRight: 2 }}>🔗</button>
+              <span style={{ width: 1, alignSelf: "stretch", background: "var(--border)", margin: "4px 4px" }} />
+              {onEdit && <button title="Edit" onClick={() => onEdit(p)} style={{ padding: "8px 10px", fontSize: 15, marginRight: 2 }}>✏️</button>}
+              <button title="Delete" onClick={() => handleDeleteFromList(p)} style={{ padding: "8px 10px", fontSize: 15, marginRight: 6 }}>🗑</button>
             </div>
           ))}
           {myPlays.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>No plays yet.</p>}
@@ -257,9 +280,11 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
 
   if (show3D) {
     return (
-      <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Loading 3D view…</div>}>
-        <Play3DViewer play={play} roster={rosterMap} onBack={() => setShow3D(false)} />
-      </Suspense>
+      <ThreeDErrorBoundary onBack={() => setShow3D(false)}>
+        <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Loading 3D view…</div>}>
+          <Play3DViewer play={play} roster={rosterMap} onBack={() => setShow3D(false)} />
+        </Suspense>
+      </ThreeDErrorBoundary>
     );
   }
 
