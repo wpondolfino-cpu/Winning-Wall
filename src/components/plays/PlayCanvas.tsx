@@ -368,7 +368,7 @@ export default function PlayCanvas({
         if (within(frame.defenders[i], 16)) { setMoveDrag({ kind: "defender", index: i }); setMovePos(p); return; }
       }
       const ballHit = getBallPos(frame);
-      if (ballHit && within(ballHit, 12)) { setMoveDrag({ kind: "ball" }); setMovePos(p); return; }
+      if (ballHit && within(ballHit, 14)) { setMoveDrag({ kind: "ball" }); setMovePos(p); return; }
       for (let i = 0; i < frame.actions.length; i++) {
         const a = frame.actions[i];
         if ((a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen") && within(curveHandlePos(a), 11)) {
@@ -595,7 +595,13 @@ export default function PlayCanvas({
       ))}
 
       {ballPos && (
-        <circle cx={ballPos.x} cy={ballPos.y} r={8} fill="#EF9F27" stroke="#854F0B" strokeWidth={1.5} />
+        <g>
+          <circle cx={ballPos.x} cy={ballPos.y} r={12} fill="none" stroke="#fff" strokeWidth={2} opacity={0.85} />
+          <circle cx={ballPos.x} cy={ballPos.y} r={10} fill="#FF9A1F" stroke="#6B3410" strokeWidth={2} />
+          <path d={`M ${ballPos.x - 10} ${ballPos.y} Q ${ballPos.x} ${ballPos.y - 7} ${ballPos.x + 10} ${ballPos.y}`} fill="none" stroke="#6B3410" strokeWidth={1.2} opacity={0.8} />
+          <path d={`M ${ballPos.x - 10} ${ballPos.y} Q ${ballPos.x} ${ballPos.y + 7} ${ballPos.x + 10} ${ballPos.y}`} fill="none" stroke="#6B3410" strokeWidth={1.2} opacity={0.8} />
+          <line x1={ballPos.x} y1={ballPos.y - 10} x2={ballPos.x} y2={ballPos.y + 10} stroke="#6B3410" strokeWidth={1.2} opacity={0.8} />
+        </g>
       )}
 
       {(displayFrame.texts ?? []).map((t, i) => {
@@ -615,7 +621,7 @@ export default function PlayCanvas({
         <circle cx={displayFrame.defenders[selected.index].x} cy={displayFrame.defenders[selected.index].y} r={17} fill="none" stroke="var(--gold)" strokeWidth={2} strokeDasharray="4,3" />
       )}
       {selected && selected.kind === "ball" && ballPos && (
-        <circle cx={ballPos.x} cy={ballPos.y} r={14} fill="none" stroke="var(--gold)" strokeWidth={2} strokeDasharray="4,3" />
+        <circle cx={ballPos.x} cy={ballPos.y} r={17} fill="none" stroke="var(--gold)" strokeWidth={2} strokeDasharray="4,3" />
       )}
       {selected && selected.kind === "action" && displayFrame.actions[selected.index] && (
         <path d={linePath(displayFrame.actions[selected.index])} fill="none" stroke="var(--gold)" strokeWidth={6} opacity={0.35} />
