@@ -81,10 +81,49 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
     // Hoops (a raised rim so the court reads as a real court, not just lines)
     hoopPositions(play.court_template).forEach((hp) => {
       const w = toWorld(hp.x, hp.y);
-      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.03, 8, 20), new THREE.MeshStandardMaterial({ color: 0xef9f27 }));
-      rim.position.set(w.x, 2.0, w.z);
+      // Direction from court center out to the hoop — the backboard sits
+      // further along this same direction, facing back toward center.
+      const dist = Math.hypot(w.x, w.z) || 1;
+      const dirX = w.x / dist, dirZ = w.z / dist;
+      const rimHeight = 2.0;
+
+      const hoopGroup = new THREE.Group();
+
+      // Support pole + arm (floor to backboard)
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, rimHeight, 8), new THREE.MeshStandardMaterial({ color: 0x555555 }));
+      pole.position.set(w.x + dirX * 0.45, rimHeight / 2, w.z + dirZ * 0.45);
+      hoopGroup.add(pole);
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.05), new THREE.MeshStandardMaterial({ color: 0x555555 }));
+      arm.position.set(w.x + dirX * 0.22, rimHeight, w.z + dirZ * 0.22);
+      arm.rotation.y = Math.atan2(dirZ, dirX);
+      hoopGroup.add(arm);
+
+      // Backboard (a bit further out than the rim, facing back toward center)
+      const backboard = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.65, 1.1), new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }));
+      backboard.position.set(w.x + dirX * 0.42, rimHeight + 0.15, w.z + dirZ * 0.42);
+      backboard.rotation.y = Math.atan2(dirZ, dirX);
+      hoopGroup.add(backboard);
+      const backboardStripe = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.3, 0.5), new THREE.MeshStandardMaterial({ color: 0xdd3333 }));
+      backboardStripe.position.copy(backboard.position);
+      backboardStripe.position.y -= 0.05;
+      backboardStripe.rotation.y = backboard.rotation.y;
+      hoopGroup.add(backboardStripe);
+
+      // Rim
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.025, 8, 24), new THREE.MeshStandardMaterial({ color: 0xff6a1a }));
+      rim.position.set(w.x, rimHeight, w.z);
       rim.rotation.x = Math.PI / 2;
-      scene.add(rim);
+      hoopGroup.add(rim);
+
+      // Net — a loose wireframe cone hanging from the rim
+      const net = new THREE.Mesh(
+        new THREE.ConeGeometry(0.3, 0.42, 12, 1, true),
+        new THREE.MeshBasicMaterial({ color: 0xf2f2f2, wireframe: true, transparent: true, opacity: 0.8 })
+      );
+      net.position.set(w.x, rimHeight - 0.21, w.z);
+      hoopGroup.add(net);
+
+      scene.add(hoopGroup);
     });
 
     // Desktop: free orbit. Mobile: presets only (no drag control).
@@ -149,7 +188,7 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
       });
       if (frame.ball) {
         const w = toWorld(frame.ball.x, frame.ball.y);
-        ballMesh = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 10), new THREE.MeshStandardMaterial({ color: 0xef9f27 }));
+        ballMesh = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 12), new THREE.MeshStandardMaterial({ color: 0xff9a1f, emissive: 0x552200, emissiveIntensity: 0.4 }));
         ballMesh.position.set(w.x, 0.5, w.z);
         scene.add(ballMesh);
       }
@@ -257,7 +296,7 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
         <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
           {play.data.frames.map((_, i) => (
             <button key={i} onClick={() => setFrameIdx(i)} style={{ padding: "6px 10px", border: i === frameIdx ? "2px solid var(--gold)" : "1px solid var(--border)" }}>
-              Beat {i + 1}
+              Step {i + 1}
             </button>
           ))}
         </div>
