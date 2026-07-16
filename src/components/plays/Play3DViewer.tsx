@@ -38,8 +38,8 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
   const stateRef = useRef({ play, roster, frameIdx });
   stateRef.current = { play, roster, frameIdx };
 
-  const playSignalRef = useRef(0);
-  const [, forceRerender] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const isPlayingRef = useRef(false);
 
   useEffect(() => {
     const mount = mountRef.current!;
@@ -208,29 +208,53 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
 
     buildEntities(stateRef.current.play.data.frames[stateRef.current.frameIdx], stateRef.current.roster);
 
-    // Animation: tween from the current frame to the next whenever playSignalRef changes.
-    let animStart: number | null = null;
+    // Animation: tween from the current beat to the next while playing.
+    // Uses elapsed-time-so-far rather than a fixed start timestamp, so
+    // pausing/resuming doesn't need to fuss with clock offsets — elapsed
+    // just stops accumulating while paused.
     let animFromFrame: PlayFrame | null = null;
     let animToFrame: PlayFrame | null = null;
-    let lastPlaySignal = 0;
+    let elapsed = 0;
+    let lastTickTime = performance.now();
 
-    function maybeStartAnimation() {
-      if (playSignalRef.current === lastPlaySignal) return;
-      lastPlaySignal = playSignalRef.current;
+    function beginNextBeat(): boolean {
       const { play: p, frameIdx: idx } = stateRef.current;
       const nextIdx = idx + 1;
-      if (nextIdx >= p.data.frames.length) return;
+      if (nextIdx >= p.data.frames.length) return false;
       animFromFrame = p.data.frames[idx];
       animToFrame = p.data.frames[nextIdx];
-      animStart = performance.now();
+      elapsed = 0;
+      return true;
+    }
+
+    function startOrResume() {
+      if (!animFromFrame) {
+        // Sitting idle — if we're already on the last beat, restart from the top.
+        if (stateRef.current.frameIdx >= stateRef.current.play.data.frames.length - 1) {
+          stateRef.current = { ...stateRef.current, frameIdx: 0 };
+          setFrameIdx(0);
+        }
+        beginNextBeat();
+      }
+      isPlayingRef.current = true;
+      setIsPlaying(true);
+    }
+    function pause() {
+      isPlayingRef.current = false;
+      setIsPlaying(false);
+    }
+    function togglePlayPause() {
+      if (isPlayingRef.current) pause(); else startOrResume();
     }
 
     let raf = 0;
     function tick(now: number) {
       raf = requestAnimationFrame(tick);
-      maybeStartAnimation();
-      if (animStart !== null && animFromFrame && animToFrame) {
-        const t = Math.min(1, (now - animStart) / 1500);
+      const dt = now - lastTickTime;
+      lastTickTime = now;
+      if (animFromFrame && animToFrame) {
+        if (isPlayingRef.current) elapsed += dt;
+        const t = Math.min(1, elapsed / 1500);
         animFromFrame.players.forEach((fp, i) => {
           const tp = animToFrame!.players[i];
           if (!tp || !playerGroups[i]) return;
@@ -272,14 +296,32 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
           }
         }
         if (t >= 1) {
-          animStart = null;
-          setFrameIdx((i) => i + 1);
+          const nextIdx = stateRef.current.frameIdx + 1;
+          setFrameIdx(nextIdx);
+          stateRef.current = { ...stateRef.current, frameIdx: nextIdx };
+          const more = isPlayingRef.current && beginNextBeat();
+          if (!more) {
+            animFromFrame = null; animToFrame = null; elapsed = 0;
+            if (isPlayingRef.current) pause();
+          }
         }
       }
-      controls?.update();
+      controls.update();
       renderer.render(scene, camera);
     }
     raf = requestAnimationFrame(tick);
+
+    // Spacebar and a plain click on the scene both toggle play/pause,
+    // matching standard video-player conventions.
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.code !== "Space" && e.key !== " ") return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
+      e.preventDefault();
+      togglePlayPause();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    renderer.domElement.addEventListener("click", togglePlayPause);
 
     function handleResize() {
       const w = mount.clientWidth, h = mount.clientHeight;
@@ -291,11 +333,14 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
 
     (mount as any)._rebuildForFrame = () => buildEntities(stateRef.current.play.data.frames[stateRef.current.frameIdx], stateRef.current.roster);
     (mount as any)._setPreset = (pos: [number, number, number]) => { camera.position.set(...pos); camera.lookAt(0, 0, 0); };
+    (mount as any)._togglePlayPause = togglePlayPause;
 
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", handleResize);
-      controls?.dispose();
+      window.removeEventListener("keydown", handleKeyDown);
+      renderer.domElement.removeEventListener("click", togglePlayPause);
+      controls.dispose();
       renderer.dispose();
       mount.removeChild(renderer.domElement);
     };
@@ -307,24 +352,15 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
     (mountRef.current as any)?._rebuildForFrame?.();
   }, [frameIdx]);
 
-  function watchPlay() {
-    setFrameIdx(0);
-    setTimeout(() => {
-      playSignalRef.current += 1;
-      forceRerender((n) => n + 1);
-      // Kick off each subsequent beat automatically as frames advance.
-      const advance = setInterval(() => {
-        playSignalRef.current += 1;
-      }, 1600);
-      setTimeout(() => clearInterval(advance), 1600 * (play.data.frames.length + 1));
-    }, 50);
+  function handlePlayPauseClick() {
+    (mountRef.current as any)?._togglePlayPause?.();
   }
 
   return (
     <div>
       <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
         <button onClick={onBack} style={{ padding: "8px 14px" }}>← Back to 2D</button>
-        <button onClick={watchPlay} className="coach-add-btn">▶ Watch play</button>
+        <button onClick={handlePlayPauseClick} className="coach-add-btn">{isPlaying ? "⏸ Pause" : "▶ Play"}</button>
         <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
           {PRESETS.map((preset) => (
             <button key={preset.label} onClick={() => (mountRef.current as any)?._setPreset?.(preset.pos)} style={{ padding: "6px 10px", fontSize: 12 }}>
