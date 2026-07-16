@@ -9,7 +9,7 @@ import {
   Play, PlayData, PlayFrame, PlayPlayer, PlayAction, ActionType,
   CourtTemplate, COURT_TEMPLATES, COURT_TEMPLATE_LABELS,
   SavedAction, RosterPlayer, PlayShareTarget,
-  emptyPlayData, createPlay, updatePlay, genPlayerId,
+  emptyPlayData, createPlay, updatePlay, deletePlay, genPlayerId,
   getMySavedActions, createSavedAction, deleteSavedAction,
   getRoster, getStaff, sharePlay,
 } from "../../lib/plays";
@@ -467,6 +467,15 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     } catch (e: any) { showToast("Error: " + e.message); }
   }
 
+  async function handleDelete() {
+    if (!existingPlay) return;
+    if (!window.confirm(`Delete "${existingPlay.title}"? This can't be undone.`)) return;
+    try {
+      await deletePlay(existingPlay.id);
+      onClose?.();
+    } catch (e: any) { showToast("Error: " + e.message); }
+  }
+
   const rosterMap: Record<string, RosterPlayer> = Object.fromEntries(roster.map((r) => [r.id, r]));
 
   return (
@@ -593,6 +602,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             <button onClick={() => setShowShare((v) => !v)} style={{ padding: "8px 14px" }}>Share with coach</button>
           )}
           {onClose && <button onClick={onClose} style={{ padding: "8px 14px" }}>Close</button>}
+          {existingPlay && <button onClick={handleDelete} style={{ padding: "8px 14px", color: "#ff7b7b" }}>🗑 Delete play</button>}
         </div>
 
         {showShare && (
