@@ -23,20 +23,26 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | null;
+type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | null;
 
-const TOOL_LABELS: { tool: Tool; label: string; icon: string }[] = [
+const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "select", label: "Move", icon: "✥" },
   { tool: "player", label: "Player", icon: "⬤" },
-  { tool: "defender", label: "Defender", icon: "✕" },
   { tool: "ball", label: "Ball", icon: "●" },
   { tool: "move", label: "Cut", icon: "→" },
   { tool: "pass", label: "Pass", icon: "┄" },
   { tool: "dribble", label: "Dribble", icon: "〜" },
   { tool: "screen", label: "Screen", icon: "⊥" },
   { tool: "handoff", label: "Handoff", icon: "✱" },
-  { tool: "draw", label: "Draw", icon: "✎" },
+  { tool: "text", label: "Text", icon: "T" },
   { tool: "erase", label: "Erase", icon: "⌫" },
+];
+// Used less often — tucked behind "More tools" instead of permanently
+// taking up space in the main row.
+const MORE_TOOLS: { tool: Tool; label: string; icon: string }[] = [
+  { tool: "defender", label: "Defender", icon: "✕" },
+  { tool: "draw", label: "Draw", icon: "✎" },
+  { tool: "zone", label: "Zone shading", icon: "▦" },
 ];
 
 function cloneFrames(frames: PlayFrame[]): PlayFrame[] { return JSON.parse(JSON.stringify(frames)); }
@@ -49,6 +55,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const [frames, setFrames] = useState<PlayFrame[]>(existingPlay?.data?.frames ?? emptyPlayData().frames);
   const [frameIdx, setFrameIdx] = useState(0);
   const [tool, setTool] = useState<Tool>("player");
+  const [showMoreTools, setShowMoreTools] = useState(false);
+  const [selected, setSelected] = useState<{ kind: "player" | "defender" | "ball" | "action" | "text" | "zone"; index: number } | null>(null);
   const [history, setHistory] = useState<PlayFrame[][]>([]);
   const [future, setFuture] = useState<PlayFrame[][]>([]);
   const [saving, setSaving] = useState(false);
@@ -81,19 +89,25 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       } else if (cmdOrCtrl && e.key.toLowerCase() === "y") {
         e.preventDefault();
         redo();
+      } else if ((e.key === "Delete" || e.key === "Backspace") && selected) {
+        e.preventDefault();
+        deleteSelected();
       } else if (e.key === "Escape") {
         setTool(null);
         setStampAction(null);
+        setSelected(null);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [history, future, frames]);
+  }, [history, future, frames, selected]);
 
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(""), 3000); }
 
   const frame = frames[frameIdx];
+
+  useEffect(() => { setSelected(null); }, [frameIdx]);
 
   function pushHistory() {
     setHistory((h) => [...h.slice(-49), cloneFrames(frames)]);
@@ -164,6 +178,45 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     updateFrame((f) => ({ ...f, actions: f.actions.map((a, i) => i === idx ? { ...a, curve: { x, y } } : a) }));
   }, [frames, frameIdx]);
 
+  function addText(x: number, y: number) {
+    const text = window.prompt("Text for this label (e.g. \"wait for screen\")");
+    if (!text || !text.trim()) return;
+    pushHistory();
+    updateFrame((f) => ({ ...f, texts: [...(f.texts ?? []), { x, y, text: text.trim() }] }));
+  }
+  const moveText = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, texts: (f.texts ?? []).map((t, i) => i === idx ? { ...t, x, y } : t) }));
+  }, [frames, frameIdx]);
+  function editText(idx: number) {
+    const current = frame.texts?.[idx]?.text ?? "";
+    const next = window.prompt("Edit label text (leave blank to keep unchanged):", current);
+    if (next === null || !next.trim()) return;
+    pushHistory();
+    updateFrame((f) => ({ ...f, texts: (f.texts ?? []).map((t, i) => i === idx ? { ...t, text: next.trim() } : t) }));
+  }
+
+  function addZone(x: number, y: number, w: number, h: number) {
+    pushHistory();
+    updateFrame((f) => ({ ...f, zones: [...(f.zones ?? []), { x, y, w, h }] }));
+  }
+  const moveZone = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, zones: (f.zones ?? []).map((z, i) => i === idx ? { ...z, x, y } : z) }));
+  }, [frames, frameIdx]);
+
+  function deleteSelected() {
+    if (!selected) return;
+    pushHistory();
+    if (selected.kind === "player") updateFrame((f) => ({ ...f, players: f.players.filter((_, i) => i !== selected.index) }));
+    else if (selected.kind === "defender") updateFrame((f) => ({ ...f, defenders: f.defenders.filter((_, i) => i !== selected.index) }));
+    else if (selected.kind === "ball") updateFrame((f) => ({ ...f, ball: null }));
+    else if (selected.kind === "action") updateFrame((f) => ({ ...f, actions: f.actions.filter((_, i) => i !== selected.index) }));
+    else if (selected.kind === "text") updateFrame((f) => ({ ...f, texts: (f.texts ?? []).filter((_, i) => i !== selected.index) }));
+    else if (selected.kind === "zone") updateFrame((f) => ({ ...f, zones: (f.zones ?? []).filter((_, i) => i !== selected.index) }));
+    setSelected(null);
+  }
+
   function previewAllBeats() {
     setFrameIdx(0);
     setTimeout(() => setPlaySignal((s) => s + 1), 50);
@@ -215,6 +268,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         }
         return true;
       }),
+      texts: (f.texts ?? []).filter((t) => !near(t, 20)),
+      zones: (f.zones ?? []).filter((z) => !(x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h)),
     }));
   }
 
@@ -230,6 +285,52 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     pushHistory();
     setFrames((fr) => fr.filter((_, idx) => idx !== i));
     setFrameIdx((idx) => Math.max(0, idx >= i ? idx - 1 : idx));
+  }
+
+  function duplicateFrame() {
+    pushHistory();
+    const copy: PlayFrame = JSON.parse(JSON.stringify(frames[frameIdx]));
+    setFrames((fr) => [...fr.slice(0, frameIdx + 1), copy, ...fr.slice(frameIdx + 1)]);
+    setFrameIdx(frameIdx + 1);
+    setSelected(null);
+  }
+
+  function flipFrameData(f: PlayFrame): PlayFrame {
+    return {
+      ...f,
+      players: f.players.map((p) => ({ ...p, x: CANVAS_W - p.x })),
+      defenders: f.defenders.map((d) => ({ ...d, x: CANVAS_W - d.x })),
+      ball: f.ball ? { ...f.ball, x: CANVAS_W - f.ball.x } : null,
+      actions: f.actions.map((a) => ({
+        ...a, x1: CANVAS_W - a.x1, x2: CANVAS_W - a.x2,
+        curve: a.curve ? { ...a.curve, x: CANVAS_W - a.curve.x } : undefined,
+      })),
+      drawings: (f.drawings ?? []).map((d) => ({ points: d.points.map((pt) => ({ ...pt, x: CANVAS_W - pt.x })) })),
+      texts: (f.texts ?? []).map((t) => ({ ...t, x: CANVAS_W - t.x })),
+      zones: (f.zones ?? []).map((z) => ({ ...z, x: CANVAS_W - z.x - z.w })),
+    };
+  }
+  function flipCurrentStep() {
+    pushHistory();
+    setFrames((fr) => fr.map((f, i) => (i === frameIdx ? flipFrameData(f) : f)));
+    setSelected(null);
+  }
+  function flipEntirePlay() {
+    if (!window.confirm("Flip every step in this play left-to-right?")) return;
+    pushHistory();
+    setFrames((fr) => fr.map((f) => flipFrameData(f)));
+    setSelected(null);
+  }
+
+  function duplicateSelectedPlayer() {
+    if (!selected || selected.kind !== "player") return;
+    pushHistory();
+    updateFrame((f) => {
+      const orig = f.players[selected.index];
+      if (!orig) return f;
+      const nextNumVal = (f.players.length % 5) + 1;
+      return { ...f, players: [...f.players, { ...orig, x: orig.x + 20, y: orig.y + 20, num: nextNumVal }] };
+    });
   }
 
   function assignRoster(playerIdx: number, profileId: string) {
@@ -307,16 +408,39 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder="Tags (comma separated: inbounds, press break, BLOB...)"
           style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
 
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-          {TOOL_LABELS.map(({ tool: t, label, icon }) => (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: showMoreTools ? 6 : 8 }}>
+          {PRIMARY_TOOLS.map(({ tool: t, label, icon }) => (
             <button key={label} onClick={() => { setTool(t); setStampAction(null); }}
               style={{ padding: "6px 10px", fontSize: 13, border: tool === t ? "2px solid var(--gold)" : "1px solid var(--border)", borderRadius: "8px", background: tool === t ? "rgba(240,192,64,0.12)" : "transparent" }}>
               {icon} {label}
             </button>
           ))}
+          <span style={{ width: 1, alignSelf: "stretch", background: "var(--border)", margin: "0 2px" }} />
+          <button onClick={() => setShowMoreTools((v) => !v)}
+            style={{ padding: "6px 10px", fontSize: 13, border: "1px solid var(--border)", borderRadius: "8px", background: showMoreTools ? "var(--surface2)" : "transparent" }}>
+            {showMoreTools ? "▴" : "▾"} More tools
+          </button>
+        </div>
+
+        {showMoreTools && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, padding: "8px 8px", background: "var(--surface2)", borderRadius: 8 }}>
+            {MORE_TOOLS.map(({ tool: t, label, icon }) => (
+              <button key={label} onClick={() => { setTool(t); setStampAction(null); setShowMoreTools(false); }}
+                style={{ padding: "6px 10px", fontSize: 13, border: tool === t ? "2px solid var(--gold)" : "1px solid var(--border)", borderRadius: "8px", background: tool === t ? "rgba(240,192,64,0.12)" : "var(--surface)" }}>
+                {icon} {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
           <button onClick={undo} disabled={!history.length} style={{ padding: "6px 10px" }}>↩ Undo</button>
           <button onClick={redo} disabled={!future.length} style={{ padding: "6px 10px" }}>↪ Redo</button>
           <span style={{ fontSize: 11, color: "var(--muted)", alignSelf: "center" }}>⌘/Ctrl+Z undo · +Shift redo · Esc deselect</span>
+          {selected && <button onClick={deleteSelected} style={{ padding: "6px 10px" }}>🗑 Delete selected</button>}
+          {selected && selected.kind === "player" && <button onClick={duplicateSelectedPlayer} style={{ padding: "6px 10px" }}>⧉ Duplicate player</button>}
+          <button onClick={flipCurrentStep} style={{ padding: "6px 10px" }}>↔ Flip step</button>
+          <button onClick={flipEntirePlay} style={{ padding: "6px 10px" }}>↔ Flip entire play</button>
           <button onClick={() => setAvatarsDefault((v) => !v)} style={{ padding: "6px 10px" }}>
             Avatars: {avatarsDefault ? "on" : "off"}
           </button>
@@ -361,6 +485,13 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onMoveActionPoint={moveActionPoint}
             onMoveActionWhole={moveActionWhole}
             onSetActionCurve={setActionCurve}
+            onAddText={addText}
+            onMoveText={moveText}
+            onEditText={editText}
+            onAddZone={addZone}
+            onMoveZone={moveZone}
+            selected={selected}
+            onSelect={setSelected}
             onAddDrawing={addDrawing}
             playSignal={playSignal}
             onPlayDone={handlePreviewBeatDone}
@@ -375,6 +506,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             </button>
           ))}
           <button onClick={addFrame} style={{ padding: "6px 10px" }}>+ Add step</button>
+          <button onClick={duplicateFrame} style={{ padding: "6px 10px" }}>⧉ Duplicate step</button>
           {frames.length > 1 && <button onClick={() => deleteFrame(frameIdx)} style={{ padding: "6px 10px" }}>Delete step</button>}
           <span style={{ fontSize: 12, color: "var(--muted)" }}>A play can be several sequential steps — e.g. "screen sets" then "cut".</span>
         </div>
