@@ -301,7 +301,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     // everyone else keeps their prior spot. Handoff markers clear each step
     // since they mark a one-time moment, not a persistent state.
     const players = last.players.map((p) => {
-      const sourced = p.id && last.actions.find((a) => a.sourcePlayerId === p.id && (a.type === "move" || a.type === "dribble" || a.type === "screen"));
+      const sourced = p.id ? last.actions.find((a) => a.sourcePlayerId === p.id && (a.type === "move" || a.type === "dribble" || a.type === "screen")) : undefined;
       const base = sourced ? { ...p, x: sourced.x2, y: sourced.y2 } : { ...p };
       return { ...base, handoff: false };
     });
