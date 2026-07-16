@@ -26,7 +26,7 @@ const toWorld = (x: number, y: number) => ({ x: (x - 300) / SCALE, z: (y - 210) 
 
 const PRESETS: { label: string; pos: [number, number, number] }[] = [
   { label: "Half court", pos: [0, 4, 9] },
-  { label: "Baseline", pos: [0, 2.5, -7] },
+  { label: "Baseline", pos: [7, 2, -3] },
   { label: "Sideline", pos: [11, 4, 0] },
   { label: "Top-down", pos: [0, 13, 0.5] },
   { label: "Full court", pos: [0, 11, 15] },
@@ -399,11 +399,9 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
         <button onClick={onBack} style={{ padding: "8px 12px", fontSize: 13 }}>← Back to 2D</button>
         <button onClick={handlePlayPauseClick} className="coach-add-btn" style={{ fontSize: 13 }}>{isPlaying ? "⏸ Pause" : "▶ Play"}</button>
-      </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
         <select
           value={presetLabel}
           onChange={(e) => {
@@ -411,13 +409,13 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
             const preset = PRESETS.find((p) => p.label === e.target.value);
             if (preset) (mountRef.current as any)?._setPreset?.(preset.pos);
           }}
-          style={{ padding: "7px 10px", fontSize: 12, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", fontFamily: "inherit", outline: "none" }}
+          style={{ marginLeft: "auto", padding: "7px 10px", fontSize: 12, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", fontFamily: "inherit", outline: "none" }}
         >
           {PRESETS.map((preset) => <option key={preset.label} value={preset.label}>{preset.label}</option>)}
         </select>
-        <span style={{ fontSize: 11, color: "var(--muted)" }}>Drag to orbit, scroll to zoom</span>
       </div>
       <div ref={mountRef} style={{ width: "100%", aspectRatio: "4 / 3", borderRadius: 12, overflow: "hidden", background: "#1a2235" }} />
+      <p style={{ textAlign: "center", fontSize: 12, color: "var(--muted)", margin: "8px 0" }}>Drag to orbit, scroll to zoom</p>
       {play.data.frames.length > 1 && (
         <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
           {play.data.frames.map((_, i) => (
