@@ -67,6 +67,30 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     if (currentUserRole === "player") getStaff().then(setStaff).catch(console.error);
   }, [currentUserRole]);
 
+  // Keyboard shortcuts. Skipped while typing in a text field so native
+  // undo/redo in the title/tags inputs still works normally.
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      const typing = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
+      if (typing) return;
+      const cmdOrCtrl = e.metaKey || e.ctrlKey;
+      if (cmdOrCtrl && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo(); else undo();
+      } else if (cmdOrCtrl && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        redo();
+      } else if (e.key === "Escape") {
+        setTool(null);
+        setStampAction(null);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [history, future, frames]);
+
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(""), 3000); }
 
   const frame = frames[frameIdx];
@@ -131,9 +155,13 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       actions: f.actions.map((a, i) => i === idx ? (which === "start" ? { ...a, x1: x, y1: y } : { ...a, x2: x, y2: y }) : a),
     }));
   }, [frames, frameIdx]);
-  const moveActionWhole = useCallback((idx: number, x1: number, y1: number, x2: number, y2: number) => {
+  const moveActionWhole = useCallback((idx: number, x1: number, y1: number, x2: number, y2: number, curve?: { x: number; y: number }) => {
     pushHistory();
-    updateFrame((f) => ({ ...f, actions: f.actions.map((a, i) => i === idx ? { ...a, x1, y1, x2, y2 } : a) }));
+    updateFrame((f) => ({ ...f, actions: f.actions.map((a, i) => i === idx ? { ...a, x1, y1, x2, y2, curve } : a) }));
+  }, [frames, frameIdx]);
+  const setActionCurve = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, actions: f.actions.map((a, i) => i === idx ? { ...a, curve: { x, y } } : a) }));
   }, [frames, frameIdx]);
 
   function previewAllBeats() {
@@ -164,7 +192,22 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       players: f.players.filter((p) => !near(p, 16)),
       defenders: f.defenders.filter((d) => !near(d, 16)),
       ball: f.ball && near(f.ball, 12) ? null : f.ball,
-      actions: f.actions.filter((a) => distToSegment(a.x1, a.y1, a.x2, a.y2) >= 14),
+      actions: f.actions.filter((a) => {
+        if (!a.curve) return distToSegment(a.x1, a.y1, a.x2, a.y2) >= 14;
+        // Curved line — sample points along the quadratic curve and check
+        // each segment, so clicking anywhere on the visible curve erases it.
+        const steps = 12;
+        for (let i = 0; i < steps; i++) {
+          const t1 = i / steps, t2 = (i + 1) / steps;
+          const mt1 = 1 - t1, mt2 = 1 - t2;
+          const p1x = mt1 * mt1 * a.x1 + 2 * mt1 * t1 * a.curve.x + t1 * t1 * a.x2;
+          const p1y = mt1 * mt1 * a.y1 + 2 * mt1 * t1 * a.curve.y + t1 * t1 * a.y2;
+          const p2x = mt2 * mt2 * a.x1 + 2 * mt2 * t2 * a.curve.x + t2 * t2 * a.x2;
+          const p2y = mt2 * mt2 * a.y1 + 2 * mt2 * t2 * a.curve.y + t2 * t2 * a.y2;
+          if (distToSegment(p1x, p1y, p2x, p2y) < 14) return false;
+        }
+        return true;
+      }),
       drawings: (f.drawings ?? []).filter((d) => {
         for (let i = 0; i < d.points.length - 1; i++) {
           const a = d.points[i], b = d.points[i + 1];
@@ -273,6 +316,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           ))}
           <button onClick={undo} disabled={!history.length} style={{ padding: "6px 10px" }}>↩ Undo</button>
           <button onClick={redo} disabled={!future.length} style={{ padding: "6px 10px" }}>↪ Redo</button>
+          <span style={{ fontSize: 11, color: "var(--muted)", alignSelf: "center" }}>⌘/Ctrl+Z undo · +Shift redo · Esc deselect</span>
           <button onClick={() => setAvatarsDefault((v) => !v)} style={{ padding: "6px 10px" }}>
             Avatars: {avatarsDefault ? "on" : "off"}
           </button>
@@ -316,6 +360,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onMoveBall={moveBall}
             onMoveActionPoint={moveActionPoint}
             onMoveActionWhole={moveActionWhole}
+            onSetActionCurve={setActionCurve}
             onAddDrawing={addDrawing}
             playSignal={playSignal}
             onPlayDone={handlePreviewBeatDone}
