@@ -9,7 +9,7 @@ import {
   Play, PlayData, PlayFrame, PlayPlayer, PlayAction, ActionType,
   CourtTemplate, COURT_TEMPLATES, COURT_TEMPLATE_LABELS,
   SavedAction, RosterPlayer, PlayShareTarget,
-  emptyPlayData, createPlay, updatePlay,
+  emptyPlayData, createPlay, updatePlay, genPlayerId,
   getMySavedActions, createSavedAction, deleteSavedAction,
   getRoster, getStaff, sharePlay,
 } from "../../lib/plays";
@@ -52,7 +52,17 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const [tagsInput, setTagsInput] = useState((existingPlay?.tags ?? []).join(", "));
   const [courtTemplate, setCourtTemplate] = useState<CourtTemplate>(existingPlay?.court_template ?? "half");
   const [avatarsDefault, setAvatarsDefault] = useState(existingPlay?.data?.avatarsDefault ?? false);
-  const [frames, setFrames] = useState<PlayFrame[]>(existingPlay?.data?.frames ?? emptyPlayData().frames);
+  const [frames, setFrames] = useState<PlayFrame[]>(() => {
+    const initial = existingPlay?.data?.frames ?? emptyPlayData().frames;
+    // Plays saved before player identity existed have no `id` on their
+    // players — assign one based on array position (the same assumption
+    // the app already made implicitly elsewhere) so the new carry-forward
+    // logic has something to work with going forward.
+    return initial.map((f) => ({
+      ...f,
+      players: f.players.map((p, i) => (p.id ? p : { ...p, id: `legacy-${i}` })),
+    }));
+  });
   const [frameIdx, setFrameIdx] = useState(0);
   const [tool, setTool] = useState<Tool>("player");
   const [showMoreTools, setShowMoreTools] = useState(false);
@@ -135,7 +145,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
   const addPlayer = useCallback((p: PlayPlayer) => { pushHistory(); updateFrame((f) => ({ ...f, players: [...f.players, p] })); }, [frames, frameIdx]);
   const addDefender = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, defenders: [...f.defenders, { x, y }] })); }, [frames, frameIdx]);
-  const setBall = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, ball: { x, y } })); }, [frames, frameIdx]);
+  const setBall = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, ball: { x, y }, ballHolderId: null })); }, [frames, frameIdx]);
   const addAction = useCallback((a: PlayAction) => { pushHistory(); updateFrame((f) => ({ ...f, actions: [...f.actions, a] })); }, [frames, frameIdx]);
   const addDrawing = useCallback((points: { x: number; y: number }[]) => {
     pushHistory();
@@ -152,7 +162,15 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
   const movePlayer = useCallback((idx: number, x: number, y: number) => {
     pushHistory();
-    updateFrame((f) => ({ ...f, players: f.players.map((p, i) => i === idx ? { ...p, x, y } : p) }));
+    updateFrame((f) => {
+      const players = f.players.map((p, i) => i === idx ? { ...p, x, y } : p);
+      // If this player is the current ball-holder, keep the ball's stored
+      // position in sync too — this matters for the beat-to-beat animation,
+      // which reads ball.x/y directly rather than re-deriving from the holder.
+      const movedId = f.players[idx]?.id;
+      const ball = (movedId && f.ballHolderId === movedId) ? { x, y } : f.ball;
+      return { ...f, players, ball };
+    });
   }, [frames, frameIdx]);
   const moveDefender = useCallback((idx: number, x: number, y: number) => {
     pushHistory();
@@ -160,7 +178,9 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   }, [frames, frameIdx]);
   const moveBall = useCallback((x: number, y: number) => {
     pushHistory();
-    updateFrame((f) => ({ ...f, ball: { x, y } }));
+    // Manually dragging the ball is an explicit override — it's no longer
+    // "held" by whoever it was tracking, it's just sitting at this spot.
+    updateFrame((f) => ({ ...f, ball: { x, y }, ballHolderId: null }));
   }, [frames, frameIdx]);
   const moveActionPoint = useCallback((idx: number, which: "start" | "end", x: number, y: number) => {
     pushHistory();
@@ -276,7 +296,46 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   function addFrame() {
     pushHistory();
     const last = frames[frames.length - 1];
-    const copy: PlayFrame = { players: JSON.parse(JSON.stringify(last.players)), defenders: JSON.parse(JSON.stringify(last.defenders)), ball: last.ball ? { ...last.ball } : null, actions: [] };
+
+    // Cuts/dribbles carry their player forward to the action's endpoint;
+    // everyone else keeps their prior spot. Handoff markers clear each step
+    // since they mark a one-time moment, not a persistent state.
+    const players = last.players.map((p) => {
+      const sourced = p.id && last.actions.find((a) => a.sourcePlayerId === p.id && (a.type === "move" || a.type === "dribble"));
+      const base = sourced ? { ...p, x: sourced.x2, y: sourced.y2 } : { ...p };
+      return { ...base, handoff: false };
+    });
+
+    // Ball possession carries forward: an explicit handoff marker wins,
+    // then whoever a pass targeted, then a continuing dribbler, then
+    // whoever already held it.
+    let ballHolderId: string | null = last.ballHolderId ?? null;
+    const handoffPlayer = last.players.find((p) => p.handoff);
+    if (handoffPlayer?.id) {
+      ballHolderId = handoffPlayer.id;
+    } else {
+      const passTarget = [...last.actions].reverse().find((a) => a.type === "pass" && a.targetPlayerId);
+      if (passTarget?.targetPlayerId) {
+        ballHolderId = passTarget.targetPlayerId;
+      } else {
+        const dribbler = [...last.actions].reverse().find((a) => a.type === "dribble" && a.sourcePlayerId);
+        if (dribbler?.sourcePlayerId) ballHolderId = dribbler.sourcePlayerId;
+      }
+    }
+
+    let ball = last.ball ? { ...last.ball } : null;
+    if (ballHolderId) {
+      const holder = players.find((p) => p.id === ballHolderId);
+      if (holder) ball = { x: holder.x, y: holder.y };
+    }
+
+    const copy: PlayFrame = {
+      players,
+      defenders: JSON.parse(JSON.stringify(last.defenders)),
+      ball,
+      ballHolderId,
+      actions: [],
+    };
     setFrames((fr) => [...fr, copy]);
     setFrameIdx(frames.length);
   }
@@ -329,7 +388,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       const orig = f.players[selected.index];
       if (!orig) return f;
       const nextNumVal = (f.players.length % 5) + 1;
-      return { ...f, players: [...f.players, { ...orig, x: orig.x + 20, y: orig.y + 20, num: nextNumVal }] };
+      return { ...f, players: [...f.players, { ...orig, id: genPlayerId(), x: orig.x + 20, y: orig.y + 20, num: nextNumVal, handoff: false }] };
     });
   }
 
@@ -355,11 +414,27 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     const anchor = d.players[0] ?? d.ball ?? d.defenders[0] ?? (d.actions[0] ? { x: d.actions[0].x1, y: d.actions[0].y1 } : { x: 0, y: 0 });
     const dx = x - anchor.x, dy = y - anchor.y;
     const baseCount = frame.players.length;
+    // Stamped players are new, distinct players — give each a fresh id
+    // rather than reusing whatever the saved template's players had (which
+    // could collide with existing players, or with another copy of this
+    // same stamp used elsewhere). Remap the stamped actions' source/target
+    // links through the same table so they still point at the right player.
+    const idMap = new Map<string, string>();
+    const newPlayers = d.players.map((p, i) => {
+      const newId = genPlayerId();
+      if (p.id) idMap.set(p.id, newId);
+      return { ...p, id: newId, x: p.x + dx, y: p.y + dy, num: ((baseCount + i) % 5) + 1 };
+    });
+    const newActions = d.actions.map((a) => ({
+      ...a, x1: a.x1 + dx, y1: a.y1 + dy, x2: a.x2 + dx, y2: a.y2 + dy,
+      sourcePlayerId: a.sourcePlayerId ? idMap.get(a.sourcePlayerId) : undefined,
+      targetPlayerId: a.targetPlayerId ? idMap.get(a.targetPlayerId) : undefined,
+    }));
     updateFrame((f) => ({
-      players: [...f.players, ...d.players.map((p, i) => ({ ...p, x: p.x + dx, y: p.y + dy, num: ((baseCount + i) % 5) + 1 }))],
+      players: [...f.players, ...newPlayers],
       defenders: [...f.defenders, ...d.defenders.map((def) => ({ x: def.x + dx, y: def.y + dy }))],
       ball: f.ball ?? (d.ball ? { x: d.ball.x + dx, y: d.ball.y + dy } : null),
-      actions: [...f.actions, ...d.actions.map((a) => ({ ...a, x1: a.x1 + dx, y1: a.y1 + dy, x2: a.x2 + dx, y2: a.y2 + dy }))],
+      actions: [...f.actions, ...newActions],
     }));
     setStampAction(null);
   }
