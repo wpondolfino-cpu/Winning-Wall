@@ -35,7 +35,9 @@ interface Props {
   onMoveDefender?: (index: number, x: number, y: number) => void;
   onMoveBall?: (x: number, y: number) => void;
   onMoveActionPoint?: (index: number, which: "start" | "end", x: number, y: number) => void;
-  onMoveActionWhole?: (index: number, x1: number, y1: number, x2: number, y2: number) => void;
+  onMoveActionWhole?: (index: number, x1: number, y1: number, x2: number, y2: number, curve?: { x: number; y: number }) => void;
+  /** "select" tool — drag a cut/pass line's midpoint handle to bow it into a curl. */
+  onSetActionCurve?: (index: number, x: number, y: number) => void;
   /** "draw" tool — called once, with the full point list, when a freehand stroke is released. */
   onAddDrawing?: (points: { x: number; y: number }[]) => void;
   /** Bump this number to play the current frame's actions once. */
@@ -132,6 +134,16 @@ function dribblePath(x1: number, y1: number, x2: number, y2: number) {
   return d;
 }
 
+function linePath(a: PlayAction) {
+  if (a.curve) return `M ${a.x1} ${a.y1} Q ${a.curve.x} ${a.curve.y} ${a.x2} ${a.y2}`;
+  return `M ${a.x1} ${a.y1} L ${a.x2} ${a.y2}`;
+}
+
+/** Where the draggable "bend" handle sits — the curve's control point if set, otherwise the straight midpoint. */
+function curveHandlePos(a: PlayAction) {
+  return a.curve ?? { x: (a.x1 + a.x2) / 2, y: (a.y1 + a.y2) / 2 };
+}
+
 function ActionShape({ a }: { a: PlayAction }) {
   if (a.type === "screen") {
     const dx = a.x2 - a.x1, dy = a.y2 - a.y1;
@@ -146,7 +158,7 @@ function ActionShape({ a }: { a: PlayAction }) {
   }
   if (a.type === "pass") {
     return (
-      <path d={`M ${a.x1} ${a.y1} L ${a.x2} ${a.y2}`} fill="none" stroke="#185FA5" strokeWidth={2.5}
+      <path d={linePath(a)} fill="none" stroke="#185FA5" strokeWidth={2.5}
         strokeDasharray="6,4" markerEnd="url(#pc-arrow-pass)" />
     );
   }
@@ -156,9 +168,9 @@ function ActionShape({ a }: { a: PlayAction }) {
         markerEnd="url(#pc-arrow-solid)" />
     );
   }
-  // "move" / cut
+  // "move" / cut — the type that can curl off a screen
   return (
-    <path d={`M ${a.x1} ${a.y1} L ${a.x2} ${a.y2}`} fill="none" stroke="var(--text)" strokeWidth={2.5}
+    <path d={linePath(a)} fill="none" stroke="var(--text)" strokeWidth={2.5}
       markerEnd="url(#pc-arrow-solid)" />
   );
 }
@@ -229,7 +241,7 @@ function PlayerIcon({ p, showAvatar, avatarUrl, onDoubleClick }: {
 export default function PlayCanvas({
   frame, courtTemplate, avatarsDefault, roster = {}, edit = false, tool = null,
   onAddPlayer, onAddDefender, onSetBall, onAddAction, onErase, onToggleAvatar,
-  onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff,
+  onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff, onSetActionCurve,
   playSignal, onPlayDone, courtBg = "#3a2a17",
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -242,6 +254,7 @@ export default function PlayCanvas({
     | { kind: "player" | "defender"; index: number }
     | { kind: "ball" }
     | { kind: "actionStart" | "actionEnd"; index: number }
+    | { kind: "actionCurve"; index: number }
     | { kind: "actionWhole"; index: number; startX: number; startY: number; origA: PlayAction };
   const [moveDrag, setMoveDrag] = useState<MoveDrag | null>(null);
   const [movePos, setMovePos] = useState<{ x: number; y: number } | null>(null);
@@ -283,6 +296,12 @@ export default function PlayCanvas({
       if (frame.ball && within(frame.ball, 12)) { setMoveDrag({ kind: "ball" }); setMovePos(p); return; }
       for (let i = 0; i < frame.actions.length; i++) {
         const a = frame.actions[i];
+        if ((a.type === "move" || a.type === "pass") && within(curveHandlePos(a), 11)) {
+          setMoveDrag({ kind: "actionCurve", index: i }); setMovePos(p); return;
+        }
+      }
+      for (let i = 0; i < frame.actions.length; i++) {
+        const a = frame.actions[i];
         if (within({ x: a.x1, y: a.y1 }, 11)) { setMoveDrag({ kind: "actionStart", index: i }); setMovePos(p); return; }
         if (within({ x: a.x2, y: a.y2 }, 11)) { setMoveDrag({ kind: "actionEnd", index: i }); setMovePos(p); return; }
       }
@@ -318,10 +337,11 @@ export default function PlayCanvas({
       else if (moveDrag.kind === "ball") onMoveBall?.(p.x, p.y);
       else if (moveDrag.kind === "actionStart") onMoveActionPoint?.(moveDrag.index, "start", p.x, p.y);
       else if (moveDrag.kind === "actionEnd") onMoveActionPoint?.(moveDrag.index, "end", p.x, p.y);
+      else if (moveDrag.kind === "actionCurve") onSetActionCurve?.(moveDrag.index, p.x, p.y);
       else if (moveDrag.kind === "actionWhole") {
         const dx = p.x - moveDrag.startX, dy = p.y - moveDrag.startY;
         const a = moveDrag.origA;
-        onMoveActionWhole?.(moveDrag.index, a.x1 + dx, a.y1 + dy, a.x2 + dx, a.y2 + dy);
+        onMoveActionWhole?.(moveDrag.index, a.x1 + dx, a.y1 + dy, a.x2 + dx, a.y2 + dy, a.curve ? { x: a.curve.x + dx, y: a.curve.y + dy } : undefined);
       }
       setMoveDrag(null);
       setMovePos(null);
@@ -369,10 +389,17 @@ export default function PlayCanvas({
       displayFrame = { ...frame, actions: frame.actions.map((a, i) => i === moveDrag.index ? { ...a, x1: movePos.x, y1: movePos.y } : a) };
     } else if (moveDrag.kind === "actionEnd") {
       displayFrame = { ...frame, actions: frame.actions.map((a, i) => i === moveDrag.index ? { ...a, x2: movePos.x, y2: movePos.y } : a) };
+    } else if (moveDrag.kind === "actionCurve") {
+      displayFrame = { ...frame, actions: frame.actions.map((a, i) => i === moveDrag.index ? { ...a, curve: { x: movePos.x, y: movePos.y } } : a) };
     } else if (moveDrag.kind === "actionWhole") {
       const dx = movePos.x - moveDrag.startX, dy = movePos.y - moveDrag.startY;
       const orig = moveDrag.origA;
-      displayFrame = { ...frame, actions: frame.actions.map((a, i) => i === moveDrag.index ? { ...a, x1: orig.x1 + dx, y1: orig.y1 + dy, x2: orig.x2 + dx, y2: orig.y2 + dy } : a) };
+      displayFrame = {
+        ...frame,
+        actions: frame.actions.map((a, i) => i === moveDrag.index
+          ? { ...a, x1: orig.x1 + dx, y1: orig.y1 + dy, x2: orig.x2 + dx, y2: orig.y2 + dy, curve: orig.curve ? { x: orig.curve.x + dx, y: orig.curve.y + dy } : undefined }
+          : a),
+      };
     }
   }
 
@@ -430,17 +457,28 @@ export default function PlayCanvas({
         <circle cx={displayFrame.ball.x} cy={displayFrame.ball.y} r={8} fill="#EF9F27" stroke="#854F0B" strokeWidth={1.5} />
       )}
 
-      {edit && tool === "select" && displayFrame.actions.map((a, i) => (
-        <g key={i}>
-          <circle cx={a.x1} cy={a.y1} r={6} fill="var(--gold)" opacity={0.85} />
-          <circle cx={a.x2} cy={a.y2} r={6} fill="var(--gold)" opacity={0.85} />
-        </g>
-      ))}
+      {edit && tool === "select" && displayFrame.actions.map((a, i) => {
+        const chp = (a.type === "move" || a.type === "pass") ? curveHandlePos(a) : null;
+        return (
+          <g key={i}>
+            <circle cx={a.x1} cy={a.y1} r={6} fill="var(--gold)" opacity={0.85} />
+            <circle cx={a.x2} cy={a.y2} r={6} fill="var(--gold)" opacity={0.85} />
+            {chp && <circle cx={chp.x} cy={chp.y} r={6} fill="none" stroke="var(--gold)" strokeWidth={2} opacity={0.85} />}
+          </g>
+        );
+      })}
 
       {animT !== null && frame.actions.map((a, i) => {
         if (a.type === "screen") return null;
-        const x = a.x1 + (a.x2 - a.x1) * animT;
-        const y = a.y1 + (a.y2 - a.y1) * animT;
+        let x: number, y: number;
+        if (a.curve) {
+          const t = animT, mt = 1 - t;
+          x = mt * mt * a.x1 + 2 * mt * t * a.curve.x + t * t * a.x2;
+          y = mt * mt * a.y1 + 2 * mt * t * a.curve.y + t * t * a.y2;
+        } else {
+          x = a.x1 + (a.x2 - a.x1) * animT;
+          y = a.y1 + (a.y2 - a.y1) * animT;
+        }
         return <circle key={i} cx={x} cy={y} r={a.type === "pass" ? 6 : 9} fill="#378ADD" opacity={0.9} />;
       })}
     </svg>
