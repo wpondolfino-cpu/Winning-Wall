@@ -13,7 +13,7 @@ const Play3DViewer = lazy(() => import("./Play3DViewer"));
 import {
   Play, RosterPlayer, getMyPlays, getPlaysSharedWithMe, getMyAssignedPlaybooks,
   getPlaybookPlays, getPlayShares, revokePlayShare, markPlayViewed, markPlaybookViewed,
-  forkPlay, getRoster, Playbook,
+  forkPlay, getRoster, Playbook, deletePlay,
 } from "../../lib/plays";
 
 interface Props {
@@ -90,6 +90,14 @@ export default function PlayViewer({ onEdit, onCreateNew }: Props) {
         onEdit={onEdit}
         onFork={handleFork}
         onPrint={() => setPrintPlays({ plays: [openPlay] })}
+        onDeleted={async () => {
+          try {
+            await deletePlay(openPlay.id);
+            await load();
+            setOpenPlay(null);
+            setOpenShareId(null);
+          } catch (e: any) { showToast("Error: " + e.message); }
+        }}
       />
     );
   }
@@ -173,9 +181,9 @@ export default function PlayViewer({ onEdit, onCreateNew }: Props) {
   );
 }
 
-function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit, onFork, onPrint }: {
+function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit, onFork, onPrint, onDeleted }: {
   play: Play; shareId: string | null; rosterMap: Record<string, RosterPlayer>; canManageShares: boolean;
-  onBack: () => void; onEdit?: (p: Play) => void; onFork: (p: Play) => void; onPrint: () => void;
+  onBack: () => void; onEdit?: (p: Play) => void; onFork: (p: Play) => void; onPrint: () => void; onDeleted: () => void;
 }) {
   const [frameIdx, setFrameIdx] = useState(0);
   const [playSignal, setPlaySignal] = useState(0);
@@ -238,6 +246,14 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
         <button onClick={onPrint} style={{ padding: "8px 12px" }}>🖨️ Print / export</button>
         {onEdit && canManageShares && <button onClick={() => onEdit(play)} style={{ padding: "8px 12px" }}>Edit</button>}
         {canManageShares && <button onClick={() => setShowShares((v) => !v)} style={{ padding: "8px 12px" }}>Manage sharing</button>}
+        {canManageShares && (
+          <button
+            onClick={() => { if (window.confirm(`Delete "${play.title}"? This can't be undone.`)) onDeleted(); }}
+            style={{ padding: "8px 12px", color: "#ff7b7b" }}
+          >
+            🗑 Delete play
+          </button>
+        )}
       </div>
 
       {showShares && (
