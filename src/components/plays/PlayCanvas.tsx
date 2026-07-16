@@ -21,19 +21,23 @@ interface Props {
   roster?: Record<string, RosterPlayer>;
   /** When true, clicks/drags on the court edit the frame via the callbacks below. */
   edit?: boolean;
-  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | null;
+  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | null;
   onAddPlayer?: (p: PlayPlayer) => void;
   onAddDefender?: (x: number, y: number) => void;
   onSetBall?: (x: number, y: number) => void;
   onAddAction?: (a: PlayAction) => void;
   onErase?: (x: number, y: number) => void;
   onToggleAvatar?: (index: number) => void;
+  /** "handoff" tool — click a player to stamp/unstamp the handoff marker on them. */
+  onToggleHandoff?: (index: number) => void;
   /** "select" tool — drag an existing player/defender/ball, or either end (or the whole line) of an existing action. */
   onMovePlayer?: (index: number, x: number, y: number) => void;
   onMoveDefender?: (index: number, x: number, y: number) => void;
   onMoveBall?: (x: number, y: number) => void;
   onMoveActionPoint?: (index: number, which: "start" | "end", x: number, y: number) => void;
   onMoveActionWhole?: (index: number, x1: number, y1: number, x2: number, y2: number) => void;
+  /** "draw" tool — called once, with the full point list, when a freehand stroke is released. */
+  onAddDrawing?: (points: { x: number; y: number }[]) => void;
   /** Bump this number to play the current frame's actions once. */
   playSignal?: number;
   onPlayDone?: () => void;
@@ -108,6 +112,11 @@ function courtBackground(template: CourtTemplate) {
   }
 }
 
+function pointsToPath(points: { x: number; y: number }[]) {
+  if (points.length === 0) return "";
+  return `M ${points[0].x} ${points[0].y} ` + points.slice(1).map((p) => `L ${p.x} ${p.y}`).join(" ");
+}
+
 function dribblePath(x1: number, y1: number, x2: number, y2: number) {
   const dx = x2 - x1, dy = y2 - y1;
   const len = Math.hypot(dx, dy) || 1;
@@ -177,6 +186,12 @@ function PlayerIcon({ p, showAvatar, avatarUrl, onDoubleClick }: {
         <image href={avatarUrl} x={p.x - 14} y={p.y - 14} width={28} height={28} clipPath={`url(#${clipId})`} />
         <circle cx={p.x + 10} cy={p.y + 10} r={7} fill="var(--surface)" stroke={color} strokeWidth={1.5} />
         <text x={p.x + 10} y={p.y + 13} textAnchor="middle" fontSize={9} fontWeight={500} fill={color}>{p.num}</text>
+        {p.handoff && (
+          <g>
+            <circle cx={p.x - 10} cy={p.y - 10} r={7} fill="var(--surface)" stroke="var(--gold)" strokeWidth={1.5} />
+            <text x={p.x - 10} y={p.y - 7} textAnchor="middle" fontSize={12} fontWeight={700} fill="var(--gold)">*</text>
+          </g>
+        )}
       </g>
     );
   }
@@ -188,6 +203,12 @@ function PlayerIcon({ p, showAvatar, avatarUrl, onDoubleClick }: {
         <text x={p.x} y={p.y + 5} textAnchor="middle" fontSize={13} fill={color}>?</text>
         <circle cx={p.x + 10} cy={p.y + 10} r={7} fill="var(--surface)" stroke={color} strokeWidth={1.5} />
         <text x={p.x + 10} y={p.y + 13} textAnchor="middle" fontSize={9} fontWeight={500} fill={color}>{p.num}</text>
+        {p.handoff && (
+          <g>
+            <circle cx={p.x - 10} cy={p.y - 10} r={7} fill="var(--surface)" stroke="var(--gold)" strokeWidth={1.5} />
+            <text x={p.x - 10} y={p.y - 7} textAnchor="middle" fontSize={12} fontWeight={700} fill="var(--gold)">*</text>
+          </g>
+        )}
       </g>
     );
   }
@@ -195,6 +216,12 @@ function PlayerIcon({ p, showAvatar, avatarUrl, onDoubleClick }: {
     <g style={{ cursor: onDoubleClick ? "pointer" : undefined }} onDoubleClick={onDoubleClick}>
       <circle cx={p.x} cy={p.y} r={13} fill="#E6F1FB" stroke="#185FA5" strokeWidth={2} />
       <text x={p.x} y={p.y + 4} textAnchor="middle" fontSize={12} fontWeight={500} fill="#0C447C">{p.num}</text>
+      {p.handoff && (
+        <g>
+          <circle cx={p.x - 10} cy={p.y - 10} r={7} fill="var(--surface)" stroke="var(--gold)" strokeWidth={1.5} />
+          <text x={p.x - 10} y={p.y - 7} textAnchor="middle" fontSize={12} fontWeight={700} fill="var(--gold)">*</text>
+        </g>
+      )}
     </g>
   );
 }
@@ -202,11 +229,12 @@ function PlayerIcon({ p, showAvatar, avatarUrl, onDoubleClick }: {
 export default function PlayCanvas({
   frame, courtTemplate, avatarsDefault, roster = {}, edit = false, tool = null,
   onAddPlayer, onAddDefender, onSetBall, onAddAction, onErase, onToggleAvatar,
-  onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole,
+  onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff,
   playSignal, onPlayDone, courtBg = "#3a2a17",
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [drawPoints, setDrawPoints] = useState<{ x: number; y: number }[] | null>(null);
   const [animT, setAnimT] = useState<number | null>(null); // 0..1 while animating, null when idle
   const nextNum = (frame.players.length % 5) + 1;
 
@@ -234,6 +262,16 @@ export default function PlayCanvas({
     if (tool === "defender") { onAddDefender?.(p.x, p.y); return; }
     if (tool === "ball") { onSetBall?.(p.x, p.y); return; }
     if (tool === "erase") { onErase?.(p.x, p.y); return; }
+    if (tool === "draw") { setDrawPoints([p]); return; }
+    if (tool === "handoff") {
+      let closest = -1, closestDist = 20;
+      frame.players.forEach((pl, i) => {
+        const d = Math.hypot(pl.x - p.x, pl.y - p.y);
+        if (d < closestDist) { closest = i; closestDist = d; }
+      });
+      if (closest >= 0) onToggleHandoff?.(closest);
+      return;
+    }
     if (tool === "select") {
       const within = (a: { x: number; y: number }, r: number) => Math.hypot(a.x - p.x, a.y - p.y) < r;
       for (let i = 0; i < frame.players.length; i++) {
@@ -262,11 +300,17 @@ export default function PlayCanvas({
   }
 
   function handleMouseMove(e: ReactMouseEvent) {
+    if (drawPoints) { setDrawPoints((pts) => (pts ? [...pts, pointFromEvent(e)] : pts)); return; }
     if (!moveDrag) return;
     setMovePos(pointFromEvent(e));
   }
 
   function handleMouseUp(e: ReactMouseEvent) {
+    if (drawPoints) {
+      if (drawPoints.length > 1) onAddDrawing?.(drawPoints);
+      setDrawPoints(null);
+      return;
+    }
     if (moveDrag) {
       const p = pointFromEvent(e);
       if (moveDrag.kind === "player") onMovePlayer?.(moveDrag.index, p.x, p.y);
@@ -340,7 +384,7 @@ export default function PlayCanvas({
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onMouseLeave={() => { setMoveDrag(null); setMovePos(null); }}
+      onMouseLeave={() => { setMoveDrag(null); setMovePos(null); setDrawPoints(null); }}
     >
       <defs>
         <marker id="pc-arrow-solid" markerWidth={8} markerHeight={8} refX={6} refY={4} orient="auto">
@@ -353,6 +397,13 @@ export default function PlayCanvas({
       {courtBackground(courtTemplate)}
 
       {displayFrame.actions.map((a, i) => <ActionShape key={i} a={a} />)}
+
+      {(displayFrame.drawings ?? []).map((d, i) => (
+        <path key={i} d={pointsToPath(d.points)} fill="none" stroke="var(--gold)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+      ))}
+      {drawPoints && drawPoints.length > 1 && (
+        <path d={pointsToPath(drawPoints)} fill="none" stroke="var(--gold)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
+      )}
 
       {displayFrame.players.map((p, i) => {
         const rp = p.profile_id ? roster[p.profile_id] : undefined;
