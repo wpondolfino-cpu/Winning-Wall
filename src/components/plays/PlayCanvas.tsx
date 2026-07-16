@@ -7,7 +7,7 @@
 // actions and forked plays stay valid if the template changes later.
 
 import { useRef, useState, useEffect, type MouseEvent as ReactMouseEvent } from "react";
-import type { CourtTemplate, PlayFrame, PlayPlayer, PlayAction, ActionType } from "../../lib/plays";
+import type { CourtTemplate, PlayFrame, PlayPlayer, PlayAction, ActionType, PlayText, PlayZone } from "../../lib/plays";
 import type { RosterPlayer } from "../../lib/plays";
 
 export const CANVAS_W = 600;
@@ -21,7 +21,7 @@ interface Props {
   roster?: Record<string, RosterPlayer>;
   /** When true, clicks/drags on the court edit the frame via the callbacks below. */
   edit?: boolean;
-  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | null;
+  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | null;
   onAddPlayer?: (p: PlayPlayer) => void;
   onAddDefender?: (x: number, y: number) => void;
   onSetBall?: (x: number, y: number) => void;
@@ -40,11 +40,22 @@ interface Props {
   onSetActionCurve?: (index: number, x: number, y: number) => void;
   /** "draw" tool — called once, with the full point list, when a freehand stroke is released. */
   onAddDrawing?: (points: { x: number; y: number }[]) => void;
+  /** "text" tool — click the court to place a label (the editor prompts for the content). */
+  onAddText?: (x: number, y: number) => void;
+  onMoveText?: (index: number, x: number, y: number) => void;
+  /** Double-click an existing label (any tool) to edit its content. */
+  onEditText?: (index: number) => void;
+  /** "zone" tool — drag a rectangle to shade an area of the court. */
+  onAddZone?: (x: number, y: number, w: number, h: number) => void;
+  onMoveZone?: (index: number, x: number, y: number) => void;
   /** Bump this number to play the current frame's actions once. */
   playSignal?: number;
   onPlayDone?: () => void;
   /** Override the court's background fill — used by PlayPrintView for a lighter, ink-friendly tone. */
   courtBg?: string;
+  /** "select" tool — the currently selected element, highlighted, and what Delete/Backspace acts on. */
+  selected?: { kind: "player" | "defender" | "ball" | "action" | "text" | "zone"; index: number } | null;
+  onSelect?: (sel: { kind: "player" | "defender" | "ball" | "action" | "text" | "zone"; index: number } | null) => void;
 }
 
 // Shared half-court markings (key, free-throw circle, hoop, 3PT line) used
@@ -242,16 +253,19 @@ export default function PlayCanvas({
   frame, courtTemplate, avatarsDefault, roster = {}, edit = false, tool = null,
   onAddPlayer, onAddDefender, onSetBall, onAddAction, onErase, onToggleAvatar,
   onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff, onSetActionCurve,
-  playSignal, onPlayDone, courtBg = "#3a2a17",
+  onAddText, onMoveText, onEditText, onAddZone, onMoveZone,
+  playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [dragCurrent, setDragCurrent] = useState<{ x: number; y: number } | null>(null);
   const [drawPoints, setDrawPoints] = useState<{ x: number; y: number }[] | null>(null);
   const [animT, setAnimT] = useState<number | null>(null); // 0..1 while animating, null when idle
   const nextNum = (frame.players.length % 5) + 1;
 
   type MoveDrag =
-    | { kind: "player" | "defender"; index: number }
+    | { kind: "player" | "defender" | "text"; index: number }
+    | { kind: "zone"; index: number; offsetX: number; offsetY: number }
     | { kind: "ball" }
     | { kind: "actionStart" | "actionEnd"; index: number }
     | { kind: "actionCurve"; index: number }
@@ -276,6 +290,7 @@ export default function PlayCanvas({
     if (tool === "ball") { onSetBall?.(p.x, p.y); return; }
     if (tool === "erase") { onErase?.(p.x, p.y); return; }
     if (tool === "draw") { setDrawPoints([p]); return; }
+    if (tool === "text") { onAddText?.(p.x, p.y); return; }
     if (tool === "handoff") {
       let closest = -1, closestDist = 20;
       frame.players.forEach((pl, i) => {
@@ -313,6 +328,18 @@ export default function PlayCanvas({
           return;
         }
       }
+      for (let i = 0; i < (frame.texts ?? []).length; i++) {
+        if (within(frame.texts![i], 20)) { setMoveDrag({ kind: "text", index: i }); setMovePos(p); return; }
+      }
+      for (let i = 0; i < (frame.zones ?? []).length; i++) {
+        const z = frame.zones![i];
+        if (p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h) {
+          setMoveDrag({ kind: "zone", index: i, offsetX: p.x - z.x, offsetY: p.y - z.y });
+          setMovePos(p);
+          return;
+        }
+      }
+      onSelect?.(null);
       return;
     }
     setDragStart(p);
@@ -320,6 +347,7 @@ export default function PlayCanvas({
 
   function handleMouseMove(e: ReactMouseEvent) {
     if (drawPoints) { setDrawPoints((pts) => (pts ? [...pts, pointFromEvent(e)] : pts)); return; }
+    if (dragStart) { setDragCurrent(pointFromEvent(e)); }
     if (!moveDrag) return;
     setMovePos(pointFromEvent(e));
   }
@@ -332,17 +360,20 @@ export default function PlayCanvas({
     }
     if (moveDrag) {
       const p = pointFromEvent(e);
-      if (moveDrag.kind === "player") onMovePlayer?.(moveDrag.index, p.x, p.y);
-      else if (moveDrag.kind === "defender") onMoveDefender?.(moveDrag.index, p.x, p.y);
-      else if (moveDrag.kind === "ball") onMoveBall?.(p.x, p.y);
-      else if (moveDrag.kind === "actionStart") onMoveActionPoint?.(moveDrag.index, "start", p.x, p.y);
-      else if (moveDrag.kind === "actionEnd") onMoveActionPoint?.(moveDrag.index, "end", p.x, p.y);
-      else if (moveDrag.kind === "actionCurve") onSetActionCurve?.(moveDrag.index, p.x, p.y);
+      if (moveDrag.kind === "player") { onMovePlayer?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "player", index: moveDrag.index }); }
+      else if (moveDrag.kind === "defender") { onMoveDefender?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "defender", index: moveDrag.index }); }
+      else if (moveDrag.kind === "ball") { onMoveBall?.(p.x, p.y); onSelect?.({ kind: "ball", index: 0 }); }
+      else if (moveDrag.kind === "actionStart") { onMoveActionPoint?.(moveDrag.index, "start", p.x, p.y); onSelect?.({ kind: "action", index: moveDrag.index }); }
+      else if (moveDrag.kind === "actionEnd") { onMoveActionPoint?.(moveDrag.index, "end", p.x, p.y); onSelect?.({ kind: "action", index: moveDrag.index }); }
+      else if (moveDrag.kind === "actionCurve") { onSetActionCurve?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "action", index: moveDrag.index }); }
       else if (moveDrag.kind === "actionWhole") {
         const dx = p.x - moveDrag.startX, dy = p.y - moveDrag.startY;
         const a = moveDrag.origA;
         onMoveActionWhole?.(moveDrag.index, a.x1 + dx, a.y1 + dy, a.x2 + dx, a.y2 + dy, a.curve ? { x: a.curve.x + dx, y: a.curve.y + dy } : undefined);
+        onSelect?.({ kind: "action", index: moveDrag.index });
       }
+      else if (moveDrag.kind === "text") { onMoveText?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "text", index: moveDrag.index }); }
+      else if (moveDrag.kind === "zone") { onMoveZone?.(moveDrag.index, p.x - moveDrag.offsetX, p.y - moveDrag.offsetY); onSelect?.({ kind: "zone", index: moveDrag.index }); }
       setMoveDrag(null);
       setMovePos(null);
       return;
@@ -353,8 +384,14 @@ export default function PlayCanvas({
       if (Math.hypot(p.x - dragStart.x, p.y - dragStart.y) > 8) {
         onAddAction?.({ type: tool as ActionType, x1: dragStart.x, y1: dragStart.y, x2: p.x, y2: p.y });
       }
+    } else if (tool === "zone") {
+      const p = pointFromEvent(e);
+      const x = Math.min(dragStart.x, p.x), y = Math.min(dragStart.y, p.y);
+      const w = Math.abs(p.x - dragStart.x), h = Math.abs(p.y - dragStart.y);
+      if (w > 10 && h > 10) onAddZone?.(x, y, w, h);
     }
     setDragStart(null);
+    setDragCurrent(null);
   }
 
   // Play the current frame's actions once whenever playSignal changes.
@@ -400,6 +437,10 @@ export default function PlayCanvas({
           ? { ...a, x1: orig.x1 + dx, y1: orig.y1 + dy, x2: orig.x2 + dx, y2: orig.y2 + dy, curve: orig.curve ? { x: orig.curve.x + dx, y: orig.curve.y + dy } : undefined }
           : a),
       };
+    } else if (moveDrag.kind === "text") {
+      displayFrame = { ...frame, texts: (frame.texts ?? []).map((t, i) => i === moveDrag.index ? { ...t, x: movePos.x, y: movePos.y } : t) };
+    } else if (moveDrag.kind === "zone") {
+      displayFrame = { ...frame, zones: (frame.zones ?? []).map((z, i) => i === moveDrag.index ? { ...z, x: movePos.x - moveDrag.offsetX, y: movePos.y - moveDrag.offsetY } : z) };
     }
   }
 
@@ -411,7 +452,7 @@ export default function PlayCanvas({
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onMouseLeave={() => { setMoveDrag(null); setMovePos(null); setDrawPoints(null); }}
+      onMouseLeave={() => { setMoveDrag(null); setMovePos(null); setDrawPoints(null); setDragStart(null); setDragCurrent(null); }}
     >
       <defs>
         <marker id="pc-arrow-solid" markerWidth={8} markerHeight={8} refX={6} refY={4} orient="auto">
@@ -422,6 +463,17 @@ export default function PlayCanvas({
         </marker>
       </defs>
       {courtBackground(courtTemplate)}
+
+      {(displayFrame.zones ?? []).map((z, i) => (
+        <rect key={i} x={z.x} y={z.y} width={z.w} height={z.h} fill="var(--gold)" opacity={0.15} stroke="var(--gold)" strokeWidth={1} strokeDasharray="4,3" />
+      ))}
+      {tool === "zone" && dragStart && dragCurrent && (
+        <rect
+          x={Math.min(dragStart.x, dragCurrent.x)} y={Math.min(dragStart.y, dragCurrent.y)}
+          width={Math.abs(dragCurrent.x - dragStart.x)} height={Math.abs(dragCurrent.y - dragStart.y)}
+          fill="var(--gold)" opacity={0.15} stroke="var(--gold)" strokeWidth={1} strokeDasharray="4,3"
+        />
+      )}
 
       {displayFrame.actions.map((a, i) => <ActionShape key={i} a={a} />)}
 
@@ -456,6 +508,36 @@ export default function PlayCanvas({
       {displayFrame.ball && (
         <circle cx={displayFrame.ball.x} cy={displayFrame.ball.y} r={8} fill="#EF9F27" stroke="#854F0B" strokeWidth={1.5} />
       )}
+
+      {(displayFrame.texts ?? []).map((t, i) => {
+        const w = Math.max(24, t.text.length * 6.2 + 10);
+        return (
+          <g key={i} style={{ cursor: edit ? "pointer" : undefined }} onDoubleClick={edit ? () => onEditText?.(i) : undefined}>
+            <rect x={t.x - w / 2} y={t.y - 10} width={w} height={18} rx={4} fill="var(--surface)" stroke="var(--gold)" strokeWidth={1} opacity={0.92} />
+            <text x={t.x} y={t.y} textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={500} fill="var(--gold)">{t.text}</text>
+          </g>
+        );
+      })}
+
+      {selected && selected.kind === "player" && displayFrame.players[selected.index] && (
+        <circle cx={displayFrame.players[selected.index].x} cy={displayFrame.players[selected.index].y} r={20} fill="none" stroke="var(--gold)" strokeWidth={2} strokeDasharray="4,3" />
+      )}
+      {selected && selected.kind === "defender" && displayFrame.defenders[selected.index] && (
+        <circle cx={displayFrame.defenders[selected.index].x} cy={displayFrame.defenders[selected.index].y} r={17} fill="none" stroke="var(--gold)" strokeWidth={2} strokeDasharray="4,3" />
+      )}
+      {selected && selected.kind === "ball" && displayFrame.ball && (
+        <circle cx={displayFrame.ball.x} cy={displayFrame.ball.y} r={14} fill="none" stroke="var(--gold)" strokeWidth={2} strokeDasharray="4,3" />
+      )}
+      {selected && selected.kind === "action" && displayFrame.actions[selected.index] && (
+        <path d={linePath(displayFrame.actions[selected.index])} fill="none" stroke="var(--gold)" strokeWidth={6} opacity={0.35} />
+      )}
+      {selected && selected.kind === "text" && (displayFrame.texts ?? [])[selected.index] && (
+        <circle cx={(displayFrame.texts ?? [])[selected.index].x} cy={(displayFrame.texts ?? [])[selected.index].y} r={16} fill="none" stroke="var(--gold)" strokeWidth={2} strokeDasharray="4,3" />
+      )}
+      {selected && selected.kind === "zone" && (displayFrame.zones ?? [])[selected.index] && (() => {
+        const z = (displayFrame.zones ?? [])[selected.index];
+        return <rect x={z.x - 3} y={z.y - 3} width={z.w + 6} height={z.h + 6} fill="none" stroke="var(--gold)" strokeWidth={2} strokeDasharray="4,3" />;
+      })()}
 
       {edit && tool === "select" && displayFrame.actions.map((a, i) => {
         const chp = (a.type === "move" || a.type === "pass") ? curveHandlePos(a) : null;
