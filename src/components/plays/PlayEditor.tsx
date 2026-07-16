@@ -264,7 +264,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     updateFrame((f) => ({
       players: f.players.filter((p) => !near(p, 16)),
       defenders: f.defenders.filter((d) => !near(d, 16)),
-      ball: f.ball && near(f.ball, 14) ? null : f.ball,
+      ball: f.ball && near(f.ball, 12) ? null : f.ball,
       actions: f.actions.filter((a) => {
         if (!a.curve) return distToSegment(a.x1, a.y1, a.x2, a.y2) >= 14;
         // Curved line — sample points along the quadratic curve and check
