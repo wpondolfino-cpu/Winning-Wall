@@ -56,7 +56,7 @@ export default function DrillLibrary({ canManage, onPractice, onChanged }: Props
   )].sort();
 
   const grouped = CATEGORIES.reduce((acc, cat) => {
-    const ds = filtered.filter(d => d.category === cat);
+    const ds = filtered.filter(d => d.category === cat).sort((a, b) => a.title.localeCompare(b.title));
     if (ds.length > 0) acc[cat] = ds;
     return acc;
   }, {} as Record<string, Workout[]>);
