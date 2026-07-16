@@ -436,7 +436,6 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
           <button onClick={undo} disabled={!history.length} style={{ padding: "6px 10px" }}>↩ Undo</button>
           <button onClick={redo} disabled={!future.length} style={{ padding: "6px 10px" }}>↪ Redo</button>
-          <span style={{ fontSize: 11, color: "var(--muted)", alignSelf: "center" }}>⌘/Ctrl+Z undo · +Shift redo · Esc deselect</span>
           {selected && <button onClick={deleteSelected} style={{ padding: "6px 10px" }}>🗑 Delete selected</button>}
           {selected && selected.kind === "player" && <button onClick={duplicateSelectedPlayer} style={{ padding: "6px 10px" }}>⧉ Duplicate player</button>}
           <button onClick={flipCurrentStep} style={{ padding: "6px 10px" }}>↔ Flip step</button>
