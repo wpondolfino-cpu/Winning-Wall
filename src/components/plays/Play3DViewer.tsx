@@ -18,6 +18,8 @@ interface Props {
   play: Play;
   roster: Record<string, RosterPlayer>;
   onBack: () => void;
+  /** Viewer-only, local override — renders this one player (by stable id) with the viewer's own avatar, mirroring the same feature in the 2D canvas. */
+  selfOverride?: { playerId: string; avatarUrl: string | null } | null;
 }
 
 const FACE_COLORS = [0x378add, 0x639922, 0xd85a30, 0xd4537e, 0x7f77dd];
@@ -48,13 +50,13 @@ function zoomedOut(preset: typeof PRESETS_DESKTOP[number], factor: number) {
 }
 const PRESETS_MOBILE = PRESETS_DESKTOP.map((p) => zoomedOut(p, 1.6));
 
-export default function Play3DViewer({ play, roster, onBack }: Props) {
+export default function Play3DViewer({ play, roster, onBack, selfOverride = null }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [frameIdx, setFrameIdx] = useState(0);
 
   // Mutable refs so the render loop (set up once) can read current props/state.
-  const stateRef = useRef({ play, roster, frameIdx });
-  stateRef.current = { play, roster, frameIdx };
+  const stateRef = useRef({ play, roster, frameIdx, selfOverride });
+  stateRef.current = { play, roster, frameIdx, selfOverride };
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [presets] = useState(() => (window.innerWidth < 768 ? PRESETS_MOBILE : PRESETS_DESKTOP));
@@ -206,7 +208,7 @@ function makeNumberBadgeTexture(num: number, hexColor: number): THREE.CanvasText
   return tex;
 }
 
-function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>) {
+function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>, selfOv: { playerId: string; avatarUrl: string | null } | null) {
       clearEntities();
       frame.players.forEach((p, i) => {
         const color = FACE_COLORS[(p.num - 1 + 5) % 5];
@@ -215,7 +217,8 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
         body.position.y = 0.55;
         g.add(body);
 
-        const avatarUrl = p.profile_id ? rosterMap[p.profile_id]?.avatar_url : null;
+        const isSelf = !!(selfOv && p.id === selfOv.playerId);
+        const avatarUrl = isSelf ? selfOv!.avatarUrl : (p.profile_id ? rosterMap[p.profile_id]?.avatar_url : null);
         if (avatarUrl) {
           const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffffff }));
           sprite.position.y = 1.2;
@@ -232,6 +235,13 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
         badge.position.set(0.24, avatarUrl ? 1.38 : 1.32, 0);
         badge.scale.set(0.22, 0.22, 0.22);
         g.add(badge);
+
+        if (isSelf) {
+          const ring = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.42, 24), new THREE.MeshBasicMaterial({ color: 0xf0c040, side: THREE.DoubleSide }));
+          ring.rotation.x = -Math.PI / 2;
+          ring.position.y = 0.02;
+          g.add(ring);
+        }
 
         const w = toWorld(p.x, p.y);
         g.position.set(w.x, 0, w.z);
@@ -257,7 +267,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
       }
     }
 
-    buildEntities(stateRef.current.play.data.frames[stateRef.current.frameIdx], stateRef.current.roster);
+    buildEntities(stateRef.current.play.data.frames[stateRef.current.frameIdx], stateRef.current.roster, stateRef.current.selfOverride);
 
     // Animation: tween from the current beat to the next while playing.
     // Uses elapsed-time-so-far rather than a fixed start timestamp, so
@@ -388,7 +398,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
     const resizeObserver = new ResizeObserver(() => handleResize());
     resizeObserver.observe(mount);
 
-    (mount as any)._rebuildForFrame = () => buildEntities(stateRef.current.play.data.frames[stateRef.current.frameIdx], stateRef.current.roster);
+    (mount as any)._rebuildForFrame = () => buildEntities(stateRef.current.play.data.frames[stateRef.current.frameIdx], stateRef.current.roster, stateRef.current.selfOverride);
     (mount as any)._setPreset = (pos: [number, number, number], lookAt?: [number, number, number]) => {
       camera.position.set(...pos);
       camera.lookAt(...(lookAt ?? [0, 0, 0]));
