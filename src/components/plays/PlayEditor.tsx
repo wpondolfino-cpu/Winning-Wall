@@ -23,7 +23,7 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | null;
+type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | null;
 
 const TOOL_LABELS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "select", label: "Move", icon: "✥" },
@@ -34,6 +34,8 @@ const TOOL_LABELS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "pass", label: "Pass", icon: "┄" },
   { tool: "dribble", label: "Dribble", icon: "〜" },
   { tool: "screen", label: "Screen", icon: "⊥" },
+  { tool: "handoff", label: "Handoff", icon: "✱" },
+  { tool: "draw", label: "Draw", icon: "✎" },
   { tool: "erase", label: "Erase", icon: "⌫" },
 ];
 
@@ -97,10 +99,18 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const addDefender = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, defenders: [...f.defenders, { x, y }] })); }, [frames, frameIdx]);
   const setBall = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, ball: { x, y } })); }, [frames, frameIdx]);
   const addAction = useCallback((a: PlayAction) => { pushHistory(); updateFrame((f) => ({ ...f, actions: [...f.actions, a] })); }, [frames, frameIdx]);
+  const addDrawing = useCallback((points: { x: number; y: number }[]) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, drawings: [...(f.drawings ?? []), { points }] }));
+  }, [frames, frameIdx]);
   const toggleAvatar = useCallback((idx: number) => {
     pushHistory();
     updateFrame((f) => ({ ...f, players: f.players.map((p, i) => i === idx ? { ...p, showAvatar: !(p.showAvatar ?? avatarsDefault) } : p) }));
   }, [frames, frameIdx, avatarsDefault]);
+  const toggleHandoff = useCallback((idx: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, players: f.players.map((p, i) => i === idx ? { ...p, handoff: !p.handoff } : p) }));
+  }, [frames, frameIdx]);
 
   const movePlayer = useCallback((idx: number, x: number, y: number) => {
     pushHistory();
@@ -155,6 +165,13 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       defenders: f.defenders.filter((d) => !near(d, 16)),
       ball: f.ball && near(f.ball, 12) ? null : f.ball,
       actions: f.actions.filter((a) => distToSegment(a.x1, a.y1, a.x2, a.y2) >= 14),
+      drawings: (f.drawings ?? []).filter((d) => {
+        for (let i = 0; i < d.points.length - 1; i++) {
+          const a = d.points[i], b = d.points[i + 1];
+          if (distToSegment(a.x, a.y, b.x, b.y) < 14) return false;
+        }
+        return true;
+      }),
     }));
   }
 
@@ -293,11 +310,13 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onAddAction={addAction}
             onErase={eraseNear}
             onToggleAvatar={toggleAvatar}
+            onToggleHandoff={toggleHandoff}
             onMovePlayer={movePlayer}
             onMoveDefender={moveDefender}
             onMoveBall={moveBall}
             onMoveActionPoint={moveActionPoint}
             onMoveActionWhole={moveActionWhole}
+            onAddDrawing={addDrawing}
             playSignal={playSignal}
             onPlayDone={handlePreviewBeatDone}
           />
@@ -307,12 +326,12 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           {frames.map((_, i) => (
             <button key={i} onClick={() => setFrameIdx(i)}
               style={{ padding: "6px 10px", border: i === frameIdx ? "2px solid var(--gold)" : "1px solid var(--border)", borderRadius: "8px" }}>
-              Beat {i + 1}
+              Step {i + 1}
             </button>
           ))}
-          <button onClick={addFrame} style={{ padding: "6px 10px" }}>+ Add beat</button>
-          {frames.length > 1 && <button onClick={() => deleteFrame(frameIdx)} style={{ padding: "6px 10px" }}>Delete beat</button>}
-          <span style={{ fontSize: 12, color: "var(--muted)" }}>A play can be several sequential beats — e.g. "screen sets" then "cut".</span>
+          <button onClick={addFrame} style={{ padding: "6px 10px" }}>+ Add step</button>
+          {frames.length > 1 && <button onClick={() => deleteFrame(frameIdx)} style={{ padding: "6px 10px" }}>Delete step</button>}
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>A play can be several sequential steps — e.g. "screen sets" then "cut".</span>
         </div>
 
         <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
@@ -349,7 +368,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         ))}
         {savedActions.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>None yet.</p>}
         <button onClick={saveCurrentFrameAsAction} style={{ width: "100%", padding: "6px 8px", fontSize: 13, marginTop: 6 }}>
-          + Save current beat as action
+          + Save current step as action
         </button>
 
         <h3 style={{ fontSize: 14, margin: "16px 0 8px" }}>Link players to roster</h3>
