@@ -205,8 +205,13 @@ function ActionShape({ a }: { a: PlayAction }) {
   }
   if (a.type === "pass") {
     return (
-      <path d={linePath(a)} fill="none" stroke="#185FA5" strokeWidth={2.5}
-        strokeDasharray="6,4" markerEnd="url(#pc-arrow-pass)" />
+      <g>
+        <path d={linePath(a)} fill="none" stroke="#185FA5" strokeWidth={2.5}
+          strokeDasharray="6,4" markerEnd="url(#pc-arrow-pass)" />
+        {!a.targetPlayerId && (
+          <circle cx={a.x2} cy={a.y2} r={9} fill="none" stroke="#E24B4A" strokeWidth={1.5} strokeDasharray="3,2" opacity={0.85} />
+        )}
+      </g>
     );
   }
   if (a.type === "dribble") {
