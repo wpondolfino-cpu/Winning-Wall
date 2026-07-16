@@ -115,11 +115,14 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
       rim.rotation.x = Math.PI / 2;
       hoopGroup.add(rim);
 
-      // Net — a loose wireframe cone hanging from the rim
+      // Net — a loose wireframe cone hanging from the rim. ConeGeometry
+      // defaults to apex-up/base-down; rotated 180° so the wide opening
+      // faces up into the rim and it narrows to a point hanging below.
       const net = new THREE.Mesh(
         new THREE.ConeGeometry(0.3, 0.42, 12, 1, true),
         new THREE.MeshBasicMaterial({ color: 0xf2f2f2, wireframe: true, transparent: true, opacity: 0.8 })
       );
+      net.rotation.x = Math.PI;
       net.position.set(w.x, rimHeight - 0.21, w.z);
       hoopGroup.add(net);
 
@@ -146,6 +149,18 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
       [...playerGroups, ...defenderGroups].forEach((g) => scene.remove(g));
       if (ballMesh) scene.remove(ballMesh);
       playerGroups = []; defenderGroups = []; ballMesh = null;
+    }
+
+    // Mirrors the 2D canvas's getBallPos — the ball follows whoever holds
+    // it (by id) rather than relying only on its own stored x/y, which can
+    // go stale if the holder was moved without the stored ball position
+    // being touched.
+    function getBallWorldPos(f: PlayFrame) {
+      if (f.ballHolderId) {
+        const holder = f.players.find((p) => p.id === f.ballHolderId);
+        if (holder) return toWorld(holder.x, holder.y);
+      }
+      return f.ball ? toWorld(f.ball.x, f.ball.y) : null;
     }
 
     function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>) {
@@ -186,10 +201,10 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
         scene.add(g);
         defenderGroups[i] = g;
       });
-      if (frame.ball) {
-        const w = toWorld(frame.ball.x, frame.ball.y);
+      const ballW = getBallWorldPos(frame);
+      if (ballW) {
         ballMesh = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 12), new THREE.MeshStandardMaterial({ color: 0xff9a1f, emissive: 0x552200, emissiveIntensity: 0.4 }));
-        ballMesh.position.set(w.x, 0.5, w.z);
+        ballMesh.position.set(ballW.x, 0.5, ballW.z);
         scene.add(ballMesh);
       }
     }
@@ -226,6 +241,14 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
           playerGroups[i].position.x = from.x + (to.x - from.x) * t;
           playerGroups[i].position.z = from.z + (to.z - from.z) * t;
         });
+        if (ballMesh) {
+          const fromBall = getBallWorldPos(animFromFrame);
+          const toBall = getBallWorldPos(animToFrame);
+          if (fromBall && toBall) {
+            ballMesh.position.x = fromBall.x + (toBall.x - fromBall.x) * t;
+            ballMesh.position.z = fromBall.z + (toBall.z - fromBall.z) * t;
+          }
+        }
         if (t >= 1) {
           animStart = null;
           setFrameIdx((i) => i + 1);
