@@ -67,7 +67,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
   const [playbooks, setPlaybooks] = useState<(Playbook & { share_id: string; viewed_at: string | null })[]>([]);
   const [openPlay, setOpenPlay] = useState<Play | null>(null);
   const [openIn3D, setOpenIn3D] = useState(false);
-  const [openSharesDirect, setOpenSharesDirect] = useState(false);
+  const [sharePopupPlay, setSharePopupPlay] = useState<Play | null>(null);
   const [openShareId, setOpenShareId] = useState<string | null>(null);
   const [openPlaybook, setOpenPlaybook] = useState<{ pb: Playbook & { share_id: string }; plays: Play[] } | null>(null);
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
@@ -128,8 +128,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
         rosterMap={rosterMap}
         canManageShares={myPlays.some((p) => p.id === openPlay.id)}
         startIn3D={openIn3D}
-        startWithSharesOpen={openSharesDirect}
-        onBack={() => { setOpenPlay(null); setOpenShareId(null); setOpenIn3D(false); setOpenSharesDirect(false); }}
+        onBack={() => { setOpenPlay(null); setOpenShareId(null); setOpenIn3D(false); }}
         onEdit={onEdit}
         onFork={handleFork}
         onPrint={() => setPrintPlays({ plays: [openPlay] })}
@@ -192,10 +191,22 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
             <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6, border: "1px solid var(--border)", borderRadius: 8 }}>
               <button onClick={() => setOpenPlay(p)} style={{ flex: 1, textAlign: "left", padding: "10px 12px", background: "none", border: "none", color: "var(--text)", cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>
                 {p.title}
-                {p.tags.length > 0 && <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 8 }}>{p.tags.join(", ")}</span>}
+                {p.tags.length > 0 && (
+                  <span style={{ marginLeft: 8 }}>
+                    {p.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        onClick={(e) => { e.stopPropagation(); setSearch(tag); }}
+                        style={{ fontSize: 11, color: "var(--muted)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 5, padding: "2px 6px", marginRight: 4, cursor: "pointer" }}
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </span>
+                )}
               </button>
               <button title="Watch in 3D" onClick={() => { setOpenPlay(p); setOpenIn3D(true); }} style={{ padding: "8px 10px", fontSize: 15, marginRight: 2 }}>🧊</button>
-              <button title="Share" onClick={() => { setOpenPlay(p); setOpenSharesDirect(true); }} style={{ padding: "8px 10px", fontSize: 15, marginRight: 2 }}>🔗</button>
+              <button title="Share" onClick={() => setSharePopupPlay(p)} style={{ padding: "8px 10px", fontSize: 15, marginRight: 2, display: "inline-flex", alignItems: "center" }}><ShareIcon /></button>
               <span style={{ width: 1, alignSelf: "stretch", background: "var(--border)", margin: "4px 4px" }} />
               {onEdit && <button title="Edit" onClick={() => onEdit(p)} style={{ padding: "8px 10px", fontSize: 15, marginRight: 2 }}>✏️</button>}
               <button title="Delete" onClick={() => handleDeleteFromList(p)} style={{ padding: "8px 10px", fontSize: 15, marginRight: 6 }}>🗑</button>
@@ -229,42 +240,21 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
       )}
 
       {toast && <p style={{ fontSize: 13, color: "var(--gold)", marginTop: 8 }}>{toast}</p>}
+      {sharePopupPlay && <SharePopup play={sharePopupPlay} onClose={() => setSharePopupPlay(null)} />}
     </div>
   );
 }
 
-function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit, onFork, onPrint, onDeleted, startIn3D, startWithSharesOpen }: {
+function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit, onFork, onPrint, onDeleted, startIn3D }: {
   play: Play; shareId: string | null; rosterMap: Record<string, RosterPlayer>; canManageShares: boolean;
   onBack: () => void; onEdit?: (p: Play) => void; onFork: (p: Play) => void; onPrint: () => void; onDeleted: () => void;
-  startIn3D?: boolean; startWithSharesOpen?: boolean;
+  startIn3D?: boolean;
 }) {
   const [frameIdx, setFrameIdx] = useState(0);
   const [playSignal, setPlaySignal] = useState(0);
-  const [shares, setShares] = useState<any[]>([]);
-  const [showShares, setShowShares] = useState(!!startWithSharesOpen);
   const [show3D, setShow3D] = useState(!!startIn3D);
-  const [shareTargets, setShareTargets] = useState<PlayShareTarget[]>([]);
-  const [addingShare, setAddingShare] = useState(false);
+  const [showSharePopup, setShowSharePopup] = useState(false);
   const frame = play.data.frames[frameIdx];
-
-  useEffect(() => { if (canManageShares) getPlayShares(play.id).then(setShares).catch(console.error); }, [canManageShares, play.id]);
-
-  useEffect(() => {
-    if (!showShares || shareTargets.length > 0) return;
-    // Anyone the play can be shared with — staff and roster players alike.
-    Promise.all([getStaff(), getRoster()]).then(([staff, roster]) => {
-      setShareTargets([...staff, ...roster.map((r) => ({ id: r.id, name: r.name }))]);
-    }).catch(console.error);
-  }, [showShares, shareTargets.length]);
-
-  async function handleAddShare(targetId: string) {
-    try {
-      await sharePlay(play.id, targetId);
-      const updated = await getPlayShares(play.id);
-      setShares(updated);
-      setAddingShare(false);
-    } catch (e: any) { console.error(e); }
-  }
 
   function playAll() {
     // Simple sequential playback: play current beat, then auto-advance.
@@ -323,7 +313,7 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
         <button onClick={() => onFork(play)} style={{ padding: "8px 12px" }}>Duplicate as my own</button>
         <button onClick={onPrint} style={{ padding: "8px 12px" }}>🖨️ Print / export</button>
         {onEdit && canManageShares && <button onClick={() => onEdit(play)} style={{ padding: "8px 12px" }}>Edit</button>}
-        {canManageShares && <button onClick={() => setShowShares((v) => !v)} style={{ padding: "8px 12px" }}>Manage sharing</button>}
+        {canManageShares && <button onClick={() => setShowSharePopup(true)} style={{ padding: "8px 12px", display: "inline-flex", alignItems: "center", gap: 6 }}><ShareIcon /> Manage sharing</button>}
         {canManageShares && (
           <button
             onClick={() => { if (window.confirm(`Delete "${play.title}"? This can't be undone.`)) onDeleted(); }}
@@ -334,31 +324,99 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
         )}
       </div>
 
-      {showShares && (
-        <div style={{ marginTop: 10, padding: 10, background: "var(--surface2)", borderRadius: "8px" }}>
-          {shares.map((s) => (
-            <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, fontSize: 13 }}>
-              <span>{s.profiles?.name ?? "Someone"} {s.viewed_at ? "· viewed" : "· not viewed yet"}</span>
-              <button onClick={async () => { await revokePlayShare(s.id); setShares((sh) => sh.filter((x) => x.id !== s.id)); }} style={{ fontSize: 12, padding: "4px 8px" }}>Revoke</button>
-            </div>
-          ))}
-          {shares.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>Not shared with anyone.</p>}
+      {showSharePopup && <SharePopup play={play} onClose={() => setShowSharePopup(false)} />}
+    </div>
+  );
+}
 
-          <button onClick={() => setAddingShare((v) => !v)} style={{ fontSize: 12, padding: "5px 10px", marginTop: 6 }}>
-            {addingShare ? "✕ Cancel" : "+ Share with someone"}
-          </button>
-          {addingShare && (
-            <div style={{ marginTop: 8, maxHeight: 180, overflowY: "auto" }}>
-              {shareTargets.filter((t) => !shares.some((s) => s.shared_with === t.id)).map((t) => (
-                <button key={t.id} onClick={() => handleAddShare(t.id)} style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px", fontSize: 12, marginBottom: 4 }}>
+// A "person + plus" glyph, clearer than a chain-link for "share/add someone".
+function ShareIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
+      <circle cx="10" cy="7" r="4" />
+      <path d="M2 20c0-4 3.5-7 8-7s8 3 8 7" />
+      <circle cx="19" cy="17" r="4.5" fill="var(--surface2)" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M19 14.7v4.6M16.7 17h4.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// A Google-Docs-style share dialog — pick people to add, see who already has
+// access, remove them — without navigating away from wherever you are.
+function SharePopup({ play, onClose }: { play: Play; onClose: () => void }) {
+  const [shares, setShares] = useState<any[]>([]);
+  const [targets, setTargets] = useState<PlayShareTarget[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    Promise.all([getPlayShares(play.id), getStaff(), getRoster()]).then(([s, staff, roster]) => {
+      setShares(s);
+      setTargets([...staff, ...roster.map((r) => ({ id: r.id, name: r.name }))]);
+      setLoading(false);
+    }).catch(console.error);
+  }, [play.id]);
+
+  async function handleAdd(targetId: string) {
+    try {
+      await sharePlay(play.id, targetId);
+      setShares(await getPlayShares(play.id));
+      setQuery("");
+    } catch (e: any) { console.error(e); }
+  }
+  async function handleRevoke(shareId: string) {
+    await revokePlayShare(shareId);
+    setShares((sh) => sh.filter((x) => x.id !== shareId));
+  }
+
+  const q = query.trim().toLowerCase();
+  const matches = q
+    ? targets.filter((t) => !shares.some((s) => s.shared_with === t.id) && t.name.toLowerCase().includes(q))
+    : [];
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}
+      onClick={onClose}
+    >
+      <div
+        style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: 20, width: "100%", maxWidth: 420, maxHeight: "80vh", overflowY: "auto" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h3 style={{ fontSize: 16, margin: 0, display: "flex", alignItems: "center", gap: 8 }}><ShareIcon /> Share "{play.title}"</h3>
+          <button onClick={onClose} style={{ padding: "4px 10px" }}>✕</button>
+        </div>
+
+        <div style={{ position: "relative", marginBottom: 16 }}>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Type a name to add someone…"
+            style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
+          />
+          {q && (
+            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, marginTop: 4, maxHeight: 200, overflowY: "auto", zIndex: 10 }}>
+              {matches.map((t) => (
+                <button key={t.id} onClick={() => handleAdd(t.id)} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 13 }}>
                   {t.name}
                 </button>
               ))}
-              {shareTargets.length === 0 && <p style={{ fontSize: 12, color: "var(--muted)" }}>Loading…</p>}
+              {matches.length === 0 && <p style={{ fontSize: 12, color: "var(--muted)", padding: "8px 10px", margin: 0 }}>No matches.</p>}
             </div>
           )}
         </div>
-      )}
+
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8, fontWeight: 600 }}>People with access</div>
+        {loading && <p style={{ fontSize: 13, color: "var(--muted)" }}>Loading…</p>}
+        {!loading && shares.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>Not shared with anyone yet.</p>}
+        {shares.map((s) => (
+          <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", fontSize: 13, borderBottom: "1px solid var(--border)" }}>
+            <span>{s.profiles?.name ?? "Someone"} <span style={{ color: "var(--muted)", fontSize: 11 }}>{s.viewed_at ? "· viewed" : "· not viewed yet"}</span></span>
+            <button onClick={() => handleRevoke(s.id)} style={{ fontSize: 12, padding: "4px 10px" }}>Remove</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
