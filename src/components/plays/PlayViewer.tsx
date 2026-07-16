@@ -17,6 +17,7 @@ import {
 } from "../../lib/plays";
 
 interface Props {
+  currentUserRole?: "player" | "coach" | "admin";
   onEdit?: (play: Play) => void;
   onCreateNew?: () => void;
 }
@@ -29,7 +30,7 @@ function filterPlays<T extends { title: string; tags: string[] }>(plays: T[], se
   return plays.filter((p) => p.title.toLowerCase().includes(q) || p.tags.some((t) => t.toLowerCase().includes(q)));
 }
 
-export default function PlayViewer({ onEdit, onCreateNew }: Props) {
+export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Props) {
   const [tab, setTab] = useState<Tab>("mine");
   const [myPlays, setMyPlays] = useState<Play[]>([]);
   const [sharedPlays, setSharedPlays] = useState<(Play & { share_id: string; shared_by: string })[]>([]);
@@ -128,7 +129,9 @@ export default function PlayViewer({ onEdit, onCreateNew }: Props) {
       <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 12, padding: 5, marginBottom: 20, border: "1px solid var(--border)" }}>
         <button onClick={() => setTab("mine")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "mine" ? "var(--royal)" : "transparent", color: tab === "mine" ? "#fff" : "var(--muted)", transition: "all .2s" }}>My plays</button>
         <button onClick={() => setTab("shared")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "shared" ? "var(--royal)" : "transparent", color: tab === "shared" ? "#fff" : "var(--muted)", transition: "all .2s" }}>Shared with me</button>
-        <button onClick={() => setTab("playbooks")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "playbooks" ? "var(--royal)" : "transparent", color: tab === "playbooks" ? "#fff" : "var(--muted)", transition: "all .2s" }}>Playbooks</button>
+        {currentUserRole !== "coach" && currentUserRole !== "admin" && (
+          <button onClick={() => setTab("playbooks")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "playbooks" ? "var(--royal)" : "transparent", color: tab === "playbooks" ? "#fff" : "var(--muted)", transition: "all .2s" }}>Playbooks</button>
+        )}
       </div>
 
       {(tab === "mine" || tab === "shared") && (
@@ -216,8 +219,12 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
 
   return (
     <div>
-      <button onClick={onBack} style={{ marginBottom: 10 }}>← Back</button>
-      <h2 style={{ fontSize: 18, marginBottom: 8 }}>{play.title}</h2>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+        <button onClick={onBack} style={{ padding: "8px 12px" }}>← Back</button>
+        <h2 style={{ fontSize: 18, margin: 0, flex: "1 1 auto", minWidth: 120 }}>{play.title}</h2>
+        <button onClick={() => { setFrameIdx(0); playAll(); }} className="coach-add-btn">▶ Watch play</button>
+        <button onClick={() => setShow3D(true)} className="coach-add-btn">🧊 Watch in 3D</button>
+      </div>
 
       <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 12, marginBottom: 10 }}>
         <PlayCanvas
@@ -231,15 +238,15 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
         />
       </div>
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-        {play.data.frames.length > 1 && play.data.frames.map((_, i) => (
-          <button key={i} onClick={() => setFrameIdx(i)} style={{ padding: "6px 10px", border: i === frameIdx ? "2px solid var(--gold)" : "1px solid var(--border)" }}>
-            Step {i + 1}
-          </button>
-        ))}
-        <button onClick={() => { setFrameIdx(0); playAll(); }} className="coach-add-btn" style={{ marginLeft: "auto" }}>▶ Watch play</button>
-        <button onClick={() => setShow3D(true)} className="coach-add-btn">🧊 Watch in 3D</button>
-      </div>
+      {play.data.frames.length > 1 && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+          {play.data.frames.map((_, i) => (
+            <button key={i} onClick={() => setFrameIdx(i)} style={{ padding: "6px 10px", border: i === frameIdx ? "2px solid var(--gold)" : "1px solid var(--border)" }}>
+              Step {i + 1}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button onClick={() => onFork(play)} style={{ padding: "8px 12px" }}>Duplicate as my own</button>
