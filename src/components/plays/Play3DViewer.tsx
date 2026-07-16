@@ -26,7 +26,7 @@ const toWorld = (x: number, y: number) => ({ x: (x - 300) / SCALE, z: (y - 210) 
 
 const PRESETS: { label: string; pos: [number, number, number] }[] = [
   { label: "Half court", pos: [0, 4, 9] },
-  { label: "Baseline", pos: [7, 2, -3] },
+  { label: "Baseline", pos: [11, 3, -5] },
   { label: "Sideline", pos: [11, 4, 0] },
   { label: "Top-down", pos: [0, 13, 0.5] },
   { label: "Full court", pos: [0, 11, 15] },
@@ -414,7 +414,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           {PRESETS.map((preset) => <option key={preset.label} value={preset.label}>{preset.label}</option>)}
         </select>
       </div>
-      <div ref={mountRef} style={{ width: "100%", aspectRatio: "4 / 3", borderRadius: 12, overflow: "hidden", background: "#1a2235" }} />
+      <div ref={mountRef} style={{ width: "100%", height: 420, borderRadius: 12, overflow: "hidden", background: "#1a2235" }} />
       <p style={{ textAlign: "center", fontSize: 12, color: "var(--muted)", margin: "8px 0" }}>Drag to orbit, scroll to zoom</p>
       {play.data.frames.length > 1 && (
         <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
