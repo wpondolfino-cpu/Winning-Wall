@@ -130,16 +130,36 @@ function pointsToPath(points: { x: number; y: number }[]) {
   return `M ${points[0].x} ${points[0].y} ` + points.slice(1).map((p) => `L ${p.x} ${p.y}`).join(" ");
 }
 
-function dribblePath(x1: number, y1: number, x2: number, y2: number) {
-  const dx = x2 - x1, dy = y2 - y1;
-  const len = Math.hypot(dx, dy) || 1;
-  const n = Math.max(3, Math.round(len / 14));
+function dribblePath(a: PlayAction) {
+  const { x1, y1, x2, y2, curve } = a;
+  if (!curve) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const n = Math.max(3, Math.round(len / 14));
+    let d = `M ${x1} ${y1} `;
+    for (let i = 1; i <= n; i++) {
+      const t = i / n;
+      const px = x1 + dx * t, py = y1 + dy * t;
+      const off = i % 2 === 0 ? 6 : -6;
+      const nx = (-dy / len) * off, ny = (dx / len) * off;
+      d += `L ${px + nx} ${py + ny} `;
+    }
+    return d;
+  }
+  // Curved dribble — zigzag perpendicular to the curve's local direction at
+  // each sampled point, rather than one constant direction.
+  const approxLen = Math.hypot(x2 - x1, y2 - y1) * 1.3; // curved paths run a bit longer than the straight chord
+  const n = Math.max(6, Math.round(approxLen / 14));
   let d = `M ${x1} ${y1} `;
   for (let i = 1; i <= n; i++) {
-    const t = i / n;
-    const px = x1 + dx * t, py = y1 + dy * t;
+    const t = i / n, mt = 1 - t;
+    const px = mt * mt * x1 + 2 * mt * t * curve.x + t * t * x2;
+    const py = mt * mt * y1 + 2 * mt * t * curve.y + t * t * y2;
+    const tdx = 2 * mt * (curve.x - x1) + 2 * t * (x2 - curve.x);
+    const tdy = 2 * mt * (curve.y - y1) + 2 * t * (y2 - curve.y);
+    const tlen = Math.hypot(tdx, tdy) || 1;
     const off = i % 2 === 0 ? 6 : -6;
-    const nx = (-dy / len) * off, ny = (dx / len) * off;
+    const nx = (-tdy / tlen) * off, ny = (tdx / tlen) * off;
     d += `L ${px + nx} ${py + ny} `;
   }
   return d;
@@ -155,14 +175,20 @@ function curveHandlePos(a: PlayAction) {
   return a.curve ?? { x: (a.x1 + a.x2) / 2, y: (a.y1 + a.y2) / 2 };
 }
 
+/** Direction the line is heading at its endpoint — the curve's tangent there if curved, otherwise the straight direction. Used to keep the screen's end-tick perpendicular to what's actually drawn. */
+function endDirection(a: PlayAction) {
+  if (a.curve) return { dx: 2 * (a.x2 - a.curve.x), dy: 2 * (a.y2 - a.curve.y) };
+  return { dx: a.x2 - a.x1, dy: a.y2 - a.y1 };
+}
+
 function ActionShape({ a }: { a: PlayAction }) {
   if (a.type === "screen") {
-    const dx = a.x2 - a.x1, dy = a.y2 - a.y1;
+    const { dx, dy } = endDirection(a);
     const len = Math.hypot(dx, dy) || 1;
     const nx = (-dy / len) * 9, ny = (dx / len) * 9;
     return (
       <g>
-        <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke="var(--text)" strokeWidth={4} />
+        <path d={linePath(a)} fill="none" stroke="var(--text)" strokeWidth={4} />
         <line x1={a.x2 - nx} y1={a.y2 - ny} x2={a.x2 + nx} y2={a.y2 + ny} stroke="var(--text)" strokeWidth={4} />
       </g>
     );
@@ -175,7 +201,7 @@ function ActionShape({ a }: { a: PlayAction }) {
   }
   if (a.type === "dribble") {
     return (
-      <path d={dribblePath(a.x1, a.y1, a.x2, a.y2)} fill="none" stroke="var(--text)" strokeWidth={2.5}
+      <path d={dribblePath(a)} fill="none" stroke="var(--text)" strokeWidth={2.5}
         markerEnd="url(#pc-arrow-solid)" />
     );
   }
@@ -192,6 +218,23 @@ function distToSegment(px: number, py: number, x1: number, y1: number, x2: numbe
   const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
   const cx = x1 + t * dx, cy = y1 + t * dy;
   return Math.hypot(px - cx, py - cy);
+}
+
+/** Distance from a point to an action's actual visible line — follows the curve when one is set, instead of the straight chord underneath it. */
+function distToAction(px: number, py: number, a: PlayAction) {
+  if (!a.curve) return distToSegment(px, py, a.x1, a.y1, a.x2, a.y2);
+  let min = Infinity;
+  const steps = 12;
+  for (let i = 0; i < steps; i++) {
+    const t1 = i / steps, t2 = (i + 1) / steps;
+    const mt1 = 1 - t1, mt2 = 1 - t2;
+    const p1x = mt1 * mt1 * a.x1 + 2 * mt1 * t1 * a.curve.x + t1 * t1 * a.x2;
+    const p1y = mt1 * mt1 * a.y1 + 2 * mt1 * t1 * a.curve.y + t1 * t1 * a.y2;
+    const p2x = mt2 * mt2 * a.x1 + 2 * mt2 * t2 * a.curve.x + t2 * t2 * a.x2;
+    const p2y = mt2 * mt2 * a.y1 + 2 * mt2 * t2 * a.curve.y + t2 * t2 * a.y2;
+    min = Math.min(min, distToSegment(px, py, p1x, p1y, p2x, p2y));
+  }
+  return min;
 }
 
 const FACE_COLORS = ["#378ADD", "#639922", "#D85A30", "#D4537E", "#7F77DD"];
@@ -311,7 +354,7 @@ export default function PlayCanvas({
       if (frame.ball && within(frame.ball, 12)) { setMoveDrag({ kind: "ball" }); setMovePos(p); return; }
       for (let i = 0; i < frame.actions.length; i++) {
         const a = frame.actions[i];
-        if ((a.type === "move" || a.type === "pass") && within(curveHandlePos(a), 11)) {
+        if ((a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen") && within(curveHandlePos(a), 11)) {
           setMoveDrag({ kind: "actionCurve", index: i }); setMovePos(p); return;
         }
       }
@@ -322,7 +365,7 @@ export default function PlayCanvas({
       }
       for (let i = 0; i < frame.actions.length; i++) {
         const a = frame.actions[i];
-        if (distToSegment(p.x, p.y, a.x1, a.y1, a.x2, a.y2) < 14) {
+        if (distToAction(p.x, p.y, a) < 14) {
           setMoveDrag({ kind: "actionWhole", index: i, startX: p.x, startY: p.y, origA: { ...a } });
           setMovePos(p);
           return;
@@ -540,7 +583,7 @@ export default function PlayCanvas({
       })()}
 
       {edit && tool === "select" && displayFrame.actions.map((a, i) => {
-        const chp = (a.type === "move" || a.type === "pass") ? curveHandlePos(a) : null;
+        const chp = (a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen") ? curveHandlePos(a) : null;
         return (
           <g key={i}>
             <circle cx={a.x1} cy={a.y1} r={6} fill="var(--gold)" opacity={0.85} />
