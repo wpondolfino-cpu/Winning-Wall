@@ -9,7 +9,7 @@ import PlayPrintView from "./PlayPrintView";
 import {
   Play, RosterPlayer, getMyPlays, getPlaysSharedWithMe, getMyAssignedPlaybooks,
   getPlaybookPlays, getPlayShares, revokePlayShare, markPlayViewed, markPlaybookViewed,
-  forkPlay, getRoster, Playbook, deletePlay,
+  forkPlay, getRoster, Playbook, deletePlay, getStaff, sharePlay, PlayShareTarget,
 } from "../../lib/plays";
 
 // Lazy-loaded: three.js is a large dependency, and most people watching a
@@ -44,6 +44,8 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
   const [sharedPlays, setSharedPlays] = useState<(Play & { share_id: string; shared_by: string })[]>([]);
   const [playbooks, setPlaybooks] = useState<(Playbook & { share_id: string; viewed_at: string | null })[]>([]);
   const [openPlay, setOpenPlay] = useState<Play | null>(null);
+  const [openIn3D, setOpenIn3D] = useState(false);
+  const [openSharesDirect, setOpenSharesDirect] = useState(false);
   const [openShareId, setOpenShareId] = useState<string | null>(null);
   const [openPlaybook, setOpenPlaybook] = useState<{ pb: Playbook & { share_id: string }; plays: Play[] } | null>(null);
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
@@ -82,6 +84,14 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
     } catch (e: any) { showToast("Error: " + e.message); }
   }
 
+  async function handleDeleteFromList(p: Play) {
+    if (!window.confirm(`Delete "${p.title}"? This can't be undone.`)) return;
+    try {
+      await deletePlay(p.id);
+      await load();
+    } catch (e: any) { showToast("Error: " + e.message); }
+  }
+
   const rosterMap: Record<string, RosterPlayer> = Object.fromEntries(roster.map((r) => [r.id, r]));
 
   if (printPlays) {
@@ -95,7 +105,9 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
         shareId={openShareId}
         rosterMap={rosterMap}
         canManageShares={myPlays.some((p) => p.id === openPlay.id)}
-        onBack={() => { setOpenPlay(null); setOpenShareId(null); }}
+        startIn3D={openIn3D}
+        startWithSharesOpen={openSharesDirect}
+        onBack={() => { setOpenPlay(null); setOpenShareId(null); setOpenIn3D(false); setOpenSharesDirect(false); }}
         onEdit={onEdit}
         onFork={handleFork}
         onPrint={() => setPrintPlays({ plays: [openPlay] })}
@@ -155,10 +167,16 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
         <>
           {onCreateNew && <button onClick={onCreateNew} className="coach-add-btn" style={{ width: "100%", justifyContent: "center", marginBottom: 10 }}>+ Draw a new play</button>}
           {filterPlays(myPlays, search).map((p) => (
-            <button key={p.id} onClick={() => setOpenPlay(p)} style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 12px", marginBottom: 6, border: "1px solid var(--border)", borderRadius: "8px" }}>
-              {p.title}
-              {p.tags.length > 0 && <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 8 }}>{p.tags.join(", ")}</span>}
-            </button>
+            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6, border: "1px solid var(--border)", borderRadius: 8 }}>
+              <button onClick={() => setOpenPlay(p)} style={{ flex: 1, textAlign: "left", padding: "10px 12px", background: "none", border: "none", color: "var(--text)", cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>
+                {p.title}
+                {p.tags.length > 0 && <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 8 }}>{p.tags.join(", ")}</span>}
+              </button>
+              <button title="Watch in 3D" onClick={() => { setOpenPlay(p); setOpenIn3D(true); }} style={{ padding: "6px 8px", fontSize: 13 }}>🧊</button>
+              <button title="Share" onClick={() => { setOpenPlay(p); setOpenSharesDirect(true); }} style={{ padding: "6px 8px", fontSize: 13 }}>🔗</button>
+              {onEdit && <button title="Edit" onClick={() => onEdit(p)} style={{ padding: "6px 8px", fontSize: 13 }}>✏️</button>}
+              <button title="Delete" onClick={() => handleDeleteFromList(p)} style={{ padding: "6px 8px", fontSize: 13, marginRight: 4 }}>🗑</button>
+            </div>
           ))}
           {myPlays.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>No plays yet.</p>}
           {myPlays.length > 0 && filterPlays(myPlays, search).length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>No plays match "{search}".</p>}
@@ -192,18 +210,38 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
   );
 }
 
-function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit, onFork, onPrint, onDeleted }: {
+function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit, onFork, onPrint, onDeleted, startIn3D, startWithSharesOpen }: {
   play: Play; shareId: string | null; rosterMap: Record<string, RosterPlayer>; canManageShares: boolean;
   onBack: () => void; onEdit?: (p: Play) => void; onFork: (p: Play) => void; onPrint: () => void; onDeleted: () => void;
+  startIn3D?: boolean; startWithSharesOpen?: boolean;
 }) {
   const [frameIdx, setFrameIdx] = useState(0);
   const [playSignal, setPlaySignal] = useState(0);
   const [shares, setShares] = useState<any[]>([]);
-  const [showShares, setShowShares] = useState(false);
-  const [show3D, setShow3D] = useState(false);
+  const [showShares, setShowShares] = useState(!!startWithSharesOpen);
+  const [show3D, setShow3D] = useState(!!startIn3D);
+  const [shareTargets, setShareTargets] = useState<PlayShareTarget[]>([]);
+  const [addingShare, setAddingShare] = useState(false);
   const frame = play.data.frames[frameIdx];
 
   useEffect(() => { if (canManageShares) getPlayShares(play.id).then(setShares).catch(console.error); }, [canManageShares, play.id]);
+
+  useEffect(() => {
+    if (!showShares || shareTargets.length > 0) return;
+    // Anyone the play can be shared with — staff and roster players alike.
+    Promise.all([getStaff(), getRoster()]).then(([staff, roster]) => {
+      setShareTargets([...staff, ...roster.map((r) => ({ id: r.id, name: r.name }))]);
+    }).catch(console.error);
+  }, [showShares, shareTargets.length]);
+
+  async function handleAddShare(targetId: string) {
+    try {
+      await sharePlay(play.id, targetId);
+      const updated = await getPlayShares(play.id);
+      setShares(updated);
+      setAddingShare(false);
+    } catch (e: any) { console.error(e); }
+  }
 
   function playAll() {
     // Simple sequential playback: play current beat, then auto-advance.
@@ -280,6 +318,20 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
             </div>
           ))}
           {shares.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>Not shared with anyone.</p>}
+
+          <button onClick={() => setAddingShare((v) => !v)} style={{ fontSize: 12, padding: "5px 10px", marginTop: 6 }}>
+            {addingShare ? "✕ Cancel" : "+ Share with someone"}
+          </button>
+          {addingShare && (
+            <div style={{ marginTop: 8, maxHeight: 180, overflowY: "auto" }}>
+              {shareTargets.filter((t) => !shares.some((s) => s.shared_with === t.id)).map((t) => (
+                <button key={t.id} onClick={() => handleAddShare(t.id)} style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px", fontSize: 12, marginBottom: 4 }}>
+                  {t.name}
+                </button>
+              ))}
+              {shareTargets.length === 0 && <p style={{ fontSize: 12, color: "var(--muted)" }}>Loading…</p>}
+            </div>
+          )}
         </div>
       )}
     </div>
