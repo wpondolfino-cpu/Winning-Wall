@@ -24,6 +24,7 @@ const Play3DViewer = lazy(() => import("./Play3DViewer")) as unknown as Componen
   play: Play;
   roster: Record<string, RosterPlayer>;
   onBack: () => void;
+  selfOverride?: { playerId: string; avatarUrl: string | null } | null;
 }>;
 
 interface Props {
@@ -294,7 +295,7 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
     return (
       <ThreeDErrorBoundary onBack={() => setShow3D(false)}>
         <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Loading 3D view…</div>}>
-          <Play3DViewer play={play} roster={rosterMap} onBack={() => setShow3D(false)} />
+          <Play3DViewer play={play} roster={rosterMap} onBack={() => setShow3D(false)} selfOverride={selfOverride} />
         </Suspense>
       </ThreeDErrorBoundary>
     );
