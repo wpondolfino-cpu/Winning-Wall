@@ -33,7 +33,6 @@ const PRESETS: { label: string; pos: [number, number, number] }[] = [
 export default function Play3DViewer({ play, roster, onBack }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [frameIdx, setFrameIdx] = useState(0);
-  const [isMobile] = useState(() => window.innerWidth < 768);
 
   // Mutable refs so the render loop (set up once) can read current props/state.
   const stateRef = useRef({ play, roster, frameIdx });
@@ -129,15 +128,13 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
       scene.add(hoopGroup);
     });
 
-    // Desktop: free orbit. Mobile: presets only (no drag control).
-    let controls: OrbitControls | null = null;
-    if (!isMobile) {
-      controls = new OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
-      controls.dampingFactor = 0.08;
-      controls.maxPolarAngle = Math.PI * 0.49; // don't let the camera dip below the floor
-      controls.target.set(0, 0, 0);
-    }
+    // Free orbit is available everywhere now; presets give a quick way to
+    // snap to a good angle first, then fine-tune by dragging from there.
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.maxPolarAngle = Math.PI * 0.49; // don't let the camera dip below the floor
+    controls.target.set(0, 0, 0);
 
     // Entity groups, rebuilt whenever the current frame changes
     let playerGroups: THREE.Group[] = [];
@@ -237,16 +234,41 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
         animFromFrame.players.forEach((fp, i) => {
           const tp = animToFrame!.players[i];
           if (!tp || !playerGroups[i]) return;
-          const from = toWorld(fp.x, fp.y), to = toWorld(tp.x, tp.y);
-          playerGroups[i].position.x = from.x + (to.x - from.x) * t;
-          playerGroups[i].position.z = from.z + (to.z - from.z) * t;
+          // If this player's movement was drawn as a curl (curve set on
+          // their cut/dribble/screen), follow that curve instead of
+          // cutting straight from A to B — otherwise curved routes look
+          // right in 2D but players run straight through each other in 3D.
+          const sourced = fp.id && animFromFrame!.actions.find(
+            (a) => a.sourcePlayerId === fp.id && (a.type === "move" || a.type === "dribble" || a.type === "screen")
+          );
+          let x: number, z: number;
+          if (sourced?.curve) {
+            const mt = 1 - t;
+            const w1 = toWorld(sourced.x1, sourced.y1), wc = toWorld(sourced.curve.x, sourced.curve.y), w2 = toWorld(sourced.x2, sourced.y2);
+            x = mt * mt * w1.x + 2 * mt * t * wc.x + t * t * w2.x;
+            z = mt * mt * w1.z + 2 * mt * t * wc.z + t * t * w2.z;
+          } else {
+            const from = toWorld(fp.x, fp.y), to = toWorld(tp.x, tp.y);
+            x = from.x + (to.x - from.x) * t;
+            z = from.z + (to.z - from.z) * t;
+          }
+          playerGroups[i].position.x = x;
+          playerGroups[i].position.z = z;
         });
         if (ballMesh) {
           const fromBall = getBallWorldPos(animFromFrame);
           const toBall = getBallWorldPos(animToFrame);
           if (fromBall && toBall) {
-            ballMesh.position.x = fromBall.x + (toBall.x - fromBall.x) * t;
-            ballMesh.position.z = fromBall.z + (toBall.z - fromBall.z) * t;
+            const passAction = [...animFromFrame.actions].reverse().find((a) => a.type === "pass" && a.targetPlayerId && a.curve);
+            if (passAction?.curve) {
+              const mt = 1 - t;
+              const w1 = toWorld(passAction.x1, passAction.y1), wc = toWorld(passAction.curve.x, passAction.curve.y), w2 = toWorld(passAction.x2, passAction.y2);
+              ballMesh.position.x = mt * mt * w1.x + 2 * mt * t * wc.x + t * t * w2.x;
+              ballMesh.position.z = mt * mt * w1.z + 2 * mt * t * wc.z + t * t * w2.z;
+            } else {
+              ballMesh.position.x = fromBall.x + (toBall.x - fromBall.x) * t;
+              ballMesh.position.z = fromBall.z + (toBall.z - fromBall.z) * t;
+            }
           }
         }
         if (t >= 1) {
@@ -303,16 +325,14 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
       <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
         <button onClick={onBack} style={{ padding: "8px 14px" }}>← Back to 2D</button>
         <button onClick={watchPlay} className="coach-add-btn">▶ Watch play</button>
-        {isMobile && (
-          <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
-            {PRESETS.map((preset) => (
-              <button key={preset.label} onClick={() => (mountRef.current as any)?._setPreset?.(preset.pos)} style={{ padding: "6px 10px", fontSize: 12 }}>
-                {preset.label}
-              </button>
-            ))}
-          </div>
-        )}
-        {!isMobile && <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: "auto" }}>Drag to orbit, scroll to zoom</span>}
+        <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+          {PRESETS.map((preset) => (
+            <button key={preset.label} onClick={() => (mountRef.current as any)?._setPreset?.(preset.pos)} style={{ padding: "6px 10px", fontSize: 12 }}>
+              {preset.label}
+            </button>
+          ))}
+        </div>
+        <span style={{ fontSize: 12, color: "var(--muted)" }}>Drag to orbit, scroll to zoom</span>
       </div>
       <div ref={mountRef} style={{ width: "100%", height: 420, borderRadius: 12, overflow: "hidden", background: "#1a2235" }} />
       {play.data.frames.length > 1 && (
