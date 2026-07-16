@@ -28,6 +28,7 @@ export default function PlaysHub({ currentUserRole }: Props) {
 
   return (
     <PlayViewer
+      currentUserRole={currentUserRole}
       onCreateNew={() => setEditing("new")}
       onEdit={(p) => setEditing(p)}
     />
