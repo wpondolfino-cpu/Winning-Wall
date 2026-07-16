@@ -160,7 +160,33 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
       return f.ball ? toWorld(f.ball.x, f.ball.y) : null;
     }
 
-    function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>) {
+    // A small floating badge showing the jersey number, so it's readable in 3D
+// without cross-referencing the 2D view — shown on every player regardless
+// of whether they also have a photo avatar.
+function makeNumberBadgeTexture(num: number, hexColor: number): THREE.CanvasTexture {
+  const size = 64;
+  const canvas = document.createElement("canvas");
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  const colorStr = "#" + hexColor.toString(16).padStart(6, "0");
+  ctx.fillStyle = "#111828";
+  ctx.beginPath();
+  ctx.arc(size / 2, size / 2, size / 2 - 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = colorStr;
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 32px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(num), size / 2, size / 2 + 2);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>) {
       clearEntities();
       frame.players.forEach((p, i) => {
         const color = FACE_COLORS[(p.num - 1 + 5) % 5];
@@ -181,6 +207,11 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
           head.position.y = 1.15;
           g.add(head);
         }
+
+        const badge = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeNumberBadgeTexture(p.num, color) }));
+        badge.position.set(0.24, avatarUrl ? 1.38 : 1.32, 0);
+        badge.scale.set(0.22, 0.22, 0.22);
+        g.add(badge);
 
         const w = toWorld(p.x, p.y);
         g.position.set(w.x, 0, w.z);
