@@ -3,18 +3,26 @@
 // "Shared with me", and "My playbooks", then plays back a single play
 // frame-by-frame. No drawing tools live here — see PlayEditor for that.
 
-import { useState, useEffect, lazy, Suspense } from "react";
+import { useState, useEffect, lazy, Suspense, type ComponentType } from "react";
 import PlayCanvas from "./PlayCanvas";
 import PlayPrintView from "./PlayPrintView";
-// Lazy-loaded: three.js is a large dependency, and most people watching a
-// play never open the 3D view — this keeps it out of everyone's initial
-// page load and only fetches it the first time "Watch in 3D" is clicked.
-const Play3DViewer = lazy(() => import("./Play3DViewer"));
 import {
   Play, RosterPlayer, getMyPlays, getPlaysSharedWithMe, getMyAssignedPlaybooks,
   getPlaybookPlays, getPlayShares, revokePlayShare, markPlayViewed, markPlaybookViewed,
   forkPlay, getRoster, Playbook, deletePlay,
 } from "../../lib/plays";
+
+// Lazy-loaded: three.js is a large dependency, and most people watching a
+// play never open the 3D view — this keeps it out of everyone's initial
+// page load and only fetches it the first time "Watch in 3D" is clicked.
+// Typed explicitly (rather than relying on lazy()'s inference through the
+// dynamic import) since that inference wasn't resolving Play3DViewer's
+// actual props correctly.
+const Play3DViewer = lazy(() => import("./Play3DViewer")) as unknown as ComponentType<{
+  play: Play;
+  roster: Record<string, RosterPlayer>;
+  onBack: () => void;
+}>;
 
 interface Props {
   currentUserRole?: "player" | "coach" | "admin";
