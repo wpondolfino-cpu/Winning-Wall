@@ -57,6 +57,8 @@ interface Props {
   /** "select" tool — the currently selected element, highlighted, and what Delete/Backspace acts on. */
   selected?: { kind: "player" | "defender" | "ball" | "action" | "text" | "zone"; index: number } | null;
   onSelect?: (sel: { kind: "player" | "defender" | "ball" | "action" | "text" | "zone"; index: number } | null) => void;
+  /** Viewer-only, local override — renders this one player (by stable id) with the viewer's own avatar, regardless of what's actually linked in the play data. Never persisted or saved. */
+  selfOverride?: { playerId: string; avatarUrl: string | null } | null;
 }
 
 // Shared half-court markings (key, free-throw circle, hoop, 3PT line) used
@@ -319,7 +321,7 @@ export default function PlayCanvas({
   onAddPlayer, onAddDefender, onSetBall, onAddAction, onErase, onToggleAvatar,
   onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff, onSetActionCurve,
   onAddText, onMoveText, onEditText, onAddZone, onMoveZone,
-  playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect,
+  playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect, selfOverride = null,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
@@ -574,14 +576,16 @@ export default function PlayCanvas({
       )}
 
       {displayFrame.players.map((p, i) => {
+        const isSelf = !!(selfOverride && p.id === selfOverride.playerId);
         const rp = p.profile_id ? roster[p.profile_id] : undefined;
-        const showAvatar = p.showAvatar ?? avatarsDefault;
+        const showAvatar = isSelf ? true : (p.showAvatar ?? avatarsDefault);
+        const avatarUrl = isSelf ? selfOverride!.avatarUrl : rp?.avatar_url;
         return (
           <PlayerIcon
             key={i}
             p={p}
             showAvatar={showAvatar}
-            avatarUrl={rp?.avatar_url}
+            avatarUrl={avatarUrl}
             onDoubleClick={edit ? () => onToggleAvatar?.(i) : undefined}
           />
         );
