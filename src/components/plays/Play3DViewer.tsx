@@ -24,13 +24,29 @@ const FACE_COLORS = [0x378add, 0x639922, 0xd85a30, 0xd4537e, 0x7f77dd];
 const SCALE = 40; // divides the 600x420 2D coordinate space down to world units
 const toWorld = (x: number, y: number) => ({ x: (x - 300) / SCALE, z: (y - 210) / SCALE });
 
-const PRESETS: { label: string; pos: [number, number, number]; lookAt?: [number, number, number] }[] = [
+const PRESETS_DESKTOP: { label: string; pos: [number, number, number]; lookAt?: [number, number, number] }[] = [
   { label: "Half court", pos: [0, 4, 9] },
   { label: "Baseline", pos: [3, 5, -15], lookAt: [1, 1, 3] },
   { label: "Sideline", pos: [11, 4, 0] },
   { label: "Top-down", pos: [0, 13, 0.5] },
   { label: "Full court", pos: [0, 11, 15] },
 ];
+
+// Mobile screens are narrower relative to height than a laptop window, so
+// the same camera distance shows less of the court side-to-side — this
+// scales each preset further out along its own line of sight (from
+// whatever it's looking at, not just from the origin), so the framing/angle
+// stays the same as desktop, just pulled back.
+function zoomedOut(preset: typeof PRESETS_DESKTOP[number], factor: number) {
+  const target = preset.lookAt ?? [0, 0, 0];
+  const pos: [number, number, number] = [
+    target[0] + (preset.pos[0] - target[0]) * factor,
+    target[1] + (preset.pos[1] - target[1]) * factor,
+    target[2] + (preset.pos[2] - target[2]) * factor,
+  ];
+  return { ...preset, pos };
+}
+const PRESETS_MOBILE = PRESETS_DESKTOP.map((p) => zoomedOut(p, 1.6));
 
 export default function Play3DViewer({ play, roster, onBack }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -41,7 +57,8 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
   stateRef.current = { play, roster, frameIdx };
 
   const [isPlaying, setIsPlaying] = useState(false);
-  const [presetLabel, setPresetLabel] = useState(PRESETS[0].label);
+  const [presets] = useState(() => (window.innerWidth < 768 ? PRESETS_MOBILE : PRESETS_DESKTOP));
+  const [presetLabel, setPresetLabel] = useState(presets[0].label);
   const isPlayingRef = useRef(false);
 
   useEffect(() => {
@@ -51,7 +68,7 @@ export default function Play3DViewer({ play, roster, onBack }: Props) {
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-    camera.position.set(...PRESETS[0].pos);
+    camera.position.set(...presets[0].pos);
     camera.lookAt(0, 0, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -409,12 +426,12 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           value={presetLabel}
           onChange={(e) => {
             setPresetLabel(e.target.value);
-            const preset = PRESETS.find((p) => p.label === e.target.value);
+            const preset = presets.find((p) => p.label === e.target.value);
             if (preset) (mountRef.current as any)?._setPreset?.(preset.pos, preset.lookAt);
           }}
           style={{ marginLeft: "auto", padding: "7px 10px", fontSize: 12, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", fontFamily: "inherit", outline: "none" }}
         >
-          {PRESETS.map((preset) => <option key={preset.label} value={preset.label}>{preset.label}</option>)}
+          {presets.map((preset) => <option key={preset.label} value={preset.label}>{preset.label}</option>)}
         </select>
       </div>
       <div ref={mountRef} style={{ width: "100%", height: 420, borderRadius: 12, overflow: "hidden", background: "#1a2235" }} />
