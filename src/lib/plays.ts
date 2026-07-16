@@ -33,6 +33,11 @@ export interface PlayAction {
   x2: number; y2: number;
 }
 
+/** A freehand-drawn stroke — a raw list of points, for annotations that don't fit the straight-line action types. */
+export interface PlayDrawing {
+  points: PlayPoint[];
+}
+
 export interface PlayPlayer {
   /** Jersey number shown on the icon. */
   num: number;
@@ -41,6 +46,8 @@ export interface PlayPlayer {
   profile_id?: string | null;
   /** Per-player override — shows an avatar even if the play-wide default is off. */
   showAvatar?: boolean;
+  /** Marks this player as receiving a handoff at this point in the beat — stamp it on top of wherever a dribble/cut ends. */
+  handoff?: boolean;
 }
 
 export interface PlayDefender {
@@ -48,12 +55,14 @@ export interface PlayDefender {
 }
 
 export interface PlayFrame {
-  /** Optional label for this beat, e.g. "Screen sets" / "Cut and pass". */
+  /** Optional label for this step, e.g. "Screen sets" / "Cut and pass". */
   label?: string;
   players: PlayPlayer[];
   defenders: PlayDefender[];
   ball: PlayPoint | null;
   actions: PlayAction[];
+  /** Freehand strokes. Optional for backward compatibility with plays saved before this existed. */
+  drawings?: PlayDrawing[];
 }
 
 export interface PlayData {
@@ -65,7 +74,7 @@ export interface PlayData {
 export function emptyPlayData(): PlayData {
   return {
     avatarsDefault: false,
-    frames: [{ players: [], defenders: [], ball: null, actions: [] }],
+    frames: [{ players: [], defenders: [], ball: null, actions: [], drawings: [] }],
   };
 }
 
