@@ -24,9 +24,9 @@ const FACE_COLORS = [0x378add, 0x639922, 0xd85a30, 0xd4537e, 0x7f77dd];
 const SCALE = 40; // divides the 600x420 2D coordinate space down to world units
 const toWorld = (x: number, y: number) => ({ x: (x - 300) / SCALE, z: (y - 210) / SCALE });
 
-const PRESETS: { label: string; pos: [number, number, number] }[] = [
+const PRESETS: { label: string; pos: [number, number, number]; lookAt?: [number, number, number] }[] = [
   { label: "Half court", pos: [0, 4, 9] },
-  { label: "Baseline", pos: [3.7, 1.7, -5.2] },
+  { label: "Baseline", pos: [3, 5, -15], lookAt: [1, 1, 3] },
   { label: "Sideline", pos: [11, 4, 0] },
   { label: "Top-down", pos: [0, 13, 0.5] },
   { label: "Full court", pos: [0, 11, 15] },
@@ -372,7 +372,10 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
     resizeObserver.observe(mount);
 
     (mount as any)._rebuildForFrame = () => buildEntities(stateRef.current.play.data.frames[stateRef.current.frameIdx], stateRef.current.roster);
-    (mount as any)._setPreset = (pos: [number, number, number]) => { camera.position.set(...pos); camera.lookAt(0, 0, 0); };
+    (mount as any)._setPreset = (pos: [number, number, number], lookAt?: [number, number, number]) => {
+      camera.position.set(...pos);
+      camera.lookAt(...(lookAt ?? [0, 0, 0]));
+    };
     (mount as any)._togglePlayPause = togglePlayPause;
 
     return () => {
@@ -407,7 +410,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           onChange={(e) => {
             setPresetLabel(e.target.value);
             const preset = PRESETS.find((p) => p.label === e.target.value);
-            if (preset) (mountRef.current as any)?._setPreset?.(preset.pos);
+            if (preset) (mountRef.current as any)?._setPreset?.(preset.pos, preset.lookAt);
           }}
           style={{ marginLeft: "auto", padding: "7px 10px", fontSize: 12, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", fontFamily: "inherit", outline: "none" }}
         >
