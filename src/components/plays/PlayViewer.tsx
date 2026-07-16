@@ -226,7 +226,7 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
       <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
         {play.data.frames.length > 1 && play.data.frames.map((_, i) => (
           <button key={i} onClick={() => setFrameIdx(i)} style={{ padding: "6px 10px", border: i === frameIdx ? "2px solid var(--gold)" : "1px solid var(--border)" }}>
-            Beat {i + 1}
+            Step {i + 1}
           </button>
         ))}
         <button onClick={() => { setFrameIdx(0); playAll(); }} className="coach-add-btn" style={{ marginLeft: "auto" }}>▶ Watch play</button>
