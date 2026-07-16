@@ -56,6 +56,18 @@ export interface PlayDefender {
   x: number; y: number;
 }
 
+/** A short text annotation placed on the court, e.g. "wait for screen". */
+export interface PlayText {
+  x: number; y: number;
+  text: string;
+}
+
+/** A shaded rectangular zone, e.g. a spacing or help-defense area. */
+export interface PlayZone {
+  x: number; y: number;
+  w: number; h: number;
+}
+
 export interface PlayFrame {
   /** Optional label for this step, e.g. "Screen sets" / "Cut and pass". */
   label?: string;
@@ -65,6 +77,10 @@ export interface PlayFrame {
   actions: PlayAction[];
   /** Freehand strokes. Optional for backward compatibility with plays saved before this existed. */
   drawings?: PlayDrawing[];
+  /** Text annotations. Optional for backward compatibility. */
+  texts?: PlayText[];
+  /** Shaded zones. Optional for backward compatibility. */
+  zones?: PlayZone[];
 }
 
 export interface PlayData {
