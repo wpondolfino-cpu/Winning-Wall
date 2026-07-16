@@ -33,6 +33,16 @@ export interface PlayAction {
   x2: number; y2: number;
   /** Optional curve control point — drag the line's midpoint handle (Move tool) to bow it into a curl. Straight when absent. */
   curve?: { x: number; y: number };
+  /** The player performing this action — auto-detected by proximity to (x1,y1) when drawn. Drives "add step" carry-forward for cuts/dribbles. */
+  sourcePlayerId?: string;
+  /** For passes — the player this action ends at, auto-detected by proximity to (x2,y2). Drives ball-possession carry-forward. */
+  targetPlayerId?: string;
+}
+
+/** Generates a stable id for a newly-placed player. Not cryptographically meaningful — just needs to be unique within a play. */
+export function genPlayerId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  return "p_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
 /** A freehand-drawn stroke — a raw list of points, for annotations that don't fit the straight-line action types. */
@@ -41,6 +51,8 @@ export interface PlayDrawing {
 }
 
 export interface PlayPlayer {
+  /** Stable identity across every step of this play — set once when first placed, never regenerated. This is what lets a step's cut/pass endpoint carry a player's position (and ball possession) forward automatically. Optional for backward compatibility with plays saved before this existed. */
+  id?: string;
   /** Jersey number shown on the icon. */
   num: number;
   x: number; y: number;
@@ -74,6 +86,8 @@ export interface PlayFrame {
   players: PlayPlayer[];
   defenders: PlayDefender[];
   ball: PlayPoint | null;
+  /** If set, the ball's displayed position tracks this player (by id) instead of the stored ball.x/y — dragging that player brings the ball with them. Cleared automatically if the ball itself is dragged or re-placed. */
+  ballHolderId?: string | null;
   actions: PlayAction[];
   /** Freehand strokes. Optional for backward compatibility with plays saved before this existed. */
   drawings?: PlayDrawing[];
