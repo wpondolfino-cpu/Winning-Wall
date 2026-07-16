@@ -53,7 +53,7 @@ export default function PlayPrintView({ plays, playbookName, roster = {}, onBack
               <div key={i}>
                 {play.data.frames.length > 1 && (
                   <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, color: "#333" }}>
-                    Beat {i + 1}{frame.label ? ` — ${frame.label}` : ""}
+                    Step {i + 1}{frame.label ? ` — ${frame.label}` : ""}
                   </div>
                 )}
                 <div style={{ border: "1px solid #ddd", borderRadius: 8 }}>
