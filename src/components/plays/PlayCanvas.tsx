@@ -100,19 +100,26 @@ function courtBackground(template: CourtTemplate) {
         </>
       );
     case "baseline_oob":
+      // Shrink the court slightly and shift it down, leaving real
+      // out-of-bounds space above the highlighted baseline to place the
+      // inbounder — previously they had to stand right on the line itself.
       return (
         <>
-          <rect x={4} y={4} width={592} height={412} fill="none" stroke="var(--silver)" strokeWidth={2} />
-          {halfCourtMarkings()}
-          <line x1={4} y1={4} x2={596} y2={4} stroke="var(--gold)" strokeWidth={3} />
+          <g transform="translate(0,35.34) scale(1,0.91505)">
+            <rect x={4} y={4} width={592} height={412} fill="none" stroke="var(--silver)" strokeWidth={2} />
+            {halfCourtMarkings()}
+          </g>
+          <line x1={4} y1={39} x2={596} y2={39} stroke="var(--gold)" strokeWidth={3} />
         </>
       );
     case "sideline_oob":
       return (
         <>
-          <rect x={4} y={4} width={592} height={412} fill="none" stroke="var(--silver)" strokeWidth={2} />
-          {halfCourtMarkings()}
-          <line x1={4} y1={4} x2={4} y2={416} stroke="var(--gold)" strokeWidth={3} />
+          <g transform="translate(35.24,0) scale(0.94088,1)">
+            <rect x={4} y={4} width={592} height={412} fill="none" stroke="var(--silver)" strokeWidth={2} />
+            {halfCourtMarkings()}
+          </g>
+          <line x1={39} y1={4} x2={39} y2={416} stroke="var(--gold)" strokeWidth={3} />
         </>
       );
     case "half":
