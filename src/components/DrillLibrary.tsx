@@ -37,6 +37,7 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
   const [editDrill, setEditDrill] = useState<Workout | null>(null);
   const [archiving, setArchiving] = useState<string | null>(null);
   const [showRandomModal, setShowRandomModal] = useState(false);
+  const [viewDrill, setViewDrill] = useState<Workout | null>(null);
 
   useEffect(() => {
     if (openRandomDrillSignal) setShowRandomModal(true);
@@ -234,8 +235,8 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
                   const isDeleting = deleting === d.id;
                   return (
                     <div key={d.id}
-                      onClick={() => !canManage && onPractice?.(d.id)}
-                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)", opacity: (d as any).library_archived ? 0.6 : 1, cursor: !canManage ? "pointer" : "default" }}>
+                      onClick={() => canManage ? setViewDrill(d) : onPractice?.(d.id)}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)", opacity: (d as any).library_archived ? 0.6 : 1, cursor: "pointer" }}>
                       <span style={{ fontSize: 18 }}>{d.emoji ?? "🏀"}</span>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{d.title}</div>
@@ -300,6 +301,60 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
               <button onClick={() => { toggleArchive(usageModal.drill); setUsageModal(null); }}
                 style={{ flex: 1, background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
                 📦 Archive Instead
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewDrill && (
+        <div onClick={() => setViewDrill(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1500, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, width: "min(460px, 96vw)", padding: 22, maxHeight: "85vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 4 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--text)", letterSpacing: 1 }}>{viewDrill.emoji ?? "🏀"} {viewDrill.title}</div>
+              <button onClick={() => setViewDrill(null)} style={{ background: "transparent", border: "none", color: "var(--muted)", fontSize: 18, cursor: "pointer", lineHeight: 1 }}>✕</button>
+            </div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
+              <span style={{ fontSize: 11, color: "var(--muted)" }}>{viewDrill.category}</span>
+              {((viewDrill as any).tags ?? []).map((t: string) => (
+                <span key={t} style={{ fontSize: 10, color: "var(--gold)" }}>🏷️ {t}</span>
+              ))}
+              {(viewDrill as any).library_archived && <span style={{ fontSize: 10, color: "var(--muted)" }}>📦 Archived</span>}
+            </div>
+
+            {(() => {
+              const vid = getYouTubeId(viewDrill.video_url);
+              if (!vid) return null;
+              return (
+                <div style={{ borderRadius: 10, overflow: "hidden", marginBottom: 16, background: "#000", position: "relative", paddingTop: "56.25%" }}>
+                  <iframe src={`https://www.youtube.com/embed/${vid}?rel=0&modestbranding=1`} title={viewDrill.title} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
+                </div>
+              );
+            })()}
+
+            {(viewDrill as any).resource_url && (
+              <a href={(viewDrill as any).resource_url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "rgba(26,63,168,0.1)", border: "1px solid rgba(26,63,168,0.25)", borderRadius: 10, marginBottom: 14, textDecoration: "none" }}>
+                <span style={{ fontSize: 20 }}>📄</span>
+                <span style={{ flex: 1, fontSize: 13, color: "#93b4ff", fontWeight: 600 }}>View Program / Resource</span>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>↗</span>
+              </a>
+            )}
+
+            {viewDrill.description && (
+              <div style={{ padding: "12px 14px", background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 13, color: "var(--silver-light)", lineHeight: 1.7, marginBottom: 16, whiteSpace: "pre-wrap" }}>
+                {viewDrill.description}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { setEditDrill(viewDrill); setViewDrill(null); }}
+                style={{ flex: 1, background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                ✏️ Edit
+              </button>
+              <button onClick={() => setViewDrill(null)}
+                style={{ flex: 1, background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                Close
               </button>
             </div>
           </div>
