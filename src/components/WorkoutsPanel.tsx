@@ -4,6 +4,7 @@ import { supabase, Workout, Score, submitScore as _submitScore, submitLibraryPra
 import DrillTimer, { Stopwatch } from "./DrillTimer";
 import DurationInput from "./DurationInput";
 import { formatDuration } from "../lib/time";
+import { randomDrillPool, pickRandomDrill } from "../lib/randomDrill";
 
 interface Props {
   workouts: Workout[];
@@ -12,6 +13,11 @@ interface Props {
   onScoreLogged: () => void;
   openWorkoutId?: string | null;
   onDeepLinkHandled?: () => void;
+  // Set when the drill currently open came from the Random Drill Generator.
+  // Drives the "keep practicing?" prompt after a score is logged.
+  randomDrillSession?: { category: string; tags: string[] } | null;
+  onRandomDrillSessionChange?: (session: { category: string; tags: string[] } | null) => void;
+  onRandomDrillChangeFilters?: () => void; // sends the player back to the Library's Random Drill modal
 }
 
 // ── Spot Personal Bests Display ───────────────────────────────
@@ -43,8 +49,9 @@ function SpotPBDisplay({ playerId, workoutId, spotConfig, totalBest, isTime = fa
   );
 }
 
-export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLogged, openWorkoutId, onDeepLinkHandled }: Props) {
+export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLogged, openWorkoutId, onDeepLinkHandled, randomDrillSession, onRandomDrillSessionChange, onRandomDrillChangeFilters }: Props) {
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
+  const [keepPracticing, setKeepPracticing] = useState(false);
 
   // Deep-link support (e.g. clicking a drill from Hall of Fame) — open
   // that specific workout's detail modal directly, even if it's not part
@@ -116,6 +123,25 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
     setSpotScores({});
   }
 
+  function rerollSameFilters() {
+    setKeepPracticing(false);
+    if (!randomDrillSession) return;
+    const candidates = randomDrillPool(workouts, randomDrillSession);
+    const pick = pickRandomDrill(candidates);
+    if (pick) openLog(pick);
+  }
+
+  function changeFilters() {
+    setKeepPracticing(false);
+    onRandomDrillSessionChange?.(null);
+    onRandomDrillChangeFilters?.();
+  }
+
+  function doneKeepPracticing() {
+    setKeepPracticing(false);
+    onRandomDrillSessionChange?.(null);
+  }
+
   function isMultiSpotTime(w: Workout | null): boolean {
     const metric = ((w as any)?.scoring_metric ?? "shots made") as string;
     return metric.toLowerCase().includes("fastest") || metric.toLowerCase().includes("second");
@@ -166,6 +192,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
             ? "✅ Practice logged! +1 point"
             : "✅ Practice logged! (Already credited today, but still counts for personal bests.)"
         );
+        if (randomDrillSession) setKeepPracticing(true);
         setSaving(false);
         return;
       }
@@ -206,6 +233,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
       const { newStreak, bonusAwarded } = await updateStreak(playerId);
       setActiveWorkout(null);
       onScoreLogged();
+      if (randomDrillSession) setKeepPracticing(true);
       let msg = "";
       if (bonusAwarded) { msg = `🔥 ${STREAK_BONUS_DAYS}-day streak! You earned ${STREAK_BONUS_PTS} bonus points!`; }
       else if (isPersonalBest && previousBest !== null) { msg = `🏆 New personal best! Your score was saved to the leaderboard.`; }
@@ -527,6 +555,25 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
             <button className="btn-primary" onClick={handleSubmitScore} disabled={saving} style={{ marginTop: 16 }}>
               {saving ? "Saving…" : "Log My Score"}
             </button>
+          </div>
+        </div>
+      )}
+
+      {keepPracticing && (
+        <div className="modal-overlay open" onClick={doneKeepPracticing}>
+          <div className="log-modal" onClick={e => e.stopPropagation()} style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🎲</div>
+            <div className="modal-title" style={{ marginBottom: 6 }}>Nice work!</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20 }}>Want another random drill?</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <button className="btn-primary" onClick={rerollSameFilters}>🔁 Same filters</button>
+              <button onClick={changeFilters} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                Change filters
+              </button>
+              <button onClick={doneKeepPracticing} style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}
