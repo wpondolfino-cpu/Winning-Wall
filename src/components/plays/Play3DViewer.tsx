@@ -48,7 +48,7 @@ function zoomedOut(preset: typeof PRESETS_DESKTOP[number], factor: number) {
   ];
   return { ...preset, pos };
 }
-const PRESETS_MOBILE = PRESETS_DESKTOP.map((p) => zoomedOut(p, 1.6));
+const PRESETS_MOBILE = PRESETS_DESKTOP.map((p) => zoomedOut(p, 2.15));
 
 export default function Play3DViewer({ play, roster, onBack, selfOverride = null }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
