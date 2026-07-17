@@ -108,6 +108,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
   const [sprintSecs, setSprintSecs] = useState("");
   const [selfPoints, setSelfPoints] = useState("");
   const [spotScores, setSpotScores] = useState<Record<number, string>>({});
+  const [activeStopwatchSpot, setActiveStopwatchSpot] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
 
@@ -121,6 +122,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
     setSprintSecs(existing?.sprint_secs?.toString() ?? "");
     setSelfPoints(existing?.self_points?.toString() ?? "");
     setSpotScores({});
+    setActiveStopwatchSpot(null);
   }
 
   function rerollSameFilters() {
@@ -285,13 +287,26 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
             {spots.map((spotName, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ flex: 1, fontSize: 14, color: "var(--text)", fontWeight: 500 }}>{spotName}</div>
-                {isTime ? (
-                  <DurationInput valueSeconds={spotScores[i] ?? ""} onChange={v => setSpotScores(prev => ({ ...prev, [i]: v }))} />
-                ) : (
-                  <input type="number" inputMode="numeric" value={spotScores[i] ?? ""} onChange={e => setSpotScores(prev => ({ ...prev, [i]: e.target.value }))} placeholder="0" min="0"
-                    style={{ width: 80, textAlign: "center", fontSize: 18, fontWeight: 600, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 8px", color: "var(--text)", fontFamily: "inherit", outline: "none" }} />
+              <div key={i}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ flex: 1, fontSize: 14, color: "var(--text)", fontWeight: 500 }}>{spotName}</div>
+                  {isTime ? (
+                    <>
+                      <button onClick={() => setActiveStopwatchSpot(prev => prev === i ? null : i)}
+                        style={{ background: activeStopwatchSpot === i ? "var(--royal)" : "var(--surface2)", border: "1px solid var(--border)", color: activeStopwatchSpot === i ? "#fff" : "var(--muted)", borderRadius: 8, padding: "9px 10px", fontSize: 14, fontFamily: "inherit", cursor: "pointer" }}>
+                        ⏱
+                      </button>
+                      <DurationInput valueSeconds={spotScores[i] ?? ""} onChange={v => setSpotScores(prev => ({ ...prev, [i]: v }))} />
+                    </>
+                  ) : (
+                    <input type="number" inputMode="numeric" value={spotScores[i] ?? ""} onChange={e => setSpotScores(prev => ({ ...prev, [i]: e.target.value }))} placeholder="0" min="0"
+                      style={{ width: 80, textAlign: "center", fontSize: 18, fontWeight: 600, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 8px", color: "var(--text)", fontFamily: "inherit", outline: "none" }} />
+                  )}
+                </div>
+                {isTime && activeStopwatchSpot === i && (
+                  <div style={{ marginTop: 8 }}>
+                    <Stopwatch onUseTime={(secs) => { setSpotScores(prev => ({ ...prev, [i]: secs.toString() })); setActiveStopwatchSpot(null); }} />
+                  </div>
                 )}
               </div>
             ))}
