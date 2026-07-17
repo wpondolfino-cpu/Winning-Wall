@@ -65,6 +65,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   });
   const [frameIdx, setFrameIdx] = useState(0);
   const [tool, setTool] = useState<Tool>("player");
+  const [isMobile] = useState(() => window.innerWidth < 768);
+  const [mobileStage, setMobileStage] = useState<"draw" | "confirm" | "naming">("draw");
   const [showMoreTools, setShowMoreTools] = useState(false);
   const [selected, setSelected] = useState<{ kind: "player" | "defender" | "ball" | "action" | "text" | "zone"; index: number } | null>(null);
   const [history, setHistory] = useState<PlayFrame[][]>([]);
@@ -245,6 +247,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     if (frameIdx < frames.length - 1) {
       setFrameIdx((i) => i + 1);
       setTimeout(() => setPlaySignal((s) => s + 1), 150);
+    } else if (isMobile) {
+      setMobileStage("confirm");
     }
   }
 
@@ -487,6 +491,192 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   }
 
   const rosterMap: Record<string, RosterPlayer> = Object.fromEntries(roster.map((r) => [r.id, r]));
+
+  // --- Mobile layout: reorganized toolbar, court moved up front, and a
+  // combined preview -> confirm -> name/tags -> save flow instead of an
+  // always-visible title field. Desktop below is untouched. ---
+  if (isMobile) {
+    if (mobileStage === "confirm") {
+      return (
+        <div>
+          <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 12, marginBottom: 12 }}>
+            <PlayCanvas frame={frames[frames.length - 1]} courtTemplate={courtTemplate} avatarsDefault={avatarsDefault} roster={rosterMap} edit={false} />
+          </div>
+          <p style={{ textAlign: "center", fontSize: 14, color: "var(--text)", marginBottom: 10 }}>Look good?</p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setMobileStage("draw")} style={{ flex: 1, padding: 10 }}>← Go back</button>
+            <button onClick={() => setMobileStage("naming")} className="coach-add-btn" style={{ flex: 1, justifyContent: "center" }}>Confirm</button>
+          </div>
+        </div>
+      );
+    }
+
+    if (mobileStage === "naming") {
+      return (
+        <div>
+          <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 16 }}>
+            <h3 style={{ fontSize: 15, margin: "0 0 12px", color: "var(--text)" }}>Name this play</h3>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Play title (required)"
+              style={{ width: "100%", marginBottom: 8, background: "var(--surface)", border: title.trim() ? "1px solid var(--border)" : "2px solid var(--gold)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder="Tags (optional)"
+              style={{ width: "100%", marginBottom: 14, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setMobileStage("draw")} style={{ flex: 1, padding: 10 }}>Cancel</button>
+              <button onClick={handleSave} disabled={saving} className="coach-add-btn" style={{ flex: 1, justifyContent: "center" }}>
+                {saving ? "Saving…" : "Confirm save"}
+              </button>
+            </div>
+            {toast && <p style={{ fontSize: 13, color: "var(--gold)", marginTop: 10, textAlign: "center" }}>{toast}</p>}
+          </div>
+        </div>
+      );
+    }
+
+    // mobileStage === "draw"
+    return (
+      <div>
+        <select value={courtTemplate} onChange={(e) => setCourtTemplate(e.target.value as CourtTemplate)}
+          style={{ width: "100%", marginBottom: 8, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+          {COURT_TEMPLATES.map((c) => <option key={c} value={c}>{COURT_TEMPLATE_LABELS[c]}</option>)}
+        </select>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 4, marginBottom: 6 }}>
+          {[
+            { tool: "select" as Tool, label: "Move", icon: "✥" },
+            { tool: "player" as Tool, label: "Player", icon: "⬤" },
+            { tool: "ball" as Tool, label: "Ball", icon: "●" },
+            { tool: "move" as Tool, label: "Cut", icon: "→" },
+            { tool: "pass" as Tool, label: "Pass", icon: "┄" },
+            { tool: "dribble" as Tool, label: "Dribble", icon: "〜" },
+            { tool: "screen" as Tool, label: "Screen", icon: "⊥" },
+          ].map(({ tool: t, label, icon }) => (
+            <button key={label} onClick={() => { setTool(t); setStampAction(null); }}
+              style={{ padding: "6px 2px", fontSize: 10, border: tool === t ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: tool === t ? "rgba(240,192,64,0.12)" : "var(--surface2)", color: "var(--text)" }}>
+              {icon} {label}
+            </button>
+          ))}
+          <button onClick={undo} disabled={!history.length}
+            style={{ padding: "6px 2px", fontSize: 10, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface2)", color: "var(--text)" }}>
+            ↩ Undo
+          </button>
+          <button onClick={() => { setTool("erase"); setStampAction(null); }}
+            style={{ padding: "6px 2px", fontSize: 10, border: tool === "erase" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: tool === "erase" ? "rgba(240,192,64,0.12)" : "var(--surface2)", color: "var(--text)" }}>
+            ⌫ Erase
+          </button>
+          <button onClick={() => setAvatarsDefault((v) => !v)}
+            style={{ padding: "6px 2px", fontSize: 10, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface2)", color: "var(--text)" }}>
+            Avatars: {avatarsDefault ? "on" : "off"}
+          </button>
+        </div>
+
+        <button onClick={() => setShowMoreTools((v) => !v)}
+          style={{ width: "100%", padding: "6px", fontSize: 11, border: "1px solid var(--border)", borderRadius: 8, background: showMoreTools ? "var(--surface2)" : "transparent", color: "var(--muted)", marginBottom: 8 }}>
+          {showMoreTools ? "▴" : "▾"} More tools
+        </button>
+        {showMoreTools && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8, padding: 8, background: "var(--surface2)", borderRadius: 8 }}>
+            <button onClick={() => { setTool("defender"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "defender" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>✕ Defender</button>
+            <button onClick={() => { setTool("draw"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "draw" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>✎ Draw</button>
+            <button onClick={() => { flipEntirePlay(); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↔ Flip entire play</button>
+            <button onClick={() => { flipCurrentStep(); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↔ Flip step</button>
+            <button onClick={() => { setTool("handoff"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "handoff" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>✱ Handoff</button>
+            <button onClick={() => { redo(); setShowMoreTools(false); }} disabled={!future.length}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↪ Redo</button>
+            <button onClick={() => { setTool("zone"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "zone" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>▦ Zone shading</button>
+          </div>
+        )}
+
+        {stampAction && (
+          <p style={{ fontSize: 12, color: "var(--gold)", marginBottom: 6 }}>
+            Tap the court to stamp in "{stampAction.name}" — <button onClick={() => setStampAction(null)} style={{ fontSize: 11 }}>cancel</button>
+          </p>
+        )}
+
+        <div
+          onClickCapture={(e) => {
+            if (!stampAction) return;
+            const svg = (e.currentTarget as HTMLDivElement).querySelector("svg")!;
+            const rect = svg.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
+            const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
+            stampActionAt(stampAction, x, y);
+          }}
+          style={{ background: "var(--surface2)", borderRadius: 12, padding: 10, marginBottom: 8 }}
+        >
+          <PlayCanvas
+            frame={frame} courtTemplate={courtTemplate} avatarsDefault={avatarsDefault} roster={rosterMap}
+            edit={!stampAction} tool={tool}
+            onAddPlayer={addPlayer} onAddDefender={addDefender} onSetBall={setBall} onAddAction={addAction}
+            onErase={eraseNear} onToggleAvatar={toggleAvatar} onToggleHandoff={toggleHandoff}
+            onMovePlayer={movePlayer} onMoveDefender={moveDefender} onMoveBall={moveBall}
+            onMoveActionPoint={moveActionPoint} onMoveActionWhole={moveActionWhole} onSetActionCurve={setActionCurve}
+            onAddText={addText} onMoveText={moveText} onEditText={editText} onAddZone={addZone} onMoveZone={moveZone}
+            selected={selected} onSelect={setSelected} onAddDrawing={addDrawing}
+            playSignal={playSignal} onPlayDone={handlePreviewBeatDone}
+          />
+        </div>
+
+        <div style={{ display: "flex", gap: 4, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {frames.map((_, i) => (
+            <button key={i} onClick={() => setFrameIdx(i)}
+              style={{ padding: "6px 9px", fontSize: 11, border: i === frameIdx ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 8, background: "var(--surface2)", color: "var(--text)" }}>
+              Step {i + 1}
+            </button>
+          ))}
+          <button onClick={addFrame} style={{ padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface2)", color: "var(--muted)" }}>+</button>
+        </div>
+
+        <button onClick={previewAllBeats} className="coach-add-btn" style={{ width: "100%", justifyContent: "center", marginBottom: 16 }}>
+          ▶ Preview & save
+        </button>
+
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+          <h3 style={{ fontSize: 13, margin: "0 0 8px", color: "var(--text)" }}>Saved actions</h3>
+          {savedActions.map((a) => (
+            <div key={a.id} style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+              <button onClick={() => setStampAction(a)} style={{ flex: 1, textAlign: "left", padding: "6px 8px", fontSize: 12 }}>🔖 {a.name}</button>
+              <button onClick={async () => { await deleteSavedAction(a.id); setSavedActions((s) => s.filter((x) => x.id !== a.id)); }} style={{ padding: "6px 8px", fontSize: 11 }}>✕</button>
+            </div>
+          ))}
+          {savedActions.length === 0 && <p style={{ fontSize: 12, color: "var(--muted)" }}>None yet.</p>}
+          <button onClick={saveCurrentFrameAsAction} style={{ width: "100%", padding: "6px 8px", fontSize: 12, marginTop: 4 }}>+ Save current step as action</button>
+
+          <h3 style={{ fontSize: 13, margin: "16px 0 8px", color: "var(--text)" }}>Link players to roster</h3>
+          {frame.players.map((p, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+              <span style={{ fontSize: 11, width: 20, color: "var(--text)" }}>#{p.num}</span>
+              <select value={p.profile_id ?? ""} onChange={(e) => assignRoster(i, e.target.value)}
+                style={{ flex: 1, fontSize: 11, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", color: "var(--text)", fontFamily: "inherit", outline: "none" }}>
+                <option value="">— unassigned —</option>
+                {roster.map((r) => <option key={r.id} value={r.id}>{r.name}{r.jersey != null ? ` (#${r.jersey})` : ""}</option>)}
+              </select>
+            </div>
+          ))}
+          {frame.players.length === 0 && <p style={{ fontSize: 12, color: "var(--muted)" }}>Place players on the court to link them.</p>}
+
+          <div style={{ display: "flex", gap: 12, marginTop: 16, fontSize: 12, flexWrap: "wrap" }}>
+            {currentUserRole === "player" && <button onClick={() => setShowShare((v) => !v)} style={{ padding: "6px 10px" }}>Share with coach</button>}
+            {onClose && <button onClick={onClose} style={{ padding: "6px 10px" }}>Close</button>}
+            {existingPlay && <button onClick={handleDelete} style={{ padding: "6px 10px", color: "#ff7b7b" }}>🗑 Delete play</button>}
+          </div>
+          {showShare && (
+            <div style={{ marginTop: 8, padding: 10, background: "var(--surface2)", borderRadius: 8 }}>
+              {staff.map((s) => (
+                <button key={s.id} onClick={() => handleShare(s.id)} style={{ display: "block", padding: "6px 10px", marginBottom: 4, fontSize: 12 }}>{s.name}</button>
+              ))}
+              {staff.length === 0 && <p style={{ fontSize: 12, color: "var(--muted)" }}>No coaches found.</p>}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 260px", gap: 16 }}>
