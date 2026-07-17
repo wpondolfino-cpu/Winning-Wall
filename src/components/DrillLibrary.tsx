@@ -7,16 +7,24 @@
 import { useState, useEffect } from "react";
 import { supabase, Workout, getWorkouts } from "../lib/supabase";
 import WorkoutBuilder from "./coach/WorkoutBuilder";
+import RandomDrillModal from "./RandomDrillModal";
 
 interface Props {
   canManage: boolean;
-  onPractice?: (workoutId: string) => void; // player: deep-link into the Workouts tab's scoring modal
+  // player: deep-link into the Workouts tab's scoring modal. filters is set
+  // when the drill came from the Random Drill Generator, so the Workouts
+  // tab knows to offer "same filters" on the next reroll.
+  onPractice?: (workoutId: string, filters?: { category: string; tags: string[] }) => void;
   onChanged?: () => void; // coach/admin: let the parent refresh its own workouts list
+  // Bumped by the parent to force the Random Drill modal open (used when a
+  // player picks "Change filters" after logging a score from a previous
+  // random-drill round, to bring them back here).
+  openRandomDrillSignal?: number;
 }
 
 const CATEGORIES = ["Dribbling", "Finishing", "Shooting", "Competing", "Strength"] as const;
 
-export default function DrillLibrary({ canManage, onPractice, onChanged }: Props) {
+export default function DrillLibrary({ canManage, onPractice, onChanged, openRandomDrillSignal }: Props) {
   const [drills, setDrills] = useState<Workout[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -28,6 +36,11 @@ export default function DrillLibrary({ canManage, onPractice, onChanged }: Props
   const [showBuilder, setShowBuilder] = useState(false);
   const [editDrill, setEditDrill] = useState<Workout | null>(null);
   const [archiving, setArchiving] = useState<string | null>(null);
+  const [showRandomModal, setShowRandomModal] = useState(false);
+
+  useEffect(() => {
+    if (openRandomDrillSignal) setShowRandomModal(true);
+  }, [openRandomDrillSignal]);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [usageModal, setUsageModal] = useState<{ drill: Workout; counts: Record<string, number> } | null>(null);
 
@@ -131,11 +144,16 @@ export default function DrillLibrary({ canManage, onPractice, onChanged }: Props
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
         <div className="section-title" style={{ margin: 0 }}>📚 Drill Library</div>
-        {canManage && (
-          <button onClick={() => setShowBuilder(true)} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
-            + Add Drill
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => setShowRandomModal(true)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+            🎲 Random Drill
           </button>
-        )}
+          {canManage && (
+            <button onClick={() => setShowBuilder(true)} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+              + Add Drill
+            </button>
+          )}
+        </div>
       </div>
       <div className="section-sub" style={{ marginBottom: 16 }}>
         {filtered.length} drill{filtered.length !== 1 ? "s" : ""} · {canManage ? "Click ✏️ to edit, 📦 to archive, 🗑 to delete" : "Tap a drill to practice — 1 point per drill per day, personal bests always count"}
@@ -286,6 +304,15 @@ export default function DrillLibrary({ canManage, onPractice, onChanged }: Props
             </div>
           </div>
         </div>
+      )}
+
+      {showRandomModal && (
+        <RandomDrillModal
+          drills={drills}
+          canManage={canManage}
+          onClose={() => setShowRandomModal(false)}
+          onLogScore={(id, filters) => onPractice?.(id, filters)}
+        />
       )}
     </div>
   );
