@@ -48,25 +48,19 @@ export const HAIR_COLORS: { value: string; label: string }[] = [
 
 export const TOP_STYLES: { value: string; label: string }[] = [
   { value: "shortFlat", label: "Short" },
-  { value: "curly", label: "Curly" },
-  { value: "straight01", label: "Straight" },
-  { value: "bigHair", label: "Big hair" },
   { value: "bun", label: "Bun" },
   { value: "shortRound", label: "Buzzed" },
-  { value: "bob", label: "Bob" },
   { value: "curvy", label: "Curvy" },
-  { value: "hijab", label: "Hijab" },
   { value: "turban", label: "Turban" },
   { value: "fro", label: "Afro" },
-  { value: "froBand", label: "Afro w/ band" },
-  { value: "dreads01", label: "Dreads" },
+  { value: "dreads", label: "Dreads" },
+  { value: "dreads01", label: "Dreads (short)" },
+  { value: "dreads02", label: "Dreads (long)" },
   { value: "sides", label: "Sides" },
   { value: "theCaesar", label: "Caesar" },
   { value: "theCaesarAndSidePart", label: "Caesar w/ part" },
-  { value: "shavedSides", label: "Shaved sides" },
   { value: "shaggyMullet", label: "Shaggy mullet" },
   { value: "shortCurly", label: "Short curly" },
-  { value: "longButNotTooLong", label: "Medium length" },
 ];
 
 export const EYE_STYLES: { value: string; label: string }[] = [
