@@ -159,7 +159,7 @@ function buildOptions(config: AvatarConfig) {
     facialHairProbability: config.facialHair === "blank" ? 0 : 100,
     // Jersey — pinned to a single plain shirt shape; only the color is a
     // real player-facing choice.
-    clothing: ["shirtCrewNeck" as any],
+    clothes: ["shirtCrewNeck" as any],
     clothesColor: [config.clothesColor as any],
     backgroundColor: ["transparent"],
   };
