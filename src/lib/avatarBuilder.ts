@@ -69,6 +69,9 @@ export const EYE_STYLES: { value: string; label: string }[] = [
   { value: "wink", label: "Wink" },
   { value: "squint", label: "Squint" },
   { value: "surprised", label: "Surprised" },
+  { value: "closed", label: "Closed" },
+  { value: "winkWacky", label: "Wacky wink" },
+  { value: "xDizzy", label: "Dizzy" },
 ];
 
 export const EYEBROW_STYLES: { value: string; label: string }[] = [
@@ -76,7 +79,6 @@ export const EYEBROW_STYLES: { value: string; label: string }[] = [
   { value: "raisedExcited", label: "Raised" },
   { value: "angry", label: "Angry" },
   { value: "sadConcerned", label: "Sad" },
-  { value: "unibrowNatural", label: "Unibrow" },
   { value: "upDown", label: "Up-down" },
 ];
 
@@ -86,6 +88,11 @@ export const MOUTH_STYLES: { value: string; label: string }[] = [
   { value: "twinkle", label: "Twinkle" },
   { value: "serious", label: "Serious" },
   { value: "tongue", label: "Tongue out" },
+  { value: "screamOpen", label: "Hype" },
+  { value: "concerned", label: "Concerned" },
+  { value: "disbelief", label: "Disbelief" },
+  { value: "eating", label: "Eating" },
+  { value: "grimace", label: "Grimace" },
 ];
 
 export const FACIAL_HAIR_STYLES: { value: string; label: string }[] = [
