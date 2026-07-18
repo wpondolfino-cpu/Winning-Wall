@@ -80,7 +80,7 @@ export default function AvatarBuilder({ profile, onSaved, onCancel, initialConfi
     try {
       const file = avatarConfigToFile(config);
       const url = await uploadAvatar(profile.id, file);
-      await saveAvatarConfig(profile.id, config);
+      await saveAvatarConfig(profile.id, config as unknown as Record<string, string>);
       onSaved(url);
     } catch (e: any) {
       setToast("Error: " + e.message);
