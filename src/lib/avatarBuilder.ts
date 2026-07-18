@@ -1,16 +1,16 @@
 // src/lib/avatarBuilder.ts
-// Generates a memoji-style illustrated avatar (skin tone, hair, eyes, mouth)
-// using DiceBear's open-source "avataaars" style, entirely client-side — no
-// external network calls at generation time. The result is an SVG, which we
-// wrap in a File and hand to the existing uploadAvatar() pipeline, so it
-// lands in the exact same avatar_url slot a photo upload would.
+// Generates a memoji-style illustrated avatar using DiceBear's open-source
+// "avataaars" style, entirely client-side — no external network calls at
+// generation time. The result is an SVG, which we wrap in a File and hand
+// to the existing uploadAvatar() pipeline, so it lands in the exact same
+// avatar_url slot a photo upload would.
 //
-// NOTE: the option values below (topStyles, eyeStyles, etc.) are DiceBear's
-// documented avataaars trait names as of writing. Once @dicebear/collection
-// is actually installed, double-check these against its shipped TypeScript
-// types (or https://www.dicebear.com/styles/avataaars/) — DiceBear
-// occasionally renames or adds trait values between versions, and the
-// installed package's types are the authoritative source, not this comment.
+// NOTE: the option values below are DiceBear's documented avataaars trait
+// names as of writing. The "top" values are confirmed directly from a real
+// TypeScript build error against the installed package; the rest are
+// well-known standard avataaars values but haven't been build-verified the
+// same way — if a build error names an invalid value here, that's the spot
+// to check, same as happened with the first version of this file.
 
 import { createAvatar } from "@dicebear/core";
 import { avataaars } from "@dicebear/collection";
@@ -20,7 +20,12 @@ export interface AvatarConfig {
   hairColor: string;
   top: string;
   eyes: string;
+  eyebrows: string;
   mouth: string;
+  facialHair: string;
+  facialHairColor: string;
+  accessories: string;
+  clothesColor: string;
 }
 
 export const SKIN_TONES: { value: string; label: string }[] = [
@@ -48,6 +53,11 @@ export const TOP_STYLES: { value: string; label: string }[] = [
   { value: "bigHair", label: "Big hair" },
   { value: "bun", label: "Bun" },
   { value: "shortRound", label: "Buzzed" },
+  { value: "bob", label: "Bob" },
+  { value: "curvy", label: "Curvy" },
+  { value: "hat", label: "Cap" },
+  { value: "hijab", label: "Hijab" },
+  { value: "turban", label: "Turban" },
 ];
 
 export const EYE_STYLES: { value: string; label: string }[] = [
@@ -58,6 +68,15 @@ export const EYE_STYLES: { value: string; label: string }[] = [
   { value: "surprised", label: "Surprised" },
 ];
 
+export const EYEBROW_STYLES: { value: string; label: string }[] = [
+  { value: "default", label: "Default" },
+  { value: "raisedExcited", label: "Raised" },
+  { value: "angry", label: "Angry" },
+  { value: "sadConcerned", label: "Sad" },
+  { value: "unibrowNatural", label: "Unibrow" },
+  { value: "upDown", label: "Up-down" },
+];
+
 export const MOUTH_STYLES: { value: string; label: string }[] = [
   { value: "smile", label: "Smile" },
   { value: "default", label: "Neutral" },
@@ -66,52 +85,88 @@ export const MOUTH_STYLES: { value: string; label: string }[] = [
   { value: "tongue", label: "Tongue out" },
 ];
 
+export const FACIAL_HAIR_STYLES: { value: string; label: string }[] = [
+  { value: "blank", label: "None" },
+  { value: "beardLight", label: "Light beard" },
+  { value: "beardMedium", label: "Full beard" },
+  { value: "beardMajestic", label: "Long beard" },
+  { value: "moustacheFancy", label: "Fancy mustache" },
+  { value: "moustacheMagnum", label: "Mustache" },
+];
+
+export const ACCESSORY_STYLES: { value: string; label: string }[] = [
+  { value: "blank", label: "None" },
+  { value: "round", label: "Round" },
+  { value: "wayfarers", label: "Wayfarers" },
+  { value: "prescription01", label: "Prescription" },
+  { value: "sunglasses", label: "Sunglasses" },
+];
+
+// Named DiceBear clothesColor values (not raw hex) — swatch below is just
+// an approximation for the picker button's own display color.
+export const JERSEY_COLORS: { value: string; label: string; swatch: string }[] = [
+  { value: "blue03", label: "Blue", swatch: "#378add" },
+  { value: "red", label: "Red", swatch: "#d85a30" },
+  { value: "black", label: "Black", swatch: "#2c2c2a" },
+  { value: "white", label: "White", swatch: "#f1efe8" },
+  { value: "pastelGreen", label: "Green", swatch: "#97c459" },
+  { value: "gray02", label: "Gray", swatch: "#888780" },
+];
+
 export function defaultAvatarConfig(): AvatarConfig {
   return {
     skinColor: SKIN_TONES[0].value,
     hairColor: HAIR_COLORS[0].value,
     top: TOP_STYLES[0].value,
     eyes: EYE_STYLES[0].value,
+    eyebrows: EYEBROW_STYLES[0].value,
     mouth: MOUTH_STYLES[0].value,
+    facialHair: FACIAL_HAIR_STYLES[0].value,
+    facialHairColor: HAIR_COLORS[0].value,
+    accessories: ACCESSORY_STYLES[0].value,
+    clothesColor: JERSEY_COLORS[0].value,
   };
 }
 
 // Same fixed seed used for both preview and the final save — the seed
 // determines how DiceBear resolves any trait we don't explicitly set below,
 // so using two different seeds (as an earlier version of this file did) let
-// unpinned traits like clothing color and eyebrows quietly differ between
-// what was previewed and what actually got saved.
+// unpinned traits quietly differ between what was previewed and what
+// actually got saved. Every trait that matters is now explicitly set
+// either way, but keeping this shared is cheap insurance.
 const AVATAR_SEED = "winning-wall-avatar";
 
-/** A data: URI for live preview — cheap to regenerate on every trait change. */
-export function avatarPreviewUri(config: AvatarConfig): string {
-  const avatar = createAvatar(avataaars, {
+function buildOptions(config: AvatarConfig) {
+  return {
     seed: AVATAR_SEED,
     skinColor: [config.skinColor],
     hairColor: [config.hairColor],
     top: [config.top as any],
     eyes: [config.eyes as any],
+    eyebrows: [config.eyebrows as any],
     mouth: [config.mouth as any],
+    facialHair: [config.facialHair as any],
+    facialHairColor: [config.facialHairColor],
+    // "blank" means no glasses — probability 0 keeps DiceBear from ever
+    // substituting a different accessory in that case regardless.
+    accessories: [config.accessories as any],
+    accessoriesProbability: config.accessories === "blank" ? 0 : 100,
+    facialHairProbability: config.facialHair === "blank" ? 0 : 100,
+    // Jersey — pinned to a single plain shirt shape; only the color is a
+    // real player-facing choice.
+    clothing: ["shirtCrewNeck" as any],
+    clothesColor: [config.clothesColor as any],
     backgroundColor: ["transparent"],
-    accessoriesProbability: 0,
-    facialHairProbability: 0,
-  });
-  return avatar.toDataUri();
+  };
+}
+
+/** A data: URI for live preview — cheap to regenerate on every trait change. */
+export function avatarPreviewUri(config: AvatarConfig): string {
+  return createAvatar(avataaars, buildOptions(config)).toDataUri();
 }
 
 /** The saved SVG, wrapped as a File for the existing uploadAvatar() pipeline. */
 export function avatarConfigToFile(config: AvatarConfig): File {
-  const avatar = createAvatar(avataaars, {
-    seed: AVATAR_SEED,
-    skinColor: [config.skinColor],
-    hairColor: [config.hairColor],
-    top: [config.top as any],
-    eyes: [config.eyes as any],
-    mouth: [config.mouth as any],
-    backgroundColor: ["transparent"],
-    accessoriesProbability: 0,
-    facialHairProbability: 0,
-  });
-  const svg = avatar.toString();
+  const svg = createAvatar(avataaars, buildOptions(config)).toString();
   return new File([svg], "avatar.svg", { type: "image/svg+xml" });
 }
