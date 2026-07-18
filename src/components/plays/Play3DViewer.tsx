@@ -205,36 +205,12 @@ function makeJerseyNumberTexture(num: number, mirrored = false): THREE.CanvasTex
   return tex;
 }
 
-function makeJerseyTexture(hexColor: number): THREE.CanvasTexture {
-  const w = 128, h = 256;
-  const canvas = document.createElement("canvas");
-  canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext("2d")!;
-  const colorStr = "#" + hexColor.toString(16).padStart(6, "0");
-  ctx.fillStyle = colorStr;
-  ctx.fillRect(0, 0, w, h);
-  // Collar/shoulder trim band, plus a thinner accent line just below it —
-  // CylinderGeometry's V=1 (top of the shirt) maps to the top of this
-  // canvas by default.
-  ctx.fillStyle = "#f4f4f0";
-  ctx.fillRect(0, 6, w, 9);
-  ctx.fillStyle = "#0c1a33";
-  ctx.fillRect(0, 17, w, 4);
-  // Side seam accents, roughly where the armholes would be on a real jersey
-  ctx.fillStyle = "rgba(255,255,255,0.3)";
-  ctx.fillRect(w * 0.22, 0, 3, h);
-  ctx.fillRect(w * 0.73, 0, 3, h);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.needsUpdate = true;
-  return tex;
-}
-
 function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>, selfOv: { playerId: string; avatarUrl: string | null } | null) {
       clearEntities();
       frame.players.forEach((p, i) => {
         const color = FACE_COLORS[(p.num - 1 + 5) % 5];
         const g = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.9, 16), new THREE.MeshStandardMaterial({ map: makeJerseyTexture(color) }));
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.9, 12), new THREE.MeshStandardMaterial({ color }));
         body.position.y = 0.55;
         g.add(body);
 
@@ -247,8 +223,8 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           // predictable boundary, so only crop the ones we generated.
           const isBuiltAvatar = /\.svg(\?|$)/i.test(avatarUrl);
           const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffffff }));
-          sprite.position.y = 1.2;
-          sprite.scale.set(isBuiltAvatar ? 0.62 : 0.5, isBuiltAvatar ? 0.41 : 0.5, 0.5);
+          sprite.position.y = isBuiltAvatar ? 1.35 : 1.2;
+          sprite.scale.set(isBuiltAvatar ? 0.85 : 0.5, isBuiltAvatar ? 0.56 : 0.5, 0.5);
           textureLoader.load(
             avatarUrl,
             (tex) => {
