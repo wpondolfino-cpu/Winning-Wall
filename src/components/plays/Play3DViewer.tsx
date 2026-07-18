@@ -182,27 +182,24 @@ export default function Play3DViewer({ play, roster, onBack, selfOverride = null
       return f.ball ? toWorld(f.ball.x, f.ball.y) : null;
     }
 
-    // A small floating badge showing the jersey number, so it's readable in 3D
-// without cross-referencing the 2D view — shown on every player regardless
-// of whether they also have a photo avatar.
-function makeNumberBadgeTexture(num: number, hexColor: number): THREE.CanvasTexture {
-  const size = 64;
+    // A number printed directly on the jersey (front and back), like a real
+// uniform, instead of a floating badge near the head.
+function makeJerseyNumberTexture(num: number, mirrored = false): THREE.CanvasTexture {
+  const w = 64, h = 80;
   const canvas = document.createElement("canvas");
-  canvas.width = size; canvas.height = size;
+  canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext("2d")!;
-  const colorStr = "#" + hexColor.toString(16).padStart(6, "0");
-  ctx.fillStyle = "#111828";
-  ctx.beginPath();
-  ctx.arc(size / 2, size / 2, size / 2 - 2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = colorStr;
-  ctx.lineWidth = 4;
-  ctx.stroke();
-  ctx.fillStyle = "#fff";
-  ctx.font = "bold 32px sans-serif";
+  ctx.clearRect(0, 0, w, h);
+  if (mirrored) { ctx.translate(w, 0); ctx.scale(-1, 1); }
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = "#00000055";
+  ctx.lineWidth = 3;
+  ctx.font = "bold 56px sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(String(num), size / 2, size / 2 + 2);
+  const text = String(num);
+  ctx.strokeText(text, w / 2, h / 2 + 2);
+  ctx.fillText(text, w / 2, h / 2 + 2);
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
   return tex;
@@ -220,12 +217,27 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
         const isSelf = !!(selfOv && p.id === selfOv.playerId);
         const avatarUrl = isSelf ? selfOv!.avatarUrl : (p.profile_id ? rosterMap[p.profile_id]?.avatar_url : null);
         if (avatarUrl) {
+          // Our own generated avatars are always .svg (see avatarConfigToFile)
+          // and have the illustrated shoulders/collar starting at a known,
+          // fixed point in the image — real uploaded photos have no such
+          // predictable boundary, so only crop the ones we generated.
+          const isBuiltAvatar = /\.svg(\?|$)/i.test(avatarUrl);
           const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffffff }));
           sprite.position.y = 1.2;
-          sprite.scale.set(0.5, 0.5, 0.5);
+          sprite.scale.set(0.5, isBuiltAvatar ? 0.33 : 0.5, 0.5);
           textureLoader.load(
             avatarUrl,
-            (tex) => { (sprite.material as THREE.SpriteMaterial).map = tex; (sprite.material as THREE.SpriteMaterial).needsUpdate = true; },
+            (tex) => {
+              if (isBuiltAvatar) {
+                // Keep only the top ~66% of the image (head/face/hair),
+                // cutting off the built-in shoulders and collar so they
+                // don't clash with the jersey color on the body below.
+                tex.repeat.set(1, 0.66);
+                tex.offset.set(0, 0.34);
+              }
+              (sprite.material as THREE.SpriteMaterial).map = tex;
+              (sprite.material as THREE.SpriteMaterial).needsUpdate = true;
+            },
             undefined,
             (err) => console.error("3D avatar texture failed to load:", avatarUrl, err)
           );
@@ -236,10 +248,13 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           g.add(head);
         }
 
-        const badge = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeNumberBadgeTexture(p.num, color) }));
-        badge.position.set(0.24, avatarUrl ? 1.38 : 1.32, 0);
-        badge.scale.set(0.22, 0.22, 0.22);
-        g.add(badge);
+        const numberFront = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.4), new THREE.MeshBasicMaterial({ map: makeJerseyNumberTexture(p.num, false), transparent: true }));
+        numberFront.position.set(0, 0.62, 0.281);
+        g.add(numberFront);
+        const numberBack = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.4), new THREE.MeshBasicMaterial({ map: makeJerseyNumberTexture(p.num, true), transparent: true }));
+        numberBack.position.set(0, 0.62, -0.281);
+        numberBack.rotation.y = Math.PI;
+        g.add(numberBack);
 
         if (isSelf) {
           const ring = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.42, 24), new THREE.MeshBasicMaterial({ color: 0xf0c040, side: THREE.DoubleSide }));
