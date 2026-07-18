@@ -82,9 +82,9 @@ export function avatarPreviewUri(config: AvatarConfig): string {
     seed: "preview",
     skinColor: [config.skinColor],
     hairColor: [config.hairColor],
-    top: [config.top],
-    eyes: [config.eyes],
-    mouth: [config.mouth],
+    top: [config.top as any],
+    eyes: [config.eyes as any],
+    mouth: [config.mouth as any],
     backgroundColor: ["transparent"],
   });
   return avatar.toDataUri();
@@ -96,9 +96,9 @@ export function avatarConfigToFile(config: AvatarConfig): File {
     seed: "saved-" + Date.now(),
     skinColor: [config.skinColor],
     hairColor: [config.hairColor],
-    top: [config.top],
-    eyes: [config.eyes],
-    mouth: [config.mouth],
+    top: [config.top as any],
+    eyes: [config.eyes as any],
+    mouth: [config.mouth as any],
     backgroundColor: ["transparent"],
   });
   const svg = avatar.toString();
