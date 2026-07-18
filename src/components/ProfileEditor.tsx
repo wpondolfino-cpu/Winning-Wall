@@ -117,6 +117,7 @@ export default function ProfileEditor({ profile, onUpdated }: Props) {
         <div style={{ marginBottom: 20 }}>
           <AvatarBuilder
             profile={profile}
+            initialConfig={profile.avatar_config as any}
             onSaved={(url) => {
               setAvatarPreview(url);
               onUpdated({ avatar_url: url });
