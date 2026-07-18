@@ -56,6 +56,7 @@ export async function uploadAvatar(userId: string, file: File): Promise<string> 
     `${userId}/avatar.jpg`,
     `${userId}/avatar.png`,
     `${userId}/avatar.webp`,
+    `${userId}/avatar.svg`,
   ]);
 
   const { error: uploadError } = await supabase.storage
@@ -71,6 +72,11 @@ export async function uploadAvatar(userId: string, file: File): Promise<string> 
   if (profileError) throw profileError;
 
   return publicUrl;
+}
+
+export async function markAvatarPromptSeen(userId: string): Promise<void> {
+  const { error } = await supabase.from("profiles").update({ avatar_prompt_seen: true }).eq("id", userId);
+  if (error) throw error;
 }
 
 export async function approveUser(userId: string, role: "player" | "coach"): Promise<void> {
