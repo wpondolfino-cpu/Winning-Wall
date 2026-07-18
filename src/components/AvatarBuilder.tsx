@@ -4,7 +4,7 @@
 // uses, so it plugs into every existing avatar_url consumer (2D/3D plays,
 // roster, profile) with no changes needed there.
 import { useState } from "react";
-import { Profile, uploadAvatar } from "../lib/supabase";
+import { Profile, uploadAvatar, saveAvatarConfig } from "../lib/supabase";
 import {
   AvatarConfig, defaultAvatarConfig, avatarPreviewUri, avatarConfigToFile,
   SKIN_TONES, HAIR_COLORS, TOP_STYLES, EYE_STYLES, EYEBROW_STYLES, MOUTH_STYLES,
@@ -15,6 +15,8 @@ interface Props {
   profile: Profile;
   onSaved: (avatarUrl: string) => void;
   onCancel?: () => void;
+  /** Their previously saved trait selections, if any — lets reopening the builder start from what they already picked instead of the defaults. */
+  initialConfig?: AvatarConfig | null;
 }
 
 function ColorRow({ label, options, value, onChange }: { label: string; options: { value: string; label: string }[]; value: string; onChange: (v: string) => void }) {
@@ -64,31 +66,8 @@ function PickRow({ label, options, value, onChange }: { label: string; options: 
   );
 }
 
-function SwatchRow({ label, options, value, onChange }: { label: string; options: { value: string; label: string; swatch: string }[]; value: string; onChange: (v: string) => void }) {
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 6px", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</p>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {options.map((o) => (
-          <button
-            key={o.value}
-            onClick={() => onChange(o.value)}
-            title={o.label}
-            style={{
-              width: 30, height: 30, borderRadius: "50%",
-              background: o.swatch,
-              border: value === o.value ? "2.5px solid var(--gold)" : "2px solid var(--border)",
-              cursor: "pointer", padding: 0,
-            }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export default function AvatarBuilder({ profile, onSaved, onCancel }: Props) {
-  const [config, setConfig] = useState<AvatarConfig>(defaultAvatarConfig());
+export default function AvatarBuilder({ profile, onSaved, onCancel, initialConfig }: Props) {
+  const [config, setConfig] = useState<AvatarConfig>(initialConfig ?? defaultAvatarConfig());
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
 
@@ -101,6 +80,7 @@ export default function AvatarBuilder({ profile, onSaved, onCancel }: Props) {
     try {
       const file = avatarConfigToFile(config);
       const url = await uploadAvatar(profile.id, file);
+      await saveAvatarConfig(profile.id, config);
       onSaved(url);
     } catch (e: any) {
       setToast("Error: " + e.message);
@@ -127,7 +107,7 @@ export default function AvatarBuilder({ profile, onSaved, onCancel }: Props) {
         <ColorRow label="Facial hair color" options={HAIR_COLORS} value={config.facialHairColor} onChange={(v) => set("facialHairColor", v)} />
       )}
       <PickRow label="Glasses" options={ACCESSORY_STYLES} value={config.accessories} onChange={(v) => set("accessories", v)} />
-      <SwatchRow label="Jersey color" options={JERSEY_COLORS} value={config.clothesColor} onChange={(v) => set("clothesColor", v)} />
+      <ColorRow label="Jersey color" options={JERSEY_COLORS} value={config.clothesColor} onChange={(v) => set("clothesColor", v)} />
 
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         {onCancel && <button onClick={onCancel} style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontFamily: "inherit" }}>Cancel</button>}
