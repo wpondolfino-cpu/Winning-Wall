@@ -104,13 +104,17 @@ export const ACCESSORY_STYLES: { value: string; label: string }[] = [
 
 // Named DiceBear clothesColor values (not raw hex) — swatch below is just
 // an approximation for the picker button's own display color.
-export const JERSEY_COLORS: { value: string; label: string; swatch: string }[] = [
-  { value: "blue03", label: "Blue", swatch: "#378add" },
-  { value: "red", label: "Red", swatch: "#d85a30" },
-  { value: "black", label: "Black", swatch: "#2c2c2a" },
-  { value: "white", label: "White", swatch: "#f1efe8" },
-  { value: "pastelGreen", label: "Green", swatch: "#97c459" },
-  { value: "gray02", label: "Gray", swatch: "#888780" },
+// Same format as SKIN_TONES/HAIR_COLORS — clothesColor is a hex color like
+// every other *Color field, not a named enum. Using named values here
+// (e.g. "blue03") was the actual bug — DiceBear couldn't parse them as a
+// color at all, so the jersey shape silently failed to render.
+export const JERSEY_COLORS: { value: string; label: string }[] = [
+  { value: "378add", label: "Blue" },
+  { value: "d85a30", label: "Red" },
+  { value: "2c2c2a", label: "Black" },
+  { value: "f1efe8", label: "White" },
+  { value: "639922", label: "Green" },
+  { value: "5f5e5a", label: "Gray" },
 ];
 
 export function defaultAvatarConfig(): AvatarConfig {
@@ -160,7 +164,7 @@ function buildOptions(config: AvatarConfig) {
     // Jersey — pinned to a single plain shirt shape; only the color is a
     // real player-facing choice.
     clothes: ["shirtCrewNeck" as any],
-    clothesColor: [config.clothesColor as any],
+    clothesColor: [config.clothesColor],
     backgroundColor: ["transparent"],
   };
 }
