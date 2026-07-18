@@ -2,6 +2,7 @@
 // Reusable profile editor — works for players, coaches, and admins
 import { useState, useRef } from "react";
 import { Profile, updateProfileName, uploadAvatar, GRADE_CATEGORIES, supabase } from "../lib/supabase";
+import AvatarBuilder from "./AvatarBuilder";
 
 interface Props {
   profile: Profile;
@@ -16,6 +17,7 @@ export default function ProfileEditor({ profile, onUpdated }: Props) {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(profile.avatar_url ?? null);
   const [grade, setGrade]             = useState<string>(profile.grade_category ?? GRADE_CATEGORIES[0]);
   const [savingGrade, setSavingGrade] = useState(false);
+  const [showAvatarBuilder, setShowAvatarBuilder] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   function showToast(msg: string) {
@@ -96,6 +98,35 @@ export default function ProfileEditor({ profile, onUpdated }: Props) {
       <div className="card-title">My Profile</div>
 
       {/* Avatar + role row */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "var(--surface2)", borderRadius: 8, padding: 3, width: 220 }}>
+        <button
+          onClick={() => setShowAvatarBuilder(false)}
+          style={{ flex: 1, padding: "7px", fontSize: 12, fontWeight: 600, border: "none", borderRadius: 6, background: showAvatarBuilder ? "transparent" : "var(--royal)", color: showAvatarBuilder ? "var(--muted)" : "#fff", fontFamily: "inherit", cursor: "pointer" }}
+        >
+          Photo
+        </button>
+        <button
+          onClick={() => setShowAvatarBuilder(true)}
+          style={{ flex: 1, padding: "7px", fontSize: 12, fontWeight: 600, border: "none", borderRadius: 6, background: showAvatarBuilder ? "var(--royal)" : "transparent", color: showAvatarBuilder ? "#fff" : "var(--muted)", fontFamily: "inherit", cursor: "pointer" }}
+        >
+          Build avatar
+        </button>
+      </div>
+
+      {showAvatarBuilder ? (
+        <div style={{ marginBottom: 20 }}>
+          <AvatarBuilder
+            profile={profile}
+            onSaved={(url) => {
+              setAvatarPreview(url);
+              onUpdated({ avatar_url: url });
+              showToast("✅ Avatar saved!");
+              setShowAvatarBuilder(false);
+            }}
+            onCancel={() => setShowAvatarBuilder(false)}
+          />
+        </div>
+      ) : (
       <div style={{ display: "flex", alignItems: "center", gap: 18, marginBottom: 24 }}>
         {/* Avatar circle */}
         <div style={{ position: "relative", flexShrink: 0 }}>
@@ -175,6 +206,7 @@ export default function ProfileEditor({ profile, onUpdated }: Props) {
           )}
         </div>
       </div>
+      )}
 
       {/* Hidden file input */}
       <input
@@ -186,9 +218,9 @@ export default function ProfileEditor({ profile, onUpdated }: Props) {
       />
 
       {/* Upload hint */}
-      <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 16, marginTop: -12 }}>
+      {!showAvatarBuilder && <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 16, marginTop: -12 }}>
         Tap your photo to change it · JPEG, PNG, or WebP · Max 5MB
-      </div>
+      </div>}
 
       {/* Name editor */}
       <div style={{ marginBottom: 6 }}>
