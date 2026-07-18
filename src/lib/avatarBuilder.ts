@@ -139,6 +139,11 @@ const AVATAR_SEED = "winning-wall-avatar";
 function buildOptions(config: AvatarConfig) {
   return {
     seed: AVATAR_SEED,
+    // Explicit pixel size, not just a viewBox — an SVG with no explicit
+    // width/height can report a zero natural size in some loading contexts
+    // (notably three.js's TextureLoader), which fails to load with no
+    // visible error at all.
+    size: 256,
     skinColor: [config.skinColor],
     hairColor: [config.hairColor],
     top: [config.top as any],
