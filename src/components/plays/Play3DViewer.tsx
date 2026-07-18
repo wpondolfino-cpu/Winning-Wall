@@ -223,7 +223,12 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffffff }));
           sprite.position.y = 1.2;
           sprite.scale.set(0.5, 0.5, 0.5);
-          textureLoader.load(avatarUrl, (tex) => { (sprite.material as THREE.SpriteMaterial).map = tex; (sprite.material as THREE.SpriteMaterial).needsUpdate = true; });
+          textureLoader.load(
+            avatarUrl,
+            (tex) => { (sprite.material as THREE.SpriteMaterial).map = tex; (sprite.material as THREE.SpriteMaterial).needsUpdate = true; },
+            undefined,
+            (err) => console.error("3D avatar texture failed to load:", avatarUrl, err)
+          );
           g.add(sprite);
         } else {
           const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 12), new THREE.MeshStandardMaterial({ color }));
