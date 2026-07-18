@@ -70,8 +70,6 @@ export const EYE_STYLES: { value: string; label: string }[] = [
   { value: "squint", label: "Squint" },
   { value: "surprised", label: "Surprised" },
   { value: "closed", label: "Closed" },
-  { value: "winkWacky", label: "Wacky wink" },
-  { value: "xDizzy", label: "Dizzy" },
 ];
 
 export const EYEBROW_STYLES: { value: string; label: string }[] = [
@@ -91,7 +89,6 @@ export const MOUTH_STYLES: { value: string; label: string }[] = [
   { value: "screamOpen", label: "Hype" },
   { value: "concerned", label: "Concerned" },
   { value: "disbelief", label: "Disbelief" },
-  { value: "eating", label: "Eating" },
   { value: "grimace", label: "Grimace" },
 ];
 
