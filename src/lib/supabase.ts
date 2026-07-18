@@ -60,6 +60,7 @@ export interface Profile {
   is_period_champion?: boolean;
   champion_since?: string;
   must_change_password?: boolean;
+  avatar_prompt_seen?: boolean;
   team_id?: string;
   created_at: string;
 }
