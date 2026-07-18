@@ -79,6 +79,11 @@ export async function markAvatarPromptSeen(userId: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function saveAvatarConfig(userId: string, config: Record<string, string>): Promise<void> {
+  const { error } = await supabase.from("profiles").update({ avatar_config: config }).eq("id", userId);
+  if (error) throw error;
+}
+
 export async function approveUser(userId: string, role: "player" | "coach"): Promise<void> {
   const { error } = await supabase.from("profiles").update({ role }).eq("id", userId);
   if (error) throw error;
