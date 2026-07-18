@@ -61,6 +61,7 @@ export interface Profile {
   champion_since?: string;
   must_change_password?: boolean;
   avatar_prompt_seen?: boolean;
+  avatar_config?: Record<string, string> | null;
   team_id?: string;
   created_at: string;
 }
