@@ -3,6 +3,7 @@ import { useAuth } from "./hooks/useAuth";
 import { useWorkouts } from "./hooks/useWorkouts";
 import { getMyScores, getAllScores, signOut, Score, Profile, getPlayerXp, getXpPerks, checkUnseenPerks, loadPeriodAnchor } from "./lib/supabase";
 import ProfileEditor from "./components/ProfileEditor";
+import AvatarOnboardingPrompt from "./components/AvatarOnboardingPrompt";
 import ProfilePage from "./components/ProfilePage";
 import NotificationOptIn from "./components/NotificationOptIn";
 import { ensurePushTag } from "./lib/onesignal";
@@ -114,8 +115,6 @@ export default function App() {
   const [adminNavOrder, setAdminNavOrder] = useState<string[]>(ADMIN_NAV_DEFAULT_ORDER);
   const [showReorderModal, setShowReorderModal] = useState(false);
   const [deepLinkWorkoutId, setDeepLinkWorkoutId] = useState<string | null>(null);
-  const [randomDrillSession, setRandomDrillSession] = useState<{ category: string; tags: string[] } | null>(null);
-  const [reopenRandomDrillSignal, setReopenRandomDrillSignal] = useState(0);
   const [pendingChallenges, setPendingChallenges] = useState(0);
   const [pendingApprovals, setPendingApprovals]   = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -266,6 +265,10 @@ export default function App() {
     );
   }
 
+  if (profile.role === "player" && !(localProfile ?? profile).avatar_prompt_seen) {
+    return <AvatarOnboardingPrompt profile={localProfile ?? profile} onDone={handleProfileUpdated} />;
+  }
+
   const isPlayer = profile.role === "player";
   const isCoach  = profile.role === "coach";
   const isAdmin  = profile.role === "admin";
@@ -292,7 +295,6 @@ export default function App() {
               <div className={`nav-item ${playerTab==="leaderboard"?"active":""}`} onClick={()=>{setPlayerTab("leaderboard");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏆</span> Leaderboard</div>
               <div className={`nav-item ${playerTab==="lifting"?"active":""}`} onClick={()=>{setPlayerTab("lifting");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">💪</span> Lifting</div>
               <div className={`nav-item ${playerTab==="progress"?"active":""}`} onClick={()=>{setPlayerTab("progress");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">📈</span> My Progress</div>
-              <div className={`nav-item ${playerTab==="library"?"active":""}`} onClick={()=>{setPlayerTab("library");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">📚</span> Drill Library</div>
               <div className={`nav-item ${playerTab==="hof"?"active":""}`} onClick={()=>{setPlayerTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👑</span> Hall of Fame</div>
               <div className={`nav-item ${playerTab==="plays"?"active":""}`} onClick={()=>{setPlayerTab("plays");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏀</span> Plays</div>
               <div className={`nav-item ${playerTab==="profile"?"active":""}`} onClick={()=>{ setPlayerTab("profile"); setNewPerkCount(0); if(window.innerWidth<768)setSidebarOpen(false); }}><span className="nav-icon">👤</span> My Profile</div>
@@ -358,13 +360,13 @@ export default function App() {
 
 
           {/* Player panels */}
-          {isPlayer && playerTab === "workouts" && <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} randomDrillSession={randomDrillSession} onRandomDrillSessionChange={setRandomDrillSession} onRandomDrillChangeFilters={() => { setPlayerTab("library"); setReopenRandomDrillSignal(n => n + 1); }} />}
+          {isPlayer && playerTab === "workouts" && <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
           {isPlayer && playerTab === "leaderboard" && <Leaderboard currentUserId={user.id} />}
           {isPlayer && playerTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} />}
           {isPlayer && playerTab === "progress" && <ProgressPanel profile={displayProfile} myScores={myScores} workouts={workouts} />}
           {isPlayer && playerTab === "hof" && <HallOfFame onViewWorkout={(id) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} />}
           {isPlayer && playerTab === "plays" && <PlaysHub currentUserRole="player" />}
-          {isPlayer && playerTab === "library" && <DrillLibrary canManage={false} onPractice={(id, filters) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); setRandomDrillSession(filters ?? null); }} openRandomDrillSignal={reopenRandomDrillSignal} />}
+          {isPlayer && playerTab === "library" && <DrillLibrary canManage={false} onPractice={(id) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} />}
           {isPlayer && playerTab === "profile" && <ProfilePage profile={displayProfile} onUpdated={handleProfileUpdated} myScores={allScores.filter((s: any) => s.player_id === user?.id)} workouts={workouts} xpEnabled={xpEnabled} />}
           {isPlayer && playerTab === "h2h" && xpEnabled && xpPerks.length > 0 && playerXp < (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) ? (
             <div className="panel active" style={{ textAlign: "center", padding: "60px 20px" }}>
