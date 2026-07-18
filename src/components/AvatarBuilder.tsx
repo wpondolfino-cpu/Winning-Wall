@@ -7,7 +7,8 @@ import { useState } from "react";
 import { Profile, uploadAvatar } from "../lib/supabase";
 import {
   AvatarConfig, defaultAvatarConfig, avatarPreviewUri, avatarConfigToFile,
-  SKIN_TONES, HAIR_COLORS, TOP_STYLES, EYE_STYLES, MOUTH_STYLES,
+  SKIN_TONES, HAIR_COLORS, TOP_STYLES, EYE_STYLES, EYEBROW_STYLES, MOUTH_STYLES,
+  FACIAL_HAIR_STYLES, ACCESSORY_STYLES, JERSEY_COLORS,
 } from "../lib/avatarBuilder";
 
 interface Props {
@@ -63,6 +64,29 @@ function PickRow({ label, options, value, onChange }: { label: string; options: 
   );
 }
 
+function SwatchRow({ label, options, value, onChange }: { label: string; options: { value: string; label: string; swatch: string }[]; value: string; onChange: (v: string) => void }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 6px", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {options.map((o) => (
+          <button
+            key={o.value}
+            onClick={() => onChange(o.value)}
+            title={o.label}
+            style={{
+              width: 30, height: 30, borderRadius: "50%",
+              background: o.swatch,
+              border: value === o.value ? "2.5px solid var(--gold)" : "2px solid var(--border)",
+              cursor: "pointer", padding: 0,
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function AvatarBuilder({ profile, onSaved, onCancel }: Props) {
   const [config, setConfig] = useState<AvatarConfig>(defaultAvatarConfig());
   const [saving, setSaving] = useState(false);
@@ -96,7 +120,14 @@ export default function AvatarBuilder({ profile, onSaved, onCancel }: Props) {
       <PickRow label="Hair style" options={TOP_STYLES} value={config.top} onChange={(v) => set("top", v)} />
       <ColorRow label="Hair color" options={HAIR_COLORS} value={config.hairColor} onChange={(v) => set("hairColor", v)} />
       <PickRow label="Eyes" options={EYE_STYLES} value={config.eyes} onChange={(v) => set("eyes", v)} />
+      <PickRow label="Eyebrows" options={EYEBROW_STYLES} value={config.eyebrows} onChange={(v) => set("eyebrows", v)} />
       <PickRow label="Mouth" options={MOUTH_STYLES} value={config.mouth} onChange={(v) => set("mouth", v)} />
+      <PickRow label="Facial hair" options={FACIAL_HAIR_STYLES} value={config.facialHair} onChange={(v) => set("facialHair", v)} />
+      {config.facialHair !== "blank" && (
+        <ColorRow label="Facial hair color" options={HAIR_COLORS} value={config.facialHairColor} onChange={(v) => set("facialHairColor", v)} />
+      )}
+      <PickRow label="Glasses" options={ACCESSORY_STYLES} value={config.accessories} onChange={(v) => set("accessories", v)} />
+      <SwatchRow label="Jersey color" options={JERSEY_COLORS} value={config.clothesColor} onChange={(v) => set("clothesColor", v)} />
 
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         {onCancel && <button onClick={onCancel} style={{ flex: 1, padding: 10, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontFamily: "inherit" }}>Cancel</button>}
