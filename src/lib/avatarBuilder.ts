@@ -76,16 +76,25 @@ export function defaultAvatarConfig(): AvatarConfig {
   };
 }
 
+// Same fixed seed used for both preview and the final save — the seed
+// determines how DiceBear resolves any trait we don't explicitly set below,
+// so using two different seeds (as an earlier version of this file did) let
+// unpinned traits like clothing color and eyebrows quietly differ between
+// what was previewed and what actually got saved.
+const AVATAR_SEED = "winning-wall-avatar";
+
 /** A data: URI for live preview — cheap to regenerate on every trait change. */
 export function avatarPreviewUri(config: AvatarConfig): string {
   const avatar = createAvatar(avataaars, {
-    seed: "preview",
+    seed: AVATAR_SEED,
     skinColor: [config.skinColor],
     hairColor: [config.hairColor],
     top: [config.top as any],
     eyes: [config.eyes as any],
     mouth: [config.mouth as any],
     backgroundColor: ["transparent"],
+    accessoriesProbability: 0,
+    facialHairProbability: 0,
   });
   return avatar.toDataUri();
 }
@@ -93,13 +102,15 @@ export function avatarPreviewUri(config: AvatarConfig): string {
 /** The saved SVG, wrapped as a File for the existing uploadAvatar() pipeline. */
 export function avatarConfigToFile(config: AvatarConfig): File {
   const avatar = createAvatar(avataaars, {
-    seed: "saved-" + Date.now(),
+    seed: AVATAR_SEED,
     skinColor: [config.skinColor],
     hairColor: [config.hairColor],
     top: [config.top as any],
     eyes: [config.eyes as any],
     mouth: [config.mouth as any],
     backgroundColor: ["transparent"],
+    accessoriesProbability: 0,
+    facialHairProbability: 0,
   });
   const svg = avatar.toString();
   return new File([svg], "avatar.svg", { type: "image/svg+xml" });
