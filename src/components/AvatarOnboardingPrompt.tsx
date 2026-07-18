@@ -40,7 +40,7 @@ export default function AvatarOnboardingPrompt({ profile, onDone }: Props) {
             <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: "var(--text)", letterSpacing: 0.5, margin: "0 0 16px", textAlign: "center" }}>
               Build your avatar
             </h2>
-            <AvatarBuilder profile={profile} onSaved={handleSaved} onCancel={() => setBuilding(false)} />
+            <AvatarBuilder profile={profile} initialConfig={profile.avatar_config as any} onSaved={handleSaved} onCancel={() => setBuilding(false)} />
           </>
         ) : (
           <div style={{ textAlign: "center" }}>
