@@ -79,7 +79,7 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame }: Props) 
   if (loading) return <div className="card">Loading games…</div>;
 
   return (
-    <div className="card" style={{ maxWidth: 640 }}>
+    <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <span style={{ fontSize: 13, color: "var(--muted)" }}>Games</span>
         <button className="btn-primary" style={{ padding: "6px 14px", width: "auto" }} onClick={() => setCreating(true)}>
