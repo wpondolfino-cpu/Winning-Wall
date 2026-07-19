@@ -68,6 +68,28 @@ export interface Game {
   status: "draft" | "published";
 }
 
+export interface SavedReport {
+  id: string;
+  label: string;
+  season: string;
+  game_count: "3" | "5" | "10" | "season";
+  category: "all" | PossessionType;
+  created_by: string;
+  created_at: string;
+}
+
+export async function listSavedReports(season: string) {
+  return supabase.from("saved_reports").select("*").eq("season", season).order("created_at", { ascending: false });
+}
+
+export async function saveReport(report: Omit<SavedReport, "id" | "created_at">) {
+  return supabase.from("saved_reports").insert(report).select().single();
+}
+
+export async function deleteSavedReport(id: string) {
+  return supabase.from("saved_reports").delete().eq("id", id);
+}
+
 // ── Offline queue (IndexedDB) ──────────────────────────────────
 const DB_NAME = "ww-game-stats";
 const STORE = "queue";
