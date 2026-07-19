@@ -6,9 +6,10 @@
 // drill in the library); coaches/admins only get Reroll/Close since they
 // don't log scores themselves.
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Workout } from "../lib/supabase";
 import { randomDrillPool, pickRandomDrill } from "../lib/randomDrill";
+import { getCategories } from "../lib/categories";
 
 interface Props {
   drills: Workout[];
@@ -17,8 +18,6 @@ interface Props {
   onLogScore?: (workoutId: string, filters: { category: string; tags: string[] }) => void;
 }
 
-const CATEGORIES = ["Dribbling", "Finishing", "Shooting", "Competing", "Strength"] as const;
-
 function getYouTubeId(url?: string): string | null {
   if (!url) return null;
   const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([^&?/\s]+)/);
@@ -26,11 +25,14 @@ function getYouTubeId(url?: string): string | null {
 }
 
 export default function RandomDrillModal({ drills, canManage, onClose, onLogScore }: Props) {
+  const [categories, setCategories] = useState<string[]>([]);
   const [category, setCategory] = useState<string>("All");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [step, setStep] = useState<"filter" | "result">("filter");
   const [result, setResult] = useState<Workout | null>(null);
   const [noMatch, setNoMatch] = useState(false);
+
+  useEffect(() => { getCategories().then(cs => setCategories(cs.map(c => c.name))); }, []);
 
   const active = useMemo(() => drills.filter(d => (d as any).library_archived !== true), [drills]);
 
@@ -72,7 +74,7 @@ export default function RandomDrillModal({ drills, canManage, onClose, onLogScor
         {step === "filter" && (
           <>
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 12 }}>
-              {(["All", ...CATEGORIES] as const).map(c => (
+              {(["All", ...categories]).map(c => (
                 <button key={c} onClick={() => { setCategory(c); setSelectedTags([]); }}
                   style={{ padding: "5px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600, background: category === c ? "var(--royal)" : "var(--surface2)", color: category === c ? "#fff" : "var(--muted)" }}>
                   {c}
