@@ -1,11 +1,10 @@
 // src/components/coach/WorkoutBuilder.tsx
 import { useState, useEffect } from "react";
 import { supabase, Workout, createWorkout, getEmbedUrl, ScoringType } from "../../lib/supabase";
+import { getCategories } from "../../lib/categories";
 import { loadGroupsForBuilder } from "./GroupManager";
 import LibraryDrillPicker from "./LibraryDrillPicker";
 
-type Category = "Dribbling" | "Finishing" | "Shooting" | "Competing" | "Strength";
-const CATEGORIES: Category[] = ["Dribbling", "Finishing", "Shooting", "Competing", "Strength"];
 const EMOJIS = ["🏀","🎯","⚡","💪","🏆","🔥","🎽","⏱️"];
 
 interface Props {
@@ -18,7 +17,8 @@ interface Props {
 export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, defaultIsActive }: Props) {
   const [attaching, setAttaching] = useState(false);
   const [title, setTitle]               = useState("");
-  const [category, setCategory]         = useState<Category>("Shooting");
+  const [categories, setCategories]     = useState<string[]>([]);
+  const [category, setCategory]         = useState<string>("Shooting");
   const [tags, setTags]                 = useState<string[]>([]);
   const [tagInput, setTagInput]         = useState("");
   const [tagOptions, setTagOptions]     = useState<string[]>([]);
@@ -63,9 +63,14 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
 
   useEffect(() => {
     loadGroupsForBuilder().then(setGroups);
+    getCategories().then(cs => {
+      const names = cs.map(c => c.name);
+      setCategories(names);
+      if (!editWorkout && names.length > 0 && !names.includes("Shooting")) setCategory(names[0]);
+    });
     if (editWorkout) {
       setTitle(editWorkout.title);
-      setCategory((editWorkout.category as Category) ?? "Shooting");
+      setCategory(editWorkout.category ?? "Shooting");
       setTags((editWorkout as any).tags ?? []);
       setDesc(editWorkout.description ?? "");
       setVideoUrl(editWorkout.video_url ?? "");
@@ -174,8 +179,8 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
           </div>
           <div>
             <label>Category</label>
-            <select value={category} onChange={e => setCategory(e.target.value as Category)}>
-              {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+            <select value={category} onChange={e => setCategory(e.target.value)}>
+              {categories.map(c => <option key={c}>{c}</option>)}
             </select>
           </div>
         </div>
