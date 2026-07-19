@@ -55,9 +55,17 @@ create table if not exists public.play_calls (
   category   text not null check (category in ('set', 'motion', 'blob', 'slob')),
   name       text not null,
   status     text not null default 'active' check (status in ('active', 'archived')),
+  linked_play_id uuid references public.plays(id) on delete set null,
   created_by uuid not null references public.profiles(id) on delete cascade,
   created_at timestamptz not null default now()
 );
+
+-- play_calls may already exist from an earlier run of this migration
+-- (before linked_play_id existed) -- "create table if not exists" would
+-- skip it entirely in that case, so add the column explicitly too.
+alter table public.play_calls add column if not exists linked_play_id uuid references public.plays(id) on delete set null;
+
+create unique index if not exists play_calls_linked_play_unique on public.play_calls(linked_play_id) where linked_play_id is not null;
 
 create index if not exists play_calls_category_idx on public.play_calls(category, status);
 
