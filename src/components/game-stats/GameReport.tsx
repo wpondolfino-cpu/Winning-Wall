@@ -102,7 +102,7 @@ export function ReportBody({
   const themTrips = possessions.filter((p) => p.team === "opponent").length;
 
   return (
-    <div className="card" style={{ maxWidth: 640 }}>
+    <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
       <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>{title}</div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
