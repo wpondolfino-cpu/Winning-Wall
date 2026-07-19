@@ -44,7 +44,7 @@ const COACH_NAV_CONFIG: NavItemConfig[] = [
   { key: "library",       icon: "📚", label: "Drill Library" },
   { key: "plays",         icon: "🏀", label: "Plays" },
   { key: "playbooks",     icon: "📋", label: "Playbooks" },
-  { key: "gamestats",     icon: "📊", label: "Game Stats" },
+  { key: "gamestats",     icon: "📊", label: "Analytics" },
   { key: "profile",       icon: "👤", label: "My Profile" },
 ];
 const COACH_NAV_DEFAULT_ORDER = COACH_NAV_CONFIG.map(i => i.key);
@@ -60,7 +60,7 @@ const ADMIN_NAV_CONFIG: NavItemConfig[] = [
   { key: "library",       icon: "📚", label: "Drill Library" },
   { key: "plays",         icon: "🏀", label: "Plays" },
   { key: "playbooks",     icon: "📋", label: "Playbooks" },
-  { key: "gamestats",     icon: "📊", label: "Game Stats" },
+  { key: "gamestats",     icon: "📊", label: "Analytics" },
   { key: "admin",         icon: "👑", label: "Admin" },
   { key: "settings",      icon: "⚙️", label: "Settings" },
   { key: "profile",       icon: "👤", label: "My Profile" },
@@ -300,7 +300,7 @@ export default function App() {
               <div className={`nav-item ${playerTab==="progress"?"active":""}`} onClick={()=>{setPlayerTab("progress");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">📈</span> My Progress</div>
               <div className={`nav-item ${playerTab==="hof"?"active":""}`} onClick={()=>{setPlayerTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👑</span> Hall of Fame</div>
               <div className={`nav-item ${playerTab==="plays"?"active":""}`} onClick={()=>{setPlayerTab("plays");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏀</span> Plays</div>
-              <div className={`nav-item ${playerTab==="gamestats"?"active":""}`} onClick={()=>{setPlayerTab("gamestats");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">📊</span> Game Stats</div>
+              <div className={`nav-item ${playerTab==="gamestats"?"active":""}`} onClick={()=>{setPlayerTab("gamestats");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">📊</span> Analytics</div>
               <div className={`nav-item ${playerTab==="profile"?"active":""}`} onClick={()=>{ setPlayerTab("profile"); setNewPerkCount(0); if(window.innerWidth<768)setSidebarOpen(false); }}><span className="nav-icon">👤</span> My Profile</div>
               <div className={`nav-item ${playerTab==="h2h"?"active":""}`} onClick={()=>{ setPlayerTab("h2h"); setPendingChallenges(0); if(window.innerWidth<768)setSidebarOpen(false); }} style={{ position: "relative" }}>
                 <span className="nav-icon">⚔️</span> Challenges
