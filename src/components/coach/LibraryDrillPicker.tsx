@@ -5,20 +5,20 @@
 
 import { useState, useEffect } from "react";
 import { Workout, getWorkouts } from "../../lib/supabase";
+import { getCategories } from "../../lib/categories";
 
 interface Props {
   onSelect: (drill: Workout) => void;
 }
 
-const CATEGORIES = ["Dribbling", "Finishing", "Shooting", "Competing", "Strength"] as const;
-
 export default function LibraryDrillPicker({ onSelect }: Props) {
   const [drills, setDrills] = useState<Workout[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
   const [open, setOpen] = useState(false);
 
-  useEffect(() => { getWorkouts().then(setDrills).catch(console.error); }, []);
+  useEffect(() => { getWorkouts().then(setDrills).catch(console.error); getCategories().then(cs => setCategories(cs.map(c => c.name))); }, []);
 
   const filtered = drills.filter(d => {
     const matchName = query === "" || d.title.toLowerCase().includes(query.toLowerCase());
@@ -47,7 +47,7 @@ export default function LibraryDrillPicker({ onSelect }: Props) {
             style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box", marginBottom: 8 }}
           />
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 10 }}>
-            {(["All", ...CATEGORIES] as const).map(c => (
+            {(["All", ...categories]).map(c => (
               <button key={c} onClick={() => setCategoryFilter(c)}
                 style={{ padding: "4px 9px", borderRadius: 6, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, background: categoryFilter === c ? "var(--royal)" : "var(--surface)", color: categoryFilter === c ? "#fff" : "var(--muted)" }}>
                 {c}
