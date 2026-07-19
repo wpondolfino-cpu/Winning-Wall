@@ -94,7 +94,7 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
 
   return (
     <div>
-      <div className="card" style={{ maxWidth: 640, marginBottom: 12 }}>
+      <div className="card" style={{ width: "100%", maxWidth: 1400, marginBottom: 12 }}>
         <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 8 }}>Build a report</div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
           {([3, 5, 10, "season"] as GameCount[]).map((n) => (
