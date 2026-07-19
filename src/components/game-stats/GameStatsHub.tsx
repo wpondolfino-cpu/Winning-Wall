@@ -1,16 +1,15 @@
 // src/components/game-stats/GameStatsHub.tsx
-// Single nav entry point for the Game Stats feature. Coaches/admins land
-// on the games list, can start/continue live entry on a draft game, review
-// and correct possessions after watching film, open a single game's
-// report, or build a custom cross-game report (e.g. "last 5 games,
-// transition offense"). Players land on a read-only list of published
-// games and can only open reports -- RLS keeps draft games and raw
-// possessions out of their queries entirely, so there's no client-side
-// gating to get wrong here.
+// Single nav entry point for the Game Stats feature, split into two
+// top-level tabs for coaches/admins: Games (create/track/edit individual
+// games) and Reports (build cross-game reports and revisit saved ones).
+// Players skip the tab split entirely -- they get a read-only list of
+// published games and can only open reports. RLS keeps draft games, raw
+// possessions, and saved report filters out of their queries, so there's
+// no client-side gating to get wrong here.
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { finishGame, isGameFinal } from "../../lib/gameStats";
+import { finishGame, isGameFinal, listSavedReports, deleteSavedReport, type SavedReport } from "../../lib/gameStats";
 import GamesHistory from "../coach/GamesHistory";
 import GameTracker from "../coach/GameTracker";
 import GameReport, { ReportScope } from "./GameReport";
@@ -22,15 +21,18 @@ interface Props {
   userId: string;
 }
 
-type View =
+type GamesView =
   | { mode: "list" }
   | { mode: "track"; gameId: string }
   | { mode: "report"; gameId: string; opponent: string }
-  | { mode: "edit"; gameId: string; opponent: string }
-  | { mode: "reports" };
+  | { mode: "edit"; gameId: string; opponent: string };
+
+type ReportsView = { mode: "history" } | { mode: "builder"; saved?: SavedReport };
 
 export default function GameStatsHub({ currentUserRole, userId }: Props) {
-  const [view, setView] = useState<View>({ mode: "list" });
+  const [topTab, setTopTab] = useState<"games" | "reports">("games");
+  const [gamesView, setGamesView] = useState<GamesView>({ mode: "list" });
+  const [reportsView, setReportsView] = useState<ReportsView>({ mode: "history" });
   const [quarter, setQuarter] = useState(1);
   const [gameFinal, setGameFinal] = useState<boolean | null>(null);
   const [finishing, setFinishing] = useState(false);
@@ -38,7 +40,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   const [finalThem, setFinalThem] = useState("");
   const [reportSel, setReportSel] = useState<{ kind: "quarter"; quarter: number } | { kind: "half"; half: 1 | 2 } | { kind: "game" }>({ kind: "game" });
 
-  const activeGameId = view.mode === "track" || view.mode === "report" || view.mode === "edit" ? view.gameId : null;
+  const activeGameId = gamesView.mode === "track" || gamesView.mode === "report" || gamesView.mode === "edit" ? gamesView.gameId : null;
 
   useEffect(() => {
     if (!activeGameId) { setGameFinal(null); return; }
@@ -62,30 +64,83 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   }
 
   if (currentUserRole === "player") {
-    return <PlayerGamesList userId={userId} view={view} setView={setView} />;
+    return <PlayerGamesList userId={userId} />;
   }
 
+  return (
+    <div>
+      <div className="role-tabs" style={{ marginBottom: 12, maxWidth: 320 }}>
+        <button className={`role-tab ${topTab === "games" ? "active" : ""}`} onClick={() => setTopTab("games")}>Games</button>
+        <button className={`role-tab ${topTab === "reports" ? "active" : ""}`} onClick={() => setTopTab("reports")}>Reports</button>
+      </div>
+
+      {topTab === "games" && (
+        <GamesTab
+          userId={userId}
+          view={gamesView}
+          setView={setGamesView}
+          quarter={quarter}
+          setQuarter={setQuarter}
+          gameFinal={gameFinal}
+          finishing={finishing}
+          setFinishing={setFinishing}
+          finalUs={finalUs}
+          setFinalUs={setFinalUs}
+          finalThem={finalThem}
+          setFinalThem={setFinalThem}
+          handleFinish={handleFinish}
+          reportSel={reportSel}
+          setReportSel={setReportSel}
+        />
+      )}
+
+      {topTab === "reports" && (
+        <ReportsTab userId={userId} view={reportsView} setView={setReportsView} />
+      )}
+    </div>
+  );
+}
+
+function GamesTab({
+  userId,
+  view,
+  setView,
+  quarter,
+  setQuarter,
+  gameFinal,
+  finishing,
+  setFinishing,
+  finalUs,
+  setFinalUs,
+  finalThem,
+  setFinalThem,
+  handleFinish,
+  reportSel,
+  setReportSel,
+}: {
+  userId: string;
+  view: GamesView;
+  setView: (v: GamesView) => void;
+  quarter: number;
+  setQuarter: (q: number) => void;
+  gameFinal: boolean | null;
+  finishing: boolean;
+  setFinishing: (b: boolean) => void;
+  finalUs: string;
+  setFinalUs: (s: string) => void;
+  finalThem: string;
+  setFinalThem: (s: string) => void;
+  handleFinish: (gameId: string) => void;
+  reportSel: { kind: "quarter"; quarter: number } | { kind: "half"; half: 1 | 2 } | { kind: "game" };
+  setReportSel: (s: { kind: "quarter"; quarter: number } | { kind: "half"; half: 1 | 2 } | { kind: "game" }) => void;
+}) {
   if (view.mode === "list") {
     return (
-      <div>
-        <button onClick={() => setView({ mode: "reports" })} style={{ ...backBtn, marginBottom: 10 }}>
-          📊 Build a report
-        </button>
-        <GamesHistory
-          userId={userId}
-          onOpenGame={(gameId) => setView({ mode: "track", gameId })}
-          onEditGame={(gameId) => setView({ mode: "edit", gameId, opponent: "" })}
-        />
-      </div>
-    );
-  }
-
-  if (view.mode === "reports") {
-    return (
-      <div>
-        <button onClick={() => setView({ mode: "list" })} style={{ ...backBtn, marginBottom: 10 }}>← Games</button>
-        <ReportBuilder season={currentSeason()} />
-      </div>
+      <GamesHistory
+        userId={userId}
+        onOpenGame={(gameId) => setView({ mode: "track", gameId })}
+        onEditGame={(gameId) => setView({ mode: "edit", gameId, opponent: "" })}
+      />
     );
   }
 
@@ -118,12 +173,13 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
               </button>
             ))}
           </div>
-          <button onClick={() => { setReportSel({ kind: "quarter", quarter }); setView({ mode: "report", gameId: view.gameId, opponent: "" }); }} style={backBtn}>
+          <button
+            onClick={() => { setReportSel({ kind: "quarter", quarter }); setView({ mode: "report", gameId: view.gameId, opponent: "" }); }}
+            style={backBtn}
+          >
             View report →
           </button>
-          {!gameFinal && (
-            <button onClick={() => setFinishing(true)} style={backBtn}>Finish game</button>
-          )}
+          {!gameFinal && <button onClick={() => setFinishing(true)} style={backBtn}>Finish game</button>}
         </div>
         {finishing && (
           <div className="card" style={{ maxWidth: 640, marginBottom: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -140,6 +196,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
     );
   }
 
+  // view.mode === "report"
   const scope: ReportScope =
     reportSel.kind === "quarter" ? { kind: "quarter", gameId: view.gameId, quarter: reportSel.quarter } :
     reportSel.kind === "half" ? { kind: "half", gameId: view.gameId, half: reportSel.half } :
@@ -172,10 +229,61 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   );
 }
 
-function PlayerGamesList({ userId, view, setView }: { userId: string; view: View; setView: (v: View) => void }) {
-  // Players only ever see published games (RLS-enforced), so this reuses
-  // GamesHistory's list rendering isn't appropriate -- it has coach-only
-  // actions -- so a lightweight published-only list lives here instead.
+function ReportsTab({ userId, view, setView }: { userId: string; view: ReportsView; setView: (v: ReportsView) => void }) {
+  const [history, setHistory] = useState<SavedReport[] | null>(null);
+  const season = currentSeason();
+
+  useEffect(() => { if (view.mode === "history") loadHistory(); }, [view.mode]);
+
+  async function loadHistory() {
+    const { data } = await listSavedReports(season);
+    setHistory((data as SavedReport[]) ?? []);
+  }
+
+  async function remove(id: string) {
+    if (!window.confirm("Delete this saved report?")) return;
+    const { error } = await deleteSavedReport(id);
+    if (!error) setHistory((h) => (h ?? []).filter((r) => r.id !== id));
+  }
+
+  if (view.mode === "builder") {
+    return (
+      <div>
+        <button onClick={() => setView({ mode: "history" })} style={{ ...backBtn, marginBottom: 10 }}>← Reports</button>
+        <ReportBuilder season={season} userId={userId} initial={view.saved} onSaved={loadHistory} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="card" style={{ maxWidth: 640 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <span style={{ fontSize: 13, color: "var(--muted)" }}>Reports · {season}</span>
+        <button className="btn-primary" style={{ padding: "6px 14px", width: "auto" }} onClick={() => setView({ mode: "builder" })}>
+          Create report
+        </button>
+      </div>
+
+      {history === null && <div style={{ fontSize: 13, color: "var(--muted)" }}>Loading…</div>}
+      {history?.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>No reports saved yet this season.</div>}
+      {history?.map((r) => (
+        <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderTop: "1px solid var(--border)" }}>
+          <div style={{ cursor: "pointer" }} onClick={() => setView({ mode: "builder", saved: r })}>
+            <span style={{ fontSize: 14 }}>{r.label}</span>{" "}
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>· {new Date(r.created_at).toLocaleDateString()}</span>
+          </div>
+          <button style={{ ...backBtn, background: "transparent", color: "#8a2f2f" }} onClick={() => remove(r.id)}>Delete</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PlayerGamesList({ userId }: { userId: string }) {
+  // Players only ever see published games (RLS-enforced) and have no
+  // Games/Reports split -- just a list that opens straight into a report.
+  type View = { mode: "list" } | { mode: "report"; gameId: string; opponent: string };
+  const [view, setView] = useState<View>({ mode: "list" });
   const [games, setGames] = useState<{ id: string; opponent: string; game_date: string; final_score_us: number | null; final_score_them: number | null }[] | null>(null);
 
   useEffect(() => {
