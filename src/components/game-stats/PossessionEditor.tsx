@@ -50,7 +50,7 @@ export default function PossessionEditor({ gameId, opponent }: Props) {
   if (loading) return <div className="card">Loading possessions…</div>;
 
   return (
-    <div className="card" style={{ maxWidth: 720 }}>
+    <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
       <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>
         Editing possessions · vs {opponent}
       </div>
