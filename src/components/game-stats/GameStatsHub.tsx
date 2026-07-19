@@ -69,13 +69,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
 
   return (
     <div>
-      <style>{`
-        /* Cards fill the available width instead of hugging a fixed
-           column -- capped generously so text doesn't stretch absurdly
-           thin on an ultra-wide monitor, but otherwise full-width. */
-        .gs-wide, .gs-wide-lg, .gs-tabs { width: 100%; max-width: 1400px; }
-      `}</style>
-      <div className="role-tabs gs-tabs" style={{ marginBottom: 12 }}>
+      <div className="role-tabs" style={{ marginBottom: 12, width: "100%", maxWidth: 1400 }}>
         <button className={`role-tab ${topTab === "games" ? "active" : ""}`} onClick={() => setTopTab("games")}>Games</button>
         <button className={`role-tab ${topTab === "reports" ? "active" : ""}`} onClick={() => setTopTab("reports")}>Reports</button>
       </div>
@@ -188,7 +182,7 @@ function GamesTab({
           {!gameFinal && <button onClick={() => setFinishing(true)} style={backBtn}>Finish game</button>}
         </div>
         {finishing && (
-          <div className="card gs-wide" style={{ marginBottom: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="card" style={{ width: "100%", maxWidth: 1400, marginBottom: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <span style={{ fontSize: 12, color: "var(--muted)" }}>Final score — Us</span>
             <input type="number" value={finalUs} onChange={(e) => setFinalUs(e.target.value)} style={{ width: 56, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }} />
             <span style={{ fontSize: 12, color: "var(--muted)" }}>Them</span>
@@ -262,7 +256,7 @@ function ReportsTab({ userId, view, setView }: { userId: string; view: ReportsVi
   }
 
   return (
-    <div className="card gs-wide">
+    <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <span style={{ fontSize: 13, color: "var(--muted)" }}>Reports · {season}</span>
         <button className="btn-primary" style={{ padding: "6px 14px", width: "auto" }} onClick={() => setView({ mode: "builder" })}>
@@ -314,7 +308,7 @@ function PlayerGamesList({ userId }: { userId: string }) {
   }
 
   return (
-    <div className="card gs-wide">
+    <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
       <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>Games</div>
       {games.map((g) => (
         <div
