@@ -245,7 +245,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     drawnPlays[cat].filter((dp) => !playCalls.some((pc) => pc.linked_play_id === dp.id));
 
   return (
-    <div className="card gs-wide">
+    <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
       <style>{`
         .gt-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); gap: 8px; }
         @media (max-width: 480px) {
