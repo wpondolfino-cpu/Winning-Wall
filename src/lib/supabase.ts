@@ -60,8 +60,6 @@ export interface Profile {
   is_period_champion?: boolean;
   champion_since?: string;
   must_change_password?: boolean;
-  avatar_prompt_seen?: boolean;
-  avatar_config?: Record<string, string> | null;
   team_id?: string;
   created_at: string;
 }
@@ -71,7 +69,7 @@ export interface Workout {
   coach_id: string;
   title: string;
   description?: string;
-  category: "Dribbling" | "Finishing" | "Shooting" | "Competing" | "Strength";
+  category: string;
   video_url?: string;
   emoji: string;
   scoring_type: ScoringType;
