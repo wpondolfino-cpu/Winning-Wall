@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase, Workout, getWorkouts } from "../../lib/supabase";
+import { getCategories } from "../../lib/categories";
 import { loadGroupsForBuilder } from "./GroupManager";
 
 interface Props {
@@ -12,17 +13,17 @@ interface Props {
   onAttached: () => void;
 }
 
-const CATEGORIES = ["Dribbling", "Finishing", "Shooting", "Competing", "Strength"] as const;
-
 export default function FindDrillModal({ onClose, onAttached }: Props) {
   const [groups, setGroups] = useState<any[]>([]);
   const [groupId, setGroupId] = useState<string>("");
   const [drills, setDrills] = useState<Workout[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
   const [attaching, setAttaching] = useState<string | null>(null);
 
   useEffect(() => {
+    getCategories().then(cs => setCategories(cs.map(c => c.name)));
     loadGroupsForBuilder().then((gs: any[]) => {
       setGroups(gs);
       const draft = gs.find((g: any) => g.status === "draft");
@@ -75,7 +76,7 @@ export default function FindDrillModal({ onClose, onAttached }: Props) {
           style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", marginBottom: 8 }} />
 
         <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 12 }}>
-          {(["All", ...CATEGORIES] as const).map(c => (
+          {(["All", ...categories]).map(c => (
             <button key={c} onClick={() => setCategoryFilter(c)}
               style={{ padding: "4px 10px", borderRadius: 6, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, background: categoryFilter === c ? "var(--royal)" : "var(--surface2)", color: categoryFilter === c ? "#fff" : "var(--muted)" }}>
               {c}
