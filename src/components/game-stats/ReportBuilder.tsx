@@ -3,11 +3,16 @@
 // ReportBody so a filtered report looks identical to a normal one -- the
 // only difference is which possessions get fetched and whether they're
 // narrowed to one possession_type before the stat math runs.
+//
+// Can also reopen from a SavedReport (Reports tab history) -- the saved
+// row only stores the filters, so reopening always re-runs against
+// current data rather than showing a frozen snapshot.
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { ReportBody } from "./GameReport";
-import type { Possession, PlayCall, StatGoal, PossessionType } from "../../lib/gameStats";
+import { saveReport } from "../../lib/gameStats";
+import type { Possession, PlayCall, StatGoal, PossessionType, SavedReport } from "../../lib/gameStats";
 
 type GameCount = 3 | 5 | 10 | "season";
 type CategoryFilter = "all" | PossessionType;
@@ -20,16 +25,25 @@ const CATEGORY_LABEL: Record<CategoryFilter, string> = {
   slob: "SLOB",
 };
 
-export default function ReportBuilder({ season }: { season: string }) {
-  const [gameCount, setGameCount] = useState<GameCount>(5);
-  const [category, setCategory] = useState<CategoryFilter>("all");
+interface Props {
+  season: string;
+  userId: string;
+  initial?: SavedReport;
+  onSaved?: () => void;
+}
+
+export default function ReportBuilder({ season, userId, initial, onSaved }: Props) {
+  const [gameCount, setGameCount] = useState<GameCount>(initial ? (initial.game_count === "season" ? "season" : (Number(initial.game_count) as GameCount)) : 5);
+  const [category, setCategory] = useState<CategoryFilter>(initial?.category ?? "all");
   const [possessions, setPossessions] = useState<Possession[] | null>(null);
   const [playCalls, setPlayCalls] = useState<PlayCall[]>([]);
   const [goals, setGoals] = useState<StatGoal[]>([]);
   const [gameLabel, setGameLabel] = useState("");
   const [loading, setLoading] = useState(false);
+  const [savingLabel, setSavingLabel] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
-  useEffect(() => { run(); }, [gameCount, category]);
+  useEffect(() => { run(); setSaved(false); }, [gameCount, category]);
 
   async function run() {
     setLoading(true);
@@ -62,32 +76,58 @@ export default function ReportBuilder({ season }: { season: string }) {
     setLoading(false);
   }
 
+  async function confirmSave() {
+    const label = savingLabel?.trim() || `${gameCount === "season" ? "Full season" : `Last ${gameCount}`} · ${CATEGORY_LABEL[category]}`;
+    const { error } = await saveReport({
+      label,
+      season,
+      game_count: String(gameCount) as SavedReport["game_count"],
+      category,
+      created_by: userId,
+    });
+    if (!error) {
+      setSavingLabel(null);
+      setSaved(true);
+      onSaved?.();
+    }
+  }
+
   return (
     <div>
       <div className="card" style={{ maxWidth: 640, marginBottom: 12 }}>
         <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 8 }}>Build a report</div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
           {([3, 5, 10, "season"] as GameCount[]).map((n) => (
-            <button
-              key={n}
-              onClick={() => setGameCount(n)}
-              style={pillStyle(gameCount === n)}
-            >
+            <button key={n} onClick={() => setGameCount(n)} style={pillStyle(gameCount === n)}>
               {n === "season" ? "Full season" : `Last ${n}`}
             </button>
           ))}
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
           {(Object.keys(CATEGORY_LABEL) as CategoryFilter[]).map((c) => (
-            <button
-              key={c}
-              onClick={() => setCategory(c)}
-              style={pillStyle(category === c)}
-            >
+            <button key={c} onClick={() => setCategory(c)} style={pillStyle(category === c)}>
               {CATEGORY_LABEL[c]}
             </button>
           ))}
         </div>
+
+        {savingLabel === null ? (
+          <button style={pillStyle(false)} onClick={() => setSavingLabel("")} disabled={saved}>
+            {saved ? "Saved to history ✓" : "Save this report"}
+          </button>
+        ) : (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input
+              autoFocus
+              value={savingLabel}
+              onChange={(e) => setSavingLabel(e.target.value)}
+              placeholder="Label (optional)"
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
+            />
+            <button className="btn-primary" style={{ width: "auto", padding: "6px 14px" }} onClick={confirmSave}>Save</button>
+            <button style={pillStyle(false)} onClick={() => setSavingLabel(null)}>Cancel</button>
+          </div>
+        )}
       </div>
 
       {loading || possessions === null ? (
