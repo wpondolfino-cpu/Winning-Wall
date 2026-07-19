@@ -144,3 +144,29 @@ create policy "stat_goals_staff_all" on public.stat_goals
 drop policy if exists "stat_goals_players_read" on public.stat_goals;
 create policy "stat_goals_players_read" on public.stat_goals
   for select using (true);
+
+-- ── Saved reports (Reports tab history) ────────────────────────
+-- Stores the *filters* a coach used to build a report, not a frozen
+-- snapshot -- reopening one re-runs it against current data.
+create table if not exists public.saved_reports (
+  id           uuid primary key default gen_random_uuid(),
+  label        text not null,
+  season       text not null,
+  game_count   text not null check (game_count in ('3', '5', '10', 'season')),
+  category     text not null check (category in ('all', 'transition', 'half_court', 'blob', 'slob')),
+  created_by   uuid not null references public.profiles(id) on delete cascade,
+  created_at   timestamptz not null default now()
+);
+
+create index if not exists saved_reports_season_idx on public.saved_reports(season);
+
+alter table public.saved_reports enable row level security;
+
+drop policy if exists "saved_reports_staff_all" on public.saved_reports;
+create policy "saved_reports_staff_all" on public.saved_reports
+  for all using (
+    exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('coach', 'admin'))
+  )
+  with check (
+    exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('coach', 'admin'))
+  );
