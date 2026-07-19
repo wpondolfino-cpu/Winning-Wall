@@ -2,20 +2,32 @@
 // Live, offline-first possession entry. Every tap queues locally via
 // gameStats.queuePossession and syncs in the background -- the coach never
 // waits on the network mid-game. One possession = one true offensive trip;
-// an OREB extends the current trip instead of starting a new one.
+// an OREB extends the current trip (increments oreb_count) instead of
+// starting a new one, but jumps straight into a fresh half-court sub-flow
+// so the follow-up action gets its own play-call/paint-touch/shot-quality
+// detail, same as if "Half-court" had been tapped from scratch.
 //
 // Shot quality applies to both makes and misses (it rates the look, not
 // the result), so every FG attempt routes through a "pendingShot" holding
-// pattern before it's committed with a quality tag.
+// pattern before it's committed with a quality tag. FT trips are always
+// auto-tagged "great" quality -- a trip to the line is by definition a
+// clean, uncontested look.
+//
+// BLOB/SLOB/Set/Motion pickers also surface any play drawn in the Plays
+// feature and tagged with that category (case-insensitive), not just
+// play_calls added inline here -- see gameStats.ts's fetchDrawnPlaysForCategory.
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import {
   queuePossession,
   queueCount,
+  fetchDrawnPlaysForCategory,
+  ensurePlayCallForPlay,
   type Possession,
   type PlayCall,
   type PlayCallCategory,
+  type DrawnPlay,
   type Team,
   type PossessionType,
   type HalfCourtType,
@@ -55,10 +67,12 @@ interface FlowSnapshot {
   paintTouch: PaintTouch | null;
   orebCount: number;
   pendingShot: PendingShot | null;
+  postOreb: boolean;
 }
 
 export default function GameTracker({ gameId, userId, quarter }: Props) {
   const [playCalls, setPlayCalls] = useState<PlayCall[]>([]);
+  const [drawnPlays, setDrawnPlays] = useState<Record<PlayCallCategory, DrawnPlay[]>>({ set: [], motion: [], blob: [], slob: [] });
   const [unsynced, setUnsynced] = useState(0);
   const [sequence, setSequence] = useState(1);
   const [log, setLog] = useState<Possession[]>([]);
@@ -72,6 +86,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
   const [paintTouch, setPaintTouch] = useState<PaintTouch | null>(null);
   const [orebCount, setOrebCount] = useState(0);
   const [pendingShot, setPendingShot] = useState<PendingShot | null>(null);
+  const [postOreb, setPostOreb] = useState(false);
   const [newPlayName, setNewPlayName] = useState("");
   const [addingPlayFor, setAddingPlayFor] = useState<PlayCallCategory | null>(null);
   const [history, setHistory] = useState<FlowSnapshot[]>([]);
@@ -86,6 +101,9 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
   async function loadPlayCalls() {
     const { data } = await supabase.from("play_calls").select("*").eq("status", "active");
     setPlayCalls((data as PlayCall[]) ?? []);
+    const categories: PlayCallCategory[] = ["set", "motion", "blob", "slob"];
+    const results = await Promise.all(categories.map((c) => fetchDrawnPlaysForCategory(c)));
+    setDrawnPlays({ set: results[0], motion: results[1], blob: results[2], slob: results[3] });
   }
 
   async function refreshUnsynced() {
@@ -101,6 +119,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     setPaintTouch(null);
     setOrebCount(0);
     setPendingShot(null);
+    setPostOreb(false);
     setHistory([]);
   }
 
@@ -108,7 +127,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
   function pushHistory() {
     setHistory((h) => [
       ...h,
-      { step, possessionType, halfCourtType, playCallId, oobResult, paintTouch, orebCount, pendingShot },
+      { step, possessionType, halfCourtType, playCallId, oobResult, paintTouch, orebCount, pendingShot, postOreb },
     ]);
   }
 
@@ -124,6 +143,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       setPaintTouch(prev.paintTouch);
       setOrebCount(prev.orebCount);
       setPendingShot(prev.pendingShot);
+      setPostOreb(prev.postOreb);
       return h.slice(0, -1);
     });
   }
@@ -190,10 +210,21 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     }
   }
 
+  async function pickDrawnPlay(dp: DrawnPlay, category: PlayCallCategory, nextStep: Step) {
+    const pc = await ensurePlayCallForPlay(dp, category, userId);
+    if (!pc) return;
+    pushHistory();
+    setPlayCalls((list) => (list.some((x) => x.id === pc.id) ? list : [...list, pc]));
+    setPlayCallId(pc.id);
+    setStep(nextStep);
+  }
+
   const playsForCategory = (cat: PlayCallCategory) => playCalls.filter((p) => p.category === cat);
+  const unlinkedDrawnFor = (cat: PlayCallCategory) =>
+    drawnPlays[cat].filter((dp) => !playCalls.some((pc) => pc.linked_play_id === dp.id));
 
   return (
-    <div className="card" style={{ maxWidth: 640 }}>
+    <div className="card gs-wide">
       <style>{`
         .gt-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); gap: 8px; }
         @media (max-width: 480px) {
@@ -229,7 +260,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
         <Section label="Possession type">
           <Grid cols={4}>
             <Btn onClick={() => { pushHistory(); setPossessionType("transition"); setStep("flags"); }}>Transition</Btn>
-            <Btn onClick={() => { pushHistory(); setPossessionType("half_court"); setStep("halfcourt_type"); }}>Half-court</Btn>
+            <Btn onClick={() => { pushHistory(); setPossessionType("half_court"); setPostOreb(false); setStep("halfcourt_type"); }}>Half-court</Btn>
             <Btn onClick={() => { pushHistory(); setPossessionType("blob"); setStep("oob_result"); }}>BLOB</Btn>
             <Btn onClick={() => { pushHistory(); setPossessionType("slob"); setStep("oob_result"); }}>SLOB</Btn>
           </Grid>
@@ -238,9 +269,14 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
 
       {step === "halfcourt_type" && (
         <Section label="Half-court type" accent>
-          <Grid cols={2}>
+          <Grid cols={postOreb ? 3 : 2}>
             <Btn onClick={() => { pushHistory(); setHalfCourtType("set"); setStep("play_call"); }}>Set</Btn>
             <Btn onClick={() => { pushHistory(); setHalfCourtType("motion"); setStep("play_call"); }}>Motion</Btn>
+            {postOreb && (
+              <Btn onClick={() => { pushHistory(); setHalfCourtType(null); setPlayCallId(null); setStep("flags"); }}>
+                Immediate score
+              </Btn>
+            )}
           </Grid>
         </Section>
       )}
@@ -249,7 +285,9 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
         <Section label={`Which ${halfCourtType}`} accent>
           <PlayCallPicker
             plays={playsForCategory(halfCourtType)}
+            drawn={unlinkedDrawnFor(halfCourtType)}
             onPick={(id) => { pushHistory(); setPlayCallId(id); setStep("flags"); }}
+            onPickDrawn={(dp) => pickDrawnPlay(dp, halfCourtType, "flags")}
             adding={addingPlayFor === halfCourtType}
             onStartAdd={() => setAddingPlayFor(halfCourtType)}
             newName={newPlayName}
@@ -264,7 +302,9 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
           <Section label={`${possessionType.toUpperCase()} play`} accent>
             <PlayCallPicker
               plays={playsForCategory(possessionType)}
+              drawn={unlinkedDrawnFor(possessionType)}
               onPick={(id) => setPlayCallId(id)}
+              onPickDrawn={(dp) => pickDrawnPlay(dp, possessionType, "oob_result")}
               adding={addingPlayFor === possessionType}
               onStartAdd={() => setAddingPlayFor(possessionType)}
               newName={newPlayName}
@@ -283,22 +323,40 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
 
       {step === "flags" && (
         <>
-          <Grid cols={2}>
-            <Btn active={paintTouch === "single"} onClick={() => setPaintTouch(paintTouch === "single" ? null : "single")}>
-              Paint touch
-            </Btn>
-            <Btn active={paintTouch === "both"} onClick={() => setPaintTouch(paintTouch === "both" ? null : "both")}>
-              Both sides
-            </Btn>
-          </Grid>
-          <Btn onClick={() => setOrebCount((c) => c + 1)} style={{ marginTop: 8, width: "100%" }}>
-            OREB {orebCount ? `(${orebCount})` : ""}
-          </Btn>
-          <Grid cols={4} style={{ marginTop: 10 }}>
+          {!postOreb && (
+            <Grid cols={2}>
+              <Btn active={paintTouch === "single"} onClick={() => setPaintTouch(paintTouch === "single" ? null : "single")}>
+                Paint touch
+              </Btn>
+              <Btn active={paintTouch === "both"} onClick={() => setPaintTouch(paintTouch === "both" ? null : "both")}>
+                Both sides
+              </Btn>
+            </Grid>
+          )}
+          <Grid cols={4} style={{ marginTop: postOreb ? 0 : 8 }}>
             <Btn onClick={() => { pushHistory(); setPendingShot({ shotType: 2, made: true }); setStep("shot_quality"); }}>Make 2</Btn>
             <Btn onClick={() => { pushHistory(); setPendingShot({ shotType: 2, made: false }); setStep("shot_quality"); }}>Miss 2</Btn>
             <Btn onClick={() => { pushHistory(); setPendingShot({ shotType: 3, made: true }); setStep("shot_quality"); }}>Make 3</Btn>
             <Btn onClick={() => { pushHistory(); setPendingShot({ shotType: 3, made: false }); setStep("shot_quality"); }}>Miss 3</Btn>
+          </Grid>
+          <Grid cols={4} style={{ marginTop: 8 }}>
+            <Btn
+              onClick={() => {
+                // An offensive rebound doesn't end the trip -- it keeps the
+                // same possession alive and hands it straight into a fresh
+                // half-court look, same as tapping "Half-court" from scratch.
+                pushHistory();
+                setOrebCount((c) => c + 1);
+                setPossessionType("half_court");
+                setHalfCourtType(null);
+                setPlayCallId(null);
+                setPaintTouch(null);
+                setPostOreb(true);
+                setStep("halfcourt_type");
+              }}
+            >
+              OREB {orebCount ? `(${orebCount})` : ""}
+            </Btn>
             <Btn onClick={() => { pushHistory(); setStep("turnover_type"); }}>Turnover</Btn>
             <Btn onClick={() => { pushHistory(); setStep("ft_points"); }}>FT trip</Btn>
             <Btn onClick={undo} style={{ color: "var(--muted)" }}>Undo</Btn>
@@ -339,7 +397,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
         <Section label="Points made at the line">
           <Grid cols={4}>
             {[0, 1, 2, 3].map((n) => (
-              <Btn key={n} onClick={() => commit("ft_trip", { points: n })}>{n}</Btn>
+              <Btn key={n} onClick={() => commit("ft_trip", { points: n, shot_quality: "great" })}>{n}</Btn>
             ))}
           </Grid>
         </Section>
@@ -416,7 +474,9 @@ function Btn({
 
 function PlayCallPicker({
   plays,
+  drawn,
   onPick,
+  onPickDrawn,
   adding,
   onStartAdd,
   newName,
@@ -424,7 +484,9 @@ function PlayCallPicker({
   onSaveNew,
 }: {
   plays: PlayCall[];
+  drawn: DrawnPlay[];
   onPick: (id: string) => void;
+  onPickDrawn: (play: DrawnPlay) => void;
   adding: boolean;
   onStartAdd: () => void;
   newName: string;
@@ -440,6 +502,16 @@ function PlayCallPicker({
           style={{ padding: "10px 16px", fontSize: 14, borderRadius: 20, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", cursor: "pointer" }}
         >
           {p.name}
+        </button>
+      ))}
+      {drawn.map((dp) => (
+        <button
+          key={dp.id}
+          onClick={() => onPickDrawn(dp)}
+          title="From your drawn Plays"
+          style={{ padding: "10px 16px", fontSize: 14, borderRadius: 20, border: "1px solid var(--royal-light)", background: "var(--surface2)", color: "var(--text)", cursor: "pointer" }}
+        >
+          🏀 {dp.title}
         </button>
       ))}
       {adding ? (
