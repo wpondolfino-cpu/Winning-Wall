@@ -47,8 +47,34 @@ export interface PlayCall {
   category: PlayCallCategory;
   name: string;
   status: "active" | "archived";
+  linked_play_id: string | null;
   created_by: string;
   created_at: string;
+}
+
+/** Minimal shape of a row from the Plays feature's `plays` table -- just enough to surface it as a pickable play call. */
+export interface DrawnPlay {
+  id: string;
+  title: string;
+  tags: string[];
+}
+
+/** Plays tagged with a category (case-insensitively) that a coach drew in the Plays feature, so they can surface in the tracker without re-entering the name. RLS on `plays` only returns ones this user owns or was shared -- see note in GameTracker. */
+export async function fetchDrawnPlaysForCategory(category: PlayCallCategory): Promise<DrawnPlay[]> {
+  const { data } = await supabase.from("plays").select("id, title, tags");
+  return ((data as DrawnPlay[]) ?? []).filter((p) => p.tags.some((t) => t.toLowerCase() === category));
+}
+
+/** Mirrors a drawn play into play_calls (once) so it can be referenced by possession.play_call_id and show up in effectiveness reports like any other play call. */
+export async function ensurePlayCallForPlay(play: DrawnPlay, category: PlayCallCategory, userId: string): Promise<PlayCall | null> {
+  const { data: existing } = await supabase.from("play_calls").select("*").eq("linked_play_id", play.id).maybeSingle();
+  if (existing) return existing as PlayCall;
+  const { data, error } = await supabase
+    .from("play_calls")
+    .insert({ category, name: play.title, linked_play_id: play.id, created_by: userId })
+    .select()
+    .single();
+  return error ? null : (data as PlayCall);
 }
 
 export interface StatGoal {
