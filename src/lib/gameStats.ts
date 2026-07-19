@@ -276,5 +276,14 @@ export function computeOobEffectiveness(possessions: Possession[], type: "blob" 
   return { total: trips.length, scored, flowed };
 }
 
+export async function finishGame(gameId: string, finalScoreUs: number, finalScoreThem: number) {
+  return supabase.from("games").update({ final_score_us: finalScoreUs, final_score_them: finalScoreThem }).eq("id", gameId);
+}
+
+/** A game is only editable/correctable once it's been explicitly finished (final score set) -- this keeps live entry and post-game correction from colliding. */
+export function isGameFinal(game: Pick<Game, "final_score_us" | "final_score_them">): boolean {
+  return game.final_score_us != null && game.final_score_them != null;
+}
+
 function round1(n: number) { return Math.round(n * 10) / 10; }
 function round2(n: number) { return Math.round(n * 100) / 100; }
