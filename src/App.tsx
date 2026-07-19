@@ -27,10 +27,11 @@ import NavReorderModal, { NavItemConfig } from "./components/NavReorderModal";
 import DrillLibrary from "./components/DrillLibrary";
 import PlaysHub from "./components/plays/PlaysHub";
 import PlaybookManager from "./components/coach/PlaybookManager";
+import GameStatsHub from "./components/game-stats/GameStatsHub";
 
-type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "more";
-type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "profile";
-type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "profile";
+type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "more";
+type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "profile";
+type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "profile";
 
 const COACH_NAV_CONFIG: NavItemConfig[] = [
   { key: "workouts",      icon: "➕", label: "Manage Workouts" },
@@ -43,6 +44,7 @@ const COACH_NAV_CONFIG: NavItemConfig[] = [
   { key: "library",       icon: "📚", label: "Drill Library" },
   { key: "plays",         icon: "🏀", label: "Plays" },
   { key: "playbooks",     icon: "📋", label: "Playbooks" },
+  { key: "gamestats",     icon: "📊", label: "Game Stats" },
   { key: "profile",       icon: "👤", label: "My Profile" },
 ];
 const COACH_NAV_DEFAULT_ORDER = COACH_NAV_CONFIG.map(i => i.key);
@@ -58,6 +60,7 @@ const ADMIN_NAV_CONFIG: NavItemConfig[] = [
   { key: "library",       icon: "📚", label: "Drill Library" },
   { key: "plays",         icon: "🏀", label: "Plays" },
   { key: "playbooks",     icon: "📋", label: "Playbooks" },
+  { key: "gamestats",     icon: "📊", label: "Game Stats" },
   { key: "admin",         icon: "👑", label: "Admin" },
   { key: "settings",      icon: "⚙️", label: "Settings" },
   { key: "profile",       icon: "👤", label: "My Profile" },
@@ -297,6 +300,7 @@ export default function App() {
               <div className={`nav-item ${playerTab==="progress"?"active":""}`} onClick={()=>{setPlayerTab("progress");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">📈</span> My Progress</div>
               <div className={`nav-item ${playerTab==="hof"?"active":""}`} onClick={()=>{setPlayerTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👑</span> Hall of Fame</div>
               <div className={`nav-item ${playerTab==="plays"?"active":""}`} onClick={()=>{setPlayerTab("plays");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏀</span> Plays</div>
+              <div className={`nav-item ${playerTab==="gamestats"?"active":""}`} onClick={()=>{setPlayerTab("gamestats");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">📊</span> Game Stats</div>
               <div className={`nav-item ${playerTab==="profile"?"active":""}`} onClick={()=>{ setPlayerTab("profile"); setNewPerkCount(0); if(window.innerWidth<768)setSidebarOpen(false); }}><span className="nav-icon">👤</span> My Profile</div>
               <div className={`nav-item ${playerTab==="h2h"?"active":""}`} onClick={()=>{ setPlayerTab("h2h"); setPendingChallenges(0); if(window.innerWidth<768)setSidebarOpen(false); }} style={{ position: "relative" }}>
                 <span className="nav-icon">⚔️</span> Challenges
@@ -366,6 +370,7 @@ export default function App() {
           {isPlayer && playerTab === "progress" && <ProgressPanel profile={displayProfile} myScores={myScores} workouts={workouts} />}
           {isPlayer && playerTab === "hof" && <HallOfFame onViewWorkout={(id) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} />}
           {isPlayer && playerTab === "plays" && <PlaysHub currentUserRole="player" />}
+          {isPlayer && playerTab === "gamestats" && <GameStatsHub currentUserRole="player" userId={user.id} />}
           {isPlayer && playerTab === "library" && <DrillLibrary canManage={false} onPractice={(id) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} />}
           {isPlayer && playerTab === "profile" && <ProfilePage profile={displayProfile} onUpdated={handleProfileUpdated} myScores={allScores.filter((s: any) => s.player_id === user?.id)} workouts={workouts} xpEnabled={xpEnabled} />}
           {isPlayer && playerTab === "h2h" && xpEnabled && xpPerks.length > 0 && playerXp < (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) ? (
@@ -424,6 +429,7 @@ export default function App() {
           {isCoach && coachTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} />}
           {isCoach && coachTab === "plays" && <PlaysHub currentUserRole="coach" />}
           {isCoach && coachTab === "playbooks" && <PlaybookManager />}
+          {isCoach && coachTab === "gamestats" && <GameStatsHub currentUserRole="coach" userId={user.id} />}
           {isCoach && coachTab === "leaderboard" && <Leaderboard canManage={true} />}
           {isCoach && coachTab === "announcements" && (<><AnnouncementPanel isAdmin={false} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
           {isCoach && coachTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isCoach={true} />}
@@ -444,6 +450,7 @@ export default function App() {
           {isAdmin && adminTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={true} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
           {isAdmin && adminTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} />}
           {isAdmin && adminTab === "plays" && <PlaysHub currentUserRole="admin" />}
+          {isAdmin && adminTab === "gamestats" && <GameStatsHub currentUserRole="admin" userId={user.id} />}
           {isAdmin && adminTab === "playbooks" && <PlaybookManager />}
           {isAdmin && adminTab === "leaderboard" && <Leaderboard canManage={true} />}
           {isAdmin && adminTab === "announcements" && (<><AnnouncementPanel isAdmin={true} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
