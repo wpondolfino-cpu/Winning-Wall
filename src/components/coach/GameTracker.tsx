@@ -7,11 +7,17 @@
 // so the follow-up action gets its own play-call/paint-touch/shot-quality
 // detail, same as if "Half-court" had been tapped from scratch.
 //
-// Shot quality applies to both makes and misses (it rates the look, not
-// the result), so every FG attempt routes through a "pendingShot" holding
-// pattern before it's committed with a quality tag. FT trips are always
-// auto-tagged "great" quality -- a trip to the line is by definition a
-// clean, uncontested look.
+// The team toggle (us on offense / us on defense) auto-flips after every
+// committed possession, since basketball possessions alternate -- undo
+// reverts the flip along with the possession it's undoing.
+//
+// Shot quality applies to both makes and misses on OUR possessions (it
+// rates the look, not the result) and every FG attempt routes through a
+// "pendingShot" holding pattern before being committed with a quality tag.
+// On defense we skip shot quality and play-calling (Set/Motion/BLOB/SLOB
+// picker) entirely -- we're coaching our own shot selection, not judging
+// theirs, and we don't know the name of a play we didn't call. FT trips
+// are auto-tagged "great" quality, but only on our own trips to the line.
 //
 // BLOB/SLOB/Set/Motion pickers also surface any play drawn in the Plays
 // feature and tagged with that category (case-insensitive), not just
@@ -174,6 +180,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     setLog((l) => [...l, possession]);
     setSequence((s) => s + 1);
     refreshUnsynced();
+    setTeam((t) => (t === "us" ? "opponent" : "us"));
     resetForNextPossession();
   }
 
@@ -186,9 +193,23 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     });
   }
 
+  /** Shared by the Make/Miss buttons and the BLOB/SLOB score branch. We don't
+      track shot quality for the opponent -- it's our own shot selection we're
+      coaching, not theirs -- so a defensive attempt commits immediately. */
+  function selectShot(shotType: 2 | 3, made: boolean) {
+    pushHistory();
+    if (team === "opponent") {
+      commit(made ? "fg_made" : "fg_missed", { shot_type: shotType, points: made ? shotType : 0, shot_quality: null });
+    } else {
+      setPendingShot({ shotType, made });
+      setStep("shot_quality");
+    }
+  }
+
   function undo() {
     setLog((l) => l.slice(0, -1));
     setSequence((s) => Math.max(1, s - 1));
+    setTeam((t) => (t === "us" ? "opponent" : "us"));
     // Local-log undo only -- once a possession has synced, correcting it
     // is an edit on the report screen, not a live undo.
   }
@@ -260,7 +281,18 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
         <Section label="Possession type">
           <Grid cols={4}>
             <Btn onClick={() => { pushHistory(); setPossessionType("transition"); setStep("flags"); }}>Transition</Btn>
-            <Btn onClick={() => { pushHistory(); setPossessionType("half_court"); setPostOreb(false); setStep("halfcourt_type"); }}>Half-court</Btn>
+            <Btn
+              onClick={() => {
+                pushHistory();
+                setPossessionType("half_court");
+                setPostOreb(false);
+                // On defense we don't know the opponent's called set, so
+                // skip straight past Set/Motion/play-call to the outcome.
+                setStep(team === "opponent" ? "flags" : "halfcourt_type");
+              }}
+            >
+              Half-court
+            </Btn>
             <Btn onClick={() => { pushHistory(); setPossessionType("blob"); setStep("oob_result"); }}>BLOB</Btn>
             <Btn onClick={() => { pushHistory(); setPossessionType("slob"); setStep("oob_result"); }}>SLOB</Btn>
           </Grid>
@@ -299,19 +331,21 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
 
       {step === "oob_result" && (possessionType === "blob" || possessionType === "slob") && (
         <>
-          <Section label={`${possessionType.toUpperCase()} play`} accent>
-            <PlayCallPicker
-              plays={playsForCategory(possessionType)}
-              drawn={unlinkedDrawnFor(possessionType)}
-              onPick={(id) => setPlayCallId(id)}
-              onPickDrawn={(dp) => pickDrawnPlay(dp, possessionType, "oob_result")}
-              adding={addingPlayFor === possessionType}
-              onStartAdd={() => setAddingPlayFor(possessionType)}
-              newName={newPlayName}
-              onNewName={setNewPlayName}
-              onSaveNew={() => addPlayCall(possessionType)}
-            />
-          </Section>
+          {team === "us" && (
+            <Section label={`${possessionType.toUpperCase()} play`} accent>
+              <PlayCallPicker
+                plays={playsForCategory(possessionType)}
+                drawn={unlinkedDrawnFor(possessionType)}
+                onPick={(id) => setPlayCallId(id)}
+                onPickDrawn={(dp) => pickDrawnPlay(dp, possessionType, "oob_result")}
+                adding={addingPlayFor === possessionType}
+                onStartAdd={() => setAddingPlayFor(possessionType)}
+                newName={newPlayName}
+                onNewName={setNewPlayName}
+                onSaveNew={() => addPlayCall(possessionType)}
+              />
+            </Section>
+          )}
           <Section label="Result" accent>
             <Grid cols={2}>
               <Btn onClick={() => { pushHistory(); setOobResult("score"); setStep("shot_type"); }}>Score</Btn>
@@ -334,10 +368,10 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
             </Grid>
           )}
           <Grid cols={4} style={{ marginTop: postOreb ? 0 : 8 }}>
-            <Btn onClick={() => { pushHistory(); setPendingShot({ shotType: 2, made: true }); setStep("shot_quality"); }}>Make 2</Btn>
-            <Btn onClick={() => { pushHistory(); setPendingShot({ shotType: 2, made: false }); setStep("shot_quality"); }}>Miss 2</Btn>
-            <Btn onClick={() => { pushHistory(); setPendingShot({ shotType: 3, made: true }); setStep("shot_quality"); }}>Make 3</Btn>
-            <Btn onClick={() => { pushHistory(); setPendingShot({ shotType: 3, made: false }); setStep("shot_quality"); }}>Miss 3</Btn>
+            <Btn onClick={() => selectShot(2, true)}>Make 2</Btn>
+            <Btn onClick={() => selectShot(2, false)}>Miss 2</Btn>
+            <Btn onClick={() => selectShot(3, true)}>Make 3</Btn>
+            <Btn onClick={() => selectShot(3, false)}>Miss 3</Btn>
           </Grid>
           <Grid cols={4} style={{ marginTop: 8 }}>
             <Btn
@@ -345,6 +379,8 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
                 // An offensive rebound doesn't end the trip -- it keeps the
                 // same possession alive and hands it straight into a fresh
                 // half-court look, same as tapping "Half-court" from scratch.
+                // On defense (their OREB) we still don't know their set, so
+                // skip straight to the outcome instead of Set/Motion.
                 pushHistory();
                 setOrebCount((c) => c + 1);
                 setPossessionType("half_court");
@@ -352,7 +388,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
                 setPlayCallId(null);
                 setPaintTouch(null);
                 setPostOreb(true);
-                setStep("halfcourt_type");
+                setStep(team === "opponent" ? "flags" : "halfcourt_type");
               }}
             >
               OREB {orebCount ? `(${orebCount})` : ""}
@@ -376,8 +412,8 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       {step === "shot_type" && (
         <Section label="Shot type (BLOB/SLOB score)">
           <Grid cols={2}>
-            <Btn onClick={() => { pushHistory(); setPendingShot({ shotType: 2, made: true }); setStep("shot_quality"); }}>2 pointer</Btn>
-            <Btn onClick={() => { pushHistory(); setPendingShot({ shotType: 3, made: true }); setStep("shot_quality"); }}>3 pointer</Btn>
+            <Btn onClick={() => selectShot(2, true)}>2 pointer</Btn>
+            <Btn onClick={() => selectShot(3, true)}>3 pointer</Btn>
           </Grid>
         </Section>
       )}
@@ -397,7 +433,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
         <Section label="Points made at the line">
           <Grid cols={4}>
             {[0, 1, 2, 3].map((n) => (
-              <Btn key={n} onClick={() => commit("ft_trip", { points: n, shot_quality: "great" })}>{n}</Btn>
+              <Btn key={n} onClick={() => commit("ft_trip", { points: n, shot_quality: team === "us" ? "great" : null })}>{n}</Btn>
             ))}
           </Grid>
         </Section>
