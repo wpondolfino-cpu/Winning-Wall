@@ -73,6 +73,21 @@ export default function GameReport({ scope, title }: Props) {
 
   if (loading) return <div className="card">Loading report…</div>;
 
+  return <ReportBody possessions={possessions} playCalls={playCalls} goals={goals} title={title} />;
+}
+
+/** The actual report card -- shared between GameReport (scope-based) and ReportBuilder (custom multi-game/category filters), so both stay visually identical. */
+export function ReportBody({
+  possessions,
+  playCalls,
+  goals,
+  title,
+}: {
+  possessions: Possession[];
+  playCalls: PlayCall[];
+  goals: StatGoal[];
+  title: string;
+}) {
   const usStats = computeTeamStats(possessions, "us", goals);
   const shotQuality = computeShotQuality(possessions, "us");
   const streaks = computeStreaks(possessions);
