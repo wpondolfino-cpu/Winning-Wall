@@ -6,8 +6,10 @@
 
 import { useState, useEffect } from "react";
 import { supabase, Workout, getWorkouts } from "../lib/supabase";
+import { getCategories } from "../lib/categories";
 import WorkoutBuilder from "./coach/WorkoutBuilder";
 import RandomDrillModal from "./RandomDrillModal";
+import CategoryManagerModal from "./CategoryManagerModal";
 
 interface Props {
   canManage: boolean;
@@ -22,10 +24,9 @@ interface Props {
   openRandomDrillSignal?: number;
 }
 
-const CATEGORIES = ["Dribbling", "Finishing", "Shooting", "Competing", "Strength"] as const;
-
 export default function DrillLibrary({ canManage, onPractice, onChanged, openRandomDrillSignal }: Props) {
   const [drills, setDrills] = useState<Workout[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
@@ -37,6 +38,7 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
   const [editDrill, setEditDrill] = useState<Workout | null>(null);
   const [archiving, setArchiving] = useState<string | null>(null);
   const [showRandomModal, setShowRandomModal] = useState(false);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [viewDrill, setViewDrill] = useState<Workout | null>(null);
 
   useEffect(() => {
@@ -45,11 +47,15 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
   const [deleting, setDeleting] = useState<string | null>(null);
   const [usageModal, setUsageModal] = useState<{ drill: Workout; counts: Record<string, number> } | null>(null);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadCategories(); }, []);
 
   async function load() {
     setLoading(true);
     try { setDrills(await getWorkouts()); } finally { setLoading(false); }
+  }
+
+  async function loadCategories() {
+    setCategories((await getCategories()).map(c => c.name));
   }
 
   const filtered = drills.filter(d => {
@@ -69,7 +75,7 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
       .flatMap(d => (d as any).tags ?? [])
   )].sort();
 
-  const grouped = CATEGORIES.reduce((acc, cat) => {
+  const grouped = categories.reduce((acc, cat) => {
     const ds = filtered.filter(d => d.category === cat).sort((a, b) => a.title.localeCompare(b.title));
     if (ds.length > 0) acc[cat] = ds;
     return acc;
@@ -154,6 +160,11 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
               + Add Drill
             </button>
           )}
+          {canManage && (
+            <button onClick={() => setShowCategoryManager(true)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+              🏷️ Manage Categories
+            </button>
+          )}
         </div>
       </div>
       <div className="section-sub" style={{ marginBottom: 16 }}>
@@ -164,7 +175,7 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
         style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", marginBottom: 10 }} />
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: availableTags.length > 0 ? 6 : (canManage ? 10 : 16) }}>
-        {(["All", ...CATEGORIES] as const).map(c => (
+        {["All", ...categories].map(c => (
           <button key={c} onClick={() => { setCategoryFilter(c); setTagFilter(null); setTagSearchOpen(false); setTagSearchQuery(""); }}
             style={{ padding: "5px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600, background: categoryFilter === c ? "var(--royal)" : "var(--surface2)", color: categoryFilter === c ? "#fff" : "var(--muted)" }}>
             {c}
@@ -359,6 +370,13 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
             </div>
           </div>
         </div>
+      )}
+
+      {showCategoryManager && (
+        <CategoryManagerModal
+          onClose={() => setShowCategoryManager(false)}
+          onChanged={() => { loadCategories(); load(); }}
+        />
       )}
 
       {showRandomModal && (
