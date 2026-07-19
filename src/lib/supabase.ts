@@ -62,6 +62,8 @@ export interface Profile {
   must_change_password?: boolean;
   team_id?: string;
   created_at: string;
+  avatar_prompt_seen?: boolean;
+  avatar_config?: any;
 }
 
 export interface Workout {
