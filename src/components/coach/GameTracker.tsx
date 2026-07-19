@@ -46,6 +46,17 @@ interface PendingShot {
   made: boolean;
 }
 
+interface FlowSnapshot {
+  step: Step;
+  possessionType: PossessionType | null;
+  halfCourtType: HalfCourtType | null;
+  playCallId: string | null;
+  oobResult: OobResult | null;
+  paintTouch: PaintTouch | null;
+  orebCount: number;
+  pendingShot: PendingShot | null;
+}
+
 export default function GameTracker({ gameId, userId, quarter }: Props) {
   const [playCalls, setPlayCalls] = useState<PlayCall[]>([]);
   const [unsynced, setUnsynced] = useState(0);
@@ -63,6 +74,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
   const [pendingShot, setPendingShot] = useState<PendingShot | null>(null);
   const [newPlayName, setNewPlayName] = useState("");
   const [addingPlayFor, setAddingPlayFor] = useState<PlayCallCategory | null>(null);
+  const [history, setHistory] = useState<FlowSnapshot[]>([]);
 
   useEffect(() => {
     loadPlayCalls();
@@ -89,6 +101,31 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     setPaintTouch(null);
     setOrebCount(0);
     setPendingShot(null);
+    setHistory([]);
+  }
+
+  /** Snapshots the current flow state before advancing a step, so goBack can restore it exactly. */
+  function pushHistory() {
+    setHistory((h) => [
+      ...h,
+      { step, possessionType, halfCourtType, playCallId, oobResult, paintTouch, orebCount, pendingShot },
+    ]);
+  }
+
+  function goBack() {
+    setHistory((h) => {
+      if (!h.length) return h;
+      const prev = h[h.length - 1];
+      setStep(prev.step);
+      setPossessionType(prev.possessionType);
+      setHalfCourtType(prev.halfCourtType);
+      setPlayCallId(prev.playCallId);
+      setOobResult(prev.oobResult);
+      setPaintTouch(prev.paintTouch);
+      setOrebCount(prev.orebCount);
+      setPendingShot(prev.pendingShot);
+      return h.slice(0, -1);
+    });
   }
 
   async function commit(outcome: Outcome, extra: Partial<Possession> = {}) {
@@ -144,6 +181,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       .select()
       .single();
     if (!error && data) {
+      pushHistory();
       setPlayCalls((p) => [...p, data as PlayCall]);
       setPlayCallId((data as PlayCall).id);
       setNewPlayName("");
@@ -178,13 +216,22 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
         </button>
       </div>
 
+      {history.length > 0 && (
+        <button
+          onClick={goBack}
+          style={{ marginBottom: 10, padding: "6px 12px", fontSize: 13, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--muted)", cursor: "pointer" }}
+        >
+          ← Back
+        </button>
+      )}
+
       {step === "type" && (
         <Section label="Possession type">
           <Grid cols={4}>
-            <Btn onClick={() => { setPossessionType("transition"); setStep("flags"); }}>Transition</Btn>
-            <Btn onClick={() => { setPossessionType("half_court"); setStep("halfcourt_type"); }}>Half-court</Btn>
-            <Btn onClick={() => { setPossessionType("blob"); setStep("oob_result"); }}>BLOB</Btn>
-            <Btn onClick={() => { setPossessionType("slob"); setStep("oob_result"); }}>SLOB</Btn>
+            <Btn onClick={() => { pushHistory(); setPossessionType("transition"); setStep("flags"); }}>Transition</Btn>
+            <Btn onClick={() => { pushHistory(); setPossessionType("half_court"); setStep("halfcourt_type"); }}>Half-court</Btn>
+            <Btn onClick={() => { pushHistory(); setPossessionType("blob"); setStep("oob_result"); }}>BLOB</Btn>
+            <Btn onClick={() => { pushHistory(); setPossessionType("slob"); setStep("oob_result"); }}>SLOB</Btn>
           </Grid>
         </Section>
       )}
@@ -192,8 +239,8 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       {step === "halfcourt_type" && (
         <Section label="Half-court type" accent>
           <Grid cols={2}>
-            <Btn onClick={() => { setHalfCourtType("set"); setStep("play_call"); }}>Set</Btn>
-            <Btn onClick={() => { setHalfCourtType("motion"); setStep("play_call"); }}>Motion</Btn>
+            <Btn onClick={() => { pushHistory(); setHalfCourtType("set"); setStep("play_call"); }}>Set</Btn>
+            <Btn onClick={() => { pushHistory(); setHalfCourtType("motion"); setStep("play_call"); }}>Motion</Btn>
           </Grid>
         </Section>
       )}
@@ -202,7 +249,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
         <Section label={`Which ${halfCourtType}`} accent>
           <PlayCallPicker
             plays={playsForCategory(halfCourtType)}
-            onPick={(id) => { setPlayCallId(id); setStep("flags"); }}
+            onPick={(id) => { pushHistory(); setPlayCallId(id); setStep("flags"); }}
             adding={addingPlayFor === halfCourtType}
             onStartAdd={() => setAddingPlayFor(halfCourtType)}
             newName={newPlayName}
@@ -227,8 +274,8 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
           </Section>
           <Section label="Result" accent>
             <Grid cols={2}>
-              <Btn onClick={() => { setOobResult("score"); setStep("shot_type"); }}>Score</Btn>
-              <Btn onClick={() => { setOobResult("flowed_half_court"); setStep("flags"); }}>Flowed to half-court</Btn>
+              <Btn onClick={() => { pushHistory(); setOobResult("score"); setStep("shot_type"); }}>Score</Btn>
+              <Btn onClick={() => { pushHistory(); setOobResult("flowed_half_court"); setStep("flags"); }}>Flowed to half-court</Btn>
             </Grid>
           </Section>
         </>
@@ -248,12 +295,12 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
             OREB {orebCount ? `(${orebCount})` : ""}
           </Btn>
           <Grid cols={4} style={{ marginTop: 10 }}>
-            <Btn onClick={() => { setPendingShot({ shotType: 2, made: true }); setStep("shot_quality"); }}>Make 2</Btn>
-            <Btn onClick={() => { setPendingShot({ shotType: 2, made: false }); setStep("shot_quality"); }}>Miss 2</Btn>
-            <Btn onClick={() => { setPendingShot({ shotType: 3, made: true }); setStep("shot_quality"); }}>Make 3</Btn>
-            <Btn onClick={() => { setPendingShot({ shotType: 3, made: false }); setStep("shot_quality"); }}>Miss 3</Btn>
-            <Btn onClick={() => setStep("turnover_type")}>Turnover</Btn>
-            <Btn onClick={() => setStep("ft_points")}>FT trip</Btn>
+            <Btn onClick={() => { pushHistory(); setPendingShot({ shotType: 2, made: true }); setStep("shot_quality"); }}>Make 2</Btn>
+            <Btn onClick={() => { pushHistory(); setPendingShot({ shotType: 2, made: false }); setStep("shot_quality"); }}>Miss 2</Btn>
+            <Btn onClick={() => { pushHistory(); setPendingShot({ shotType: 3, made: true }); setStep("shot_quality"); }}>Make 3</Btn>
+            <Btn onClick={() => { pushHistory(); setPendingShot({ shotType: 3, made: false }); setStep("shot_quality"); }}>Miss 3</Btn>
+            <Btn onClick={() => { pushHistory(); setStep("turnover_type"); }}>Turnover</Btn>
+            <Btn onClick={() => { pushHistory(); setStep("ft_points"); }}>FT trip</Btn>
             <Btn onClick={undo} style={{ color: "var(--muted)" }}>Undo</Btn>
           </Grid>
         </>
@@ -271,8 +318,8 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       {step === "shot_type" && (
         <Section label="Shot type (BLOB/SLOB score)">
           <Grid cols={2}>
-            <Btn onClick={() => { setPendingShot({ shotType: 2, made: true }); setStep("shot_quality"); }}>2 pointer</Btn>
-            <Btn onClick={() => { setPendingShot({ shotType: 3, made: true }); setStep("shot_quality"); }}>3 pointer</Btn>
+            <Btn onClick={() => { pushHistory(); setPendingShot({ shotType: 2, made: true }); setStep("shot_quality"); }}>2 pointer</Btn>
+            <Btn onClick={() => { pushHistory(); setPendingShot({ shotType: 3, made: true }); setStep("shot_quality"); }}>3 pointer</Btn>
           </Grid>
         </Section>
       )}
