@@ -41,6 +41,7 @@ export interface Possession {
   shot_type: 2 | 3 | null;
   shot_quality: ShotQuality | null;
   turnover_type: TurnoverType | null;
+  ft_attempts: 1 | 2 | 3 | null;
   points: number;
   created_by: string;
   created_at: string;
@@ -83,6 +84,7 @@ export async function ensurePlayCallForPlay(play: DrawnPlay, category: PlayCallC
 
 export interface StatGoal {
   stat_key: string;
+  team: Team;
   target_value: number;
   direction: "higher_better" | "lower_better";
 }
@@ -91,8 +93,11 @@ export async function listStatGoals() {
   return supabase.from("stat_goals").select("*");
 }
 
-export async function upsertStatGoal(statKey: string, targetValue: number, direction: "higher_better" | "lower_better", userId: string) {
-  return supabase.from("stat_goals").upsert({ stat_key: statKey, target_value: targetValue, direction, updated_by: userId }, { onConflict: "stat_key" });
+export async function upsertStatGoal(statKey: string, team: Team, targetValue: number, direction: "higher_better" | "lower_better", userId: string) {
+  return supabase.from("stat_goals").upsert(
+    { stat_key: statKey, team, target_value: targetValue, direction, updated_by: userId },
+    { onConflict: "stat_key,team" }
+  );
 }
 
 // ── Stat definitions & custom ordering ──────────────────────────
@@ -114,12 +119,15 @@ export interface StatDef {
 
 export const DEFAULT_STAT_ORDER: StatDef[] = [
   { key: "efg_pct", label: "eFG%", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "fg2_pct", label: "2PT FG%", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "fg3_pct", label: "3PT FG%", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "ft_pct", label: "FT%", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "transition_pct", label: "Transition %", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "oreb_pct", label: "OREB%", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "tov_pct", label: "TOV%", kind: "number", inGame: true, defaultDirection: "lower_better" },
   { key: "ft_rate", label: "FT rate", kind: "number", inGame: true, defaultDirection: "higher_better" },
-  { key: "paint_touch_single", label: "Paint touch", kind: "number", inGame: true, defaultDirection: "higher_better" },
-  { key: "paint_touch_both", label: "Both sides", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "paint_touch_single", label: "Paint touch %", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "paint_touch_both", label: "Both sides %", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "transition_ppp", label: "Transition PPP", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "halfcourt_ppp", label: "Half-court PPP", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "shot_quality", label: "Shot quality", kind: "shot_quality", inGame: true },
@@ -265,6 +273,7 @@ export interface StatRow {
   value: number;
   goal: number | null;
   role: "success" | "warning" | "danger" | null;
+  raw?: string; // e.g. "12/16" -- shown alongside the (colored) percentage, itself never colored
 }
 
 function colorRole(value: number, goal: number, direction: "higher_better" | "lower_better"): "success" | "warning" | "danger" {
@@ -274,64 +283,88 @@ function colorRole(value: number, goal: number, direction: "higher_better" | "lo
   return "success";
 }
 
-function goalFor(goals: StatGoal[], key: string) {
-  return goals.find((g) => g.stat_key === key) ?? null;
+function goalFor(goals: StatGoal[], key: string, team: Team) {
+  return goals.find((g) => g.stat_key === key && g.team === team) ?? null;
 }
 
 /**
  * Core box-score math for one team's possessions in the given set.
- * `invertDirection` is used for the opponent's stat block: a goal is set
- * from our own perspective (e.g. "keep TOV% under 14"), so judging the
- * opponent's *same* stat number flips what's good for us -- their eFG%
- * being low is what we want, so a "higher_better" goal becomes
- * "lower_better" when scoring their side, using our own target as the
- * rough benchmark since there's no separate opponent-specific goal.
+ * Goal coloring for "opponent" prefers a coach-set opponent-specific goal
+ * (team: 'opponent' in stat_goals) if one exists -- lets a coach hold the
+ * opponent to a tighter number than just the inverse of our own target.
+ * If no opponent-specific goal has been set, it falls back to inverting
+ * our own goal's direction (higher_better becomes lower_better and vice
+ * versa) using our own target as a rough benchmark.
  */
-export function computeTeamStats(possessions: Possession[], team: Team, goals: StatGoal[], invertDirection = false): StatRow[] {
+export function computeTeamStats(possessions: Possession[], team: Team, goals: StatGoal[]): StatRow[] {
   const trips = possessions.filter((p) => p.team === team);
   const fga = trips.filter((p) => p.outcome === "fg_made" || p.outcome === "fg_missed");
-  const made2 = trips.filter((p) => p.outcome === "fg_made" && p.shot_type === 2).length;
-  const made3 = trips.filter((p) => p.outcome === "fg_made" && p.shot_type === 3).length;
+  const fga2 = fga.filter((p) => p.shot_type === 2);
+  const fga3 = fga.filter((p) => p.shot_type === 3);
+  const made2 = fga2.filter((p) => p.outcome === "fg_made").length;
+  const made3 = fga3.filter((p) => p.outcome === "fg_made").length;
   const fgaCount = fga.length;
   const turnovers = trips.filter((p) => p.outcome === "turnover").length;
   const oreb = trips.reduce((s, p) => s + p.oreb_count, 0);
   const missedFg = trips.filter((p) => p.outcome === "fg_missed").length;
   const orebOpportunities = missedFg; // simplification: OREB% of own missed FGs
+  const ftTripsWithAttempts = trips.filter((p) => p.outcome === "ft_trip" && p.ft_attempts != null);
   const ftTrips = trips.filter((p) => p.outcome === "ft_trip").length;
+  const ftMade = ftTripsWithAttempts.reduce((s, p) => s + p.points, 0);
+  const ftAttempted = ftTripsWithAttempts.reduce((s, p) => s + (p.ft_attempts ?? 0), 0);
   const paintTouchSingle = trips.filter((p) => p.paint_touch === "single").length;
   const paintTouchBoth = trips.filter((p) => p.paint_touch === "both").length;
   const transitionTripsArr = trips.filter((p) => p.possession_type === "transition");
   const halfCourtTripsArr = trips.filter((p) => p.possession_type === "half_court");
 
   const efg = fgaCount ? ((made2 + made3) + 0.5 * made3) / fgaCount * 100 : 0;
+  const fg2Pct = fga2.length ? (made2 / fga2.length) * 100 : 0;
+  const fg3Pct = fga3.length ? (made3 / fga3.length) * 100 : 0;
+  const ftPct = ftAttempted ? (ftMade / ftAttempted) * 100 : 0;
   const tovPct = trips.length ? (turnovers / trips.length) * 100 : 0;
   const orebPct = orebOpportunities ? (oreb / orebOpportunities) * 100 : 0;
   const ftRate = fgaCount ? ftTrips / fgaCount : 0;
+  const paintTouchSinglePct = halfCourtTripsArr.length ? (paintTouchSingle / halfCourtTripsArr.length) * 100 : 0;
+  const paintTouchBothPct = halfCourtTripsArr.length ? (paintTouchBoth / halfCourtTripsArr.length) * 100 : 0;
   const transitionPpp = transitionTripsArr.length ? transitionTripsArr.reduce((s, p) => s + p.points, 0) / transitionTripsArr.length : 0;
   const halfCourtPpp = halfCourtTripsArr.length ? halfCourtTripsArr.reduce((s, p) => s + p.points, 0) / halfCourtTripsArr.length : 0;
   const transitionPct = trips.length ? (transitionTripsArr.length / trips.length) * 100 : 0;
 
-  const rows: { key: string; label: string; value: number }[] = [
+  const rows: { key: string; label: string; value: number; raw?: string }[] = [
     { key: "efg_pct", label: "eFG%", value: round1(efg) },
+    { key: "fg2_pct", label: "2PT FG%", value: round1(fg2Pct), raw: `${made2}/${fga2.length}` },
+    { key: "fg3_pct", label: "3PT FG%", value: round1(fg3Pct), raw: `${made3}/${fga3.length}` },
+    { key: "ft_pct", label: "FT%", value: round1(ftPct), raw: `${ftMade}/${ftAttempted}` },
     { key: "transition_pct", label: "Transition %", value: round1(transitionPct) },
     { key: "oreb_pct", label: "OREB%", value: round1(orebPct) },
     { key: "tov_pct", label: "TOV%", value: round1(tovPct) },
     { key: "ft_rate", label: "FT rate", value: round2(ftRate) },
-    { key: "paint_touch_single", label: "Paint touch", value: paintTouchSingle },
-    { key: "paint_touch_both", label: "Both sides", value: paintTouchBoth },
+    { key: "paint_touch_single", label: "Paint touch %", value: round1(paintTouchSinglePct) },
+    { key: "paint_touch_both", label: "Both sides %", value: round1(paintTouchBothPct) },
     { key: "transition_ppp", label: "Transition PPP", value: round2(transitionPpp) },
     { key: "halfcourt_ppp", label: "Half-court PPP", value: round2(halfCourtPpp) },
   ];
 
   return rows.map((r) => {
-    const goal = goalFor(goals, r.key);
-    const direction = goal ? (invertDirection ? (goal.direction === "higher_better" ? "lower_better" : "higher_better") : goal.direction) : undefined;
+    const ownGoal = goalFor(goals, r.key, "us");
+    const teamGoal = team === "us" ? ownGoal : goalFor(goals, r.key, "opponent");
+    let goal: number | null = null;
+    let direction: "higher_better" | "lower_better" | undefined;
+    if (teamGoal) {
+      goal = teamGoal.target_value;
+      direction = teamGoal.direction;
+    } else if (team === "opponent" && ownGoal) {
+      // No opponent-specific goal set -- fall back to inverting our own.
+      goal = ownGoal.target_value;
+      direction = ownGoal.direction === "higher_better" ? "lower_better" : "higher_better";
+    }
     return {
       key: r.key,
       label: r.label,
       value: r.value,
-      goal: goal?.target_value ?? null,
-      role: goal && direction ? colorRole(r.value, goal.target_value, direction) : null,
+      goal,
+      role: goal != null && direction ? colorRole(r.value, goal, direction) : null,
+      raw: r.raw,
     };
   });
 }
