@@ -41,7 +41,6 @@ import {
   type PossessionType,
   type HalfCourtType,
   type OobResult,
-  type PaintTouch,
   type Outcome,
 } from "../../lib/gameStats";
 
@@ -75,7 +74,8 @@ interface FlowSnapshot {
   halfCourtType: HalfCourtType | null;
   playCallId: string | null;
   oobResult: OobResult | null;
-  paintTouch: PaintTouch | null;
+  paintTouch: boolean;
+  paintTouchBoth: boolean;
   orebCount: number;
   pendingShot: PendingShot | null;
   quickFlow: boolean;
@@ -98,7 +98,8 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
   const [halfCourtType, setHalfCourtType] = useState<HalfCourtType | null>(null);
   const [playCallId, setPlayCallId] = useState<string | null>(null);
   const [oobResult, setOobResult] = useState<OobResult | null>(null);
-  const [paintTouch, setPaintTouch] = useState<PaintTouch | null>(null);
+  const [paintTouch, setPaintTouch] = useState(false);
+  const [paintTouchBoth, setPaintTouchBoth] = useState(false);
   const [orebCount, setOrebCount] = useState(0);
   const [pendingShot, setPendingShot] = useState<PendingShot | null>(null);
   const [quickFlow, setQuickFlow] = useState(false); // reached via OREB or BLOB/SLOB->Set/Motion -- hides paint touch
@@ -132,7 +133,8 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     setHalfCourtType(null);
     setPlayCallId(null);
     setOobResult(null);
-    setPaintTouch(null);
+    setPaintTouch(false);
+    setPaintTouchBoth(false);
     setOrebCount(0);
     setPendingShot(null);
     setQuickFlow(false);
@@ -144,7 +146,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
   function pushHistory() {
     setHistory((h) => [
       ...h,
-      { step, possessionType, halfCourtType, playCallId, oobResult, paintTouch, orebCount, pendingShot, quickFlow, ftAttempts },
+      { step, possessionType, halfCourtType, playCallId, oobResult, paintTouch, paintTouchBoth, orebCount, pendingShot, quickFlow, ftAttempts },
     ]);
   }
 
@@ -158,6 +160,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       setPlayCallId(prev.playCallId);
       setOobResult(prev.oobResult);
       setPaintTouch(prev.paintTouch);
+      setPaintTouchBoth(prev.paintTouchBoth);
       setOrebCount(prev.orebCount);
       setPendingShot(prev.pendingShot);
       setQuickFlow(prev.quickFlow);
@@ -178,6 +181,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       play_call_id: playCallId,
       oob_result: oobResult,
       paint_touch: paintTouch,
+      paint_touch_both_sides: paintTouchBoth,
       oreb_count: orebCount,
       outcome,
       shot_type: null,
@@ -232,7 +236,8 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       setHalfCourtType(null);
       setPlayCallId(null);
     }
-    setPaintTouch(null);
+    setPaintTouch(false);
+    setPaintTouchBoth(false);
     setQuickFlow(true);
     setStep("action_branch");
   }
@@ -445,10 +450,10 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
         <>
           {!quickFlow && possessionType !== "transition" && (
             <Grid cols={2}>
-              <Btn active={paintTouch === "single"} onClick={() => setPaintTouch(paintTouch === "single" ? null : "single")}>
+              <Btn active={paintTouch} onClick={() => setPaintTouch((v) => !v)}>
                 Paint touch
               </Btn>
-              <Btn active={paintTouch === "both"} onClick={() => setPaintTouch(paintTouch === "both" ? null : "both")}>
+              <Btn active={paintTouchBoth} onClick={() => setPaintTouchBoth((v) => !v)}>
                 Both sides
               </Btn>
             </Grid>
