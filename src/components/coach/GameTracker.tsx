@@ -357,7 +357,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
 
       {step === "flags" && (
         <>
-          {!postOreb && (
+          {!postOreb && possessionType !== "transition" && (
             <Grid cols={2}>
               <Btn active={paintTouch === "single"} onClick={() => setPaintTouch(paintTouch === "single" ? null : "single")}>
                 Paint touch
@@ -367,7 +367,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
               </Btn>
             </Grid>
           )}
-          <Grid cols={4} style={{ marginTop: postOreb ? 0 : 8 }}>
+          <Grid cols={4} style={{ marginTop: postOreb || possessionType === "transition" ? 0 : 8 }}>
             <Btn onClick={() => selectShot(2, true)}>Make 2</Btn>
             <Btn onClick={() => selectShot(2, false)}>Miss 2</Btn>
             <Btn onClick={() => selectShot(3, true)}>Make 3</Btn>
