@@ -115,6 +115,7 @@ export interface StatDef {
   kind: StatKind;
   inGame: boolean;
   defaultDirection?: "higher_better" | "lower_better";
+  selfColored?: boolean; // true for stats colored by their own sign (+/-), not against a goal target
 }
 
 export const DEFAULT_STAT_ORDER: StatDef[] = [
@@ -130,14 +131,15 @@ export const DEFAULT_STAT_ORDER: StatDef[] = [
   { key: "paint_touch_both", label: "Both sides %", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "transition_ppp", label: "Transition PPP", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "halfcourt_ppp", label: "Half-court PPP", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "extra_possessions", label: "Extra Possessions", kind: "number", inGame: true, selfColored: true },
   { key: "shot_quality", label: "Shot quality", kind: "shot_quality", inGame: true },
   { key: "set_plays", label: "Set plays (Set / Motion)", kind: "set_plays", inGame: false },
   { key: "oob_plays", label: "Set plays (BLOB / SLOB)", kind: "oob", inGame: false },
   { key: "streaks", label: "Streaks", kind: "streaks", inGame: false },
 ];
 
-/** Goal-settable stats, for the Goals tab -- just the "number" kind subset. */
-export const GOAL_STATS = DEFAULT_STAT_ORDER.filter((s) => s.kind === "number") as
+/** Goal-settable stats, for the Goals tab -- "number" kind, excluding self-colored ones like Extra Possessions that don't compare against a target. */
+export const GOAL_STATS = DEFAULT_STAT_ORDER.filter((s) => s.kind === "number" && !s.selfColored) as
   { key: string; label: string; defaultDirection: "higher_better" | "lower_better" }[];
 
 /** Reads the coach's saved stat order (single most-recent row). Null if never customized. */
@@ -274,6 +276,7 @@ export interface StatRow {
   goal: number | null;
   role: "success" | "warning" | "danger" | null;
   raw?: string; // e.g. "12/16" -- shown alongside the (colored) percentage, itself never colored
+  signed?: boolean; // shows an explicit "+" on positive values (e.g. Extra Possessions)
 }
 
 function colorRole(value: number, goal: number, direction: "higher_better" | "lower_better"): "success" | "warning" | "danger" {
@@ -367,6 +370,22 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
       raw: r.raw,
     };
   });
+}
+
+/**
+ * Extra Possessions: (our OREB + our TOV) minus (their OREB + their TOV).
+ * Positive is good for us, negative is bad -- colored by sign, not against
+ * a goal target. This is inherently a two-team number (needs both sides'
+ * OREB/TOV at once), unlike the rest of computeTeamStats which only looks
+ * at one team's possessions -- so it's its own function.
+ */
+export function computeExtraPossessions(possessions: Possession[]): { us: number; opponent: number } {
+  const orebFor = (team: Team) => possessions.filter((p) => p.team === team).reduce((s, p) => s + p.oreb_count, 0);
+  const tovFor = (team: Team) => possessions.filter((p) => p.team === team && p.outcome === "turnover").length;
+  const usTotal = orebFor("us") + tovFor("us");
+  const oppTotal = orebFor("opponent") + tovFor("opponent");
+  const us = usTotal - oppTotal;
+  return { us, opponent: -us };
 }
 
 /** Weighted shot-quality score mapped back onto the great/good/live/tough label scale. Only meaningful for "us" -- we don't track the opponent's shot quality. */
