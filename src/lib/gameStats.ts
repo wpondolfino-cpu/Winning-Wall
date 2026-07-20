@@ -83,6 +83,26 @@ export interface StatGoal {
   direction: "higher_better" | "lower_better";
 }
 
+/** The stats a coach can set a goal for -- keys match what computeTeamStats produces. */
+export const GOAL_STATS: { key: string; label: string; defaultDirection: "higher_better" | "lower_better" }[] = [
+  { key: "efg_pct", label: "eFG%", defaultDirection: "higher_better" },
+  { key: "transition_pct", label: "Transition %", defaultDirection: "higher_better" },
+  { key: "oreb_pct", label: "OREB%", defaultDirection: "higher_better" },
+  { key: "tov_pct", label: "TOV%", defaultDirection: "lower_better" },
+  { key: "paint_touches", label: "Paint touches", defaultDirection: "higher_better" },
+  { key: "ft_rate", label: "FT rate", defaultDirection: "higher_better" },
+  { key: "transition_ppp", label: "Transition PPP", defaultDirection: "higher_better" },
+  { key: "halfcourt_ppp", label: "Half-court PPP", defaultDirection: "higher_better" },
+];
+
+export async function listStatGoals() {
+  return supabase.from("stat_goals").select("*");
+}
+
+export async function upsertStatGoal(statKey: string, targetValue: number, direction: "higher_better" | "lower_better", userId: string) {
+  return supabase.from("stat_goals").upsert({ stat_key: statKey, target_value: targetValue, direction, updated_by: userId }, { onConflict: "stat_key" });
+}
+
 export interface Game {
   id: string;
   opponent: string;
@@ -215,13 +235,16 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   const orebOpportunities = missedFg; // simplification: OREB% of own missed FGs
   const ftTrips = trips.filter((p) => p.outcome === "ft_trip").length;
   const paintTouches = trips.filter((p) => p.paint_touch != null).length;
-  const transitionTrips = trips.filter((p) => p.possession_type === "transition").length;
+  const transitionTripsArr = trips.filter((p) => p.possession_type === "transition");
+  const halfCourtTripsArr = trips.filter((p) => p.possession_type === "half_court");
+  const transitionTrips = transitionTripsArr.length;
 
   const efg = fgaCount ? ((made2 + made3) + 0.5 * made3) / fgaCount * 100 : 0;
   const tovPct = trips.length ? (turnovers / trips.length) * 100 : 0;
   const orebPct = orebOpportunities ? (oreb / orebOpportunities) * 100 : 0;
   const ftRate = fgaCount ? ftTrips / fgaCount : 0;
-  const ppp = trips.length ? totalPoints / trips.length : 0;
+  const transitionPpp = transitionTripsArr.length ? transitionTripsArr.reduce((s, p) => s + p.points, 0) / transitionTripsArr.length : 0;
+  const halfCourtPpp = halfCourtTripsArr.length ? halfCourtTripsArr.reduce((s, p) => s + p.points, 0) / halfCourtTripsArr.length : 0;
   const transitionPct = trips.length ? (transitionTrips / trips.length) * 100 : 0;
 
   const rows: { key: string; label: string; value: number }[] = [
@@ -231,7 +254,8 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
     { key: "tov_pct", label: "TOV%", value: round1(tovPct) },
     { key: "paint_touches", label: "Paint touches", value: paintTouches },
     { key: "ft_rate", label: "FT rate", value: round2(ftRate) },
-    { key: "ppp", label: "PPP", value: round2(ppp) },
+    { key: "transition_ppp", label: "Transition PPP", value: round2(transitionPpp) },
+    { key: "halfcourt_ppp", label: "Half-court PPP", value: round2(halfCourtPpp) },
   ];
 
   return rows.map((r) => {
