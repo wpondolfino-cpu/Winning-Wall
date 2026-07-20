@@ -3,6 +3,15 @@
 // Players only ever reach this for games where status = 'published' --
 // RLS on `games`/`possessions` enforces that at the query level, so this
 // component doesn't need its own visibility check.
+//
+// "variant" controls how much shows: "in_game" (quarter/half reports)
+// shows only the stats flagged inGame in DEFAULT_STAT_ORDER; "full" (full
+// game / season / custom reports) shows everything, including set-play
+// and BLOB/SLOB effectiveness and streaks. Numeric stats render for both
+// Us and Opponent, in whatever order the coach set on the Goals tab;
+// shot quality / set plays / BLOB-SLOB / streaks are "us"-only sections
+// (we don't track the opponent's shot selection or play calls) and keep
+// their relative order among themselves.
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
@@ -12,10 +21,13 @@ import {
   computeStreaks,
   computePlayCallEffectiveness,
   computeOobEffectiveness,
+  getReportLayout,
+  resolveStatOrder,
   type Possession,
   type PlayCall,
   type StatGoal,
   type StatRow,
+  type StatDef,
 } from "../../lib/gameStats";
 
 export type ReportScope =
@@ -24,27 +36,33 @@ export type ReportScope =
   | { kind: "game"; gameId: string }
   | { kind: "season"; season: string; result?: "win" | "loss" };
 
+export type ReportVariant = "in_game" | "full";
+
 interface Props {
   scope: ReportScope;
   title: string;
+  variant?: ReportVariant;
 }
 
-export default function GameReport({ scope, title }: Props) {
+export default function GameReport({ scope, title, variant = "full" }: Props) {
   const [possessions, setPossessions] = useState<Possession[]>([]);
   const [playCalls, setPlayCalls] = useState<PlayCall[]>([]);
   const [goals, setGoals] = useState<StatGoal[]>([]);
+  const [statOrder, setStatOrder] = useState<StatDef[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { load(); }, [JSON.stringify(scope)]);
 
   async function load() {
     setLoading(true);
-    const [{ data: goalRows }, { data: playRows }] = await Promise.all([
+    const [{ data: goalRows }, { data: playRows }, savedOrder] = await Promise.all([
       supabase.from("stat_goals").select("*"),
       supabase.from("play_calls").select("*"),
+      getReportLayout(),
     ]);
     setGoals((goalRows as StatGoal[]) ?? []);
     setPlayCalls((playRows as PlayCall[]) ?? []);
+    setStatOrder(resolveStatOrder(savedOrder));
 
     let query = supabase.from("possessions").select("*");
     if (scope.kind === "quarter") query = query.eq("game_id", scope.gameId).eq("quarter", scope.quarter);
@@ -73,7 +91,7 @@ export default function GameReport({ scope, title }: Props) {
 
   if (loading) return <div className="card">Loading report…</div>;
 
-  return <ReportBody possessions={possessions} playCalls={playCalls} goals={goals} title={title} />;
+  return <ReportBody possessions={possessions} playCalls={playCalls} goals={goals} title={title} statOrder={statOrder} variant={variant} />;
 }
 
 /** The actual report card -- shared between GameReport (scope-based) and ReportBuilder (custom multi-game/category filters), so both stay visually identical. */
@@ -82,13 +100,27 @@ export function ReportBody({
   playCalls,
   goals,
   title,
+  statOrder,
+  variant = "full",
 }: {
   possessions: Possession[];
   playCalls: PlayCall[];
   goals: StatGoal[];
   title: string;
+  statOrder: StatDef[];
+  variant?: ReportVariant;
 }) {
-  const usStats = computeTeamStats(possessions, "us", goals);
+  const visible = statOrder.filter((s) => variant === "full" || s.inGame);
+  const numberStats = visible.filter((s) => s.kind === "number");
+  const specialStats = visible.filter((s) => s.kind !== "number");
+
+  const usStatsAll = computeTeamStats(possessions, "us", goals);
+  const oppStatsAll = computeTeamStats(possessions, "opponent", goals, true);
+  const usByKey = new Map(usStatsAll.map((r) => [r.key, r]));
+  const oppByKey = new Map(oppStatsAll.map((r) => [r.key, r]));
+  const usRows = numberStats.map((s) => usByKey.get(s.key)).filter(Boolean) as StatRow[];
+  const oppRows = numberStats.map((s) => oppByKey.get(s.key)).filter(Boolean) as StatRow[];
+
   const shotQuality = computeShotQuality(possessions, "us");
   const streaks = computeStreaks(possessions);
   const blob = computeOobEffectiveness(possessions, "blob");
@@ -116,51 +148,79 @@ export function ReportBody({
         </div>
       </div>
 
-      <StatRows rows={usStats} />
+      <SectionDivider label="Us" />
+      <StatRows rows={usRows} />
 
-      <SectionDivider label="Set plays" />
-      <PlayCallTable rows={setPlays} />
-      <div style={{ height: 8 }} />
-      <PlayCallTable rows={motionPlays} />
+      <SectionDivider label="Opponent" />
+      <StatRows rows={oppRows} />
 
-      <SectionDivider label="Set plays (BLOB / SLOB)" />
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        <div className="stat-card">
-          <div style={{ fontSize: 12, color: "var(--muted)" }}>BLOB</div>
-          <div style={{ fontSize: 15, fontWeight: 500 }}>
-            {blob.scored}-for-{blob.total} scored
-            <span style={{ fontSize: 12, color: "var(--muted)" }}> · {blob.flowed} flowed to HC</span>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div style={{ fontSize: 12, color: "var(--muted)" }}>SLOB</div>
-          <div style={{ fontSize: 15, fontWeight: 500 }}>
-            {slob.scored}-for-{slob.total} scored
-            <span style={{ fontSize: 12, color: "var(--muted)" }}> · {slob.flowed} flowed to HC</span>
-          </div>
-        </div>
-      </div>
-
-      <SectionDivider label="Shot quality" />
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
-        <span style={{ fontSize: 13, color: "var(--muted)" }}>Overall</span>
-        <span style={{ fontSize: 18, fontWeight: 500, textTransform: "capitalize" }}>{shotQuality.label ?? "—"}</span>
-      </div>
-      <ShotQualityBar breakdown={shotQuality.breakdown} />
-
-      <SectionDivider label="Streaks" />
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        <div className="stat-card">
-          <div style={{ fontSize: 12, color: "var(--muted)" }}>Scoring runs (3+)</div>
-          <div style={{ fontSize: 20, fontWeight: 500 }}>{streaks.scoringRuns.count}</div>
-          <div style={{ fontSize: 12, color: "var(--muted)" }}>best run: {streaks.scoringRuns.best} straight</div>
-        </div>
-        <div className="stat-card">
-          <div style={{ fontSize: 12, color: "var(--muted)" }}>Stop runs (3+)</div>
-          <div style={{ fontSize: 20, fontWeight: 500 }}>{streaks.stopRuns.count}</div>
-          <div style={{ fontSize: 12, color: "var(--muted)" }}>best run: {streaks.stopRuns.best} straight</div>
-        </div>
-      </div>
+      {specialStats.map((s) => {
+        if (s.kind === "shot_quality") {
+          return (
+            <div key={s.key}>
+              <SectionDivider label="Shot quality" />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+                <span style={{ fontSize: 13, color: "var(--muted)" }}>Overall</span>
+                <span style={{ fontSize: 18, fontWeight: 500, textTransform: "capitalize" }}>{shotQuality.label ?? "—"}</span>
+              </div>
+              <ShotQualityBar breakdown={shotQuality.breakdown} />
+            </div>
+          );
+        }
+        if (s.kind === "set_plays") {
+          return (
+            <div key={s.key}>
+              <SectionDivider label="Set plays" />
+              <PlayCallTable rows={setPlays} />
+              <div style={{ height: 8 }} />
+              <PlayCallTable rows={motionPlays} />
+            </div>
+          );
+        }
+        if (s.kind === "oob") {
+          return (
+            <div key={s.key}>
+              <SectionDivider label="Set plays (BLOB / SLOB)" />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div className="stat-card">
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>BLOB</div>
+                  <div style={{ fontSize: 15, fontWeight: 500 }}>
+                    {blob.scored}-for-{blob.directAttempts} direct
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}> · {blob.flowed} flowed to HC · {blob.turnovers} TO</span>
+                  </div>
+                </div>
+                <div className="stat-card">
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>SLOB</div>
+                  <div style={{ fontSize: 15, fontWeight: 500 }}>
+                    {slob.scored}-for-{slob.directAttempts} direct
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}> · {slob.flowed} flowed to HC · {slob.turnovers} TO</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        if (s.kind === "streaks") {
+          return (
+            <div key={s.key}>
+              <SectionDivider label="Streaks" />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div className="stat-card">
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Scoring runs (3+)</div>
+                  <div style={{ fontSize: 20, fontWeight: 500 }}>{streaks.scoringRuns.count}</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>best run: {streaks.scoringRuns.best} straight</div>
+                </div>
+                <div className="stat-card">
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Stop runs (3+)</div>
+                  <div style={{ fontSize: 20, fontWeight: 500 }}>{streaks.stopRuns.count}</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>best run: {streaks.stopRuns.best} straight</div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        return null;
+      })}
     </div>
   );
 }
@@ -173,9 +233,12 @@ function SectionDivider({ label }: { label: string }) {
   );
 }
 
-const roleColor: Record<string, string> = { success: "#1f7a4d", warning: "#8a6512", danger: "#8a2f2f" };
+// Solid backgrounds + white text -- the old tinted-background/colored-text
+// chips were hard to read at a glance, especially green and red.
+const roleBg: Record<string, string> = { success: "#1f7a4d", warning: "#a3690d", danger: "#b8342e" };
 
 function StatRows({ rows }: { rows: StatRow[] }) {
+  if (!rows.length) return <div style={{ fontSize: 13, color: "var(--muted)", padding: "6px 0" }}>No stats in this set yet.</div>;
   return (
     <div>
       {rows.map((r) => (
@@ -186,11 +249,11 @@ function StatRows({ rows }: { rows: StatRow[] }) {
             <span
               style={{
                 fontSize: 14,
-                fontWeight: 500,
+                fontWeight: 700,
                 padding: "2px 10px",
                 borderRadius: 8,
-                background: r.role ? roleColor[r.role] + "22" : "var(--surface2)",
-                color: r.role ? roleColor[r.role] : "var(--text)",
+                background: r.role ? roleBg[r.role] : "var(--surface2)",
+                color: r.role ? "#fff" : "var(--text)",
               }}
             >
               {r.value}
