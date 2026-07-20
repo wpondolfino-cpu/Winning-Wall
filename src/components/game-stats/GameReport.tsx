@@ -148,11 +148,8 @@ export function ReportBody({
         </div>
       </div>
 
-      <SectionDivider label="Us" />
-      <StatRows rows={usRows} />
-
-      <SectionDivider label="Opponent" />
-      <StatRows rows={oppRows} />
+      <SectionDivider label="Us · Opponent" />
+      <PairedStatRows usRows={usRows} oppRows={oppRows} />
 
       {specialStats.map((s) => {
         if (s.kind === "shot_quality") {
@@ -236,6 +233,52 @@ function SectionDivider({ label }: { label: string }) {
 // Solid backgrounds + white text -- the old tinted-background/colored-text
 // chips were hard to read at a glance, especially green and red.
 const roleBg: Record<string, string> = { success: "#1f7a4d", warning: "#a3690d", danger: "#b8342e" };
+
+function PairedStatRows({ usRows, oppRows }: { usRows: StatRow[]; oppRows: StatRow[] }) {
+  if (!usRows.length) return <div style={{ fontSize: 13, color: "var(--muted)", padding: "6px 0" }}>No stats in this set yet.</div>;
+  return (
+    <div>
+      <style>{`
+        .gs-paired { grid-template-columns: 64px 1fr 64px; }
+        @media (max-width: 420px) { .gs-paired { grid-template-columns: 48px 1fr 48px; } }
+      `}</style>
+      <div className="gs-paired" style={{ display: "grid", gap: 8, fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
+        <span style={{ textAlign: "center" }}>Us</span>
+        <span />
+        <span style={{ textAlign: "center" }}>Opponent</span>
+      </div>
+      {usRows.map((us, i) => {
+        const opp = oppRows[i];
+        return (
+          <div key={us.key} className="gs-paired" style={{ display: "grid", alignItems: "center", gap: 8, padding: "8px 0", borderTop: "1px solid var(--border)" }}>
+            <StatChip row={us} />
+            <span style={{ textAlign: "center", fontSize: 13, color: "var(--text)", whiteSpace: "nowrap" }}>{us.label}</span>
+            {opp ? <StatChip row={opp} /> : <span />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function StatChip({ row }: { row: StatRow }) {
+  return (
+    <span
+      style={{
+        textAlign: "center",
+        fontSize: 13,
+        fontWeight: 700,
+        padding: "3px 0",
+        borderRadius: 6,
+        background: row.role ? roleBg[row.role] : "var(--surface2)",
+        color: row.role ? "#fff" : "var(--text)",
+      }}
+      title={row.goal != null ? `goal ${row.goal}` : undefined}
+    >
+      {row.value}
+    </span>
+  );
+}
 
 function StatRows({ rows }: { rows: StatRow[] }) {
   if (!rows.length) return <div style={{ fontSize: 13, color: "var(--muted)", padding: "6px 0" }}>No stats in this set yet.</div>;
