@@ -2,7 +2,10 @@
 // Three things live here: the display order every report uses for its
 // stats (up/down arrows, saved to report_layout -- see resolveStatOrder
 // in gameStats.ts), and independent goal targets for Us and Opponent per
-// numeric stat. If no Opponent-specific goal is set for a stat, reports
+// numeric stat. The goal list below follows that same order for both
+// tabs -- there's no separate "opponent order" since Us/Opponent are
+// shown paired on one row per stat in the report, so only one order ever
+// makes sense. If no Opponent-specific goal is set for a stat, reports
 // fall back to inverting the Us goal (see computeTeamStats) -- setting one
 // here overrides that fallback with a real target, e.g. holding the
 // opponent's eFG% to something tighter than just "below ours."
@@ -125,9 +128,9 @@ export default function GoalsManager({ userId }: Props) {
           <button className={`role-tab ${goalTeam === "opponent" ? "active" : ""}`} onClick={() => setGoalTeam("opponent")}>Opponent</button>
         </div>
 
-        {GOAL_STATS.map((s) => {
+        {order.filter((s) => s.kind === "number" && !s.selfColored).map((s) => {
           const draftKey = `${goalTeam}:${s.key}`;
-          const draft = drafts[draftKey] ?? { value: "", direction: s.defaultDirection };
+          const draft = drafts[draftKey] ?? { value: "", direction: s.defaultDirection ?? "higher_better" };
           const existing = goals[draftKey];
           const usGoal = goals[`us:${s.key}`];
           return (
