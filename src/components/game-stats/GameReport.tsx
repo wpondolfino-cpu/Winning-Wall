@@ -21,6 +21,7 @@ import {
   computeStreaks,
   computePlayCallEffectiveness,
   computeOobEffectiveness,
+  computeExtraPossessions,
   getReportLayout,
   resolveStatOrder,
   type Possession,
@@ -118,6 +119,15 @@ export function ReportBody({
   const oppStatsAll = computeTeamStats(possessions, "opponent", goals);
   const usByKey = new Map(usStatsAll.map((r) => [r.key, r]));
   const oppByKey = new Map(oppStatsAll.map((r) => [r.key, r]));
+
+  // Extra Possessions is a two-team calculation (needs both sides' OREB/TOV
+  // at once), so it's computed separately and colored by its own sign
+  // rather than against a goal target.
+  const extra = computeExtraPossessions(possessions);
+  const signRole = (n: number) => (n > 0 ? "success" : n < 0 ? "danger" : null);
+  usByKey.set("extra_possessions", { key: "extra_possessions", label: "Extra Possessions", value: extra.us, goal: null, role: signRole(extra.us), signed: true });
+  oppByKey.set("extra_possessions", { key: "extra_possessions", label: "Extra Possessions", value: extra.opponent, goal: null, role: signRole(extra.opponent), signed: true });
+
   const usRows = numberStats.map((s) => usByKey.get(s.key)).filter(Boolean) as StatRow[];
   const oppRows = numberStats.map((s) => oppByKey.get(s.key)).filter(Boolean) as StatRow[];
 
@@ -276,7 +286,7 @@ function StatChip({ row }: { row: StatRow }) {
         }}
         title={row.goal != null ? `goal ${row.goal}` : undefined}
       >
-        {row.value}
+        {row.signed && row.value > 0 ? `+${row.value}` : row.value}
       </span>
       {row.raw && <span style={{ fontSize: 10, color: "var(--muted)" }}>{row.raw}</span>}
     </span>
