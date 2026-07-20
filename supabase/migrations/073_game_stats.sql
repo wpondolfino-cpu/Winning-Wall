@@ -153,7 +153,41 @@ drop policy if exists "stat_goals_players_read" on public.stat_goals;
 create policy "stat_goals_players_read" on public.stat_goals
   for select using (true);
 
--- ── Saved reports (Reports tab history) ────────────────────────
+-- oob_result now reflects a 3-way branch (Shot / Turnover / Set-Motion)
+-- instead of the old binary Score/Flowed -- migrate existing data first,
+-- since the old constraint has to come off before 'direct_shot' rows can
+-- be written.
+alter table public.possessions drop constraint if exists possessions_oob_result_check;
+update public.possessions set oob_result = 'direct_shot' where oob_result = 'score';
+alter table public.possessions add constraint possessions_oob_result_check
+  check (oob_result in ('direct_shot', 'flowed_half_court', 'turnover'));
+
+-- ── Report layout (custom stat ordering) ───────────────────────
+-- Single-row table (always read/written as "the latest row") holding the
+-- coach's preferred stat display order. Any stat key not present in
+-- stat_order (e.g. a newly added stat) falls back to the built-in default
+-- order -- see resolveStatOrder() in gameStats.ts.
+create table if not exists public.report_layout (
+  id           uuid primary key default gen_random_uuid(),
+  stat_order   jsonb not null default '[]'::jsonb,
+  updated_by   uuid not null references public.profiles(id) on delete cascade,
+  updated_at   timestamptz not null default now()
+);
+
+alter table public.report_layout enable row level security;
+
+drop policy if exists "report_layout_staff_write" on public.report_layout;
+create policy "report_layout_staff_write" on public.report_layout
+  for all using (
+    exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('coach', 'admin'))
+  )
+  with check (
+    exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('coach', 'admin'))
+  );
+
+drop policy if exists "report_layout_read" on public.report_layout;
+create policy "report_layout_read" on public.report_layout
+  for select using (true);
 -- Stores the *filters* a coach used to build a report, not a frozen
 -- snapshot -- reopening one re-runs it against current data.
 create table if not exists public.saved_reports (
