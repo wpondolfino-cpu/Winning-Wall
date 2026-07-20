@@ -100,6 +100,7 @@ create table if not exists public.possessions (
   shot_type         int check (shot_type in (2, 3)),
   shot_quality      text check (shot_quality in ('great', 'good', 'live', 'tough')),
   turnover_type     text check (turnover_type in ('live', 'dead')),
+  ft_attempts       int check (ft_attempts between 1 and 3),
   points            int not null default 0,
 
   created_by        uuid not null references public.profiles(id) on delete cascade,
@@ -110,6 +111,12 @@ create table if not exists public.possessions (
 
 create index if not exists possessions_game_idx on public.possessions(game_id, quarter);
 create index if not exists possessions_play_call_idx on public.possessions(play_call_id);
+
+-- possessions may already exist from an earlier run of this migration
+-- (before ft_attempts existed) -- add it explicitly for that case too.
+alter table public.possessions add column if not exists ft_attempts int;
+alter table public.possessions drop constraint if exists possessions_ft_attempts_check;
+alter table public.possessions add constraint possessions_ft_attempts_check check (ft_attempts is null or ft_attempts between 1 and 3);
 
 alter table public.possessions enable row level security;
 
@@ -131,12 +138,22 @@ create policy "possessions_players_read_published" on public.possessions
 -- ── Stat goals (coach-set targets, used to color report rows) ─
 create table if not exists public.stat_goals (
   id            uuid primary key default gen_random_uuid(),
-  stat_key      text not null unique,
+  stat_key      text not null,
+  team          text not null default 'us' check (team in ('us', 'opponent')),
   target_value  numeric not null,
   direction     text not null check (direction in ('higher_better', 'lower_better')),
   updated_by    uuid not null references public.profiles(id) on delete cascade,
   updated_at    timestamptz not null default now()
 );
+
+-- team may not exist yet if this table was created before opponent-specific
+-- goals were added -- add it explicitly for that case too.
+alter table public.stat_goals add column if not exists team text not null default 'us';
+alter table public.stat_goals drop constraint if exists stat_goals_team_check;
+alter table public.stat_goals add constraint stat_goals_team_check check (team in ('us', 'opponent'));
+alter table public.stat_goals drop constraint if exists stat_goals_stat_key_key;
+drop index if exists stat_goals_stat_key_team_unique;
+create unique index stat_goals_stat_key_team_unique on public.stat_goals(stat_key, team);
 
 alter table public.stat_goals enable row level security;
 
