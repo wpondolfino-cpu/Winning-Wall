@@ -14,7 +14,11 @@ import { supabase } from "./supabase";
 export type Team = "us" | "opponent";
 export type PossessionType = "transition" | "half_court" | "blob" | "slob";
 export type HalfCourtType = "set" | "motion";
-export type OobResult = "score" | "flowed_half_court";
+// direct_shot: a shot was taken right off the action (OREB putback or
+// BLOB/SLOB inbound), no set called. flowed_half_court: it turned into a
+// traditional half-court possession (Set/Motion). turnover: lost the ball
+// directly off the action, before any shot or set.
+export type OobResult = "direct_shot" | "flowed_half_court" | "turnover";
 export type PaintTouch = "single" | "both";
 export type Outcome = "fg_made" | "fg_missed" | "turnover" | "ft_trip";
 export type ShotQuality = "great" | "good" | "live" | "tough";
@@ -83,24 +87,77 @@ export interface StatGoal {
   direction: "higher_better" | "lower_better";
 }
 
-/** The stats a coach can set a goal for -- keys match what computeTeamStats produces. */
-export const GOAL_STATS: { key: string; label: string; defaultDirection: "higher_better" | "lower_better" }[] = [
-  { key: "efg_pct", label: "eFG%", defaultDirection: "higher_better" },
-  { key: "transition_pct", label: "Transition %", defaultDirection: "higher_better" },
-  { key: "oreb_pct", label: "OREB%", defaultDirection: "higher_better" },
-  { key: "tov_pct", label: "TOV%", defaultDirection: "lower_better" },
-  { key: "paint_touches", label: "Paint touches", defaultDirection: "higher_better" },
-  { key: "ft_rate", label: "FT rate", defaultDirection: "higher_better" },
-  { key: "transition_ppp", label: "Transition PPP", defaultDirection: "higher_better" },
-  { key: "halfcourt_ppp", label: "Half-court PPP", defaultDirection: "higher_better" },
-];
-
 export async function listStatGoals() {
   return supabase.from("stat_goals").select("*");
 }
 
 export async function upsertStatGoal(statKey: string, targetValue: number, direction: "higher_better" | "lower_better", userId: string) {
   return supabase.from("stat_goals").upsert({ stat_key: statKey, target_value: targetValue, direction, updated_by: userId }, { onConflict: "stat_key" });
+}
+
+// ── Stat definitions & custom ordering ──────────────────────────
+// One master ordered list drives both what's available to reorder (Goals
+// tab) and how every report renders. `inGame: false` items (set-play
+// effectiveness, BLOB/SLOB effectiveness, streaks) only show on a "full"
+// report (full game, season, custom report) -- not on a quarter/half
+// in-game report. A stat's `kind` decides how ReportBody renders that row;
+// `kind: "number"` rows are the only ones with goal-based coloring.
+export type StatKind = "number" | "shot_quality" | "set_plays" | "oob" | "streaks";
+
+export interface StatDef {
+  key: string;
+  label: string;
+  kind: StatKind;
+  inGame: boolean;
+  defaultDirection?: "higher_better" | "lower_better";
+}
+
+export const DEFAULT_STAT_ORDER: StatDef[] = [
+  { key: "efg_pct", label: "eFG%", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "transition_pct", label: "Transition %", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "oreb_pct", label: "OREB%", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "tov_pct", label: "TOV%", kind: "number", inGame: true, defaultDirection: "lower_better" },
+  { key: "ft_rate", label: "FT rate", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "paint_touch_single", label: "Paint touch", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "paint_touch_both", label: "Both sides", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "transition_ppp", label: "Transition PPP", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "halfcourt_ppp", label: "Half-court PPP", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "shot_quality", label: "Shot quality", kind: "shot_quality", inGame: true },
+  { key: "set_plays", label: "Set plays (Set / Motion)", kind: "set_plays", inGame: false },
+  { key: "oob_plays", label: "Set plays (BLOB / SLOB)", kind: "oob", inGame: false },
+  { key: "streaks", label: "Streaks", kind: "streaks", inGame: false },
+];
+
+/** Goal-settable stats, for the Goals tab -- just the "number" kind subset. */
+export const GOAL_STATS = DEFAULT_STAT_ORDER.filter((s) => s.kind === "number") as
+  { key: string; label: string; defaultDirection: "higher_better" | "lower_better" }[];
+
+/** Reads the coach's saved stat order (single most-recent row). Null if never customized. */
+export async function getReportLayout(): Promise<string[] | null> {
+  const { data } = await supabase.from("report_layout").select("stat_order").order("updated_at", { ascending: false }).limit(1).maybeSingle();
+  return data ? (data.stat_order as string[]) : null;
+}
+
+/** Saves the full stat order. Updates the single existing row if there is one, otherwise inserts the first. */
+export async function saveReportLayout(order: string[], userId: string) {
+  const { data: existing } = await supabase.from("report_layout").select("id").order("updated_at", { ascending: false }).limit(1).maybeSingle();
+  if (existing) {
+    return supabase.from("report_layout").update({ stat_order: order, updated_by: userId, updated_at: new Date().toISOString() }).eq("id", (existing as any).id);
+  }
+  return supabase.from("report_layout").insert({ stat_order: order, updated_by: userId });
+}
+
+/** Merges a saved key order against the current DEFAULT_STAT_ORDER -- any stat not in the saved list (e.g. one added after the coach last customized) falls in at the end, in its default position. */
+export function resolveStatOrder(savedOrder: string[] | null): StatDef[] {
+  if (!savedOrder || !savedOrder.length) return DEFAULT_STAT_ORDER;
+  const byKey = new Map(DEFAULT_STAT_ORDER.map((d) => [d.key, d]));
+  const ordered: StatDef[] = [];
+  savedOrder.forEach((k) => {
+    const d = byKey.get(k);
+    if (d) { ordered.push(d); byKey.delete(k); }
+  });
+  byKey.forEach((d) => ordered.push(d)); // newly-added stats land at the end
+  return ordered;
 }
 
 export interface Game {
@@ -221,23 +278,30 @@ function goalFor(goals: StatGoal[], key: string) {
   return goals.find((g) => g.stat_key === key) ?? null;
 }
 
-/** Core box-score math for one team's possessions in the given set. FGA/points drive eFG%, PPP, etc. */
-export function computeTeamStats(possessions: Possession[], team: Team, goals: StatGoal[]): StatRow[] {
+/**
+ * Core box-score math for one team's possessions in the given set.
+ * `invertDirection` is used for the opponent's stat block: a goal is set
+ * from our own perspective (e.g. "keep TOV% under 14"), so judging the
+ * opponent's *same* stat number flips what's good for us -- their eFG%
+ * being low is what we want, so a "higher_better" goal becomes
+ * "lower_better" when scoring their side, using our own target as the
+ * rough benchmark since there's no separate opponent-specific goal.
+ */
+export function computeTeamStats(possessions: Possession[], team: Team, goals: StatGoal[], invertDirection = false): StatRow[] {
   const trips = possessions.filter((p) => p.team === team);
   const fga = trips.filter((p) => p.outcome === "fg_made" || p.outcome === "fg_missed");
   const made2 = trips.filter((p) => p.outcome === "fg_made" && p.shot_type === 2).length;
   const made3 = trips.filter((p) => p.outcome === "fg_made" && p.shot_type === 3).length;
   const fgaCount = fga.length;
-  const totalPoints = trips.reduce((s, p) => s + p.points, 0);
   const turnovers = trips.filter((p) => p.outcome === "turnover").length;
   const oreb = trips.reduce((s, p) => s + p.oreb_count, 0);
   const missedFg = trips.filter((p) => p.outcome === "fg_missed").length;
   const orebOpportunities = missedFg; // simplification: OREB% of own missed FGs
   const ftTrips = trips.filter((p) => p.outcome === "ft_trip").length;
-  const paintTouches = trips.filter((p) => p.paint_touch != null).length;
+  const paintTouchSingle = trips.filter((p) => p.paint_touch === "single").length;
+  const paintTouchBoth = trips.filter((p) => p.paint_touch === "both").length;
   const transitionTripsArr = trips.filter((p) => p.possession_type === "transition");
   const halfCourtTripsArr = trips.filter((p) => p.possession_type === "half_court");
-  const transitionTrips = transitionTripsArr.length;
 
   const efg = fgaCount ? ((made2 + made3) + 0.5 * made3) / fgaCount * 100 : 0;
   const tovPct = trips.length ? (turnovers / trips.length) * 100 : 0;
@@ -245,32 +309,34 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   const ftRate = fgaCount ? ftTrips / fgaCount : 0;
   const transitionPpp = transitionTripsArr.length ? transitionTripsArr.reduce((s, p) => s + p.points, 0) / transitionTripsArr.length : 0;
   const halfCourtPpp = halfCourtTripsArr.length ? halfCourtTripsArr.reduce((s, p) => s + p.points, 0) / halfCourtTripsArr.length : 0;
-  const transitionPct = trips.length ? (transitionTrips / trips.length) * 100 : 0;
+  const transitionPct = trips.length ? (transitionTripsArr.length / trips.length) * 100 : 0;
 
   const rows: { key: string; label: string; value: number }[] = [
     { key: "efg_pct", label: "eFG%", value: round1(efg) },
     { key: "transition_pct", label: "Transition %", value: round1(transitionPct) },
     { key: "oreb_pct", label: "OREB%", value: round1(orebPct) },
     { key: "tov_pct", label: "TOV%", value: round1(tovPct) },
-    { key: "paint_touches", label: "Paint touches", value: paintTouches },
     { key: "ft_rate", label: "FT rate", value: round2(ftRate) },
+    { key: "paint_touch_single", label: "Paint touch", value: paintTouchSingle },
+    { key: "paint_touch_both", label: "Both sides", value: paintTouchBoth },
     { key: "transition_ppp", label: "Transition PPP", value: round2(transitionPpp) },
     { key: "halfcourt_ppp", label: "Half-court PPP", value: round2(halfCourtPpp) },
   ];
 
   return rows.map((r) => {
     const goal = goalFor(goals, r.key);
+    const direction = goal ? (invertDirection ? (goal.direction === "higher_better" ? "lower_better" : "higher_better") : goal.direction) : undefined;
     return {
       key: r.key,
       label: r.label,
       value: r.value,
       goal: goal?.target_value ?? null,
-      role: goal ? colorRole(r.value, goal.target_value, goal.direction) : null,
+      role: goal && direction ? colorRole(r.value, goal.target_value, direction) : null,
     };
   });
 }
 
-/** Weighted shot-quality score mapped back onto the great/good/live/tough label scale. */
+/** Weighted shot-quality score mapped back onto the great/good/live/tough label scale. Only meaningful for "us" -- we don't track the opponent's shot quality. */
 export function computeShotQuality(possessions: Possession[], team: Team = "us") {
   const rated = possessions.filter((p) => p.team === team && p.shot_quality != null);
   const weights: Record<ShotQuality, number> = { great: 4, good: 3, live: 2, tough: 1 };
@@ -340,12 +406,14 @@ export function computePlayCallEffectiveness(possessions: Possession[], playCall
   }).sort((a, b) => b.calls - a.calls);
 }
 
-/** BLOB/SLOB direct-score vs flowed-to-half-court breakdown. */
+/** BLOB/SLOB breakdown: direct shot attempts (and makes), flowed into a half-court set, or turned it over right off the action. */
 export function computeOobEffectiveness(possessions: Possession[], type: "blob" | "slob") {
   const trips = possessions.filter((p) => p.team === "us" && p.possession_type === type);
-  const scored = trips.filter((p) => p.oob_result === "score" && p.points > 0).length;
+  const directShots = trips.filter((p) => p.oob_result === "direct_shot");
+  const scored = directShots.filter((p) => p.points > 0).length;
   const flowed = trips.filter((p) => p.oob_result === "flowed_half_court").length;
-  return { total: trips.length, scored, flowed };
+  const turnovers = trips.filter((p) => p.oob_result === "turnover").length;
+  return { total: trips.length, directAttempts: directShots.length, scored, flowed, turnovers };
 }
 
 export async function finishGame(gameId: string, finalScoreUs: number, finalScoreThem: number) {
