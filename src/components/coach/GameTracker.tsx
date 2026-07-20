@@ -18,7 +18,8 @@
 // reverts the flip along with the possession it's undoing. On defense we
 // skip shot quality and play-calling (Set/Motion/BLOB/SLOB picker)
 // entirely -- we're coaching our own shot selection, not judging theirs,
-// and we don't know the name of a play we didn't call. FT trips are
+// and we don't know the name of a play we didn't call. FT trips ask
+// attempts (1/2/3 shots) before makes, so FT% is computable -- and are
 // auto-tagged "great" quality, but only on our own trips to the line.
 //
 // BLOB/SLOB/Set/Motion pickers also surface any play drawn in the Plays
@@ -60,6 +61,7 @@ type Step =
   | "flags"
   | "turnover_type"
   | "shot_quality"
+  | "ft_attempts"
   | "ft_points";
 
 interface PendingShot {
@@ -77,6 +79,7 @@ interface FlowSnapshot {
   orebCount: number;
   pendingShot: PendingShot | null;
   quickFlow: boolean;
+  ftAttempts: 1 | 2 | 3 | null;
 }
 
 const QUARTER_ACCENT: Record<number, string> = { 1: "#3b6fd6", 2: "#2f9e63", 3: "#c9932f", 4: "#c2402f" };
@@ -99,6 +102,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
   const [orebCount, setOrebCount] = useState(0);
   const [pendingShot, setPendingShot] = useState<PendingShot | null>(null);
   const [quickFlow, setQuickFlow] = useState(false); // reached via OREB or BLOB/SLOB->Set/Motion -- hides paint touch
+  const [ftAttempts, setFtAttempts] = useState<1 | 2 | 3 | null>(null);
   const [newPlayName, setNewPlayName] = useState("");
   const [addingPlayFor, setAddingPlayFor] = useState<PlayCallCategory | null>(null);
   const [history, setHistory] = useState<FlowSnapshot[]>([]);
@@ -132,6 +136,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     setOrebCount(0);
     setPendingShot(null);
     setQuickFlow(false);
+    setFtAttempts(null);
     setHistory([]);
   }
 
@@ -139,7 +144,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
   function pushHistory() {
     setHistory((h) => [
       ...h,
-      { step, possessionType, halfCourtType, playCallId, oobResult, paintTouch, orebCount, pendingShot, quickFlow },
+      { step, possessionType, halfCourtType, playCallId, oobResult, paintTouch, orebCount, pendingShot, quickFlow, ftAttempts },
     ]);
   }
 
@@ -156,6 +161,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       setOrebCount(prev.orebCount);
       setPendingShot(prev.pendingShot);
       setQuickFlow(prev.quickFlow);
+      setFtAttempts(prev.ftAttempts);
       return h.slice(0, -1);
     });
   }
@@ -177,6 +183,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       shot_type: null,
       shot_quality: null,
       turnover_type: null,
+      ft_attempts: null,
       points: 0,
       created_by: userId,
       created_at: new Date().toISOString(),
@@ -428,7 +435,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
           </Grid>
           <Grid cols={3} style={{ marginTop: 8 }}>
             <Btn onClick={handleOreb}>OREB {orebCount ? `(${orebCount})` : ""}</Btn>
-            <Btn onClick={() => { pushHistory(); setStep("ft_points"); }}>FT trip</Btn>
+            <Btn onClick={() => { pushHistory(); setStep("ft_attempts"); }}>FT trip</Btn>
             <Btn onClick={undo} style={{ color: "var(--muted)" }}>Undo</Btn>
           </Grid>
         </Section>
@@ -455,7 +462,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
           <Grid cols={4} style={{ marginTop: 8 }}>
             <Btn onClick={handleOreb}>OREB {orebCount ? `(${orebCount})` : ""}</Btn>
             <Btn onClick={() => { pushHistory(); setStep("turnover_type"); }}>Turnover</Btn>
-            <Btn onClick={() => { pushHistory(); setStep("ft_points"); }}>FT trip</Btn>
+            <Btn onClick={() => { pushHistory(); setStep("ft_attempts"); }}>FT trip</Btn>
             <Btn onClick={undo} style={{ color: "var(--muted)" }}>Undo</Btn>
           </Grid>
         </>
@@ -481,11 +488,21 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
         </Section>
       )}
 
-      {step === "ft_points" && (
-        <Section label="Points made at the line">
-          <Grid cols={4}>
-            {[0, 1, 2, 3].map((n) => (
-              <Btn key={n} onClick={() => commit("ft_trip", { points: n, shot_quality: team === "us" ? "great" : null })}>{n}</Btn>
+      {step === "ft_attempts" && (
+        <Section label="How many shots">
+          <Grid cols={3}>
+            {[1, 2, 3].map((n) => (
+              <Btn key={n} onClick={() => { pushHistory(); setFtAttempts(n as 1 | 2 | 3); setStep("ft_points"); }}>{n}</Btn>
+            ))}
+          </Grid>
+        </Section>
+      )}
+
+      {step === "ft_points" && ftAttempts != null && (
+        <Section label={`Points made (of ${ftAttempts})`}>
+          <Grid cols={ftAttempts + 1}>
+            {Array.from({ length: ftAttempts + 1 }, (_, n) => n).map((n) => (
+              <Btn key={n} onClick={() => commit("ft_trip", { points: n, ft_attempts: ftAttempts, shot_quality: team === "us" ? "great" : null })}>{n}</Btn>
             ))}
           </Grid>
         </Section>
