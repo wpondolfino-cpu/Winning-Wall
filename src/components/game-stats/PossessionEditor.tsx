@@ -97,6 +97,21 @@ export default function PossessionEditor({ gameId, opponent }: Props) {
             </>
           )}
 
+          {p.outcome === "ft_trip" && (
+            <>
+              <select
+                value={p.ft_attempts ?? ""}
+                onChange={(e) => save(p, { ft_attempts: e.target.value ? (Number(e.target.value) as 1 | 2 | 3) : null })}
+                style={selectStyle}
+              >
+                <option value="">shots</option>
+                <option value="1">1 shot</option>
+                <option value="2">2 shots</option>
+                <option value="3">3 shots</option>
+              </select>
+            </>
+          )}
+
           <input
             type="number"
             min={0}
