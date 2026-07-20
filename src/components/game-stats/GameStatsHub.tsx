@@ -15,6 +15,7 @@ import GameTracker from "../coach/GameTracker";
 import GameReport, { ReportScope } from "./GameReport";
 import PossessionEditor from "./PossessionEditor";
 import ReportBuilder from "./ReportBuilder";
+import GoalsManager from "./GoalsManager";
 
 interface Props {
   currentUserRole: "player" | "coach" | "admin";
@@ -30,7 +31,7 @@ type GamesView =
 type ReportsView = { mode: "history" } | { mode: "builder"; saved?: SavedReport };
 
 export default function GameStatsHub({ currentUserRole, userId }: Props) {
-  const [topTab, setTopTab] = useState<"games" | "reports">("games");
+  const [topTab, setTopTab] = useState<"games" | "reports" | "goals">("games");
   const [gamesView, setGamesView] = useState<GamesView>({ mode: "list" });
   const [reportsView, setReportsView] = useState<ReportsView>({ mode: "history" });
   const [quarter, setQuarter] = useState(1);
@@ -72,6 +73,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
       <div className="role-tabs" style={{ marginBottom: 12, width: "100%", maxWidth: 1400 }}>
         <button className={`role-tab ${topTab === "games" ? "active" : ""}`} onClick={() => setTopTab("games")}>Games</button>
         <button className={`role-tab ${topTab === "reports" ? "active" : ""}`} onClick={() => setTopTab("reports")}>Reports</button>
+        <button className={`role-tab ${topTab === "goals" ? "active" : ""}`} onClick={() => setTopTab("goals")}>Goals</button>
       </div>
 
       {topTab === "games" && (
@@ -97,6 +99,8 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
       {topTab === "reports" && (
         <ReportsTab userId={userId} view={reportsView} setView={setReportsView} />
       )}
+
+      {topTab === "goals" && <GoalsManager userId={userId} />}
     </div>
   );
 }
