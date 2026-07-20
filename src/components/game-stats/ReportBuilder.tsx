@@ -11,8 +11,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { ReportBody } from "./GameReport";
-import { saveReport } from "../../lib/gameStats";
-import type { Possession, PlayCall, StatGoal, PossessionType, SavedReport } from "../../lib/gameStats";
+import { saveReport, getReportLayout, resolveStatOrder } from "../../lib/gameStats";
+import type { Possession, PlayCall, StatGoal, PossessionType, SavedReport, StatDef } from "../../lib/gameStats";
 
 type GameCount = 3 | 5 | 10 | "season";
 type CategoryFilter = "all" | PossessionType;
@@ -38,6 +38,7 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
   const [possessions, setPossessions] = useState<Possession[] | null>(null);
   const [playCalls, setPlayCalls] = useState<PlayCall[]>([]);
   const [goals, setGoals] = useState<StatGoal[]>([]);
+  const [statOrder, setStatOrder] = useState<StatDef[]>([]);
   const [gameLabel, setGameLabel] = useState("");
   const [loading, setLoading] = useState(false);
   const [savingLabel, setSavingLabel] = useState<string | null>(null);
@@ -47,12 +48,14 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
 
   async function run() {
     setLoading(true);
-    const [{ data: goalRows }, { data: playRows }] = await Promise.all([
+    const [{ data: goalRows }, { data: playRows }, savedOrder] = await Promise.all([
       supabase.from("stat_goals").select("*"),
       supabase.from("play_calls").select("*"),
+      getReportLayout(),
     ]);
     setGoals((goalRows as StatGoal[]) ?? []);
     setPlayCalls((playRows as PlayCall[]) ?? []);
+    setStatOrder(resolveStatOrder(savedOrder));
 
     let gamesQuery = supabase.from("games").select("id, opponent, game_date").eq("season", season).order("game_date", { ascending: false });
     if (gameCount !== "season") gamesQuery = gamesQuery.limit(gameCount);
@@ -137,6 +140,8 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
           possessions={possessions}
           playCalls={playCalls}
           goals={goals}
+          statOrder={statOrder}
+          variant="full"
           title={`${gameLabel} · ${CATEGORY_LABEL[category]}`}
         />
       )}
