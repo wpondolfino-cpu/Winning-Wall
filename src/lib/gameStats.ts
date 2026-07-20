@@ -19,7 +19,6 @@ export type HalfCourtType = "set" | "motion";
 // traditional half-court possession (Set/Motion). turnover: lost the ball
 // directly off the action, before any shot or set.
 export type OobResult = "direct_shot" | "flowed_half_court" | "turnover";
-export type PaintTouch = "single" | "both";
 export type Outcome = "fg_made" | "fg_missed" | "turnover" | "ft_trip";
 export type ShotQuality = "great" | "good" | "live" | "tough";
 export type TurnoverType = "live" | "dead";
@@ -35,7 +34,8 @@ export interface Possession {
   half_court_type: HalfCourtType | null;
   play_call_id: string | null;
   oob_result: OobResult | null;
-  paint_touch: PaintTouch | null;
+  paint_touch: boolean;
+  paint_touch_both_sides: boolean;
   oreb_count: number;
   outcome: Outcome;
   shot_type: 2 | 3 | null;
@@ -315,8 +315,8 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   const ftTrips = trips.filter((p) => p.outcome === "ft_trip").length;
   const ftMade = ftTripsWithAttempts.reduce((s, p) => s + p.points, 0);
   const ftAttempted = ftTripsWithAttempts.reduce((s, p) => s + (p.ft_attempts ?? 0), 0);
-  const paintTouchSingle = trips.filter((p) => p.paint_touch === "single").length;
-  const paintTouchBoth = trips.filter((p) => p.paint_touch === "both").length;
+  const paintTouchSingle = trips.filter((p) => p.paint_touch).length;
+  const paintTouchBoth = trips.filter((p) => p.paint_touch_both_sides).length;
   const transitionTripsArr = trips.filter((p) => p.possession_type === "transition");
   const halfCourtTripsArr = trips.filter((p) => p.possession_type === "half_court");
 
