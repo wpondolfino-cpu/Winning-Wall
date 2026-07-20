@@ -3,21 +3,23 @@
 // gameStats.queuePossession and syncs in the background -- the coach never
 // waits on the network mid-game. One possession = one true offensive trip;
 // an OREB extends the current trip (increments oreb_count) instead of
-// starting a new one, but jumps straight into a fresh half-court sub-flow
-// so the follow-up action gets its own play-call/paint-touch/shot-quality
-// detail, same as if "Half-court" had been tapped from scratch.
+// starting a new one.
+//
+// OREB and BLOB/SLOB both land on the same "action_branch" screen: Shot /
+// Turnover / (Set / Motion, us only). Shot skips straight to a reduced
+// outcome grid (no Turnover button -- that's already branched separately).
+// Set/Motion route through the normal play-call picker into the full
+// "traditional half-court" outcome grid (includes Turnover). This is a
+// "quickFlow" -- paint touch/both sides don't apply on this path, same as
+// a fresh Transition possession.
 //
 // The team toggle (us on offense / us on defense) auto-flips after every
 // committed possession, since basketball possessions alternate -- undo
-// reverts the flip along with the possession it's undoing.
-//
-// Shot quality applies to both makes and misses on OUR possessions (it
-// rates the look, not the result) and every FG attempt routes through a
-// "pendingShot" holding pattern before being committed with a quality tag.
-// On defense we skip shot quality and play-calling (Set/Motion/BLOB/SLOB
-// picker) entirely -- we're coaching our own shot selection, not judging
-// theirs, and we don't know the name of a play we didn't call. FT trips
-// are auto-tagged "great" quality, but only on our own trips to the line.
+// reverts the flip along with the possession it's undoing. On defense we
+// skip shot quality and play-calling (Set/Motion/BLOB/SLOB picker)
+// entirely -- we're coaching our own shot selection, not judging theirs,
+// and we don't know the name of a play we didn't call. FT trips are
+// auto-tagged "great" quality, but only on our own trips to the line.
 //
 // BLOB/SLOB/Set/Motion pickers also surface any play drawn in the Plays
 // feature and tagged with that category (case-insensitive), not just
@@ -53,9 +55,10 @@ type Step =
   | "halfcourt_type"
   | "play_call"
   | "oob_result"
+  | "action_branch"
+  | "quick_shot"
   | "flags"
   | "turnover_type"
-  | "shot_type"
   | "shot_quality"
   | "ft_points";
 
@@ -73,8 +76,11 @@ interface FlowSnapshot {
   paintTouch: PaintTouch | null;
   orebCount: number;
   pendingShot: PendingShot | null;
-  postOreb: boolean;
+  quickFlow: boolean;
 }
+
+const QUARTER_ACCENT: Record<number, string> = { 1: "#3b6fd6", 2: "#2f9e63", 3: "#c9932f", 4: "#c2402f" };
+const DEFENSE_ACCENT = "#c2703a";
 
 export default function GameTracker({ gameId, userId, quarter }: Props) {
   const [playCalls, setPlayCalls] = useState<PlayCall[]>([]);
@@ -92,7 +98,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
   const [paintTouch, setPaintTouch] = useState<PaintTouch | null>(null);
   const [orebCount, setOrebCount] = useState(0);
   const [pendingShot, setPendingShot] = useState<PendingShot | null>(null);
-  const [postOreb, setPostOreb] = useState(false);
+  const [quickFlow, setQuickFlow] = useState(false); // reached via OREB or BLOB/SLOB->Set/Motion -- hides paint touch
   const [newPlayName, setNewPlayName] = useState("");
   const [addingPlayFor, setAddingPlayFor] = useState<PlayCallCategory | null>(null);
   const [history, setHistory] = useState<FlowSnapshot[]>([]);
@@ -125,7 +131,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     setPaintTouch(null);
     setOrebCount(0);
     setPendingShot(null);
-    setPostOreb(false);
+    setQuickFlow(false);
     setHistory([]);
   }
 
@@ -133,7 +139,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
   function pushHistory() {
     setHistory((h) => [
       ...h,
-      { step, possessionType, halfCourtType, playCallId, oobResult, paintTouch, orebCount, pendingShot, postOreb },
+      { step, possessionType, halfCourtType, playCallId, oobResult, paintTouch, orebCount, pendingShot, quickFlow },
     ]);
   }
 
@@ -149,7 +155,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       setPaintTouch(prev.paintTouch);
       setOrebCount(prev.orebCount);
       setPendingShot(prev.pendingShot);
-      setPostOreb(prev.postOreb);
+      setQuickFlow(prev.quickFlow);
       return h.slice(0, -1);
     });
   }
@@ -193,9 +199,9 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     });
   }
 
-  /** Shared by the Make/Miss buttons and the BLOB/SLOB score branch. We don't
-      track shot quality for the opponent -- it's our own shot selection we're
-      coaching, not theirs -- so a defensive attempt commits immediately. */
+  /** Shared by every Make/Miss button (flags screen and quick_shot screen). We
+      don't track shot quality for the opponent -- it's our own shot selection
+      we're coaching, not theirs -- so a defensive attempt commits immediately. */
   function selectShot(shotType: 2 | 3, made: boolean) {
     pushHistory();
     if (team === "opponent") {
@@ -204,6 +210,24 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       setPendingShot({ shotType, made });
       setStep("shot_quality");
     }
+  }
+
+  /** An offensive rebound keeps the trip alive and routes into the shared
+      action_branch (Shot / Turnover / Set-Motion). If the trip originated as
+      a BLOB/SLOB we keep that possession_type (so it still counts toward
+      BLOB/SLOB effectiveness) -- otherwise it becomes a half-court trip,
+      since the putback itself is a half-court-style action. */
+  function handleOreb() {
+    pushHistory();
+    setOrebCount((c) => c + 1);
+    if (possessionType !== "blob" && possessionType !== "slob") {
+      setPossessionType("half_court");
+      setHalfCourtType(null);
+      setPlayCallId(null);
+    }
+    setPaintTouch(null);
+    setQuickFlow(true);
+    setStep("action_branch");
   }
 
   function undo() {
@@ -244,8 +268,35 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
   const unlinkedDrawnFor = (cat: PlayCallCategory) =>
     drawnPlays[cat].filter((dp) => !playCalls.some((pc) => pc.linked_play_id === dp.id));
 
+  /** Set/Motion buttons shared by both action_branch (post-OREB / post-BLOB-SLOB) entry points. */
+  function chooseSetOrMotion(type: HalfCourtType) {
+    pushHistory();
+    if (possessionType === "blob" || possessionType === "slob") setOobResult("flowed_half_court");
+    setHalfCourtType(type);
+    setQuickFlow(true);
+    setStep("play_call");
+  }
+
+  function chooseShot() {
+    pushHistory();
+    if (possessionType === "blob" || possessionType === "slob") setOobResult("direct_shot");
+    setStep("quick_shot");
+  }
+
+  function chooseTurnover() {
+    pushHistory();
+    if (possessionType === "blob" || possessionType === "slob") setOobResult("turnover");
+    setStep("turnover_type");
+  }
+
+  const teamAccent = team === "us" ? "var(--royal)" : DEFENSE_ACCENT;
+  const quarterAccent = QUARTER_ACCENT[quarter] ?? "#8a4fbe";
+
   return (
-    <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
+    <div
+      className="card"
+      style={{ width: "100%", maxWidth: 1400, borderTop: `4px solid ${teamAccent}`, borderLeft: `4px solid ${quarterAccent}` }}
+    >
       <style>{`
         .gt-grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); gap: 8px; }
         @media (max-width: 480px) {
@@ -263,7 +314,11 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
         <button className={`role-tab ${team === "us" ? "active" : ""}`} onClick={() => setTeam("us")}>
           Us on offense
         </button>
-        <button className={`role-tab ${team === "opponent" ? "active" : ""}`} onClick={() => setTeam("opponent")}>
+        <button
+          className={`role-tab ${team === "opponent" ? "active" : ""}`}
+          onClick={() => setTeam("opponent")}
+          style={team === "opponent" ? { background: DEFENSE_ACCENT, borderColor: DEFENSE_ACCENT } : undefined}
+        >
           Us on defense
         </button>
       </div>
@@ -271,7 +326,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       {history.length > 0 && (
         <button
           onClick={goBack}
-          style={{ marginBottom: 10, padding: "6px 12px", fontSize: 13, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--muted)", cursor: "pointer" }}
+          style={{ marginTop: 10, marginBottom: 10, padding: "6px 12px", fontSize: 13, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--muted)", cursor: "pointer" }}
         >
           ← Back
         </button>
@@ -285,7 +340,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
               onClick={() => {
                 pushHistory();
                 setPossessionType("half_court");
-                setPostOreb(false);
+                setQuickFlow(false);
                 // On defense we don't know the opponent's called set, so
                 // skip straight past Set/Motion/play-call to the outcome.
                 setStep(team === "opponent" ? "flags" : "halfcourt_type");
@@ -301,14 +356,9 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
 
       {step === "halfcourt_type" && (
         <Section label="Half-court type" accent>
-          <Grid cols={postOreb ? 3 : 2}>
+          <Grid cols={2}>
             <Btn onClick={() => { pushHistory(); setHalfCourtType("set"); setStep("play_call"); }}>Set</Btn>
             <Btn onClick={() => { pushHistory(); setHalfCourtType("motion"); setStep("play_call"); }}>Motion</Btn>
-            {postOreb && (
-              <Btn onClick={() => { pushHistory(); setHalfCourtType(null); setPlayCallId(null); setStep("flags"); }}>
-                Immediate score
-              </Btn>
-            )}
           </Grid>
         </Section>
       )}
@@ -346,18 +396,47 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
               />
             </Section>
           )}
-          <Section label="Result" accent>
-            <Grid cols={2}>
-              <Btn onClick={() => { pushHistory(); setOobResult("score"); setStep("shot_type"); }}>Score</Btn>
-              <Btn onClick={() => { pushHistory(); setOobResult("flowed_half_court"); setStep("flags"); }}>Flowed to half-court</Btn>
+          <Section label="What happened" accent>
+            <Grid cols={team === "us" ? 4 : 2}>
+              <Btn onClick={chooseShot}>Shot</Btn>
+              <Btn onClick={chooseTurnover}>Turnover</Btn>
+              {team === "us" && <Btn onClick={() => chooseSetOrMotion("set")}>Set</Btn>}
+              {team === "us" && <Btn onClick={() => chooseSetOrMotion("motion")}>Motion</Btn>}
             </Grid>
           </Section>
         </>
       )}
 
+      {step === "action_branch" && (
+        <Section label="What happened">
+          <Grid cols={team === "us" ? 4 : 2}>
+            <Btn onClick={chooseShot}>Shot</Btn>
+            <Btn onClick={chooseTurnover}>Turnover</Btn>
+            {team === "us" && <Btn onClick={() => chooseSetOrMotion("set")}>Set</Btn>}
+            {team === "us" && <Btn onClick={() => chooseSetOrMotion("motion")}>Motion</Btn>}
+          </Grid>
+        </Section>
+      )}
+
+      {step === "quick_shot" && (
+        <Section label="Shot">
+          <Grid cols={4}>
+            <Btn onClick={() => selectShot(2, true)}>Make 2</Btn>
+            <Btn onClick={() => selectShot(2, false)}>Miss 2</Btn>
+            <Btn onClick={() => selectShot(3, true)}>Make 3</Btn>
+            <Btn onClick={() => selectShot(3, false)}>Miss 3</Btn>
+          </Grid>
+          <Grid cols={3} style={{ marginTop: 8 }}>
+            <Btn onClick={handleOreb}>OREB {orebCount ? `(${orebCount})` : ""}</Btn>
+            <Btn onClick={() => { pushHistory(); setStep("ft_points"); }}>FT trip</Btn>
+            <Btn onClick={undo} style={{ color: "var(--muted)" }}>Undo</Btn>
+          </Grid>
+        </Section>
+      )}
+
       {step === "flags" && (
         <>
-          {!postOreb && possessionType !== "transition" && (
+          {!quickFlow && possessionType !== "transition" && (
             <Grid cols={2}>
               <Btn active={paintTouch === "single"} onClick={() => setPaintTouch(paintTouch === "single" ? null : "single")}>
                 Paint touch
@@ -367,32 +446,14 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
               </Btn>
             </Grid>
           )}
-          <Grid cols={4} style={{ marginTop: postOreb || possessionType === "transition" ? 0 : 8 }}>
+          <Grid cols={4} style={{ marginTop: quickFlow || possessionType === "transition" ? 0 : 8 }}>
             <Btn onClick={() => selectShot(2, true)}>Make 2</Btn>
             <Btn onClick={() => selectShot(2, false)}>Miss 2</Btn>
             <Btn onClick={() => selectShot(3, true)}>Make 3</Btn>
             <Btn onClick={() => selectShot(3, false)}>Miss 3</Btn>
           </Grid>
           <Grid cols={4} style={{ marginTop: 8 }}>
-            <Btn
-              onClick={() => {
-                // An offensive rebound doesn't end the trip -- it keeps the
-                // same possession alive and hands it straight into a fresh
-                // half-court look, same as tapping "Half-court" from scratch.
-                // On defense (their OREB) we still don't know their set, so
-                // skip straight to the outcome instead of Set/Motion.
-                pushHistory();
-                setOrebCount((c) => c + 1);
-                setPossessionType("half_court");
-                setHalfCourtType(null);
-                setPlayCallId(null);
-                setPaintTouch(null);
-                setPostOreb(true);
-                setStep(team === "opponent" ? "flags" : "halfcourt_type");
-              }}
-            >
-              OREB {orebCount ? `(${orebCount})` : ""}
-            </Btn>
+            <Btn onClick={handleOreb}>OREB {orebCount ? `(${orebCount})` : ""}</Btn>
             <Btn onClick={() => { pushHistory(); setStep("turnover_type"); }}>Turnover</Btn>
             <Btn onClick={() => { pushHistory(); setStep("ft_points"); }}>FT trip</Btn>
             <Btn onClick={undo} style={{ color: "var(--muted)" }}>Undo</Btn>
@@ -405,15 +466,6 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
           <Grid cols={2}>
             <Btn onClick={() => commit("turnover", { turnover_type: "live" })}>Live ball</Btn>
             <Btn onClick={() => commit("turnover", { turnover_type: "dead" })}>Dead ball</Btn>
-          </Grid>
-        </Section>
-      )}
-
-      {step === "shot_type" && (
-        <Section label="Shot type (BLOB/SLOB score)">
-          <Grid cols={2}>
-            <Btn onClick={() => selectShot(2, true)}>2 pointer</Btn>
-            <Btn onClick={() => selectShot(3, true)}>3 pointer</Btn>
           </Grid>
         </Section>
       )}
