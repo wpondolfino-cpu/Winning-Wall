@@ -93,7 +93,8 @@ create table if not exists public.possessions (
   play_call_id      uuid references public.play_calls(id) on delete set null,
   oob_result        text check (oob_result in ('score', 'flowed_half_court')),
 
-  paint_touch       text check (paint_touch in ('single', 'both')),
+  paint_touch       boolean not null default false,
+  paint_touch_both_sides boolean not null default false,
   oreb_count        int not null default 0,
 
   outcome           text not null check (outcome in ('fg_made', 'fg_missed', 'turnover', 'ft_trip')),
@@ -117,6 +118,29 @@ create index if not exists possessions_play_call_idx on public.possessions(play_
 alter table public.possessions add column if not exists ft_attempts int;
 alter table public.possessions drop constraint if exists possessions_ft_attempts_check;
 alter table public.possessions add constraint possessions_ft_attempts_check check (ft_attempts is null or ft_attempts between 1 and 3);
+
+-- paint_touch used to be a single text field ('single'/'both'), mutually
+-- exclusive. Now it's two independent booleans -- a possession can touch
+-- the paint on one side, both sides, or neither, without one excluding
+-- the other. Guarded so this only runs once even if the migration is
+-- re-run after the conversion has already happened.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'possessions' and column_name = 'paint_touch' and data_type = 'text'
+  ) then
+    alter table public.possessions add column if not exists paint_touch_bool boolean not null default false;
+    alter table public.possessions add column if not exists paint_touch_both_sides boolean not null default false;
+    update public.possessions set paint_touch_bool = true where paint_touch is not null;
+    update public.possessions set paint_touch_both_sides = true where paint_touch = 'both';
+    alter table public.possessions drop column paint_touch;
+    alter table public.possessions rename column paint_touch_bool to paint_touch;
+  else
+    alter table public.possessions add column if not exists paint_touch boolean not null default false;
+    alter table public.possessions add column if not exists paint_touch_both_sides boolean not null default false;
+  end if;
+end $$;
 
 alter table public.possessions enable row level security;
 
