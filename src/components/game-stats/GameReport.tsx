@@ -115,7 +115,7 @@ export function ReportBody({
   const specialStats = visible.filter((s) => s.kind !== "number");
 
   const usStatsAll = computeTeamStats(possessions, "us", goals);
-  const oppStatsAll = computeTeamStats(possessions, "opponent", goals, true);
+  const oppStatsAll = computeTeamStats(possessions, "opponent", goals);
   const usByKey = new Map(usStatsAll.map((r) => [r.key, r]));
   const oppByKey = new Map(oppStatsAll.map((r) => [r.key, r]));
   const usRows = numberStats.map((s) => usByKey.get(s.key)).filter(Boolean) as StatRow[];
@@ -263,19 +263,22 @@ function PairedStatRows({ usRows, oppRows }: { usRows: StatRow[]; oppRows: StatR
 
 function StatChip({ row }: { row: StatRow }) {
   return (
-    <span
-      style={{
-        textAlign: "center",
-        fontSize: 13,
-        fontWeight: 700,
-        padding: "3px 0",
-        borderRadius: 6,
-        background: row.role ? roleBg[row.role] : "var(--surface2)",
-        color: row.role ? "#fff" : "var(--text)",
-      }}
-      title={row.goal != null ? `goal ${row.goal}` : undefined}
-    >
-      {row.value}
+    <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+      <span
+        style={{
+          textAlign: "center",
+          fontSize: 13,
+          fontWeight: 700,
+          padding: "3px 8px",
+          borderRadius: 6,
+          background: row.role ? roleBg[row.role] : "var(--surface2)",
+          color: row.role ? "#fff" : "var(--text)",
+        }}
+        title={row.goal != null ? `goal ${row.goal}` : undefined}
+      >
+        {row.value}
+      </span>
+      {row.raw && <span style={{ fontSize: 10, color: "var(--muted)" }}>{row.raw}</span>}
     </span>
   );
 }
