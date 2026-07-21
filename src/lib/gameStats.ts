@@ -12,7 +12,9 @@ import { supabase } from "./supabase";
 
 // ── Types ────────────────────────────────────────────────────
 export type Team = "us" | "opponent";
-export type PossessionType = "transition" | "half_court" | "blob" | "slob";
+export type PossessionType = "transition" | "half_court" | "blob" | "slob" | "press";
+export type DefenseScheme = "man" | "zone";
+export type PressResult = "turnover" | "man" | "zone";
 export type HalfCourtType = "set" | "motion";
 // direct_shot: a shot was taken right off the action (OREB putback or
 // BLOB/SLOB inbound), no set called. flowed_half_court: it turned into a
@@ -34,6 +36,8 @@ export interface Possession {
   half_court_type: HalfCourtType | null;
   play_call_id: string | null;
   oob_result: OobResult | null;
+  defense_scheme: DefenseScheme | null;
+  press_result: PressResult | null;
   paint_touch: boolean;
   paint_touch_both_sides: boolean;
   oreb_count: number;
@@ -110,7 +114,7 @@ export async function upsertStatGoal(statKey: string, team: Team, targetValue: n
 // report (full game, season, custom report) -- not on a quarter/half
 // in-game report. A stat's `kind` decides how ReportBody renders that row;
 // `kind: "number"` rows are the only ones with goal-based coloring.
-export type StatKind = "number" | "shot_quality" | "set_plays" | "oob" | "streaks";
+export type StatKind = "number" | "shot_quality" | "set_plays" | "oob" | "streaks" | "defense_schemes";
 
 export interface StatDef {
   key: string;
@@ -141,6 +145,7 @@ export const DEFAULT_STAT_ORDER: StatDef[] = [
   { key: "set_plays", label: "Set plays (Set / Motion)", kind: "set_plays", inGame: false },
   { key: "oob_plays", label: "Set plays (BLOB / SLOB)", kind: "oob", inGame: false },
   { key: "streaks", label: "Streaks", kind: "streaks", inGame: true },
+  { key: "defense_schemes", label: "Defense schemes (Man / Zone / Press)", kind: "defense_schemes", inGame: false },
 ];
 
 /** Goal-settable stats, for the Goals tab -- "number" kind, excluding self-colored ones like Extra Possessions that don't compare against a target. */
@@ -184,6 +189,7 @@ export interface Game {
   final_score_us: number | null;
   final_score_them: number | null;
   status: "draft" | "published";
+  notes: string | null;
 }
 
 export interface SavedReport {
@@ -272,6 +278,8 @@ function normalizeLegacyPossession(p: any): Possession {
     missed_fg_count: p.missed_fg_count ?? 0,
     absorbed_ft_attempts: p.absorbed_ft_attempts ?? 0,
     absorbed_ft_made: p.absorbed_ft_made ?? 0,
+    defense_scheme: p.defense_scheme ?? null,
+    press_result: p.press_result ?? null,
     oob_result: p.oob_result === "score" ? "direct_shot" : p.oob_result ?? null,
   };
 }
@@ -603,6 +611,47 @@ export function computeOobEffectiveness(possessions: Possession[], type: "blob" 
   return { total: trips.length, directAttempts: directShots.length, scored, flowed, turnovers };
 }
 
+export interface DefenseSchemeSummary {
+  label: string;
+  calls: number;
+  pointsAllowed: number;
+  stopPct: number;
+  ppp: number;
+}
+
+function summarizeDefense(trips: Possession[], label: string): DefenseSchemeSummary {
+  const calls = trips.length;
+  const pointsAllowed = trips.reduce((s, p) => s + p.points, 0);
+  const stops = trips.filter((p) => p.points === 0).length;
+  return {
+    label,
+    calls,
+    pointsAllowed,
+    stopPct: calls ? round1((stops / calls) * 100) : 0,
+    ppp: calls ? round2(pointsAllowed / calls) : 0,
+  };
+}
+
+/**
+ * Defensive scheme effectiveness -- Man and Zone are tagged by
+ * defense_scheme regardless of whether the possession got there directly
+ * (a fresh Man/Zone call) or via a press that broke down into one (same
+ * "counts toward the category either way" precedent as a BLOB that flows
+ * into a half-court Set counting toward Set effectiveness). Press itself
+ * is tracked by possession_type, with a breakdown of what it turned into.
+ */
+export function computeDefenseEffectiveness(possessions: Possession[]) {
+  const oppTrips = possessions.filter((p) => p.team === "opponent");
+  const man = summarizeDefense(oppTrips.filter((p) => p.defense_scheme === "man"), "Man");
+  const zone = summarizeDefense(oppTrips.filter((p) => p.defense_scheme === "zone"), "Zone");
+  const pressTrips = oppTrips.filter((p) => p.possession_type === "press");
+  const press = summarizeDefense(pressTrips, "Press (overall)");
+  const pressTurnovers = pressTrips.filter((p) => p.press_result === "turnover").length;
+  const pressToMan = pressTrips.filter((p) => p.press_result === "man").length;
+  const pressToZone = pressTrips.filter((p) => p.press_result === "zone").length;
+  return { man, zone, press, pressTurnovers, pressToMan, pressToZone };
+}
+
 /** Human-readable one-line summary of a possession, for the sync-issues viewer where a raw row isn't meaningful at a glance. */
 export function describePossession(p: Possession): string {
   const who = p.team === "us" ? "Us" : "Opponent";
@@ -614,8 +663,17 @@ export function describePossession(p: Possession): string {
   return `Q${p.quarter} · ${who} · ${type} · ${action}`;
 }
 
-export async function finishGame(gameId: string, finalScoreUs: number, finalScoreThem: number) {
-  return supabase.from("games").update({ final_score_us: finalScoreUs, final_score_them: finalScoreThem }).eq("id", gameId);
+export async function finishGame(gameId: string, finalScoreUs: number, finalScoreThem: number, notes?: string) {
+  const patch: { final_score_us: number; final_score_them: number; notes?: string } = { final_score_us: finalScoreUs, final_score_them: finalScoreThem };
+  if (notes !== undefined) patch.notes = notes;
+  return supabase.from("games").update(patch).eq("id", gameId);
+}
+
+/** Distinct seasons that have any games, most recent first -- drives the season selector so past seasons stay reachable instead of everything silently defaulting to "today's season." */
+export async function listSeasons(): Promise<string[]> {
+  const { data } = await supabase.from("games").select("season");
+  const seasons = Array.from(new Set((data ?? []).map((g: any) => g.season as string)));
+  return seasons.sort().reverse();
 }
 
 /** Undoes finishGame -- clears the final score so the game goes back to being trackable. The escape hatch for "finished too early." */
