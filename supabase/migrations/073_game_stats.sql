@@ -27,12 +27,17 @@ create table if not exists public.games (
   final_score_us   int,
   final_score_them int,
   status           text not null default 'draft' check (status in ('draft', 'published')),
+  notes            text,
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now()
 );
 
 create index if not exists games_season_idx on public.games(season);
 create index if not exists games_status_idx on public.games(status);
+
+-- games may already exist from an earlier run of this migration (before
+-- notes existed) -- add it explicitly for that case too.
+alter table public.games add column if not exists notes text;
 
 alter table public.games enable row level security;
 
@@ -88,7 +93,9 @@ create table if not exists public.possessions (
   quarter           int not null check (quarter between 1 and 8),
   sequence          int not null,
 
-  possession_type   text not null check (possession_type in ('transition', 'half_court', 'blob', 'slob')),
+  possession_type   text not null check (possession_type in ('transition', 'half_court', 'blob', 'slob', 'press')),
+  defense_scheme    text check (defense_scheme in ('man', 'zone')),
+  press_result      text check (press_result in ('turnover', 'man', 'zone')),
   half_court_type   text check (half_court_type in ('set', 'motion')),
   play_call_id      uuid references public.play_calls(id) on delete set null,
   oob_result        text check (oob_result in ('direct_shot', 'flowed_half_court', 'turnover')),
@@ -124,6 +131,18 @@ alter table public.possessions add constraint possessions_ft_attempts_check chec
 alter table public.possessions add column if not exists missed_fg_count int not null default 0;
 alter table public.possessions add column if not exists absorbed_ft_attempts int not null default 0;
 alter table public.possessions add column if not exists absorbed_ft_made int not null default 0;
+
+-- Defensive scheme tracking (Man/Zone/Press) -- possession_type needs
+-- 'press' added to its allowed values, plus two new nullable columns.
+alter table public.possessions drop constraint if exists possessions_possession_type_check;
+alter table public.possessions add constraint possessions_possession_type_check
+  check (possession_type in ('transition', 'half_court', 'blob', 'slob', 'press'));
+alter table public.possessions add column if not exists defense_scheme text;
+alter table public.possessions drop constraint if exists possessions_defense_scheme_check;
+alter table public.possessions add constraint possessions_defense_scheme_check check (defense_scheme is null or defense_scheme in ('man', 'zone'));
+alter table public.possessions add column if not exists press_result text;
+alter table public.possessions drop constraint if exists possessions_press_result_check;
+alter table public.possessions add constraint possessions_press_result_check check (press_result is null or press_result in ('turnover', 'man', 'zone'));
 
 -- paint_touch used to be a single text field ('single'/'both'), mutually
 -- exclusive. Now it's two independent booleans -- a possession can touch
