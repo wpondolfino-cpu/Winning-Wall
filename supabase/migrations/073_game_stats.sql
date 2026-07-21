@@ -103,6 +103,8 @@ create table if not exists public.possessions (
   shot_quality      text check (shot_quality in ('great', 'good', 'live', 'tough')),
   turnover_type     text check (turnover_type in ('live', 'dead')),
   ft_attempts       int check (ft_attempts between 1 and 3),
+  absorbed_ft_attempts int not null default 0,
+  absorbed_ft_made  int not null default 0,
   points            int not null default 0,
 
   created_by        uuid not null references public.profiles(id) on delete cascade,
@@ -120,6 +122,8 @@ alter table public.possessions add column if not exists ft_attempts int;
 alter table public.possessions drop constraint if exists possessions_ft_attempts_check;
 alter table public.possessions add constraint possessions_ft_attempts_check check (ft_attempts is null or ft_attempts between 1 and 3);
 alter table public.possessions add column if not exists missed_fg_count int not null default 0;
+alter table public.possessions add column if not exists absorbed_ft_attempts int not null default 0;
+alter table public.possessions add column if not exists absorbed_ft_made int not null default 0;
 
 -- paint_touch used to be a single text field ('single'/'both'), mutually
 -- exclusive. Now it's two independent booleans -- a possession can touch
