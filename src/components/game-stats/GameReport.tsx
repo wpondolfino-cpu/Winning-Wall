@@ -168,9 +168,10 @@ export function ReportBody({
 
   return (
     <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
-      <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>{title}</div>
+      <div style={{ fontSize: 14, fontWeight: 500, color: "var(--muted)", marginBottom: 12 }}>
+        {opponentName ? `${title} - Us vs. ${opponentName}` : title}
+      </div>
 
-      <SectionDivider label={`Us · ${opponentName ?? "Opponent"}`} />
       <PairedStatRows usRows={usRows} oppRows={oppRows} opponentName={opponentName} />
 
       {specialStats.map((s) => {
@@ -261,13 +262,12 @@ function PairedStatRows({ usRows, oppRows, opponentName }: { usRows: StatRow[]; 
   return (
     <div>
       <style>{`
-        .gs-paired { grid-template-columns: 64px 1fr 64px; }
-        @media (max-width: 420px) { .gs-paired { grid-template-columns: 48px 1fr 48px; } }
+        .gs-paired { grid-template-columns: 1fr 1fr 1fr; }
       `}</style>
-      <div className="gs-paired" style={{ display: "grid", gap: 8, fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
-        <span style={{ textAlign: "center" }}>Us</span>
+      <div className="gs-paired" style={{ display: "grid", gap: 8, marginBottom: 6 }}>
+        <span style={{ textAlign: "center", fontSize: 16, fontWeight: 600, color: "var(--text)" }}>Us</span>
         <span />
-        <span style={{ textAlign: "center" }}>{opponentName ?? "Opponent"}</span>
+        <span style={{ textAlign: "center", fontSize: 16, fontWeight: 600, color: "var(--text)" }}>{opponentName ?? "Opponent"}</span>
       </div>
       {usRows.map((us, i) => {
         const opp = oppRows[i];
