@@ -5,13 +5,27 @@
 // an OREB extends the current trip (increments oreb_count) instead of
 // starting a new one.
 //
-// OREB and BLOB/SLOB both land on the same "action_branch" screen: Shot /
-// Turnover / (Set / Motion, us only). Shot skips straight to a reduced
-// outcome grid (no Turnover button -- that's already branched separately).
-// Set/Motion route through the normal play-call picker into the full
-// "traditional half-court" outcome grid (includes Turnover). This is a
-// "quickFlow" -- paint touch/both sides don't apply on this path, same as
-// a fresh Transition possession.
+// OREB is no longer a standalone button -- a missed shot (or a missed free
+// throw) is a "pendingCommit" that doesn't save yet; instead it asks
+// "Offensive rebound?" Yes/No. No commits the miss as the trip's final
+// result (defensive rebound implied). Yes keeps the trip alive, tallies
+// missed_fg_count (for FG misses only, not FT misses -- OREB% is
+// conventionally measured against missed field goals), and routes into the
+// shared action_branch (Shot / Turnover / Set-Motion) for what happens
+// next. This also means a missed shot that gets rebounded is now actually
+// recorded as a miss (shot_type/quality included) instead of vanishing
+// into an untracked oreb_count bump, like it did before.
+//
+// On defense the OREB question still applies (their own rebound of their
+// own miss) but skips shot quality entirely, straight from Miss to the
+// question.
+//
+// action_branch: Shot / Turnover / (Set / Motion, us only). Shot skips
+// straight to a reduced outcome grid (no Turnover button -- that's already
+// branched separately). Set/Motion route through the normal play-call
+// picker into the full "traditional half-court" outcome grid (includes
+// Turnover). This is a "quickFlow" -- paint touch/both sides don't apply
+// on this path, same as a fresh Transition possession.
 //
 // The team toggle (us on offense / us on defense) auto-flips after every
 // committed possession, since basketball possessions alternate -- undo
@@ -31,6 +45,7 @@ import { supabase } from "../../lib/supabase";
 import {
   queuePossession,
   queueCount,
+  getLastSyncErrors,
   fetchDrawnPlaysForCategory,
   ensurePlayCallForPlay,
   type Possession,
@@ -60,12 +75,20 @@ type Step =
   | "flags"
   | "turnover_type"
   | "shot_quality"
+  | "oreb_check"
   | "ft_attempts"
   | "ft_points";
 
 interface PendingShot {
   shotType: 2 | 3;
   made: boolean;
+}
+
+interface PendingCommit {
+  outcome: Outcome;
+  extra: Partial<Possession>;
+  isFgMiss: boolean; // whether this is a missed FG (vs a missed FT) -- decides whether confirming an OREB adds to missed_fg_count
+  label: string; // shown on the oreb_check screen, e.g. "missed 2" or "missed FT"
 }
 
 interface FlowSnapshot {
@@ -77,7 +100,9 @@ interface FlowSnapshot {
   paintTouch: boolean;
   paintTouchBoth: boolean;
   orebCount: number;
+  missedFgCount: number;
   pendingShot: PendingShot | null;
+  pendingCommit: PendingCommit | null;
   quickFlow: boolean;
   ftAttempts: 1 | 2 | 3 | null;
 }
@@ -89,6 +114,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
   const [playCalls, setPlayCalls] = useState<PlayCall[]>([]);
   const [drawnPlays, setDrawnPlays] = useState<Record<PlayCallCategory, DrawnPlay[]>>({ set: [], motion: [], blob: [], slob: [] });
   const [unsynced, setUnsynced] = useState(0);
+  const [syncErrorCount, setSyncErrorCount] = useState(0);
   const [sequence, setSequence] = useState(1);
   const [log, setLog] = useState<Possession[]>([]);
 
@@ -101,7 +127,9 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
   const [paintTouch, setPaintTouch] = useState(false);
   const [paintTouchBoth, setPaintTouchBoth] = useState(false);
   const [orebCount, setOrebCount] = useState(0);
+  const [missedFgCount, setMissedFgCount] = useState(0);
   const [pendingShot, setPendingShot] = useState<PendingShot | null>(null);
+  const [pendingCommit, setPendingCommit] = useState<PendingCommit | null>(null);
   const [quickFlow, setQuickFlow] = useState(false); // reached via OREB or BLOB/SLOB->Set/Motion -- hides paint touch
   const [ftAttempts, setFtAttempts] = useState<1 | 2 | 3 | null>(null);
   const [newPlayName, setNewPlayName] = useState("");
@@ -125,6 +153,13 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
 
   async function refreshUnsynced() {
     setUnsynced(await queueCount());
+    setSyncErrorCount(getLastSyncErrors().length);
+  }
+
+  function showSyncErrors() {
+    const errors = getLastSyncErrors();
+    if (!errors.length) return;
+    alert(`${errors.length} possession(s) failed to sync:\n\n${errors.map((e) => e.message).join("\n")}`);
   }
 
   function resetForNextPossession() {
@@ -136,7 +171,9 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     setPaintTouch(false);
     setPaintTouchBoth(false);
     setOrebCount(0);
+    setMissedFgCount(0);
     setPendingShot(null);
+    setPendingCommit(null);
     setQuickFlow(false);
     setFtAttempts(null);
     setHistory([]);
@@ -146,7 +183,10 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
   function pushHistory() {
     setHistory((h) => [
       ...h,
-      { step, possessionType, halfCourtType, playCallId, oobResult, paintTouch, paintTouchBoth, orebCount, pendingShot, quickFlow, ftAttempts },
+      {
+        step, possessionType, halfCourtType, playCallId, oobResult, paintTouch, paintTouchBoth,
+        orebCount, missedFgCount, pendingShot, pendingCommit, quickFlow, ftAttempts,
+      },
     ]);
   }
 
@@ -162,7 +202,9 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       setPaintTouch(prev.paintTouch);
       setPaintTouchBoth(prev.paintTouchBoth);
       setOrebCount(prev.orebCount);
+      setMissedFgCount(prev.missedFgCount);
       setPendingShot(prev.pendingShot);
+      setPendingCommit(prev.pendingCommit);
       setQuickFlow(prev.quickFlow);
       setFtAttempts(prev.ftAttempts);
       return h.slice(0, -1);
@@ -183,6 +225,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       paint_touch: paintTouch,
       paint_touch_both_sides: paintTouchBoth,
       oreb_count: orebCount,
+      missed_fg_count: missedFgCount,
       outcome,
       shot_type: null,
       shot_quality: null,
@@ -201,36 +244,69 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     resetForNextPossession();
   }
 
+  /** Make: commits immediately (with quality, for us). Miss: doesn't commit
+      yet -- it becomes a pendingCommit and routes to "offensive rebound?"
+      first, since only a make or an unrebounded miss actually ends a trip. */
   function commitPendingShot(quality: "great" | "good" | "live" | "tough") {
     if (!pendingShot) return;
-    commit(pendingShot.made ? "fg_made" : "fg_missed", {
-      shot_type: pendingShot.shotType,
-      points: pendingShot.made ? pendingShot.shotType : 0,
-      shot_quality: quality,
-    });
+    if (pendingShot.made) {
+      commit("fg_made", { shot_type: pendingShot.shotType, points: pendingShot.shotType, shot_quality: quality });
+    } else {
+      pushHistory();
+      setPendingCommit({
+        outcome: "fg_missed",
+        extra: { shot_type: pendingShot.shotType, points: 0, shot_quality: quality },
+        isFgMiss: true,
+        label: `missed ${pendingShot.shotType}`,
+      });
+      setStep("oreb_check");
+    }
   }
 
-  /** Shared by every Make/Miss button (flags screen and quick_shot screen). We
-      don't track shot quality for the opponent -- it's our own shot selection
-      we're coaching, not theirs -- so a defensive attempt commits immediately. */
+  /** Shared by every Make/Miss button (flags screen and quick_shot screen).
+      We don't track shot quality for the opponent -- it's our own shot
+      selection we're coaching, not theirs -- so a defensive miss skips
+      straight to the OREB question with no quality step. */
   function selectShot(shotType: 2 | 3, made: boolean) {
     pushHistory();
-    if (team === "opponent") {
-      commit(made ? "fg_made" : "fg_missed", { shot_type: shotType, points: made ? shotType : 0, shot_quality: null });
+    if (made) {
+      if (team === "opponent") {
+        commit("fg_made", { shot_type: shotType, points: shotType, shot_quality: null });
+      } else {
+        setPendingShot({ shotType, made: true });
+        setStep("shot_quality");
+      }
+    } else if (team === "opponent") {
+      setPendingCommit({
+        outcome: "fg_missed",
+        extra: { shot_type: shotType, points: 0, shot_quality: null },
+        isFgMiss: true,
+        label: `missed ${shotType}`,
+      });
+      setStep("oreb_check");
     } else {
-      setPendingShot({ shotType, made });
+      setPendingShot({ shotType, made: false });
       setStep("shot_quality");
     }
   }
 
-  /** An offensive rebound keeps the trip alive and routes into the shared
-      action_branch (Shot / Turnover / Set-Motion). If the trip originated as
-      a BLOB/SLOB we keep that possession_type (so it still counts toward
+  /** "No" on the OREB question -- the pending miss (FG or FT) is the trip's
+      final result, so it commits as-is. */
+  function declineOreb() {
+    if (pendingCommit) commit(pendingCommit.outcome, pendingCommit.extra);
+    setPendingCommit(null);
+  }
+
+  /** "Yes" on the OREB question -- the trip stays alive. If the pending
+      thing was a missed FG (not FT), it counts toward missed_fg_count so
+      OREB% has an accurate denominator. If the trip originated as a
+      BLOB/SLOB we keep that possession_type (so it still counts toward
       BLOB/SLOB effectiveness) -- otherwise it becomes a half-court trip,
       since the putback itself is a half-court-style action. */
-  function handleOreb() {
+  function confirmOreb() {
     pushHistory();
     setOrebCount((c) => c + 1);
+    if (pendingCommit?.isFgMiss) setMissedFgCount((c) => c + 1);
     if (possessionType !== "blob" && possessionType !== "slob") {
       setPossessionType("half_court");
       setHalfCourtType(null);
@@ -239,6 +315,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     setPaintTouch(false);
     setPaintTouchBoth(false);
     setQuickFlow(true);
+    setPendingCommit(null);
     setStep("action_branch");
   }
 
@@ -317,8 +394,11 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       `}</style>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <span style={{ fontSize: 13, color: "var(--muted)" }}>Q{quarter} · Possession {sequence}</span>
-        <span style={{ fontSize: 12, color: unsynced ? "#e0a530" : "var(--muted)" }}>
-          {unsynced ? `${unsynced} unsynced` : "synced"}
+        <span
+          style={{ fontSize: 12, color: syncErrorCount ? "#c2402f" : unsynced ? "#e0a530" : "var(--muted)", cursor: syncErrorCount ? "pointer" : "default" }}
+          onClick={syncErrorCount ? showSyncErrors : undefined}
+        >
+          {syncErrorCount ? `⚠ ${syncErrorCount} failed to sync (tap for details)` : unsynced ? `${unsynced} unsynced` : "synced"}
         </span>
       </div>
 
@@ -438,8 +518,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
             <Btn onClick={() => selectShot(3, true)}>Make 3</Btn>
             <Btn onClick={() => selectShot(3, false)}>Miss 3</Btn>
           </Grid>
-          <Grid cols={3} style={{ marginTop: 8 }}>
-            <Btn onClick={handleOreb}>OREB {orebCount ? `(${orebCount})` : ""}</Btn>
+          <Grid cols={2} style={{ marginTop: 8 }}>
             <Btn onClick={() => { pushHistory(); setStep("ft_attempts"); }}>FT trip</Btn>
             <Btn onClick={undo} style={{ color: "var(--muted)" }}>Undo</Btn>
           </Grid>
@@ -464,8 +543,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
             <Btn onClick={() => selectShot(3, true)}>Make 3</Btn>
             <Btn onClick={() => selectShot(3, false)}>Miss 3</Btn>
           </Grid>
-          <Grid cols={4} style={{ marginTop: 8 }}>
-            <Btn onClick={handleOreb}>OREB {orebCount ? `(${orebCount})` : ""}</Btn>
+          <Grid cols={3} style={{ marginTop: 8 }}>
             <Btn onClick={() => { pushHistory(); setStep("turnover_type"); }}>Turnover</Btn>
             <Btn onClick={() => { pushHistory(); setStep("ft_attempts"); }}>FT trip</Btn>
             <Btn onClick={undo} style={{ color: "var(--muted)" }}>Undo</Btn>
@@ -493,6 +571,15 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
         </Section>
       )}
 
+      {step === "oreb_check" && (
+        <Section label={`Offensive rebound? (${pendingCommit?.label ?? ""})`} accent>
+          <Grid cols={2}>
+            <Btn tone="success" onClick={confirmOreb}>Yes</Btn>
+            <Btn onClick={declineOreb}>No</Btn>
+          </Grid>
+        </Section>
+      )}
+
       {step === "ft_attempts" && (
         <Section label="How many shots">
           <Grid cols={3}>
@@ -506,9 +593,26 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       {step === "ft_points" && ftAttempts != null && (
         <Section label={`Points made (of ${ftAttempts})`}>
           <Grid cols={ftAttempts + 1}>
-            {Array.from({ length: ftAttempts + 1 }, (_, n) => n).map((n) => (
-              <Btn key={n} onClick={() => commit("ft_trip", { points: n, ft_attempts: ftAttempts, shot_quality: team === "us" ? "great" : null })}>{n}</Btn>
-            ))}
+            {Array.from({ length: ftAttempts + 1 }, (_, n) => n).map((n) => {
+              const extra: Partial<Possession> = { points: n, ft_attempts: ftAttempts, shot_quality: team === "us" ? "great" : null };
+              const missed = n < ftAttempts;
+              return (
+                <Btn
+                  key={n}
+                  onClick={() => {
+                    if (!missed) {
+                      commit("ft_trip", extra);
+                    } else {
+                      pushHistory();
+                      setPendingCommit({ outcome: "ft_trip", extra, isFgMiss: false, label: "missed FT" });
+                      setStep("oreb_check");
+                    }
+                  }}
+                >
+                  {n}
+                </Btn>
+              );
+            })}
           </Grid>
         </Section>
       )}
