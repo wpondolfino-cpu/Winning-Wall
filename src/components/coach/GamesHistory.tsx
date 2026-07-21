@@ -16,7 +16,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { finishGame, isGameFinal, computeFinalScore, syncQueue, type Game, type Possession } from "../../lib/gameStats";
+import { finishGame, isGameFinal, computeFinalScore, syncQueue, listSeasons, type Game, type Possession } from "../../lib/gameStats";
 
 interface Props {
   userId: string;
@@ -34,8 +34,12 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame }: Props) 
   const [finalUs, setFinalUs] = useState("");
   const [finalThem, setFinalThem] = useState("");
   const [trackedCount, setTrackedCount] = useState<number | null>(null);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [search, setSearch] = useState("");
+  const [seasonFilter, setSeasonFilter] = useState<string>("all");
+  const [seasons, setSeasons] = useState<string[]>([]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); listSeasons().then(setSeasons); }, []);
 
   async function load() {
     setLoading(true);
@@ -70,6 +74,7 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame }: Props) 
     setFinalUs("");
     setFinalThem("");
     setTrackedCount(null);
+    setNotesDraft(games.find((g) => g.id === gameId)?.notes ?? "");
     // Try to push anything still stuck locally before reading the score --
     // this is the best moment to catch a sync problem, since a stale
     // pre-fill would otherwise look like a mystery instead of a clue.
@@ -86,12 +91,13 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame }: Props) 
     const us = Number(finalUs);
     const them = Number(finalThem);
     if (Number.isNaN(us) || Number.isNaN(them)) return;
-    const { error } = await finishGame(gameId, us, them);
+    const { error } = await finishGame(gameId, us, them, notesDraft.trim() || undefined);
     if (!error) {
-      setGames((g) => g.map((game) => (game.id === gameId ? { ...game, final_score_us: us, final_score_them: them } : game)));
+      setGames((g) => g.map((game) => (game.id === gameId ? { ...game, final_score_us: us, final_score_them: them, notes: notesDraft.trim() || null } : game)));
       setFinishingId(null);
       setFinalUs("");
       setFinalThem("");
+      setNotesDraft("");
     }
   }
 
@@ -103,13 +109,38 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame }: Props) 
 
   if (loading) return <div className="card">Loading games…</div>;
 
+  const filteredGames = games.filter((g) => {
+    if (seasonFilter !== "all" && g.season !== seasonFilter) return false;
+    if (search.trim() && !g.opponent.toLowerCase().includes(search.trim().toLowerCase())) return false;
+    return true;
+  });
+
   return (
     <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
         <span style={{ fontSize: 13, color: "var(--muted)" }}>Games</span>
         <button className="btn-primary" style={{ padding: "6px 14px", width: "auto" }} onClick={() => setCreating(true)}>
           New game
         </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by opponent…"
+          style={{ flex: 1, minWidth: 160, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
+        />
+        <select
+          value={seasonFilter}
+          onChange={(e) => setSeasonFilter(e.target.value)}
+          style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
+        >
+          <option value="all">All seasons</option>
+          {seasons.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
       </div>
 
       {creating && (
@@ -131,7 +162,9 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame }: Props) 
         </div>
       )}
 
-      {games.map((g) => {
+      {filteredGames.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)", padding: "10px 0" }}>No games match.</div>}
+
+      {filteredGames.map((g) => {
         const final = isGameFinal(g);
         return (
           <div key={g.id} style={{ padding: "10px 0", borderTop: "1px solid var(--border)" }}>
@@ -142,6 +175,7 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame }: Props) 
                   · {g.game_date}
                   {final ? ` · ${g.final_score_us! > g.final_score_them! ? "W" : "L"} ${g.final_score_us}-${g.final_score_them}` : ""}
                 </span>
+                {g.notes && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, fontStyle: "italic" }}>{g.notes}</div>}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span
@@ -182,6 +216,13 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame }: Props) 
                   <button className="btn-primary" style={{ width: "auto", padding: "6px 14px" }} onClick={() => saveFinish(g.id)}>Save</button>
                   <button style={{ ...actionBtn, background: "transparent" }} onClick={() => setFinishingId(null)}>Cancel</button>
                 </div>
+                <textarea
+                  value={notesDraft}
+                  onChange={(e) => setNotesDraft(e.target.value)}
+                  placeholder="Notes about this game (optional) — e.g. played zone 2nd half, starters in foul trouble Q3…"
+                  rows={2}
+                  style={{ width: "100%", marginTop: 8, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontFamily: "inherit", fontSize: 13, resize: "vertical" }}
+                />
                 {trackedCount != null && (
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
                     Pre-filled from {trackedCount} tracked possession{trackedCount === 1 ? "" : "s"} — if that looks way off from the real final score, some possessions likely didn't sync. Edit the numbers here if needed, or go fix the underlying possessions first.
