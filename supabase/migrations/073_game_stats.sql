@@ -91,11 +91,12 @@ create table if not exists public.possessions (
   possession_type   text not null check (possession_type in ('transition', 'half_court', 'blob', 'slob')),
   half_court_type   text check (half_court_type in ('set', 'motion')),
   play_call_id      uuid references public.play_calls(id) on delete set null,
-  oob_result        text check (oob_result in ('score', 'flowed_half_court')),
+  oob_result        text check (oob_result in ('direct_shot', 'flowed_half_court', 'turnover')),
 
   paint_touch       boolean not null default false,
   paint_touch_both_sides boolean not null default false,
   oreb_count        int not null default 0,
+  missed_fg_count   int not null default 0,
 
   outcome           text not null check (outcome in ('fg_made', 'fg_missed', 'turnover', 'ft_trip')),
   shot_type         int check (shot_type in (2, 3)),
@@ -118,6 +119,7 @@ create index if not exists possessions_play_call_idx on public.possessions(play_
 alter table public.possessions add column if not exists ft_attempts int;
 alter table public.possessions drop constraint if exists possessions_ft_attempts_check;
 alter table public.possessions add constraint possessions_ft_attempts_check check (ft_attempts is null or ft_attempts between 1 and 3);
+alter table public.possessions add column if not exists missed_fg_count int not null default 0;
 
 -- paint_touch used to be a single text field ('single'/'both'), mutually
 -- exclusive. Now it's two independent booleans -- a possession can touch
@@ -229,6 +231,8 @@ create policy "report_layout_staff_write" on public.report_layout
 drop policy if exists "report_layout_read" on public.report_layout;
 create policy "report_layout_read" on public.report_layout
   for select using (true);
+
+-- ── Saved reports (Reports tab history) ────────────────────────
 -- Stores the *filters* a coach used to build a report, not a frozen
 -- snapshot -- reopening one re-runs it against current data.
 create table if not exists public.saved_reports (
