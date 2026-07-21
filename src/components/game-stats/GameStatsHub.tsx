@@ -104,6 +104,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
           quarter={quarter}
           setQuarter={setQuarter}
           gameFinal={gameFinal}
+          setGameFinal={setGameFinal}
           finishing={finishing}
           setFinishing={setFinishing}
           finalUs={finalUs}
@@ -134,6 +135,7 @@ function GamesTab({
   quarter,
   setQuarter,
   gameFinal,
+  setGameFinal,
   finishing,
   setFinishing,
   finalUs,
@@ -152,6 +154,7 @@ function GamesTab({
   quarter: number;
   setQuarter: (q: number) => void;
   gameFinal: boolean | null;
+  setGameFinal: (v: boolean | null) => void;
   finishing: boolean;
   setFinishing: (b: boolean) => void;
   finalUs: string;
