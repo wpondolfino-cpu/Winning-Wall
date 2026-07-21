@@ -135,10 +135,12 @@ export const DEFAULT_STAT_ORDER: StatDef[] = [
   { key: "transition_ppp", label: "Transition PPP", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "halfcourt_ppp", label: "Half-court PPP", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "extra_possessions", label: "Extra Possessions", kind: "number", inGame: true, selfColored: true },
+  { key: "points_off_live_to", label: "Points off Live TO", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "second_chance_points", label: "Second Chance Points", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "shot_quality", label: "Shot quality", kind: "shot_quality", inGame: true },
   { key: "set_plays", label: "Set plays (Set / Motion)", kind: "set_plays", inGame: false },
   { key: "oob_plays", label: "Set plays (BLOB / SLOB)", kind: "oob", inGame: false },
-  { key: "streaks", label: "Streaks", kind: "streaks", inGame: false },
+  { key: "streaks", label: "Streaks", kind: "streaks", inGame: true },
 ];
 
 /** Goal-settable stats, for the Goals tab -- "number" kind, excluding self-colored ones like Extra Possessions that don't compare against a target. */
@@ -369,6 +371,29 @@ function goalFor(goals: StatGoal[], key: string, team: Team) {
 }
 
 /**
+ * Same goal/direction resolution computeTeamStats uses internally, exposed
+ * for stats computed outside it (points off live TOs, second chance
+ * points -- both need both teams' possessions at once, so they're plain
+ * functions rather than part of the per-team computeTeamStats pipeline).
+ * Prefers a team-specific goal; falls back to inverting the "us" goal for
+ * the opponent side, same as everywhere else.
+ */
+export function scoreAgainstGoal(goals: StatGoal[], key: string, team: Team, value: number): { goal: number | null; role: "success" | "warning" | "danger" | null } {
+  const ownGoal = goalFor(goals, key, "us");
+  const teamGoal = team === "us" ? ownGoal : goalFor(goals, key, "opponent");
+  let goal: number | null = null;
+  let direction: "higher_better" | "lower_better" | undefined;
+  if (teamGoal) {
+    goal = teamGoal.target_value;
+    direction = teamGoal.direction;
+  } else if (team === "opponent" && ownGoal) {
+    goal = ownGoal.target_value;
+    direction = ownGoal.direction === "higher_better" ? "lower_better" : "higher_better";
+  }
+  return { goal, role: goal != null && direction ? colorRole(value, goal, direction) : null };
+}
+
+/**
  * Core box-score math for one team's possessions in the given set.
  * Goal coloring for "opponent" prefers a coach-set opponent-specific goal
  * (team: 'opponent' in stat_goals) if one exists -- lets a coach hold the
@@ -436,24 +461,13 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   ];
 
   return rows.map((r) => {
-    const ownGoal = goalFor(goals, r.key, "us");
-    const teamGoal = team === "us" ? ownGoal : goalFor(goals, r.key, "opponent");
-    let goal: number | null = null;
-    let direction: "higher_better" | "lower_better" | undefined;
-    if (teamGoal) {
-      goal = teamGoal.target_value;
-      direction = teamGoal.direction;
-    } else if (team === "opponent" && ownGoal) {
-      // No opponent-specific goal set -- fall back to inverting our own.
-      goal = ownGoal.target_value;
-      direction = ownGoal.direction === "higher_better" ? "lower_better" : "higher_better";
-    }
+    const { goal, role } = scoreAgainstGoal(goals, r.key, team, r.value);
     return {
       key: r.key,
       label: r.label,
       value: r.value,
       goal,
-      role: goal != null && direction ? colorRole(r.value, goal, direction) : null,
+      role,
       raw: r.raw,
     };
   });
@@ -473,6 +487,39 @@ export function computeExtraPossessions(possessions: Possession[]): { us: number
   const oppTotal = orebFor("opponent") + tovFor("opponent");
   const us = usTotal - oppTotal;
   return { us, opponent: -us };
+}
+
+/**
+ * Points off live-ball turnovers: for each team, points scored on a
+ * transition possession that immediately follows (by sequence) a live-ball
+ * turnover committed by the OTHER team. Needs the full ordered possession
+ * list at once (it's about adjacency between two consecutive rows), same
+ * reason computeExtraPossessions and computeStreaks aren't per-team.
+ */
+export function computePointsOffLiveTurnovers(possessions: Possession[]): { us: number; opponent: number } {
+  const ordered = [...possessions].sort((a, b) => a.sequence - b.sequence);
+  let us = 0;
+  let opponent = 0;
+  for (let i = 1; i < ordered.length; i++) {
+    const prev = ordered[i - 1];
+    const cur = ordered[i];
+    const forcedByOtherTeam = prev.outcome === "turnover" && prev.turnover_type === "live" && cur.team !== prev.team;
+    const scoredInTransition = cur.possession_type === "transition" && cur.outcome === "fg_made";
+    if (forcedByOtherTeam && scoredInTransition) {
+      if (cur.team === "us") us += cur.points;
+      else opponent += cur.points;
+    }
+  }
+  return { us, opponent };
+}
+
+/** Second chance points: made 2s/3s that happened on a possession that also had at least one OREB (oreb_count > 0) -- i.e. the score came after a rebound kept the trip alive. */
+export function computeSecondChancePoints(possessions: Possession[]): { us: number; opponent: number } {
+  const scoredAfterOreb = (team: Team) =>
+    possessions
+      .filter((p) => p.team === team && p.oreb_count > 0 && p.outcome === "fg_made")
+      .reduce((s, p) => s + p.points, 0);
+  return { us: scoredAfterOreb("us"), opponent: scoredAfterOreb("opponent") };
 }
 
 /** Weighted shot-quality score mapped back onto the great/good/live/tough label scale. Only meaningful for "us" -- we don't track the opponent's shot quality. */
