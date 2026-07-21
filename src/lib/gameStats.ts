@@ -43,6 +43,8 @@ export interface Possession {
   shot_quality: ShotQuality | null;
   turnover_type: TurnoverType | null;
   ft_attempts: 1 | 2 | 3 | null;
+  absorbed_ft_attempts: number;
+  absorbed_ft_made: number;
   points: number;
   created_by: string;
   created_at: string;
@@ -266,6 +268,8 @@ function normalizeLegacyPossession(p: any): Possession {
     paint_touch: paintTouch ?? false,
     paint_touch_both_sides: paintTouchBoth ?? false,
     missed_fg_count: p.missed_fg_count ?? 0,
+    absorbed_ft_attempts: p.absorbed_ft_attempts ?? 0,
+    absorbed_ft_made: p.absorbed_ft_made ?? 0,
     oob_result: p.oob_result === "score" ? "direct_shot" : p.oob_result ?? null,
   };
 }
@@ -382,6 +386,8 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   const made3 = fga3.filter((p) => p.outcome === "fg_made").length;
   const fgaCount = fga.length;
   const turnovers = trips.filter((p) => p.outcome === "turnover").length;
+  const liveTov = trips.filter((p) => p.outcome === "turnover" && p.turnover_type === "live").length;
+  const deadTov = trips.filter((p) => p.outcome === "turnover" && p.turnover_type === "dead").length;
   const oreb = trips.reduce((s, p) => s + p.oreb_count, 0);
   // A trip can absorb multiple missed shots before it finally ends (each
   // one rebounded and continued) -- missed_fg_count tallies the ones that
@@ -390,8 +396,12 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   const orebOpportunities = trips.reduce((s, p) => s + p.missed_fg_count + (p.outcome === "fg_missed" ? 1 : 0), 0);
   const ftTripsWithAttempts = trips.filter((p) => p.outcome === "ft_trip" && p.ft_attempts != null);
   const ftTrips = trips.filter((p) => p.outcome === "ft_trip").length;
-  const ftMade = ftTripsWithAttempts.reduce((s, p) => s + p.points, 0);
-  const ftAttempted = ftTripsWithAttempts.reduce((s, p) => s + (p.ft_attempts ?? 0), 0);
+  // FT makes/attempts from a trip that ended as an ft_trip itself, PLUS any
+  // FT attempts that happened earlier in a trip but got absorbed into a
+  // later, different final outcome (missed a FT, got the OREB, kept going)
+  // -- otherwise those makes/attempts just vanish from FT% entirely.
+  const ftMade = ftTripsWithAttempts.reduce((s, p) => s + p.points, 0) + trips.reduce((s, p) => s + p.absorbed_ft_made, 0);
+  const ftAttempted = ftTripsWithAttempts.reduce((s, p) => s + (p.ft_attempts ?? 0), 0) + trips.reduce((s, p) => s + p.absorbed_ft_attempts, 0);
   const paintTouchSingle = trips.filter((p) => p.paint_touch).length;
   const paintTouchBoth = trips.filter((p) => p.paint_touch_both_sides).length;
   const transitionTripsArr = trips.filter((p) => p.possession_type === "transition");
@@ -415,12 +425,12 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
     { key: "fg2_pct", label: "2PT FG%", value: round1(fg2Pct), raw: `${made2}/${fga2.length}` },
     { key: "fg3_pct", label: "3PT FG%", value: round1(fg3Pct), raw: `${made3}/${fga3.length}` },
     { key: "ft_pct", label: "FT%", value: round1(ftPct), raw: `${ftMade}/${ftAttempted}` },
-    { key: "transition_pct", label: "Transition %", value: round1(transitionPct) },
-    { key: "oreb_pct", label: "OREB%", value: round1(orebPct) },
-    { key: "tov_pct", label: "TOV%", value: round1(tovPct) },
+    { key: "transition_pct", label: "Transition %", value: round1(transitionPct), raw: `${transitionTripsArr.length}/${trips.length}` },
+    { key: "oreb_pct", label: "OREB%", value: round1(orebPct), raw: `${oreb}` },
+    { key: "tov_pct", label: "TOV%", value: round1(tovPct), raw: `${liveTov}+${deadTov}=${turnovers}` },
     { key: "ft_rate", label: "FT rate", value: round2(ftRate) },
-    { key: "paint_touch_single", label: "Paint touch %", value: round1(paintTouchSinglePct) },
-    { key: "paint_touch_both", label: "Both sides %", value: round1(paintTouchBothPct) },
+    { key: "paint_touch_single", label: "Paint touch %", value: round1(paintTouchSinglePct), raw: `${paintTouchSingle}/${halfCourtTripsArr.length}` },
+    { key: "paint_touch_both", label: "Both sides %", value: round1(paintTouchBothPct), raw: `${paintTouchBoth}/${halfCourtTripsArr.length}` },
     { key: "transition_ppp", label: "Transition PPP", value: round2(transitionPpp) },
     { key: "halfcourt_ppp", label: "Half-court PPP", value: round2(halfCourtPpp) },
   ];
