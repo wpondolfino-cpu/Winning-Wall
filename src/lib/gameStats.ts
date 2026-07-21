@@ -300,7 +300,27 @@ export async function syncQueue(): Promise<void> {
   try {
     const pending = await getQueuedPossessions();
     for (const p of pending) {
-      const { error } = await supabase.from("possessions").upsert(p);
+      let { error } = await supabase.from("possessions").upsert(p);
+
+      // A (game_id, sequence) collision usually means the tracker got
+      // reloaded mid-game and the sequence counter restarted at 1,
+      // landing on a number an earlier possession already used. Rather
+      // than leaving it stuck forever, bump it past whatever the highest
+      // synced sequence for that game actually is and retry once.
+      if (error && error.message.includes("possessions_game_seq_unique")) {
+        const { data: maxRow } = await supabase
+          .from("possessions")
+          .select("sequence")
+          .eq("game_id", p.game_id)
+          .order("sequence", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const nextSeq = ((maxRow as any)?.sequence ?? 0) + 1;
+        const bumped = { ...p, sequence: nextSeq };
+        const retry = await supabase.from("possessions").upsert(bumped);
+        error = retry.error;
+      }
+
       if (!error) await removeFromQueue(p.id);
       else errors.push({ id: p.id, message: error.message });
     }
