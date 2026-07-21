@@ -38,6 +38,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   const [reportsView, setReportsView] = useState<ReportsView>({ mode: "history" });
   const [quarter, setQuarter] = useState(1);
   const [gameFinal, setGameFinal] = useState<boolean | null>(null);
+  const [activeOpponent, setActiveOpponent] = useState<string>("");
   const [finishing, setFinishing] = useState(false);
   const [finalUs, setFinalUs] = useState("");
   const [finalThem, setFinalThem] = useState("");
@@ -47,13 +48,16 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   const activeGameId = gamesView.mode === "track" || gamesView.mode === "report" || gamesView.mode === "edit" ? gamesView.gameId : null;
 
   useEffect(() => {
-    if (!activeGameId) { setGameFinal(null); return; }
+    if (!activeGameId) { setGameFinal(null); setActiveOpponent(""); return; }
     supabase
       .from("games")
-      .select("final_score_us, final_score_them")
+      .select("final_score_us, final_score_them, opponent")
       .eq("id", activeGameId)
       .single()
-      .then(({ data }) => setGameFinal(data ? isGameFinal(data as any) : false));
+      .then(({ data }) => {
+        setGameFinal(data ? isGameFinal(data as any) : false);
+        setActiveOpponent((data as any)?.opponent ?? "");
+      });
   }, [activeGameId]);
 
   async function startFinishing(gameId: string) {
@@ -104,6 +108,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
           quarter={quarter}
           setQuarter={setQuarter}
           gameFinal={gameFinal}
+          activeOpponent={activeOpponent}
           setGameFinal={setGameFinal}
           finishing={finishing}
           setFinishing={setFinishing}
@@ -136,6 +141,7 @@ function GamesTab({
   setQuarter,
   gameFinal,
   setGameFinal,
+  activeOpponent,
   finishing,
   setFinishing,
   finalUs,
@@ -155,6 +161,7 @@ function GamesTab({
   setQuarter: (q: number) => void;
   gameFinal: boolean | null;
   setGameFinal: (v: boolean | null) => void;
+  activeOpponent: string;
   finishing: boolean;
   setFinishing: (b: boolean) => void;
   finalUs: string;
@@ -176,7 +183,7 @@ function GamesTab({
         <GamesHistory
           userId={userId}
           onOpenGame={(gameId) => setView({ mode: "track", gameId })}
-          onEditGame={(gameId) => setView({ mode: "edit", gameId, opponent: "" })}
+          onEditGame={(gameId, opponent) => setView({ mode: "edit", gameId, opponent })}
         />
       </div>
     );
@@ -216,7 +223,7 @@ function GamesTab({
             Reopen for tracking
           </button>
         </div>
-        <PossessionEditor gameId={view.gameId} opponent={view.opponent} />
+        <PossessionEditor gameId={view.gameId} opponent={activeOpponent} />
       </div>
     );
   }
@@ -278,7 +285,7 @@ function GamesTab({
       <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <button onClick={() => setView({ mode: "track", gameId: view.gameId })} style={backBtn}>← Back to tracker</button>
         {gameFinal && (
-          <button onClick={() => setView({ mode: "edit", gameId: view.gameId, opponent: view.opponent })} style={backBtn}>Edit stats</button>
+          <button onClick={() => setView({ mode: "edit", gameId: view.gameId, opponent: activeOpponent })} style={backBtn}>Edit stats</button>
         )}
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
