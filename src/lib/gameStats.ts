@@ -129,7 +129,7 @@ export const DEFAULT_STAT_ORDER: StatDef[] = [
   { key: "transition_pct", label: "Transition %", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "oreb_pct", label: "OREB%", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "tov_pct", label: "TOV%", kind: "number", inGame: true, defaultDirection: "lower_better" },
-  { key: "ft_rate", label: "FT rate", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "ft_rate", label: "FT rate %", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "paint_touch_single", label: "Paint touch %", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "paint_touch_both", label: "Both sides %", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "transition_ppp", label: "Transition PPP", kind: "number", inGame: true, defaultDirection: "higher_better" },
@@ -357,6 +357,7 @@ export interface StatRow {
   role: "success" | "warning" | "danger" | null;
   raw?: string; // e.g. "12/16" -- shown alongside the (colored) percentage, itself never colored
   signed?: boolean; // shows an explicit "+" on positive values (e.g. Extra Possessions)
+  display?: string; // overrides how `value` renders (e.g. "1.00" instead of "1") without changing the underlying number used for coloring/goals
 }
 
 function colorRole(value: number, goal: number, direction: "higher_better" | "lower_better"): "success" | "warning" | "danger" {
@@ -444,7 +445,7 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   const halfCourtPpp = halfCourtTripsArr.length ? halfCourtTripsArr.reduce((s, p) => s + p.points, 0) / halfCourtTripsArr.length : 0;
   const transitionPct = trips.length ? (transitionTripsArr.length / trips.length) * 100 : 0;
 
-  const rows: { key: string; label: string; value: number; raw?: string }[] = [
+  const rows: { key: string; label: string; value: number; raw?: string; display?: string }[] = [
     { key: "efg_pct", label: "eFG%", value: round1(efg) },
     { key: "fg2_pct", label: "2PT FG%", value: round1(fg2Pct), raw: `${made2}/${fga2.length}` },
     { key: "fg3_pct", label: "3PT FG%", value: round1(fg3Pct), raw: `${made3}/${fga3.length}` },
@@ -452,11 +453,11 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
     { key: "transition_pct", label: "Transition %", value: round1(transitionPct), raw: `${transitionTripsArr.length}/${trips.length}` },
     { key: "oreb_pct", label: "OREB%", value: round1(orebPct), raw: `${oreb}` },
     { key: "tov_pct", label: "TOV%", value: round1(tovPct), raw: `${liveTov}+${deadTov}=${turnovers}` },
-    { key: "ft_rate", label: "FT rate", value: round2(ftRate) },
+    { key: "ft_rate", label: "FT rate %", value: round1(ftRate * 100) },
     { key: "paint_touch_single", label: "Paint touch %", value: round1(paintTouchSinglePct), raw: `${paintTouchSingle}/${halfCourtTripsArr.length}` },
     { key: "paint_touch_both", label: "Both sides %", value: round1(paintTouchBothPct), raw: `${paintTouchBoth}/${halfCourtTripsArr.length}` },
-    { key: "transition_ppp", label: "Transition PPP", value: round2(transitionPpp) },
-    { key: "halfcourt_ppp", label: "Half-court PPP", value: round2(halfCourtPpp) },
+    { key: "transition_ppp", label: "Transition PPP", value: round2(transitionPpp), display: transitionPpp.toFixed(2) },
+    { key: "halfcourt_ppp", label: "Half-court PPP", value: round2(halfCourtPpp), display: halfCourtPpp.toFixed(2) },
   ];
 
   return rows.map((r) => {
@@ -468,6 +469,7 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
       goal,
       role,
       raw: r.raw,
+      display: r.display,
     };
   });
 }
