@@ -9,13 +9,14 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { finishGame, isGameFinal, listSavedReports, deleteSavedReport, type SavedReport } from "../../lib/gameStats";
+import { finishGame, isGameFinal, computeFinalScore, reopenGame, syncQueue, listSavedReports, deleteSavedReport, type SavedReport, type Possession } from "../../lib/gameStats";
 import GamesHistory from "../coach/GamesHistory";
 import GameTracker from "../coach/GameTracker";
 import GameReport, { ReportScope } from "./GameReport";
 import PossessionEditor from "./PossessionEditor";
 import ReportBuilder from "./ReportBuilder";
 import GoalsManager from "./GoalsManager";
+import SyncIssuesViewer from "./SyncIssuesViewer";
 
 interface Props {
   currentUserRole: "player" | "coach" | "admin";
@@ -26,7 +27,8 @@ type GamesView =
   | { mode: "list" }
   | { mode: "track"; gameId: string }
   | { mode: "report"; gameId: string; opponent: string }
-  | { mode: "edit"; gameId: string; opponent: string };
+  | { mode: "edit"; gameId: string; opponent: string }
+  | { mode: "sync" };
 
 type ReportsView = { mode: "history" } | { mode: "builder"; saved?: SavedReport };
 
@@ -39,6 +41,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   const [finishing, setFinishing] = useState(false);
   const [finalUs, setFinalUs] = useState("");
   const [finalThem, setFinalThem] = useState("");
+  const [trackedCount, setTrackedCount] = useState<number | null>(null);
   const [reportSel, setReportSel] = useState<{ kind: "quarter"; quarter: number } | { kind: "half"; half: 1 | 2 } | { kind: "game" }>({ kind: "game" });
 
   const activeGameId = gamesView.mode === "track" || gamesView.mode === "report" || gamesView.mode === "edit" ? gamesView.gameId : null;
@@ -52,6 +55,23 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
       .single()
       .then(({ data }) => setGameFinal(data ? isGameFinal(data as any) : false));
   }, [activeGameId]);
+
+  async function startFinishing(gameId: string) {
+    setFinishing(true);
+    setFinalUs("");
+    setFinalThem("");
+    setTrackedCount(null);
+    // Try to push anything still stuck locally before reading the score --
+    // best moment to catch a sync problem, since a stale pre-fill would
+    // otherwise just look like a mystery instead of a clue.
+    await syncQueue();
+    const { data } = await supabase.from("possessions").select("*").eq("game_id", gameId);
+    const possessions = (data as Possession[]) ?? [];
+    const score = computeFinalScore(possessions);
+    setFinalUs(String(score.us));
+    setFinalThem(String(score.them));
+    setTrackedCount(possessions.length);
+  }
 
   async function handleFinish(gameId: string) {
     const us = Number(finalUs);
@@ -90,6 +110,8 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
           setFinalUs={setFinalUs}
           finalThem={finalThem}
           setFinalThem={setFinalThem}
+          trackedCount={trackedCount}
+          startFinishing={startFinishing}
           handleFinish={handleFinish}
           reportSel={reportSel}
           setReportSel={setReportSel}
@@ -118,6 +140,8 @@ function GamesTab({
   setFinalUs,
   finalThem,
   setFinalThem,
+  trackedCount,
+  startFinishing,
   handleFinish,
   reportSel,
   setReportSel,
@@ -134,17 +158,33 @@ function GamesTab({
   setFinalUs: (s: string) => void;
   finalThem: string;
   setFinalThem: (s: string) => void;
+  trackedCount: number | null;
+  startFinishing: (gameId: string) => void;
   handleFinish: (gameId: string) => void;
   reportSel: { kind: "quarter"; quarter: number } | { kind: "half"; half: 1 | 2 } | { kind: "game" };
   setReportSel: (s: { kind: "quarter"; quarter: number } | { kind: "half"; half: 1 | 2 } | { kind: "game" }) => void;
 }) {
   if (view.mode === "list") {
     return (
-      <GamesHistory
-        userId={userId}
-        onOpenGame={(gameId) => setView({ mode: "track", gameId })}
-        onEditGame={(gameId) => setView({ mode: "edit", gameId, opponent: "" })}
-      />
+      <div>
+        <button onClick={() => setView({ mode: "sync" })} style={{ ...backBtn, marginBottom: 10 }}>
+          🔄 Sync queue
+        </button>
+        <GamesHistory
+          userId={userId}
+          onOpenGame={(gameId) => setView({ mode: "track", gameId })}
+          onEditGame={(gameId) => setView({ mode: "edit", gameId, opponent: "" })}
+        />
+      </div>
+    );
+  }
+
+  if (view.mode === "sync") {
+    return (
+      <div>
+        <button onClick={() => setView({ mode: "list" })} style={{ ...backBtn, marginBottom: 10 }}>← Games</button>
+        <SyncIssuesViewer />
+      </div>
     );
   }
 
@@ -159,7 +199,20 @@ function GamesTab({
     }
     return (
       <div>
-        <button onClick={() => setView({ mode: "list" })} style={{ ...backBtn, marginBottom: 10 }}>← Games</button>
+        <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+          <button onClick={() => setView({ mode: "list" })} style={backBtn}>← Games</button>
+          <button
+            onClick={async () => {
+              if (!window.confirm("Reopen this game for tracking? Its final score will be cleared until you finish it again.")) return;
+              await reopenGame(view.gameId);
+              setGameFinal(false);
+              setView({ mode: "track", gameId: view.gameId });
+            }}
+            style={backBtn}
+          >
+            Reopen for tracking
+          </button>
+        </div>
         <PossessionEditor gameId={view.gameId} opponent={view.opponent} />
       </div>
     );
@@ -183,16 +236,23 @@ function GamesTab({
           >
             View report →
           </button>
-          {!gameFinal && <button onClick={() => setFinishing(true)} style={backBtn}>Finish game</button>}
+          {!gameFinal && <button onClick={() => startFinishing(view.gameId)} style={backBtn}>Finish game</button>}
         </div>
         {finishing && (
-          <div className="card" style={{ width: "100%", maxWidth: 1400, marginBottom: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>Final score — Us</span>
-            <input type="number" value={finalUs} onChange={(e) => setFinalUs(e.target.value)} style={{ width: 56, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }} />
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>Them</span>
-            <input type="number" value={finalThem} onChange={(e) => setFinalThem(e.target.value)} style={{ width: 56, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }} />
-            <button className="btn-primary" style={{ width: "auto", padding: "6px 14px" }} onClick={() => handleFinish(view.gameId)}>Save</button>
-            <button style={{ ...backBtn, background: "transparent" }} onClick={() => setFinishing(false)}>Cancel</button>
+          <div className="card" style={{ width: "100%", maxWidth: 1400, marginBottom: 10 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>Final score — Us</span>
+              <input type="number" value={finalUs} onChange={(e) => setFinalUs(e.target.value)} style={{ width: 56, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }} />
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>Them</span>
+              <input type="number" value={finalThem} onChange={(e) => setFinalThem(e.target.value)} style={{ width: 56, padding: "6px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }} />
+              <button className="btn-primary" style={{ width: "auto", padding: "6px 14px" }} onClick={() => handleFinish(view.gameId)}>Save</button>
+              <button style={{ ...backBtn, background: "transparent" }} onClick={() => setFinishing(false)}>Cancel</button>
+            </div>
+            {trackedCount != null && (
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
+                Pre-filled from {trackedCount} tracked possession{trackedCount === 1 ? "" : "s"} — if that looks way off from the real final score, some possessions likely didn't sync.
+              </div>
+            )}
           </div>
         )}
         <GameTracker gameId={view.gameId} userId={userId} quarter={quarter} />
