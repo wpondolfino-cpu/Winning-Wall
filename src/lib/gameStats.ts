@@ -37,6 +37,7 @@ export interface Possession {
   paint_touch: boolean;
   paint_touch_both_sides: boolean;
   oreb_count: number;
+  missed_fg_count: number;
   outcome: Outcome;
   shot_type: 2 | 3 | null;
   shot_quality: ShotQuality | null;
@@ -247,21 +248,47 @@ export async function queueCount(): Promise<number> {
 }
 
 let syncing = false;
+let lastSyncErrors: { id: string; message: string }[] = [];
 
-/** Drains the local queue into Supabase. Safe to call repeatedly -- no-ops while offline or mid-sync. */
+export function getLastSyncErrors() {
+  return lastSyncErrors;
+}
+
+/**
+ * Drains the local queue into Supabase. Safe to call repeatedly -- no-ops
+ * while offline or mid-sync.
+ *
+ * Previously this stopped at the first failed record, which meant one bad
+ * possession (a schema mismatch, an expired session, anything) silently
+ * blocked every possession queued after it from ever syncing -- the queue
+ * would just grow all game long behind that one stuck record. Now it tries
+ * every queued record on every pass and only leaves the ones that actually
+ * failed behind, so a single bad record can't take the rest of the game
+ * down with it.
+ */
 export async function syncQueue(): Promise<void> {
   if (syncing || !navigator.onLine) return;
   syncing = true;
+  const errors: { id: string; message: string }[] = [];
   try {
     const pending = await getQueuedPossessions();
     for (const p of pending) {
       const { error } = await supabase.from("possessions").upsert(p);
       if (!error) await removeFromQueue(p.id);
-      else break; // stop on first failure, retry next trigger
+      else errors.push({ id: p.id, message: error.message });
     }
   } finally {
+    lastSyncErrors = errors;
     syncing = false;
   }
+}
+
+/** Sum of tracked points, computed straight from the possession log -- used to pre-fill "Finish game" so the coach isn't hand-counting, and doubles as a sanity check: if this looks way off from the real final score, something didn't sync. */
+export function computeFinalScore(possessions: Possession[]): { us: number; them: number } {
+  return {
+    us: possessions.filter((p) => p.team === "us").reduce((s, p) => s + p.points, 0),
+    them: possessions.filter((p) => p.team === "opponent").reduce((s, p) => s + p.points, 0),
+  };
 }
 
 if (typeof window !== "undefined") {
@@ -309,8 +336,11 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   const fgaCount = fga.length;
   const turnovers = trips.filter((p) => p.outcome === "turnover").length;
   const oreb = trips.reduce((s, p) => s + p.oreb_count, 0);
-  const missedFg = trips.filter((p) => p.outcome === "fg_missed").length;
-  const orebOpportunities = missedFg; // simplification: OREB% of own missed FGs
+  // A trip can absorb multiple missed shots before it finally ends (each
+  // one rebounded and continued) -- missed_fg_count tallies the ones that
+  // got continued; the final row's own outcome catches the last one if
+  // *that* was also a miss (i.e. no OREB followed it, trip just ended).
+  const orebOpportunities = trips.reduce((s, p) => s + p.missed_fg_count + (p.outcome === "fg_missed" ? 1 : 0), 0);
   const ftTripsWithAttempts = trips.filter((p) => p.outcome === "ft_trip" && p.ft_attempts != null);
   const ftTrips = trips.filter((p) => p.outcome === "ft_trip").length;
   const ftMade = ftTripsWithAttempts.reduce((s, p) => s + p.points, 0);
@@ -468,8 +498,24 @@ export function computeOobEffectiveness(possessions: Possession[], type: "blob" 
   return { total: trips.length, directAttempts: directShots.length, scored, flowed, turnovers };
 }
 
+/** Human-readable one-line summary of a possession, for the sync-issues viewer where a raw row isn't meaningful at a glance. */
+export function describePossession(p: Possession): string {
+  const who = p.team === "us" ? "Us" : "Opponent";
+  const type = p.possession_type.replace("_", " ");
+  let action = p.outcome.replace("_", " ");
+  if (p.outcome === "fg_made" || p.outcome === "fg_missed") action = `${p.outcome === "fg_made" ? "made" : "missed"} ${p.shot_type ?? "?"}pt`;
+  if (p.outcome === "ft_trip") action = `FT trip (${p.points}/${p.ft_attempts ?? "?"})`;
+  if (p.outcome === "turnover") action = `turnover (${p.turnover_type ?? "?"})`;
+  return `Q${p.quarter} · ${who} · ${type} · ${action}`;
+}
+
 export async function finishGame(gameId: string, finalScoreUs: number, finalScoreThem: number) {
   return supabase.from("games").update({ final_score_us: finalScoreUs, final_score_them: finalScoreThem }).eq("id", gameId);
+}
+
+/** Undoes finishGame -- clears the final score so the game goes back to being trackable. The escape hatch for "finished too early." */
+export async function reopenGame(gameId: string) {
+  return supabase.from("games").update({ final_score_us: null, final_score_them: null }).eq("id", gameId);
 }
 
 /** A game is only editable/correctable once it's been explicitly finished (final score set) -- this keeps live entry and post-game correction from colliding. */
