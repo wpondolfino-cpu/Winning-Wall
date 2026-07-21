@@ -14,7 +14,11 @@
 // shared action_branch (Shot / Turnover / Set-Motion) for what happens
 // next. This also means a missed shot that gets rebounded is now actually
 // recorded as a miss (shot_type/quality included) instead of vanishing
-// into an untracked oreb_count bump, like it did before.
+// into an untracked oreb_count bump, like it did before. A missed free
+// throw that gets rebounded gets the same treatment via
+// absorbed_ft_attempts/absorbed_ft_made -- both its attempt count and its
+// points (if some were made) get folded into whatever the trip eventually
+// ends with, instead of silently disappearing.
 //
 // On defense the OREB question still applies (their own rebound of their
 // own miss) but skips shot quality entirely, straight from Miss to the
@@ -24,8 +28,11 @@
 // straight to a reduced outcome grid (no Turnover button -- that's already
 // branched separately). Set/Motion route through the normal play-call
 // picker into the full "traditional half-court" outcome grid (includes
-// Turnover). This is a "quickFlow" -- paint touch/both sides don't apply
-// on this path, same as a fresh Transition possession.
+// Turnover). Paint touch/both sides show there UNLESS the trip is a
+// direct BLOB/SLOB with no OREB in it (we don't track paint touch on raw
+// inbounds plays) -- once an OREB happens, paint touch becomes trackable
+// again even for a BLOB/SLOB-originated trip, since flowing into a real
+// Set/Motion after a rebound is functionally a half-court possession.
 //
 // The team toggle (us on offense / us on defense) auto-flips after every
 // committed possession, since basketball possessions alternate -- undo
@@ -101,9 +108,11 @@ interface FlowSnapshot {
   paintTouchBoth: boolean;
   orebCount: number;
   missedFgCount: number;
+  absorbedFtAttempts: number;
+  absorbedFtMade: number;
   pendingShot: PendingShot | null;
   pendingCommit: PendingCommit | null;
-  quickFlow: boolean;
+  orebOccurred: boolean;
   ftAttempts: 1 | 2 | 3 | null;
 }
 
@@ -128,9 +137,11 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
   const [paintTouchBoth, setPaintTouchBoth] = useState(false);
   const [orebCount, setOrebCount] = useState(0);
   const [missedFgCount, setMissedFgCount] = useState(0);
+  const [absorbedFtAttempts, setAbsorbedFtAttempts] = useState(0);
+  const [absorbedFtMade, setAbsorbedFtMade] = useState(0);
   const [pendingShot, setPendingShot] = useState<PendingShot | null>(null);
   const [pendingCommit, setPendingCommit] = useState<PendingCommit | null>(null);
-  const [quickFlow, setQuickFlow] = useState(false); // reached via OREB or BLOB/SLOB->Set/Motion -- hides paint touch
+  const [orebOccurred, setOrebOccurred] = useState(false); // true once any OREB happens in this trip
   const [ftAttempts, setFtAttempts] = useState<1 | 2 | 3 | null>(null);
   const [newPlayName, setNewPlayName] = useState("");
   const [addingPlayFor, setAddingPlayFor] = useState<PlayCallCategory | null>(null);
@@ -172,9 +183,11 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     setPaintTouchBoth(false);
     setOrebCount(0);
     setMissedFgCount(0);
+    setAbsorbedFtAttempts(0);
+    setAbsorbedFtMade(0);
     setPendingShot(null);
     setPendingCommit(null);
-    setQuickFlow(false);
+    setOrebOccurred(false);
     setFtAttempts(null);
     setHistory([]);
   }
@@ -185,7 +198,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       ...h,
       {
         step, possessionType, halfCourtType, playCallId, oobResult, paintTouch, paintTouchBoth,
-        orebCount, missedFgCount, pendingShot, pendingCommit, quickFlow, ftAttempts,
+        orebCount, missedFgCount, absorbedFtAttempts, absorbedFtMade, pendingShot, pendingCommit, orebOccurred, ftAttempts,
       },
     ]);
   }
@@ -203,9 +216,11 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       setPaintTouchBoth(prev.paintTouchBoth);
       setOrebCount(prev.orebCount);
       setMissedFgCount(prev.missedFgCount);
+      setAbsorbedFtAttempts(prev.absorbedFtAttempts);
+      setAbsorbedFtMade(prev.absorbedFtMade);
       setPendingShot(prev.pendingShot);
       setPendingCommit(prev.pendingCommit);
-      setQuickFlow(prev.quickFlow);
+      setOrebOccurred(prev.orebOccurred);
       setFtAttempts(prev.ftAttempts);
       return h.slice(0, -1);
     });
@@ -226,6 +241,8 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       paint_touch_both_sides: paintTouchBoth,
       oreb_count: orebCount,
       missed_fg_count: missedFgCount,
+      absorbed_ft_attempts: absorbedFtAttempts,
+      absorbed_ft_made: absorbedFtMade,
       outcome,
       shot_type: null,
       shot_quality: null,
@@ -236,6 +253,10 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       created_at: new Date().toISOString(),
       ...extra,
     };
+    // Absorbed FT makes are real points scored earlier in this same trip
+    // (a free throw made before a miss got offensive-rebounded) -- the
+    // final action's own points alone would undercount the trip.
+    possession.points += absorbedFtMade;
     await queuePossession(possession);
     setLog((l) => [...l, possession]);
     setSequence((s) => s + 1);
@@ -307,6 +328,10 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     pushHistory();
     setOrebCount((c) => c + 1);
     if (pendingCommit?.isFgMiss) setMissedFgCount((c) => c + 1);
+    if (pendingCommit && pendingCommit.outcome === "ft_trip") {
+      setAbsorbedFtAttempts((c) => c + ((pendingCommit.extra.ft_attempts as number) ?? 0));
+      setAbsorbedFtMade((c) => c + ((pendingCommit.extra.points as number) ?? 0));
+    }
     if (possessionType !== "blob" && possessionType !== "slob") {
       setPossessionType("half_court");
       setHalfCourtType(null);
@@ -314,7 +339,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     }
     setPaintTouch(false);
     setPaintTouchBoth(false);
-    setQuickFlow(true);
+    setOrebOccurred(true);
     setPendingCommit(null);
     setStep("action_branch");
   }
@@ -362,7 +387,6 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     pushHistory();
     if (possessionType === "blob" || possessionType === "slob") setOobResult("flowed_half_court");
     setHalfCourtType(type);
-    setQuickFlow(true);
     setStep("play_call");
   }
 
@@ -432,7 +456,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
               onClick={() => {
                 pushHistory();
                 setPossessionType("half_court");
-                setQuickFlow(false);
+                setOrebOccurred(false);
                 // On defense we don't know the opponent's called set, so
                 // skip straight past Set/Motion/play-call to the outcome.
                 setStep(team === "opponent" ? "flags" : "halfcourt_type");
@@ -525,31 +549,35 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
         </Section>
       )}
 
-      {step === "flags" && (
-        <>
-          {!quickFlow && possessionType !== "transition" && (
-            <Grid cols={2}>
-              <Btn active={paintTouch} onClick={() => setPaintTouch((v) => !v)}>
-                Paint touch
-              </Btn>
-              <Btn active={paintTouchBoth} onClick={() => setPaintTouchBoth((v) => !v)}>
-                Both sides
-              </Btn>
+      {step === "flags" && (() => {
+        const isDirectBlobSlob = (possessionType === "blob" || possessionType === "slob") && !orebOccurred;
+        const showPaintTouch = possessionType !== "transition" && !isDirectBlobSlob;
+        return (
+          <>
+            {showPaintTouch && (
+              <Grid cols={2}>
+                <Btn active={paintTouch} onClick={() => setPaintTouch((v) => !v)}>
+                  Paint touch
+                </Btn>
+                <Btn active={paintTouchBoth} onClick={() => setPaintTouchBoth((v) => !v)}>
+                  Both sides
+                </Btn>
+              </Grid>
+            )}
+            <Grid cols={4} style={{ marginTop: showPaintTouch ? 8 : 0 }}>
+              <Btn onClick={() => selectShot(2, true)}>Make 2</Btn>
+              <Btn onClick={() => selectShot(2, false)}>Miss 2</Btn>
+              <Btn onClick={() => selectShot(3, true)}>Make 3</Btn>
+              <Btn onClick={() => selectShot(3, false)}>Miss 3</Btn>
             </Grid>
-          )}
-          <Grid cols={4} style={{ marginTop: quickFlow || possessionType === "transition" ? 0 : 8 }}>
-            <Btn onClick={() => selectShot(2, true)}>Make 2</Btn>
-            <Btn onClick={() => selectShot(2, false)}>Miss 2</Btn>
-            <Btn onClick={() => selectShot(3, true)}>Make 3</Btn>
-            <Btn onClick={() => selectShot(3, false)}>Miss 3</Btn>
-          </Grid>
-          <Grid cols={3} style={{ marginTop: 8 }}>
-            <Btn onClick={() => { pushHistory(); setStep("turnover_type"); }}>Turnover</Btn>
+            <Grid cols={3} style={{ marginTop: 8 }}>
+              <Btn onClick={() => { pushHistory(); setStep("turnover_type"); }}>Turnover</Btn>
             <Btn onClick={() => { pushHistory(); setStep("ft_attempts"); }}>FT trip</Btn>
             <Btn onClick={undo} style={{ color: "var(--muted)" }}>Undo</Btn>
           </Grid>
-        </>
-      )}
+          </>
+        );
+      })()}
 
       {step === "turnover_type" && (
         <Section label="Turnover type">
