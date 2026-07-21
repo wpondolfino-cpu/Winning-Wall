@@ -21,7 +21,7 @@ import { finishGame, isGameFinal, computeFinalScore, syncQueue, type Game, type 
 interface Props {
   userId: string;
   onOpenGame: (gameId: string) => void;
-  onEditGame: (gameId: string) => void;
+  onEditGame: (gameId: string, opponent: string) => void;
 }
 
 export default function GamesHistory({ userId, onOpenGame, onEditGame }: Props) {
@@ -136,7 +136,7 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame }: Props) 
         return (
           <div key={g.id} style={{ padding: "10px 0", borderTop: "1px solid var(--border)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-              <div style={{ cursor: "pointer" }} onClick={() => (final ? onEditGame(g.id) : onOpenGame(g.id))}>
+              <div style={{ cursor: "pointer" }} onClick={() => (final ? onEditGame(g.id, g.opponent) : onOpenGame(g.id))}>
                 <span style={{ fontSize: 14 }}>vs {g.opponent}</span>{" "}
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>
                   · {g.game_date}
@@ -164,7 +164,7 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame }: Props) 
                   </button>
                 )}
                 {final && (
-                  <button style={actionBtn} onClick={() => onEditGame(g.id)}>Edit stats</button>
+                  <button style={actionBtn} onClick={() => onEditGame(g.id, g.opponent)}>Edit stats</button>
                 )}
                 <button style={{ ...actionBtn, background: "transparent", color: "#8a2f2f" }} onClick={() => deleteGame(g.id, g.opponent)}>
                   Delete
