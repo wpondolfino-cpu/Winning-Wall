@@ -23,6 +23,7 @@ const CATEGORY_LABEL: Record<CategoryFilter, string> = {
   half_court: "Half-court",
   blob: "BLOB",
   slob: "SLOB",
+  press: "Press",
 };
 
 interface Props {
