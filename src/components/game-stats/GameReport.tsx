@@ -24,6 +24,7 @@ import {
   computeExtraPossessions,
   computePointsOffLiveTurnovers,
   computeSecondChancePoints,
+  computeDefenseEffectiveness,
   scoreAgainstGoal,
   getReportLayout,
   resolveStatOrder,
@@ -167,9 +168,35 @@ export function ReportBody({
   const motionPlays = computePlayCallEffectiveness(possessions, playCalls.filter((p) => p.category === "motion"));
 
   return (
-    <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
-      <div style={{ fontSize: 14, fontWeight: 500, color: "var(--muted)", marginBottom: 12 }}>
-        {opponentName ? `${title} - Us vs. ${opponentName}` : title}
+    <div className="card gs-report-printable" style={{ width: "100%", maxWidth: 1400 }}>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          .gs-report-printable, .gs-report-printable * { visibility: visible; }
+          .gs-report-printable { position: absolute; left: 0; top: 0; width: 100%; }
+          .gs-no-print { display: none !important; }
+        }
+      `}</style>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+        <div style={{ fontSize: 14, fontWeight: 500, color: "var(--muted)" }}>
+          {opponentName ? `${title} - Us vs. ${opponentName}` : title}
+        </div>
+        <div className="gs-no-print" style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => window.print()}
+            style={{ padding: "5px 10px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", cursor: "pointer" }}
+          >
+            Print / Save as PDF
+          </button>
+          <CopyReportButton
+            title={title}
+            opponentName={opponentName}
+            usRows={usRows}
+            oppRows={oppRows}
+            shotQuality={shotQuality}
+            streaks={streaks}
+          />
+        </div>
       </div>
 
       <PairedStatRows usRows={usRows} oppRows={oppRows} opponentName={opponentName} />
@@ -239,9 +266,91 @@ export function ReportBody({
             </div>
           );
         }
+        if (s.kind === "defense_schemes") {
+          const defense = computeDefenseEffectiveness(possessions);
+          return (
+            <div key={s.key}>
+              <SectionDivider label="Defense schemes" />
+              <DefenseSchemeRow row={defense.man} />
+              <DefenseSchemeRow row={defense.zone} />
+              <DefenseSchemeRow row={defense.press} />
+              {defense.press.calls > 0 && (
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+                  Press forced {defense.pressTurnovers} turnover{defense.pressTurnovers === 1 ? "" : "s"}, broke down to Man {defense.pressToMan}x, Zone {defense.pressToZone}x
+                </div>
+              )}
+            </div>
+          );
+        }
         return null;
       })}
     </div>
+  );
+}
+
+function DefenseSchemeRow({ row }: { row: ReturnType<typeof computeDefenseEffectiveness>["man"] }) {
+  if (!row.calls) return null;
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0", borderTop: "1px solid var(--border)" }}>
+      <span>{row.label}</span>
+      <span style={{ color: "var(--muted)" }}>{row.calls} calls · {row.pointsAllowed} pts allowed · {row.stopPct}% stops · {row.ppp} ppp</span>
+    </div>
+  );
+}
+
+function CopyReportButton({
+  title,
+  opponentName,
+  usRows,
+  oppRows,
+  shotQuality,
+  streaks,
+}: {
+  title: string;
+  opponentName?: string;
+  usRows: StatRow[];
+  oppRows: StatRow[];
+  shotQuality: ReturnType<typeof computeShotQuality>;
+  streaks: ReturnType<typeof computeStreaks>;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  function buildText(): string {
+    const lines: string[] = [];
+    lines.push(opponentName ? `${title} - Us vs. ${opponentName}` : title);
+    lines.push("");
+    lines.push(`Stat | Us | ${opponentName ?? "Opponent"}`);
+    usRows.forEach((us, i) => {
+      const opp = oppRows[i];
+      lines.push(`${us.label}: ${us.value}${us.raw ? ` (${us.raw})` : ""} | ${opp ? `${opp.value}${opp.raw ? ` (${opp.raw})` : ""}` : "—"}`);
+    });
+    if (shotQuality.label) {
+      lines.push("");
+      lines.push(`Shot quality: ${shotQuality.label} (Great ${shotQuality.breakdown.great}% / Good ${shotQuality.breakdown.good}% / Live ${shotQuality.breakdown.live}% / Tough ${shotQuality.breakdown.tough}%)`);
+    }
+    lines.push("");
+    lines.push(`Scoring runs (3+): ${streaks.scoringRuns.count}, best ${streaks.scoringRuns.best}`);
+    lines.push(`Stop runs (3+): ${streaks.stopRuns.count}, best ${streaks.stopRuns.best}`);
+    return lines.join("\n");
+  }
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(buildText());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard permission denied or unavailable -- nothing to recover here silently
+    }
+  }
+
+  return (
+    <button
+      onClick={copy}
+      style={{ padding: "5px 10px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", cursor: "pointer" }}
+    >
+      {copied ? "Copied ✓" : "Copy as text"}
+    </button>
   );
 }
 
