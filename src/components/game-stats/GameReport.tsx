@@ -293,34 +293,6 @@ function StatChip({ row }: { row: StatRow }) {
   );
 }
 
-function StatRows({ rows }: { rows: StatRow[] }) {
-  if (!rows.length) return <div style={{ fontSize: 13, color: "var(--muted)", padding: "6px 0" }}>No stats in this set yet.</div>;
-  return (
-    <div>
-      {rows.map((r) => (
-        <div key={r.key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderTop: "1px solid var(--border)" }}>
-          <span style={{ fontSize: 14 }}>{r.label}</span>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {r.goal != null && <span style={{ fontSize: 12, color: "var(--muted)" }}>goal {r.goal}</span>}
-            <span
-              style={{
-                fontSize: 14,
-                fontWeight: 700,
-                padding: "2px 10px",
-                borderRadius: 8,
-                background: r.role ? roleBg[r.role] : "var(--surface2)",
-                color: r.role ? "#fff" : "var(--text)",
-              }}
-            >
-              {r.value}
-            </span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function PlayCallTable({ rows }: { rows: ReturnType<typeof computePlayCallEffectiveness> }) {
   if (!rows.length) return null;
   return (
