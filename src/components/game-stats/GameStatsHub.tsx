@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { finishGame, isGameFinal, computeFinalScore, reopenGame, syncQueue, listSavedReports, deleteSavedReport, type SavedReport, type Possession } from "../../lib/gameStats";
+import { finishGame, isGameFinal, computeFinalScore, reopenGame, syncQueue, listSavedReports, deleteSavedReport, listSeasons, type SavedReport, type Possession } from "../../lib/gameStats";
 import GamesHistory from "../coach/GamesHistory";
 import GameTracker from "../coach/GameTracker";
 import GameReport, { ReportScope } from "./GameReport";
@@ -42,6 +42,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   const [finishing, setFinishing] = useState(false);
   const [finalUs, setFinalUs] = useState("");
   const [finalThem, setFinalThem] = useState("");
+  const [notesDraft, setNotesDraft] = useState("");
   const [trackedCount, setTrackedCount] = useState<number | null>(null);
   const [reportSel, setReportSel] = useState<{ kind: "quarter"; quarter: number } | { kind: "half"; half: 1 | 2 } | { kind: "game" }>({ kind: "game" });
 
@@ -65,6 +66,8 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
     setFinalUs("");
     setFinalThem("");
     setTrackedCount(null);
+    const { data: gameRow } = await supabase.from("games").select("notes").eq("id", gameId).maybeSingle();
+    setNotesDraft((gameRow as any)?.notes ?? "");
     // Try to push anything still stuck locally before reading the score --
     // best moment to catch a sync problem, since a stale pre-fill would
     // otherwise just look like a mystery instead of a clue.
@@ -81,7 +84,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
     const us = Number(finalUs);
     const them = Number(finalThem);
     if (Number.isNaN(us) || Number.isNaN(them)) return;
-    const { error } = await finishGame(gameId, us, them);
+    const { error } = await finishGame(gameId, us, them, notesDraft.trim() || undefined);
     if (!error) {
       setGameFinal(true);
       setFinishing(false);
@@ -116,6 +119,8 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
           setFinalUs={setFinalUs}
           finalThem={finalThem}
           setFinalThem={setFinalThem}
+          notesDraft={notesDraft}
+          setNotesDraft={setNotesDraft}
           trackedCount={trackedCount}
           startFinishing={startFinishing}
           handleFinish={handleFinish}
@@ -148,6 +153,8 @@ function GamesTab({
   setFinalUs,
   finalThem,
   setFinalThem,
+  notesDraft,
+  setNotesDraft,
   trackedCount,
   startFinishing,
   handleFinish,
@@ -168,6 +175,8 @@ function GamesTab({
   setFinalUs: (s: string) => void;
   finalThem: string;
   setFinalThem: (s: string) => void;
+  notesDraft: string;
+  setNotesDraft: (s: string) => void;
   trackedCount: number | null;
   startFinishing: (gameId: string) => void;
   handleFinish: (gameId: string) => void;
@@ -258,6 +267,13 @@ function GamesTab({
               <button className="btn-primary" style={{ width: "auto", padding: "6px 14px" }} onClick={() => handleFinish(view.gameId)}>Save</button>
               <button style={{ ...backBtn, background: "transparent" }} onClick={() => setFinishing(false)}>Cancel</button>
             </div>
+            <textarea
+              value={notesDraft}
+              onChange={(e) => setNotesDraft(e.target.value)}
+              placeholder="Notes about this game (optional) — e.g. played zone 2nd half, starters in foul trouble Q3…"
+              rows={2}
+              style={{ width: "100%", marginTop: 8, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontFamily: "inherit", fontSize: 13, resize: "vertical" }}
+            />
             {trackedCount != null && (
               <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
                 Pre-filled from {trackedCount} tracked possession{trackedCount === 1 ? "" : "s"} — if that looks way off from the real final score, some possessions likely didn't sync.
@@ -305,12 +321,24 @@ function GamesTab({
 
 function ReportsTab({ userId, view, setView }: { userId: string; view: ReportsView; setView: (v: ReportsView) => void }) {
   const [history, setHistory] = useState<SavedReport[] | null>(null);
-  const season = currentSeason();
+  const [seasons, setSeasons] = useState<string[] | null>(null);
+  const [selectedSeason, setSelectedSeason] = useState<string>(currentSeason());
 
-  useEffect(() => { if (view.mode === "history") loadHistory(); }, [view.mode]);
+  useEffect(() => {
+    listSeasons().then((s) => {
+      setSeasons(s);
+      // Default to the current season if it has any games; otherwise fall
+      // back to the most recent season that actually exists, so a coach
+      // opening this for the first time in a new season with no games
+      // logged yet doesn't land on an empty, unselectable season.
+      if (s.length && !s.includes(currentSeason())) setSelectedSeason(s[0]);
+    });
+  }, []);
+
+  useEffect(() => { if (view.mode === "history") loadHistory(); }, [view.mode, selectedSeason]);
 
   async function loadHistory() {
-    const { data } = await listSavedReports(season);
+    const { data } = await listSavedReports(selectedSeason);
     setHistory((data as SavedReport[]) ?? []);
   }
 
@@ -324,15 +352,30 @@ function ReportsTab({ userId, view, setView }: { userId: string; view: ReportsVi
     return (
       <div>
         <button onClick={() => setView({ mode: "history" })} style={{ ...backBtn, marginBottom: 10 }}>← Reports</button>
-        <ReportBuilder season={season} userId={userId} initial={view.saved} onSaved={loadHistory} />
+        <ReportBuilder season={selectedSeason} userId={userId} initial={view.saved} onSaved={loadHistory} />
       </div>
     );
   }
 
   return (
     <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <span style={{ fontSize: 13, color: "var(--muted)" }}>Reports · {season}</span>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13, color: "var(--muted)" }}>Reports ·</span>
+          {seasons && seasons.length > 1 ? (
+            <select
+              value={selectedSeason}
+              onChange={(e) => setSelectedSeason(e.target.value)}
+              style={{ padding: "4px 8px", fontSize: 13, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
+            >
+              {seasons.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          ) : (
+            <span style={{ fontSize: 13, color: "var(--muted)" }}>{selectedSeason}</span>
+          )}
+        </div>
         <button className="btn-primary" style={{ padding: "6px 14px", width: "auto" }} onClick={() => setView({ mode: "builder" })}>
           Create report
         </button>
