@@ -240,7 +240,34 @@ export async function removeFromQueue(id: string): Promise<void> {
 }
 
 export async function getQueuedPossessions(): Promise<Possession[]> {
-  return withStore("readonly", (store) => store.getAll());
+  const raw = await withStore<Possession[]>("readonly", (store) => store.getAll());
+  return raw.map(normalizeLegacyPossession);
+}
+
+/**
+ * Some possessions sitting in a device's local queue may predate a schema
+ * change and still have the OLD shape -- e.g. paint_touch used to be a
+ * text field ('single'/'both'), now it's two booleans. Supabase rejects
+ * those on sync (invalid boolean, not-null violation), which otherwise
+ * looks like permanent data loss for whatever got tracked before the
+ * update went out. This converts old-shaped fields to the current shape
+ * so that data actually recovers instead of just failing forever.
+ */
+function normalizeLegacyPossession(p: any): Possession {
+  let paintTouch = p.paint_touch;
+  let paintTouchBoth = p.paint_touch_both_sides;
+  if (typeof paintTouch === "string") {
+    // old shape: paint_touch was 'single' | 'both' | null
+    paintTouchBoth = paintTouch === "both";
+    paintTouch = paintTouch === "single" || paintTouch === "both";
+  }
+  return {
+    ...p,
+    paint_touch: paintTouch ?? false,
+    paint_touch_both_sides: paintTouchBoth ?? false,
+    missed_fg_count: p.missed_fg_count ?? 0,
+    oob_result: p.oob_result === "score" ? "direct_shot" : p.oob_result ?? null,
+  };
 }
 
 export async function queueCount(): Promise<number> {
