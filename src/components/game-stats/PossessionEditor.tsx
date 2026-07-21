@@ -237,6 +237,14 @@ export default function PossessionEditor({ gameId, opponent }: Props) {
                 <input type="number" min={0} value={p.missed_fg_count} onChange={(e) => save(p, { missed_fg_count: Number(e.target.value) })} style={selectStyle} />
               </Field>
 
+              <Field label="Absorbed FT attempts">
+                <input type="number" min={0} value={p.absorbed_ft_attempts} onChange={(e) => save(p, { absorbed_ft_attempts: Number(e.target.value) })} style={selectStyle} />
+              </Field>
+
+              <Field label="Absorbed FT made">
+                <input type="number" min={0} value={p.absorbed_ft_made} onChange={(e) => save(p, { absorbed_ft_made: Number(e.target.value) })} style={selectStyle} />
+              </Field>
+
               <Field label="Outcome">
                 <select value={p.outcome} onChange={(e) => save(p, { outcome: e.target.value as Outcome })} style={selectStyle}>
                   {OUTCOMES.map((o) => <option key={o} value={o}>{o.replace("_", " ")}</option>)}
