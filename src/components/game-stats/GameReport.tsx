@@ -298,7 +298,7 @@ function StatChip({ row }: { row: StatRow }) {
         }}
         title={row.goal != null ? `goal ${row.goal}` : undefined}
       >
-        {row.signed && row.value > 0 ? `+${row.value}` : row.value}
+        {row.display ?? (row.signed && row.value > 0 ? `+${row.value}` : row.value)}
       </span>
       {row.raw && <span style={{ fontSize: 10, color: "var(--muted)" }}>{row.raw}</span>}
     </span>
