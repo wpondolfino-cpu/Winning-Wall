@@ -43,6 +43,20 @@
 // attempts (1/2/3 shots) before makes, so FT% is computable -- and are
 // auto-tagged "great" quality, but only on our own trips to the line.
 //
+// Defense also gets its own possession-type screen: Transition, Man, Zone,
+// Press, BLOB, SLOB (instead of offense's Transition/Half-court/BLOB/SLOB).
+// Man and Zone both go straight to the outcome screen -- there's no
+// play-calling for either since we don't know what set they're actually
+// running, we're just tagging which defense we called (defense_scheme).
+// Press asks Turnover / Man / Zone: Turnover goes to the usual live/dead
+// ball screen, Man/Zone tag defense_scheme the same way a direct call
+// would and count toward those same Man/Zone effectiveness numbers,
+// while press_result keeps track of what the press itself turned into
+// (forced turnover vs. broke down into a half-court look) for press
+// effectiveness specifically. possession_type stays 'press' through an
+// OREB, same as blob/slob, so it keeps counting toward press effectiveness
+// even if the trip continues.
+//
 // BLOB/SLOB/Set/Motion pickers also surface any play drawn in the Plays
 // feature and tagged with that category (case-insensitive), not just
 // play_calls added inline here -- see gameStats.ts's fetchDrawnPlaysForCategory.
@@ -63,6 +77,8 @@ import {
   type PossessionType,
   type HalfCourtType,
   type OobResult,
+  type DefenseScheme,
+  type PressResult,
   type Outcome,
 } from "../../lib/gameStats";
 
@@ -77,6 +93,7 @@ type Step =
   | "halfcourt_type"
   | "play_call"
   | "oob_result"
+  | "press_result"
   | "action_branch"
   | "quick_shot"
   | "flags"
@@ -104,6 +121,8 @@ interface FlowSnapshot {
   halfCourtType: HalfCourtType | null;
   playCallId: string | null;
   oobResult: OobResult | null;
+  defenseScheme: DefenseScheme | null;
+  pressResult: PressResult | null;
   paintTouch: boolean;
   paintTouchBoth: boolean;
   orebCount: number;
@@ -133,6 +152,8 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
   const [halfCourtType, setHalfCourtType] = useState<HalfCourtType | null>(null);
   const [playCallId, setPlayCallId] = useState<string | null>(null);
   const [oobResult, setOobResult] = useState<OobResult | null>(null);
+  const [defenseScheme, setDefenseScheme] = useState<DefenseScheme | null>(null);
+  const [pressResult, setPressResult] = useState<PressResult | null>(null);
   const [paintTouch, setPaintTouch] = useState(false);
   const [paintTouchBoth, setPaintTouchBoth] = useState(false);
   const [orebCount, setOrebCount] = useState(0);
@@ -179,6 +200,8 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     setHalfCourtType(null);
     setPlayCallId(null);
     setOobResult(null);
+    setDefenseScheme(null);
+    setPressResult(null);
     setPaintTouch(false);
     setPaintTouchBoth(false);
     setOrebCount(0);
@@ -197,7 +220,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     setHistory((h) => [
       ...h,
       {
-        step, possessionType, halfCourtType, playCallId, oobResult, paintTouch, paintTouchBoth,
+        step, possessionType, halfCourtType, playCallId, oobResult, defenseScheme, pressResult, paintTouch, paintTouchBoth,
         orebCount, missedFgCount, absorbedFtAttempts, absorbedFtMade, pendingShot, pendingCommit, orebOccurred, ftAttempts,
       },
     ]);
@@ -212,6 +235,8 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       setHalfCourtType(prev.halfCourtType);
       setPlayCallId(prev.playCallId);
       setOobResult(prev.oobResult);
+      setDefenseScheme(prev.defenseScheme);
+      setPressResult(prev.pressResult);
       setPaintTouch(prev.paintTouch);
       setPaintTouchBoth(prev.paintTouchBoth);
       setOrebCount(prev.orebCount);
@@ -237,6 +262,8 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       half_court_type: halfCourtType,
       play_call_id: playCallId,
       oob_result: oobResult,
+      defense_scheme: defenseScheme,
+      press_result: pressResult,
       paint_touch: paintTouch,
       paint_touch_both_sides: paintTouchBoth,
       oreb_count: orebCount,
@@ -332,7 +359,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       setAbsorbedFtAttempts((c) => c + ((pendingCommit.extra.ft_attempts as number) ?? 0));
       setAbsorbedFtMade((c) => c + ((pendingCommit.extra.points as number) ?? 0));
     }
-    if (possessionType !== "blob" && possessionType !== "slob") {
+    if (possessionType !== "blob" && possessionType !== "slob" && possessionType !== "press") {
       setPossessionType("half_court");
       setHalfCourtType(null);
       setPlayCallId(null);
@@ -448,7 +475,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
         </button>
       )}
 
-      {step === "type" && (
+      {step === "type" && team === "us" && (
         <Section label="Possession type">
           <Grid cols={4}>
             <Btn onClick={() => { pushHistory(); setPossessionType("transition"); setStep("flags"); }}>Transition</Btn>
@@ -457,15 +484,74 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
                 pushHistory();
                 setPossessionType("half_court");
                 setOrebOccurred(false);
-                // On defense we don't know the opponent's called set, so
-                // skip straight past Set/Motion/play-call to the outcome.
-                setStep(team === "opponent" ? "flags" : "halfcourt_type");
+                setStep("halfcourt_type");
               }}
             >
               Half-court
             </Btn>
             <Btn onClick={() => { pushHistory(); setPossessionType("blob"); setStep("oob_result"); }}>BLOB</Btn>
             <Btn onClick={() => { pushHistory(); setPossessionType("slob"); setStep("oob_result"); }}>SLOB</Btn>
+          </Grid>
+        </Section>
+      )}
+
+      {step === "type" && team === "opponent" && (
+        <Section label="Possession type">
+          <Grid cols={3}>
+            <Btn onClick={() => { pushHistory(); setPossessionType("transition"); setStep("flags"); }}>Transition</Btn>
+            <Btn
+              onClick={() => {
+                pushHistory();
+                setPossessionType("half_court");
+                setDefenseScheme("man");
+                setOrebOccurred(false);
+                setStep("flags");
+              }}
+            >
+              Man
+            </Btn>
+            <Btn
+              onClick={() => {
+                pushHistory();
+                setPossessionType("half_court");
+                setDefenseScheme("zone");
+                setOrebOccurred(false);
+                setStep("flags");
+              }}
+            >
+              Zone
+            </Btn>
+            <Btn onClick={() => { pushHistory(); setPossessionType("press"); setStep("press_result"); }}>Press</Btn>
+            <Btn onClick={() => { pushHistory(); setPossessionType("blob"); setStep("oob_result"); }}>BLOB</Btn>
+            <Btn onClick={() => { pushHistory(); setPossessionType("slob"); setStep("oob_result"); }}>SLOB</Btn>
+          </Grid>
+        </Section>
+      )}
+
+      {step === "press_result" && (
+        <Section label="Press result" accent>
+          <Grid cols={3}>
+            <Btn onClick={() => { pushHistory(); setPressResult("turnover"); setStep("turnover_type"); }}>Turnover</Btn>
+            <Btn
+              onClick={() => {
+                pushHistory();
+                setPressResult("man");
+                setDefenseScheme("man");
+                setStep("flags");
+              }}
+            >
+              Man
+            </Btn>
+            <Btn
+              onClick={() => {
+                pushHistory();
+                setPressResult("zone");
+                setDefenseScheme("zone");
+                setStep("flags");
+              }}
+            >
+              Zone
+            </Btn>
           </Grid>
         </Section>
       )}
