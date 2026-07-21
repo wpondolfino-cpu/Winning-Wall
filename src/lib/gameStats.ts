@@ -420,7 +420,6 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   // *that* was also a miss (i.e. no OREB followed it, trip just ended).
   const orebOpportunities = trips.reduce((s, p) => s + p.missed_fg_count + (p.outcome === "fg_missed" ? 1 : 0), 0);
   const ftTripsWithAttempts = trips.filter((p) => p.outcome === "ft_trip" && p.ft_attempts != null);
-  const ftTrips = trips.filter((p) => p.outcome === "ft_trip").length;
   // FT makes/attempts from a trip that ended as an ft_trip itself, PLUS any
   // FT attempts that happened earlier in a trip but got absorbed into a
   // later, different final outcome (missed a FT, got the OREB, kept going)
@@ -438,7 +437,7 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   const ftPct = ftAttempted ? (ftMade / ftAttempted) * 100 : 0;
   const tovPct = trips.length ? (turnovers / trips.length) * 100 : 0;
   const orebPct = orebOpportunities ? (oreb / orebOpportunities) * 100 : 0;
-  const ftRate = fgaCount ? ftTrips / fgaCount : 0;
+  const ftRate = fgaCount ? ftAttempted / fgaCount : 0;
   const paintTouchSinglePct = halfCourtTripsArr.length ? (paintTouchSingle / halfCourtTripsArr.length) * 100 : 0;
   const paintTouchBothPct = halfCourtTripsArr.length ? (paintTouchBoth / halfCourtTripsArr.length) * 100 : 0;
   const transitionPpp = transitionTripsArr.length ? transitionTripsArr.reduce((s, p) => s + p.points, 0) / transitionTripsArr.length : 0;
