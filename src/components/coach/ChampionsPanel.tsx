@@ -1,14 +1,18 @@
 // src/components/coach/ChampionsPanel.tsx
 import { useState } from "react";
-import { supabase, crownBiweeklyWinners, currentPeriodStart, currentPeriodEnd } from "../../lib/supabase";
+import { supabase, crownBiweeklyWinners, currentPeriodStart } from "../../lib/supabase";
 import { getCurrentPeriodStandings } from "../../lib/leaderboard";
 
 export default function ChampionsPanel() {
   const [crowning, setCrowning] = useState(false);
   const [undoing, setUndoing]   = useState(false);
 
-  const periodStart = currentPeriodStart();
-  const periodEnd   = currentPeriodEnd();
+  // Always describes the period that just concluded (matches
+  // getCurrentPeriodStandings' logic) — not whatever period "now"
+  // technically falls in, which could already be the brand-new period
+  // if crowning happens any time after the rollover boundary.
+  const periodEnd   = currentPeriodStart();
+  const periodStart = new Date(periodEnd.getTime() - 14 * 24 * 60 * 60 * 1000);
 
   async function handleCrown() {
     const periodName = window.prompt(
