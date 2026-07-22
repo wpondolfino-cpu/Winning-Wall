@@ -55,10 +55,11 @@ export default function Play3DViewer({ play, roster, onBack, selfOverride = null
   const [frameIdx, setFrameIdx] = useState(0);
 
   // Mutable refs so the render loop (set up once) can read current props/state.
-  const stateRef = useRef({ play, roster, frameIdx, selfOverride });
-  stateRef.current = { play, roster, frameIdx, selfOverride };
+  const stateRef = useRef({ play, roster, frameIdx, selfOverride, speed });
+  stateRef.current = { play, roster, frameIdx, selfOverride, speed };
 
   const [isPlaying, setIsPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
   const [presets] = useState(() => (window.innerWidth < 768 ? PRESETS_MOBILE : PRESETS_DESKTOP));
   const [presetLabel, setPresetLabel] = useState(presets[0].label);
   const isPlayingRef = useRef(false);
@@ -177,7 +178,13 @@ export default function Play3DViewer({ play, roster, onBack, selfOverride = null
     function getBallWorldPos(f: PlayFrame) {
       if (f.ballHolderId) {
         const holder = f.players.find((p) => p.id === f.ballHolderId);
-        if (holder) return toWorld(holder.x, holder.y);
+        if (holder) {
+          const w = toWorld(holder.x, holder.y);
+          // Offset to the side, like the ball is in the player's hand —
+          // dead-center on the holder's own coordinates put it inside their
+          // (opaque) body, hiding it from view entirely.
+          return { x: w.x + 0.38, z: w.z };
+        }
       }
       return f.ball ? toWorld(f.ball.x, f.ball.y) : null;
     }
@@ -335,7 +342,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
       lastTickTime = now;
       if (animFromFrame && animToFrame) {
         if (isPlayingRef.current) elapsed += dt;
-        const t = Math.min(1, elapsed / 1500);
+        const t = Math.min(1, elapsed / (1500 / stateRef.current.speed));
         animFromFrame.players.forEach((fp, i) => {
           const tp = animToFrame!.players[i];
           if (!tp || !playerGroups[i]) return;
@@ -452,6 +459,16 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
       <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
         <button onClick={onBack} style={{ padding: "8px 12px", fontSize: 13 }}>← Back to 2D</button>
         <button onClick={handlePlayPauseClick} className="coach-add-btn" style={{ fontSize: 13 }}>{isPlaying ? "⏸ Pause" : "▶ Play"}</button>
+        <select
+          value={speed}
+          onChange={(e) => setSpeed(Number(e.target.value))}
+          style={{ padding: "7px 8px", fontSize: 12, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", fontFamily: "inherit", outline: "none" }}
+        >
+          <option value={0.5}>0.5x</option>
+          <option value={1}>1x</option>
+          <option value={1.5}>1.5x</option>
+          <option value={2}>2x</option>
+        </select>
         <select
           value={presetLabel}
           onChange={(e) => {
