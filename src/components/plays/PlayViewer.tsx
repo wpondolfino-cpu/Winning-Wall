@@ -37,15 +37,42 @@ type Tab = "mine" | "shared" | "playbooks";
 
 // Catches any runtime error inside the 3D viewer and shows it directly,
 // instead of an unexplained blank/wrong screen if something in there throws.
+const STALE_CHUNK_RELOAD_KEY = "ww_3d_stale_chunk_reload";
+
+function isStaleChunkError(message: string): boolean {
+  return /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed/i.test(message || "");
+}
+
 class ThreeDErrorBoundary extends Component<{ children: ReactNode; onBack: () => void }, { error: Error | null }> {
   constructor(props: { children: ReactNode; onBack: () => void }) {
     super(props);
     this.state = { error: null };
   }
   static getDerivedStateFromError(error: Error) { return { error }; }
-  componentDidCatch(error: Error, info: any) { console.error("3D viewer crashed:", error, info); }
+  componentDidCatch(error: Error, info: any) {
+    console.error("3D viewer crashed:", error, info);
+    // A stale chunk means the page was open from before a newer deploy
+    // replaced this file's build output — the fix is just a fresh page
+    // load, not a real error. Reload once automatically; the sessionStorage
+    // flag survives that reload, so if the same error comes right back
+    // we know reloading didn't help and fall through to the real error
+    // message instead of looping forever.
+    if (isStaleChunkError(error.message) && !sessionStorage.getItem(STALE_CHUNK_RELOAD_KEY)) {
+      sessionStorage.setItem(STALE_CHUNK_RELOAD_KEY, "1");
+      window.location.reload();
+    }
+  }
   render() {
     if (this.state.error) {
+      if (isStaleChunkError(this.state.error.message) && !sessionStorage.getItem(STALE_CHUNK_RELOAD_KEY)) {
+        // componentDidCatch already kicked off the reload — this only shows
+        // for the brief moment before the browser actually navigates.
+        return (
+          <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>
+            Updating to the latest version…
+          </div>
+        );
+      }
       return (
         <div style={{ padding: 20 }}>
           <button onClick={this.props.onBack} style={{ padding: "8px 14px", marginBottom: 12 }}>← Back to 2D</button>
@@ -255,6 +282,7 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
 }) {
   const [frameIdx, setFrameIdx] = useState(0);
   const [playSignal, setPlaySignal] = useState(0);
+  const [speed, setSpeed] = useState(1);
   const [show3D, setShow3D] = useState(!!startIn3D);
   const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
   const [selfPlayerId, setSelfPlayerId] = useState<string | null>(() => {
@@ -287,7 +315,7 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
   function handleAnimDone() {
     if (frameIdx < play.data.frames.length - 1) {
       setFrameIdx((i) => i + 1);
-      setTimeout(() => setPlaySignal((s) => s + 1), 150);
+      setTimeout(() => setPlaySignal((s) => s + 1), 150 / speed);
     }
   }
 
@@ -310,6 +338,20 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
         <button onClick={() => setShow3D(true)} className="coach-add-btn" style={{ flex: 1, justifyContent: "center", padding: "8px 6px", fontSize: 13 }}>🧊 Watch live</button>
       </div>
 
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+        <span style={{ fontSize: 12, color: "var(--muted)" }}>Speed</span>
+        <select
+          value={speed}
+          onChange={(e) => setSpeed(Number(e.target.value))}
+          style={{ padding: "5px 8px", fontSize: 12, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", fontFamily: "inherit", outline: "none" }}
+        >
+          <option value={0.5}>0.5x</option>
+          <option value={1}>1x</option>
+          <option value={1.5}>1.5x</option>
+          <option value={2}>2x</option>
+        </select>
+      </div>
+
       <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 12, marginBottom: 10 }}>
         <PlayCanvas
           frame={frame}
@@ -319,6 +361,7 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
           edit={false}
           playSignal={playSignal}
           onPlayDone={handleAnimDone}
+          speed={speed}
           selfOverride={selfOverride}
         />
       </div>
