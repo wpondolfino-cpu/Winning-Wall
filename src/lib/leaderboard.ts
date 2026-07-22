@@ -26,8 +26,12 @@ export async function getBiweeklyChampions(): Promise<BiweeklyChampion[]> {
 // snapshot-save logic don't need to change at all — only the data
 // source feeding them does.
 export async function getCurrentPeriodStandings(): Promise<LeaderboardEntry[]> {
-  const periodStart = currentPeriodStart();
-  const periodEnd = currentPeriodEnd();
+  // Always targets the period that just concluded — not whatever period
+  // "now" happens to be in. If a coach crowns even a moment after the
+  // rollover boundary, currentPeriodStart()/End() would silently describe
+  // the brand-new (nearly empty) period instead of the one being crowned.
+  const periodEnd = currentPeriodStart();
+  const periodStart = new Date(periodEnd.getTime() - 14 * 24 * 60 * 60 * 1000);
 
   const [{ data: psc }, { data: pr }, { data: bon }, { data: sc }] = await Promise.all([
     supabase.from("score_attempts").select("*")
