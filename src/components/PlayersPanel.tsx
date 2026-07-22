@@ -2,6 +2,8 @@
 import { useState, useEffect } from "react";
 import { supabase, Score, Workout, ScoreAttempt, GRADE_CATEGORIES, GradeCategory, approveUser, rejectUser, resetPlayerScores } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
+import { Roster, getRosters } from "../lib/practicePlanner";
+import RosterManager from "./coach/RosterManager";
 
 interface Props {
   allScores: Score[];
@@ -12,6 +14,7 @@ interface EditPlayer {
   id: string;
   name: string;
   grade_category: string;
+  home_roster_id: string | null;
 }
 
 interface EditScore {
@@ -237,7 +240,8 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const [addGrade, setAddGrade]       = useState<GradeCategory>(GRADE_CATEGORIES[0]);
   const [addSaving, setAddSaving]     = useState(false);
   const [addError, setAddError]       = useState("");
-  const [activeTab, setActiveTab]     = useState<"players"|"coaches">("players");
+  const [activeTab, setActiveTab]     = useState<"players"|"coaches"|"rosters">("players");
+  const [rosters, setRosters]         = useState<Roster[]>([]);
   const [showInvite, setShowInvite]   = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
@@ -363,7 +367,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     return { ...entry, daysInactive, isInactive, pushSubscribed: pushStatus[entry.id] ?? false };
   });
 
-  useState(() => { loadPending(); loadCoaches(); loadPasswordResets(); loadPushStatus(); });
+  useState(() => { loadPending(); loadCoaches(); loadPasswordResets(); loadPushStatus(); getRosters().then(setRosters); });
 
   async function loadPushStatus() {
     const { data } = await supabase.from("profiles").select("id,push_subscribed").eq("role", "player");
@@ -417,16 +421,18 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     finally { setInviteSending(false); }
   }
 
-  function openEditPlayer(p: typeof playersWithStatus[0]) {
-    setEditPlayer({ id: p.id, name: p.name, grade_category: p.grade_category ?? GRADE_CATEGORIES[0] });
+  async function openEditPlayer(p: typeof playersWithStatus[0]) {
     setEditError("");
+    // Fetch fresh rather than trusting the leaderboard row, which may not carry this field.
+    const { data } = await supabase.from("profiles").select("home_roster_id").eq("id", p.id).single();
+    setEditPlayer({ id: p.id, name: p.name, grade_category: p.grade_category ?? GRADE_CATEGORIES[0], home_roster_id: data?.home_roster_id ?? null });
   }
 
   async function savePlayerEdit() {
     if (!editPlayer) return;
     setEditSaving(true); setEditError("");
     try {
-      await supabase.from("profiles").update({ name: editPlayer.name, grade_category: editPlayer.grade_category }).eq("id", editPlayer.id);
+      await supabase.from("profiles").update({ name: editPlayer.name, grade_category: editPlayer.grade_category, home_roster_id: editPlayer.home_roster_id }).eq("id", editPlayer.id);
       setEditPlayer(null); refresh();
     } catch (e: any) { setEditError(e.message); }
     finally { setEditSaving(false); }
@@ -569,6 +575,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 10, padding: 4, marginBottom: 16, border: "1px solid var(--border)", width: "fit-content" }}>
         <button onClick={() => setActiveTab("players")} style={{ padding: "7px 18px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "players" ? "var(--royal)" : "transparent", color: activeTab === "players" ? "#fff" : "var(--muted)" }}>👥 Players</button>
         <button onClick={() => setActiveTab("coaches")} style={{ padding: "7px 18px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "coaches" ? "var(--royal)" : "transparent", color: activeTab === "coaches" ? "#fff" : "var(--muted)" }}>🏀 Coaches</button>
+        <button onClick={() => setActiveTab("rosters")} style={{ padding: "7px 18px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "rosters" ? "var(--royal)" : "transparent", color: activeTab === "rosters" ? "#fff" : "var(--muted)" }}>🗂️ Rosters</button>
       </div>
 
       {/* ══ PLAYERS TAB ══ */}
@@ -788,6 +795,11 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
         </div>
       )}
 
+      {/* ══ ROSTERS TAB ══ */}
+      {activeTab === "rosters" && (
+        <RosterManager onChanged={() => getRosters().then(setRosters)} />
+      )}
+
       {/* Edit Player Modal */}
       {editPlayer && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setEditPlayer(null)}>
@@ -795,6 +807,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", marginBottom: 16 }}>✏️ Edit Player</div>
             <div style={{ marginBottom: 12 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label><input value={editPlayer.name} onChange={e => setEditPlayer({ ...editPlayer, name: e.target.value })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" as const }} /></div>
             <div style={{ marginBottom: 16 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Grade</label><select value={editPlayer.grade_category} onChange={e => setEditPlayer({ ...editPlayer, grade_category: e.target.value })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }}>{GRADE_CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
+            <div style={{ marginBottom: 16 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Roster</label><select value={editPlayer.home_roster_id ?? ""} onChange={e => setEditPlayer({ ...editPlayer, home_roster_id: e.target.value || null })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }}><option value="">— No roster —</option>{rosters.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
             {editError && <div style={{ color: "#ff7b7b", fontSize: 12, marginBottom: 10 }}>{editError}</div>}
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={savePlayerEdit} disabled={editSaving} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{editSaving ? "Saving…" : "Save"}</button>
