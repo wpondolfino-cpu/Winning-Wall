@@ -677,10 +677,10 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       {step === "shot_quality" && (
         <Section label="Shot quality (last attempt)">
           <Grid cols={4}>
-            <Btn tone="success" onClick={() => commitPendingShot("great")}>Great</Btn>
-            <Btn tone="success" onClick={() => commitPendingShot("good")}>Good</Btn>
-            <Btn tone="warning" onClick={() => commitPendingShot("live")}>Live</Btn>
-            <Btn tone="danger" onClick={() => commitPendingShot("tough")}>Tough</Btn>
+            <Btn tone="success" subtitle="Layups & Free-throws" onClick={() => commitPendingShot("great")}>Great</Btn>
+            <Btn tone="success" subtitle="Open, Catch & Shoot " onClick={() => commitPendingShot("good")}>Good</Btn>
+            <Btn tone="warning" subtitle="Player specific & Shot clock" onClick={() => commitPendingShot("live")}>Live</Btn>
+            <Btn tone="danger" subtitle="Contested & Early" onClick={() => commitPendingShot("tough")}>Tough</Btn>
           </Grid>
         </Section>
       )}
@@ -768,12 +768,14 @@ function Btn({
   onClick,
   active,
   tone,
+  subtitle,
   style,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   active?: boolean;
   tone?: "success" | "warning" | "danger";
+  subtitle?: string;
   style?: React.CSSProperties;
 }) {
   const toneColors: Record<string, string> = {
@@ -792,10 +794,15 @@ function Btn({
         background: active ? "var(--royal)" : tone ? toneColors[tone] + "22" : "var(--surface2)",
         color: tone ? toneColors[tone] : "var(--text)",
         cursor: "pointer",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 2,
         ...style,
       }}
     >
-      {children}
+      <span>{children}</span>
+      {subtitle && <span style={{ fontSize: 10, opacity: 0.85, fontWeight: 400 }}>{subtitle}</span>}
     </button>
   );
 }
