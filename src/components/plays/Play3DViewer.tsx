@@ -53,13 +53,13 @@ const PRESETS_MOBILE = PRESETS_DESKTOP.map((p) => zoomedOut(p, 2.15));
 export default function Play3DViewer({ play, roster, onBack, selfOverride = null }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [frameIdx, setFrameIdx] = useState(0);
+  const [speed, setSpeed] = useState(1);
 
   // Mutable refs so the render loop (set up once) can read current props/state.
   const stateRef = useRef({ play, roster, frameIdx, selfOverride, speed });
   stateRef.current = { play, roster, frameIdx, selfOverride, speed };
 
   const [isPlaying, setIsPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1);
   const [presets] = useState(() => (window.innerWidth < 768 ? PRESETS_MOBILE : PRESETS_DESKTOP));
   const [presetLabel, setPresetLabel] = useState(presets[0].label);
   const isPlayingRef = useRef(false);
