@@ -12,7 +12,11 @@ import {
 
 const PRESET_COLORS = ["#1a3fa8", "#8a8f98", "#e8e8e8", "#f0c040", "#5de098", "#d85a30", "#993c56"];
 
-export default function RosterManager() {
+interface Props {
+  onChanged?: () => void;
+}
+
+export default function RosterManager({ onChanged }: Props = {}) {
   const [rosters, setRosters]       = useState<RosterWithCount[]>([]);
   const [archived, setArchived]     = useState<RosterWithCount[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -51,7 +55,7 @@ export default function RosterManager() {
     if (error) setError(error);
     else {
       setNewName(""); setNewCoach(""); setNewType("seasonal"); setShowForm(false);
-      await load();
+      await load(); onChanged?.();
     }
     setSaving(false);
   }
@@ -70,19 +74,19 @@ export default function RosterManager() {
       name: editName.trim(), color: editColor, default_coach_name: editCoach || null,
     });
     if (error) setError(error);
-    else { setEditingId(null); await load(); }
+    else { setEditingId(null); await load(); onChanged?.(); }
     setSaving(false);
   }
 
   async function handleArchive(r: RosterWithCount) {
     if (!window.confirm(`Archive "${r.name}"? It'll drop out of the main pickers but every practice you've run with it stays intact — you can restore it anytime.`)) return;
     await archiveRoster(r.id);
-    await load();
+    await load(); onChanged?.();
   }
 
   async function handleRestore(r: RosterWithCount) {
     await restoreRoster(r.id);
-    await load();
+    await load(); onChanged?.();
   }
 
   function RosterRow({ r, archived: isArchived }: { r: RosterWithCount; archived?: boolean }) {
