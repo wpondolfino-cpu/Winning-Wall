@@ -52,6 +52,8 @@ interface Props {
   /** Bump this number to play the current frame's actions once. */
   playSignal?: number;
   onPlayDone?: () => void;
+  /** Playback speed multiplier for the beat animation — 1 is normal, 0.5 is half speed, 2 is double. */
+  speed?: number;
   /** Override the court's background fill — used by PlayPrintView for a lighter, ink-friendly tone. */
   courtBg?: string;
   /** "select" tool — the currently selected element, highlighted, and what Delete/Backspace acts on. */
@@ -321,7 +323,7 @@ export default function PlayCanvas({
   onAddPlayer, onAddDefender, onSetBall, onAddAction, onErase, onToggleAvatar,
   onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff, onSetActionCurve,
   onAddText, onMoveText, onEditText, onAddZone, onMoveZone,
-  playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect, selfOverride = null,
+  playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect, selfOverride = null, speed = 1,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
@@ -484,14 +486,14 @@ export default function PlayCanvas({
   // Play the current frame's actions once whenever playSignal changes.
   useEffect(() => {
     if (playSignal === undefined || playSignal === 0) return;
-    const dur = 1400;
+    const dur = 1400 / speed;
     const start = performance.now();
     let raf = 0;
     function step(now: number) {
       const t = Math.min(1, (now - start) / dur);
       setAnimT(t);
       if (t < 1) { raf = requestAnimationFrame(step); }
-      else { setTimeout(() => { setAnimT(null); onPlayDone?.(); }, 350); }
+      else { setTimeout(() => { setAnimT(null); onPlayDone?.(); }, 350 / speed); }
     }
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
