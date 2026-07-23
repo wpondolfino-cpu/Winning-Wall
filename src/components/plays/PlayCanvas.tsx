@@ -9,6 +9,7 @@
 import { useRef, useState, useEffect, type MouseEvent as ReactMouseEvent } from "react";
 import type { CourtTemplate, PlayFrame, PlayPlayer, PlayAction, ActionType, PlayText, PlayZone } from "../../lib/plays";
 import type { RosterPlayer } from "../../lib/plays";
+import { resolvePassEndpoint } from "../../lib/plays";
 import { genPlayerId } from "../../lib/plays";
 
 export const CANVAS_W = 600;
@@ -598,7 +599,10 @@ export default function PlayCanvas({
         />
       )}
 
-      {displayFrame.actions.map((a, i) => <ActionShape key={i} a={a} />)}
+      {displayFrame.actions.map((a, i) => {
+        const resolved = a.type === "pass" ? resolvePassEndpoint(displayFrame, a) : { x: a.x2, y: a.y2 };
+        return <ActionShape key={i} a={{ ...a, x2: resolved.x, y2: resolved.y }} />;
+      })}
 
       {(displayFrame.drawings ?? []).map((d, i) => (
         <path key={i} d={pointsToPath(d.points)} fill="none" stroke="var(--gold)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
@@ -695,14 +699,15 @@ export default function PlayCanvas({
 
       {animT !== null && frame.actions.map((a, i) => {
         if (a.type === "screen") return null;
+        const endpoint = a.type === "pass" ? resolvePassEndpoint(frame, a) : { x: a.x2, y: a.y2 };
         let x: number, y: number;
         if (a.curve) {
           const t = animT, mt = 1 - t;
-          x = mt * mt * a.x1 + 2 * mt * t * a.curve.x + t * t * a.x2;
-          y = mt * mt * a.y1 + 2 * mt * t * a.curve.y + t * t * a.y2;
+          x = mt * mt * a.x1 + 2 * mt * t * a.curve.x + t * t * endpoint.x;
+          y = mt * mt * a.y1 + 2 * mt * t * a.curve.y + t * t * endpoint.y;
         } else {
-          x = a.x1 + (a.x2 - a.x1) * animT;
-          y = a.y1 + (a.y2 - a.y1) * animT;
+          x = a.x1 + (endpoint.x - a.x1) * animT;
+          y = a.y1 + (endpoint.y - a.y1) * animT;
         }
         const isShot = a.type === "shot";
         return <circle key={i} cx={x} cy={y} r={a.type === "pass" ? 6 : isShot ? 7 : 9} fill={isShot ? "#EF9F27" : "#378ADD"} stroke={isShot ? "#854F0B" : undefined} strokeWidth={isShot ? 1.5 : 0} opacity={0.9} />;
