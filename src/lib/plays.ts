@@ -23,7 +23,7 @@ export const COURT_TEMPLATE_LABELS: Record<CourtTemplate, string> = {
 // the coordinate system stays constant so saved actions/forks stay valid
 // across templates.
 
-export type ActionType = "move" | "pass" | "dribble" | "screen" | "shot";
+export type ActionType = "move" | "pass" | "dribble" | "screen" | "shot" | "lob";
 
 export interface PlayPoint { x: number; y: number; }
 
