@@ -924,3 +924,18 @@ export async function getGroupCountsForDrills(segmentDrillIds: string[]): Promis
   data.forEach((row: any) => { counts[row.segment_drill_id] = (counts[row.segment_drill_id] ?? 0) + 1; });
   return counts;
 }
+
+// ── Practice week rename/delete ──────────────────────────────
+// Deleting a week does NOT delete its practices — practices.week_id
+// is ON DELETE SET NULL, so they just become "no week" instead of
+// disappearing. Renaming is a simple in-place update.
+
+export async function renamePracticeWeek(id: string, name: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("practice_weeks").update({ name: name.trim() }).eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+export async function deletePracticeWeek(id: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("practice_weeks").delete().eq("id", id);
+  return { error: error?.message ?? null };
+}
