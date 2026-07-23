@@ -162,13 +162,14 @@ export default function Play3DViewer({ play, roster, onBack, selfOverride = null
     // Entity groups, rebuilt whenever the current frame changes
     let playerGroups: THREE.Group[] = [];
     let defenderGroups: THREE.Group[] = [];
+    let coneGroups: THREE.Group[] = [];
     let ballMesh: THREE.Mesh | null = null;
     const textureLoader = new THREE.TextureLoader();
 
     function clearEntities() {
-      [...playerGroups, ...defenderGroups].forEach((g) => scene.remove(g));
+      [...playerGroups, ...defenderGroups, ...coneGroups].forEach((g) => scene.remove(g));
       if (ballMesh) scene.remove(ballMesh);
-      playerGroups = []; defenderGroups = []; ballMesh = null;
+      playerGroups = []; defenderGroups = []; coneGroups = []; ballMesh = null;
     }
 
     // Mirrors the 2D canvas's getBallPos — the ball follows whoever holds
@@ -286,6 +287,18 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
         scene.add(g);
         defenderGroups[i] = g;
       });
+      (frame.cones ?? []).forEach((c, i) => {
+        const g = new THREE.Group();
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.32, 12), new THREE.MeshStandardMaterial({ color: 0xe2650f }));
+        cone.position.y = 0.16;
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.05, 12), new THREE.MeshStandardMaterial({ color: 0xe2650f }));
+        base.position.y = 0.025;
+        g.add(base, cone);
+        const w = toWorld(c.x, c.y);
+        g.position.set(w.x, 0, w.z);
+        scene.add(g);
+        coneGroups[i] = g;
+      });
       const ballW = getBallWorldPos(frame);
       if (ballW) {
         ballMesh = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 12), new THREE.MeshStandardMaterial({ color: 0xff9a1f, emissive: 0x552200, emissiveIntensity: 0.4 }));
@@ -372,14 +385,25 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           const toBall = getBallWorldPos(animToFrame);
           if (fromBall && toBall) {
             const passAction = [...animFromFrame.actions].reverse().find((a) => a.type === "pass" && a.targetPlayerId && a.curve);
+            const shotAction = [...animFromFrame.actions].reverse().find((a) => a.type === "shot" && a.curve);
             if (passAction?.curve) {
               const mt = 1 - t;
               const w1 = toWorld(passAction.x1, passAction.y1), wc = toWorld(passAction.curve.x, passAction.curve.y), w2 = toWorld(passAction.x2, passAction.y2);
               ballMesh.position.x = mt * mt * w1.x + 2 * mt * t * wc.x + t * t * w2.x;
               ballMesh.position.z = mt * mt * w1.z + 2 * mt * t * wc.z + t * t * w2.z;
+              ballMesh.position.y = 0.5;
+            } else if (shotAction?.curve) {
+              const mt = 1 - t;
+              const w1 = toWorld(shotAction.x1, shotAction.y1), wc = toWorld(shotAction.curve.x, shotAction.curve.y), w2 = toWorld(shotAction.x2, shotAction.y2);
+              ballMesh.position.x = mt * mt * w1.x + 2 * mt * t * wc.x + t * t * w2.x;
+              ballMesh.position.z = mt * mt * w1.z + 2 * mt * t * wc.z + t * t * w2.z;
+              // A real shot goes up and comes back down into the rim,
+              // rather than sliding flat across the floor like a pass.
+              ballMesh.position.y = 0.5 + Math.sin(t * Math.PI) * 2.2;
             } else {
               ballMesh.position.x = fromBall.x + (toBall.x - fromBall.x) * t;
               ballMesh.position.z = fromBall.z + (toBall.z - fromBall.z) * t;
+              ballMesh.position.y = 0.5;
             }
           }
         }
