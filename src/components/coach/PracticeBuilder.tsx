@@ -21,7 +21,7 @@ import {
   updateSegmentDrill, deleteSegmentDrill, autoSplitSegmentDrillDurations,
   getAttendanceOverrides, setAttendanceOverride, clearAttendanceOverride,
   computeEffectiveAttendees, computeBlockTimes, totalDurationMinutes,
-  formatDuration, columnTotals, getSavedGroupings,
+  formatDuration, columnTotals, getSavedGroupings, getAssignableCoaches, CoachLite,
 } from "../../lib/practicePlanner";
 import GroupingEditor from "./GroupingEditor";
 import PracticeDrillLibrary from "./PracticeDrillLibrary";
@@ -55,9 +55,11 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   const [drillPickerTarget, setDrillPickerTarget] = useState<{ segment: BlockSegment; block: PracticeBlock; replacing?: SegmentDrill } | null>(null);
   const [drillsById, setDrillsById] = useState<Record<string, PracticeDrillLibraryDrill>>({});
   const [editingDrillDetails, setEditingDrillDetails] = useState<{ drill: SegmentDrill; block: PracticeBlock } | null>(null);
+  const [coachPickerTarget, setCoachPickerTarget] = useState<{ drill: SegmentDrill; block: PracticeBlock } | null>(null);
+  const [coachSelection, setCoachSelection] = useState<Set<string>>(new Set());
   const [detailsLabel, setDetailsLabel] = useState("");
   const [detailsGoal, setDetailsGoal] = useState("");
-  const [detailsCoach, setDetailsCoach] = useState("");
+  const [coaches, setCoaches] = useState<CoachLite[]>([]);
   const [blockDurationDrafts, setBlockDurationDrafts] = useState<Record<string, string>>({});
   const [drillDurationDrafts, setDrillDurationDrafts] = useState<Record<string, string>>({});
 
@@ -77,8 +79,8 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [r, w] = await Promise.all([getRosters(), getPracticeWeeks()]);
-    setRosters(r); setWeeks(w);
+    const [r, w, c] = await Promise.all([getRosters(), getPracticeWeeks(), getAssignableCoaches()]);
+    setRosters(r); setWeeks(w); setCoaches(c);
 
     const { data: p } = await supabase.from("profiles").select("id,name,home_roster_id").eq("role", "player");
     setPlayers(p ?? []);
@@ -289,7 +291,6 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   function openDrillDetails(drill: SegmentDrill, block: PracticeBlock) {
     setDetailsLabel(drill.label ?? "");
     setDetailsGoal(drill.goal_text ?? "");
-    setDetailsCoach(drill.coach_name ?? "");
     setEditingDrillDetails({ drill, block });
   }
 
@@ -299,10 +300,22 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
     await updateSegmentDrill(drill.id, {
       label: detailsLabel.trim() || null,
       goal_text: detailsGoal.trim() || null,
-      coach_name: detailsCoach.trim() || null,
     });
     await refreshBlock(block.id);
     setEditingDrillDetails(null);
+  }
+
+  function openCoachPicker(drill: SegmentDrill, block: PracticeBlock) {
+    setCoachSelection(new Set(drill.coach_ids ?? []));
+    setCoachPickerTarget({ drill, block });
+  }
+
+  async function saveCoachPicker() {
+    if (!coachPickerTarget) return;
+    const { drill, block } = coachPickerTarget;
+    await updateSegmentDrill(drill.id, { coach_ids: Array.from(coachSelection) });
+    await refreshBlock(block.id);
+    setCoachPickerTarget(null);
   }
 
   async function openGroupingEditor(drill: SegmentDrill, segment: BlockSegment) {
@@ -514,8 +527,8 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                                   {d.drill_id ? (drillsById[d.drill_id]?.title ?? "Loading…") : (d.label ?? "Untitled drill")}
                                   {d.drill_id && d.label && <span style={{ fontWeight: 400, color: "var(--muted)" }}> — {d.label}</span>}
                                 </div>
-                                {(d.goal_text || d.coach_name) && (
-                                  <div style={{ fontSize: 10, color: "var(--muted)" }}>{[d.goal_text, d.coach_name && `Coach: ${d.coach_name}`].filter(Boolean).join(" · ")}</div>
+                                {(d.goal_text || (d.coach_ids && d.coach_ids.length > 0)) && (
+                                  <div style={{ fontSize: 10, color: "var(--muted)" }}>{[d.goal_text, d.coach_ids && d.coach_ids.length > 0 && `Coach: ${d.coach_ids.map(id => coaches.find(c => c.id === id)?.name).filter(Boolean).join(", ")}`].filter(Boolean).join(" · ")}</div>
                                 )}
                               </div>
                               <input type="number" min={1}
@@ -528,6 +541,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                                 }}
                                 style={{ ...inputStyle, width: 44, padding: "3px 4px" }} />
                               <button onClick={() => openDrillDetails(d, block)} style={smallBtn}>Edit</button>
+                              <button onClick={() => openCoachPicker(d, block)} style={smallBtn}>Coaches</button>
                               <button onClick={() => openGroupingEditor(d, seg)} style={smallBtn}>Groups</button>
                               <button onClick={() => handleDeleteDrill(d, block.id)} style={dangerSmallBtn}>✕</button>
                             </div>
@@ -579,10 +593,6 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                 <div style={fieldLabel}>Goal</div>
                 <input value={detailsGoal} onChange={e => setDetailsGoal(e.target.value)} placeholder="e.g. Transition finishing" style={inputStyle} />
               </div>
-              <div>
-                <div style={fieldLabel}>Coach</div>
-                <input value={detailsCoach} onChange={e => setDetailsCoach(e.target.value)} placeholder="e.g. Coach Weston" style={inputStyle} />
-              </div>
               <button
                 onClick={() => {
                   const seg = Object.entries(segByBlock).flatMap(([, segs]) => segs).find(s => (drillsBySeg[s.id] ?? []).some(d => d.id === editingDrillDetails.drill.id));
@@ -595,6 +605,32 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                 <button onClick={saveDrillDetails} style={primaryBtn}>Save</button>
                 <button onClick={() => setEditingDrillDetails(null)} style={smallBtn}>Cancel</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {coachPickerTarget && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setCoachPickerTarget(null)}>
+          <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(360px, 96vw)", padding: 20 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", marginBottom: 10 }}>Coaches</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 220, overflowY: "auto", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, marginBottom: 12 }}>
+              {coaches.map(c => (
+                <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
+                  <input type="checkbox" checked={coachSelection.has(c.id)}
+                    onChange={() => setCoachSelection(prev => {
+                      const next = new Set(prev);
+                      if (next.has(c.id)) next.delete(c.id); else next.add(c.id);
+                      return next;
+                    })} />
+                  {c.name}
+                </label>
+              ))}
+              {coaches.length === 0 && <div style={{ fontSize: 11, color: "var(--muted)" }}>No coach accounts found.</div>}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={saveCoachPicker} style={primaryBtn}>Save</button>
+              <button onClick={() => setCoachPickerTarget(null)} style={smallBtn}>Cancel</button>
             </div>
           </div>
         </div>
