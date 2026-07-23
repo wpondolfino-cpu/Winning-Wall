@@ -29,6 +29,8 @@ export default function GroupingEditor({ drill, attendees, excusedIds, savedGrou
   const [loading, setLoading]   = useState(true);
   const [groupSize, setGroupSize] = useState(drill.group_size ?? 5);
   const [numGroups, setNumGroups] = useState(drill.num_groups ?? 2);
+  const [groupSizeDraft, setGroupSizeDraft] = useState<string | null>(null);
+  const [numGroupsDraft, setNumGroupsDraft] = useState<string | null>(null);
   const [dragPlayer, setDragPlayer] = useState<{ id: string; from: string | null } | null>(null);
 
   const load = useCallback(async () => {
@@ -87,11 +89,19 @@ export default function GroupingEditor({ drill, attendees, excusedIds, savedGrou
         <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 14, flexWrap: "wrap" }}>
           <div>
             <div style={fieldLabel}>Group size</div>
-            <input type="number" min={1} value={groupSize} onChange={e => setGroupSize(Math.max(1, parseInt(e.target.value) || 1))} style={{ ...inputStyle, width: 60 }} />
+            <input type="number" min={1}
+              value={groupSizeDraft ?? String(groupSize)}
+              onChange={e => setGroupSizeDraft(e.target.value)}
+              onBlur={e => { setGroupSize(Math.max(1, parseInt(e.target.value) || groupSize)); setGroupSizeDraft(null); }}
+              style={{ ...inputStyle, width: 60 }} />
           </div>
           <div>
             <div style={fieldLabel}># of groups</div>
-            <input type="number" min={1} value={numGroups} onChange={e => setNumGroups(Math.max(1, parseInt(e.target.value) || 1))} style={{ ...inputStyle, width: 60 }} />
+            <input type="number" min={1}
+              value={numGroupsDraft ?? String(numGroups)}
+              onChange={e => setNumGroupsDraft(e.target.value)}
+              onBlur={e => { setNumGroups(Math.max(1, parseInt(e.target.value) || numGroups)); setNumGroupsDraft(null); }}
+              style={{ ...inputStyle, width: 60 }} />
           </div>
           <div style={{ fontSize: 11, color: "var(--muted)", paddingBottom: 8 }}>
             {groupSize}v{Array(numGroups).fill(groupSize).join("v")}
