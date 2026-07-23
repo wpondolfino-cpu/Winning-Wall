@@ -22,7 +22,7 @@ interface Props {
   roster?: Record<string, RosterPlayer>;
   /** When true, clicks/drags on the court edit the frame via the callbacks below. */
   edit?: boolean;
-  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | null;
+  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "shot" | null;
   onAddPlayer?: (p: PlayPlayer) => void;
   onAddDefender?: (x: number, y: number) => void;
   onSetBall?: (x: number, y: number) => void;
@@ -49,6 +49,11 @@ interface Props {
   /** "zone" tool — drag a rectangle to shade an area of the court. */
   onAddZone?: (x: number, y: number, w: number, h: number) => void;
   onMoveZone?: (index: number, x: number, y: number) => void;
+  /** "cone" tool — click the court to place a practice-drill cone marker. */
+  onAddCone?: (x: number, y: number) => void;
+  onMoveCone?: (index: number, x: number, y: number) => void;
+  /** "shot" tool — click a player to stamp a shot action from them to the nearest hoop. */
+  onAddShot?: (index: number) => void;
   /** Bump this number to play the current frame's actions once. */
   playSignal?: number;
   onPlayDone?: () => void;
@@ -57,8 +62,8 @@ interface Props {
   /** Override the court's background fill — used by PlayPrintView for a lighter, ink-friendly tone. */
   courtBg?: string;
   /** "select" tool — the currently selected element, highlighted, and what Delete/Backspace acts on. */
-  selected?: { kind: "player" | "defender" | "ball" | "action" | "text" | "zone"; index: number } | null;
-  onSelect?: (sel: { kind: "player" | "defender" | "ball" | "action" | "text" | "zone"; index: number } | null) => void;
+  selected?: { kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone"; index: number } | null;
+  onSelect?: (sel: { kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone"; index: number } | null) => void;
   /** Viewer-only, local override — renders this one player (by stable id) with the viewer's own avatar, regardless of what's actually linked in the play data. Never persisted or saved. */
   selfOverride?: { playerId: string; avatarUrl: string | null } | null;
 }
@@ -214,6 +219,15 @@ function ActionShape({ a }: { a: PlayAction }) {
       </g>
     );
   }
+  if (a.type === "shot") {
+    return (
+      <g>
+        <path d={linePath(a)} fill="none" stroke="#e2650f" strokeWidth={2.5}
+          strokeDasharray="2,4" markerEnd="url(#pc-arrow-solid)" />
+        <circle cx={a.x2} cy={a.y2} r={6} fill="none" stroke="#e2650f" strokeWidth={1.5} />
+      </g>
+    );
+  }
   if (a.type === "pass") {
     return (
       <g>
@@ -322,7 +336,7 @@ export default function PlayCanvas({
   frame, courtTemplate, avatarsDefault, roster = {}, edit = false, tool = null,
   onAddPlayer, onAddDefender, onSetBall, onAddAction, onErase, onToggleAvatar,
   onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff, onSetActionCurve,
-  onAddText, onMoveText, onEditText, onAddZone, onMoveZone,
+  onAddText, onMoveText, onEditText, onAddZone, onMoveZone, onAddCone, onMoveCone, onAddShot,
   playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect, selfOverride = null, speed = 1,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -334,7 +348,7 @@ export default function PlayCanvas({
   const nextNum = (frame.players.length % 5) + 1;
 
   type MoveDrag =
-    | { kind: "player" | "defender" | "text"; index: number }
+    | { kind: "player" | "defender" | "text" | "cone"; index: number }
     | { kind: "zone"; index: number; offsetX: number; offsetY: number }
     | { kind: "ball" }
     | { kind: "actionStart" | "actionEnd"; index: number }
@@ -368,6 +382,16 @@ export default function PlayCanvas({
         if (d < closestDist) { closest = i; closestDist = d; }
       });
       if (closest >= 0) onToggleHandoff?.(closest);
+      return;
+    }
+    if (tool === "cone") { onAddCone?.(p.x, p.y); return; }
+    if (tool === "shot") {
+      let closest = -1, closestDist = 20;
+      frame.players.forEach((pl, i) => {
+        const d = Math.hypot(pl.x - p.x, pl.y - p.y);
+        if (d < closestDist) { closest = i; closestDist = d; }
+      });
+      if (closest >= 0) onAddShot?.(closest);
       return;
     }
     if (tool === "select") {
@@ -410,6 +434,9 @@ export default function PlayCanvas({
           return;
         }
       }
+      for (let i = 0; i < (frame.cones ?? []).length; i++) {
+        if (within(frame.cones![i], 16)) { setMoveDrag({ kind: "cone", index: i }); setMovePos(p); return; }
+      }
       onSelect?.(null);
       return;
     }
@@ -444,6 +471,7 @@ export default function PlayCanvas({
         onSelect?.({ kind: "action", index: moveDrag.index });
       }
       else if (moveDrag.kind === "text") { onMoveText?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "text", index: moveDrag.index }); }
+      else if (moveDrag.kind === "cone") { onMoveCone?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "cone", index: moveDrag.index }); }
       else if (moveDrag.kind === "zone") { onMoveZone?.(moveDrag.index, p.x - moveDrag.offsetX, p.y - moveDrag.offsetY); onSelect?.({ kind: "zone", index: moveDrag.index }); }
       setMoveDrag(null);
       setMovePos(null);
@@ -528,6 +556,8 @@ export default function PlayCanvas({
       };
     } else if (moveDrag.kind === "text") {
       displayFrame = { ...frame, texts: (frame.texts ?? []).map((t, i) => i === moveDrag.index ? { ...t, x: movePos.x, y: movePos.y } : t) };
+    } else if (moveDrag.kind === "cone") {
+      displayFrame = { ...frame, cones: (frame.cones ?? []).map((c, i) => i === moveDrag.index ? { ...c, x: movePos.x, y: movePos.y } : c) };
     } else if (moveDrag.kind === "zone") {
       displayFrame = { ...frame, zones: (frame.zones ?? []).map((z, i) => i === moveDrag.index ? { ...z, x: movePos.x - moveDrag.offsetX, y: movePos.y - moveDrag.offsetY } : z) };
     }
@@ -607,6 +637,14 @@ export default function PlayCanvas({
         </g>
       ))}
 
+      {(displayFrame.cones ?? []).map((c, i) => (
+        <g key={i}>
+          <polygon points={`${c.x},${c.y - 13} ${c.x - 9},${c.y + 9} ${c.x + 9},${c.y + 9}`} fill="#e2650f" stroke="#7a3308" strokeWidth={1.2} />
+          <rect x={c.x - 10} y={c.y + 7} width={20} height={4} rx={1} fill="#e2650f" stroke="#7a3308" strokeWidth={1} />
+          <line x1={c.x - 5} y1={c.y - 3} x2={c.x + 5} y2={c.y - 3} stroke="#fff" strokeWidth={1.6} opacity={0.85} />
+        </g>
+      ))}
+
       {ballPos && (
         <circle cx={ballPos.x} cy={ballPos.y} r={8} fill="#EF9F27" stroke="#854F0B" strokeWidth={1.5} />
       )}
@@ -636,6 +674,9 @@ export default function PlayCanvas({
       {selected && selected.kind === "text" && (displayFrame.texts ?? [])[selected.index] && (
         <circle cx={(displayFrame.texts ?? [])[selected.index].x} cy={(displayFrame.texts ?? [])[selected.index].y} r={16} fill="none" stroke="var(--gold)" strokeWidth={2} strokeDasharray="4,3" />
       )}
+      {selected && selected.kind === "cone" && (displayFrame.cones ?? [])[selected.index] && (
+        <circle cx={(displayFrame.cones ?? [])[selected.index].x} cy={(displayFrame.cones ?? [])[selected.index].y} r={16} fill="none" stroke="var(--gold)" strokeWidth={2} strokeDasharray="4,3" />
+      )}
       {selected && selected.kind === "zone" && (displayFrame.zones ?? [])[selected.index] && (() => {
         const z = (displayFrame.zones ?? [])[selected.index];
         return <rect x={z.x - 3} y={z.y - 3} width={z.w + 6} height={z.h + 6} fill="none" stroke="var(--gold)" strokeWidth={2} strokeDasharray="4,3" />;
@@ -663,7 +704,8 @@ export default function PlayCanvas({
           x = a.x1 + (a.x2 - a.x1) * animT;
           y = a.y1 + (a.y2 - a.y1) * animT;
         }
-        return <circle key={i} cx={x} cy={y} r={a.type === "pass" ? 6 : 9} fill="#378ADD" opacity={0.9} />;
+        const isShot = a.type === "shot";
+        return <circle key={i} cx={x} cy={y} r={a.type === "pass" ? 6 : isShot ? 7 : 9} fill={isShot ? "#EF9F27" : "#378ADD"} stroke={isShot ? "#854F0B" : undefined} strokeWidth={isShot ? 1.5 : 0} opacity={0.9} />;
       })}
     </svg>
   );
