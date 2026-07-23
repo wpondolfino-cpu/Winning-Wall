@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuth } from "./hooks/useAuth";
 import { useWorkouts } from "./hooks/useWorkouts";
-import { getMyScores, getAllScores, signOut, Score, Profile, getPlayerXp, getXpPerks, checkUnseenPerks, loadPeriodAnchor } from "./lib/supabase";
+import { getMyScores, getAllScores, signOut, Score, Profile, getPlayerXp, getXpPerks, checkUnseenPerks, loadPeriodAnchor, supabase } from "./lib/supabase";
 import ProfileEditor from "./components/ProfileEditor";
 import AvatarOnboardingPrompt from "./components/AvatarOnboardingPrompt";
 import ProfilePage from "./components/ProfilePage";
@@ -23,7 +23,7 @@ import PerkTutorial from "./components/PerkTutorial";
 import LiftingPanel from "./components/lifting";
 import AnnouncementPanel from "./components/coach/AnnouncementPanel";
 import SendNotificationPanel from "./components/coach/SendNotificationPanel";
-import NavReorderModal, { NavItemConfig } from "./components/NavReorderModal";
+import NavReorderModal, { NavItemConfig, NavSection } from "./components/NavReorderModal";
 import PracticeWeeksList from "./components/coach/PracticeWeeksList";
 import PracticeDrillLibrary from "./components/coach/PracticeDrillLibrary";
 import DrillLibrary from "./components/DrillLibrary";
@@ -32,44 +32,45 @@ import PlaybookManager from "./components/coach/PlaybookManager";
 import GameStatsHub from "./components/game-stats/GameStatsHub";
 
 type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "more";
-type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "practices" | "practicelibrary" | "profile";
+type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "practices" | "practicelibrary" | "settings" | "profile";
 type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "practices" | "practicelibrary" | "profile";
 
 const COACH_NAV_CONFIG: NavItemConfig[] = [
-  { key: "workouts",      icon: "➕", label: "Manage Workouts" },
-  { key: "leaderboard",   icon: "🏆", label: "Leaderboard" },
-  { key: "lifting",       icon: "💪", label: "Lifting Programs" },
-  { key: "players",       icon: "👥", label: "Players & Coaches" },
-  { key: "hof",           icon: "👑", label: "Hall of Fame" },
-  { key: "challenges",    icon: "⚔️", label: "Challenges" },
-  { key: "announcements", icon: "📢", label: "Announcements" },
-  { key: "library",       icon: "📚", label: "Drill Library" },
-  { key: "plays",         icon: "🏀", label: "Plays" },
-  { key: "playbooks",     icon: "📋", label: "Playbooks" },
-  { key: "gamestats",     icon: "📊", label: "Analytics" },
-  { key: "practicelibrary", icon: "📒", label: "Practice Drills" },
-  { key: "practices",     icon: "🗓️", label: "Practices" },
-  { key: "profile",       icon: "👤", label: "My Profile" },
+  { key: "workouts",      icon: "➕", label: "Manage Workouts",   section: "offseason" },
+  { key: "leaderboard",   icon: "🏆", label: "Leaderboard",       section: "offseason" },
+  { key: "lifting",       icon: "💪", label: "Lifting Programs",  section: "offseason" },
+  { key: "challenges",    icon: "⚔️", label: "Challenges",        section: "offseason" },
+  { key: "library",       icon: "📚", label: "Drill Library",     section: "offseason" },
+  { key: "hof",           icon: "👑", label: "Hall of Fame",      section: "offseason" },
+  { key: "plays",         icon: "🏀", label: "Plays",             section: "inseason" },
+  { key: "playbooks",     icon: "📋", label: "Playbooks",         section: "inseason" },
+  { key: "practices",     icon: "🗓️", label: "Practices",         section: "inseason" },
+  { key: "practicelibrary", icon: "📒", label: "Practice Drills", section: "inseason" },
+  { key: "gamestats",     icon: "📊", label: "Analytics",         section: "inseason" },
+  { key: "players",       icon: "👥", label: "Players & Coaches", section: "always" },
+  { key: "announcements", icon: "📢", label: "Announcements",     section: "always" },
+  { key: "settings",      icon: "⚙️", label: "Settings",          section: "always" },
+  { key: "profile",       icon: "👤", label: "My Profile",        section: "always" },
 ];
 const COACH_NAV_DEFAULT_ORDER = COACH_NAV_CONFIG.map(i => i.key);
 
 const ADMIN_NAV_CONFIG: NavItemConfig[] = [
-  { key: "workouts",      icon: "➕", label: "Manage Workouts" },
-  { key: "leaderboard",   icon: "🏆", label: "Leaderboard" },
-  { key: "lifting",       icon: "💪", label: "Lifting Programs" },
-  { key: "players",       icon: "👥", label: "Players & Coaches" },
-  { key: "hof",           icon: "👑", label: "Hall of Fame" },
-  { key: "challenges",    icon: "⚔️", label: "Challenges" },
-  { key: "announcements", icon: "📢", label: "Announcements" },
-  { key: "library",       icon: "📚", label: "Drill Library" },
-  { key: "plays",         icon: "🏀", label: "Plays" },
-  { key: "playbooks",     icon: "📋", label: "Playbooks" },
-  { key: "gamestats",     icon: "📊", label: "Analytics" },
-  { key: "admin",         icon: "👑", label: "Admin" },
-  { key: "settings",      icon: "⚙️", label: "Settings" },
-  { key: "practicelibrary", icon: "📒", label: "Practice Drills" },
-  { key: "practices",     icon: "🗓️", label: "Practices" },
-  { key: "profile",       icon: "👤", label: "My Profile" },
+  { key: "workouts",      icon: "➕", label: "Manage Workouts",   section: "offseason" },
+  { key: "leaderboard",   icon: "🏆", label: "Leaderboard",       section: "offseason" },
+  { key: "lifting",       icon: "💪", label: "Lifting Programs",  section: "offseason" },
+  { key: "challenges",    icon: "⚔️", label: "Challenges",        section: "offseason" },
+  { key: "library",       icon: "📚", label: "Drill Library",     section: "offseason" },
+  { key: "hof",           icon: "👑", label: "Hall of Fame",      section: "offseason" },
+  { key: "admin",         icon: "👑", label: "Admin",             section: "offseason" },
+  { key: "plays",         icon: "🏀", label: "Plays",             section: "inseason" },
+  { key: "playbooks",     icon: "📋", label: "Playbooks",         section: "inseason" },
+  { key: "practices",     icon: "🗓️", label: "Practices",         section: "inseason" },
+  { key: "practicelibrary", icon: "📒", label: "Practice Drills", section: "inseason" },
+  { key: "gamestats",     icon: "📊", label: "Analytics",         section: "inseason" },
+  { key: "players",       icon: "👥", label: "Players & Coaches", section: "always" },
+  { key: "announcements", icon: "📢", label: "Announcements",     section: "always" },
+  { key: "settings",      icon: "⚙️", label: "Settings",          section: "always" },
+  { key: "profile",       icon: "👤", label: "My Profile",        section: "always" },
 ];
 const ADMIN_NAV_DEFAULT_ORDER = ADMIN_NAV_CONFIG.map(i => i.key);
 
@@ -122,6 +123,8 @@ export default function App() {
   const [adminTab, setAdminTab]     = useState<AdminTab>("workouts");
   const [coachNavOrder, setCoachNavOrder] = useState<string[]>(COACH_NAV_DEFAULT_ORDER);
   const [adminNavOrder, setAdminNavOrder] = useState<string[]>(ADMIN_NAV_DEFAULT_ORDER);
+  const [navSections, setNavSections] = useState<Record<string, NavSection>>({});
+  const [navExpanded, setNavExpanded] = useState<{ inseason: boolean; offseason: boolean }>({ inseason: true, offseason: true });
   const [showReorderModal, setShowReorderModal] = useState(false);
   const [deepLinkWorkoutId, setDeepLinkWorkoutId] = useState<string | null>(null);
   const [pendingChallenges, setPendingChallenges] = useState(0);
@@ -146,6 +149,10 @@ export default function App() {
   useEffect(() => {
     if (!profile) return;
     const saved = (profile as any).nav_order as string[] | null;
+    const savedSections = (profile as any).nav_sections as Record<string, NavSection> | null;
+    const savedExpanded = (profile as any).nav_expanded as { inseason: boolean; offseason: boolean } | null;
+    setNavSections(savedSections ?? {});
+    setNavExpanded(savedExpanded ?? { inseason: true, offseason: true });
     if (profile.role === "coach") {
       const validKeys = new Set(COACH_NAV_DEFAULT_ORDER);
       const merged = saved
@@ -160,6 +167,56 @@ export default function App() {
       setAdminNavOrder(merged);
     }
   }, [profile]);
+
+  // Resolves an item's section: per-user override if one was ever saved
+  // (from dragging across zones in NavReorderModal), else its config default.
+  function resolveSection(item: NavItemConfig): NavSection {
+    return navSections[item.key] ?? item.section;
+  }
+
+  async function toggleNavExpanded(section: "inseason" | "offseason") {
+    const next = { ...navExpanded, [section]: !navExpanded[section] };
+    setNavExpanded(next);
+    if (user) await supabase.from("profiles").update({ nav_expanded: next }).eq("id", user.id);
+  }
+
+  function renderGroupedNav(navOrder: string[], navConfig: NavItemConfig[], activeKey: string, onSelect: (key: string) => void) {
+    const grouped: Record<NavSection, NavItemConfig[]> = { inseason: [], offseason: [], always: [] };
+    navOrder.forEach(key => {
+      const item = navConfig.find(i => i.key === key);
+      if (item) grouped[resolveSection(item)].push(item);
+    });
+    const renderItem = (item: NavItemConfig) => (
+      <div key={item.key} className={`nav-item ${activeKey === item.key ? "active" : ""}`}
+        onClick={() => { onSelect(item.key); if (item.key === "players") setPendingApprovals(0); if (window.innerWidth < 768) setSidebarOpen(false); }}>
+        <span className="nav-icon">{item.icon}</span> {item.label}
+        {item.key === "players" && pendingApprovals > 0 && <span style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{pendingApprovals}</span>}
+      </div>
+    );
+    const sectionHeader = (label: string, section: "inseason" | "offseason") => (
+      <div onClick={() => toggleNavExpanded(section)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 14px", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "var(--muted)", cursor: "pointer", userSelect: "none" }}>
+        {label} <span style={{ fontSize: 10 }}>{navExpanded[section] ? "▲" : "▼"}</span>
+      </div>
+    );
+    return (
+      <>
+        {grouped.inseason.length > 0 && (
+          <>
+            {sectionHeader("IN-SEASON", "inseason")}
+            {navExpanded.inseason && grouped.inseason.map(renderItem)}
+          </>
+        )}
+        {grouped.offseason.length > 0 && (
+          <>
+            {sectionHeader("OFFSEASON", "offseason")}
+            {navExpanded.offseason && grouped.offseason.map(renderItem)}
+          </>
+        )}
+        {grouped.always.length > 0 && <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />}
+        {grouped.always.map(renderItem)}
+      </>
+    );
+  }
 
   useEffect(() => {
     if (user && profile?.role === "player") loadMyScores();
@@ -318,36 +375,14 @@ export default function App() {
           )}
           {isCoach && (
             <>
-              {coachNavOrder.map(key => {
-                const item = COACH_NAV_CONFIG.find(i => i.key === key);
-                if (!item) return null;
-                return (
-                  <div key={key} className={`nav-item ${coachTab===key?"active":""}`}
-                    onClick={()=>{ setCoachTab(key as CoachTab); if (key==="players") setPendingApprovals(0); if(window.innerWidth<768)setSidebarOpen(false); }}>
-                    <span className="nav-icon">{item.icon}</span> {item.label}
-                    {key === "players" && pendingApprovals > 0 && <span style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{pendingApprovals}</span>}
-                  </div>
-                );
-              })}
-              <div className="nav-item" onClick={() => setShowReorderModal(true)} style={{ color: "var(--muted)" }}><span className="nav-icon">🔀</span> Reorder Menu</div>
+              {renderGroupedNav(coachNavOrder, COACH_NAV_CONFIG, coachTab, (key) => setCoachTab(key as CoachTab))}
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
               <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)" }}><span className="nav-icon">🚪</span> Sign Out</div>
             </>
           )}
           {isAdmin && (
             <>
-              {adminNavOrder.map(key => {
-                const item = ADMIN_NAV_CONFIG.find(i => i.key === key);
-                if (!item) return null;
-                return (
-                  <div key={key} className={`nav-item ${adminTab===key?"active":""}`}
-                    onClick={()=>{ setAdminTab(key as AdminTab); if (key==="players") setPendingApprovals(0); if(window.innerWidth<768)setSidebarOpen(false); }}>
-                    <span className="nav-icon">{item.icon}</span> {item.label}
-                    {key === "players" && pendingApprovals > 0 && <span style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{pendingApprovals}</span>}
-                  </div>
-                );
-              })}
-              <div className="nav-item" onClick={() => setShowReorderModal(true)} style={{ color: "var(--muted)" }}><span className="nav-icon">🔀</span> Reorder Menu</div>
+              {renderGroupedNav(adminNavOrder, ADMIN_NAV_CONFIG, adminTab, (key) => setAdminTab(key as AdminTab))}
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
               <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)" }}><span className="nav-icon">🚪</span> Sign Out</div>
             </>
@@ -446,6 +481,15 @@ export default function App() {
             <ChallengesPanel currentUserId={user.id} currentUserName={displayProfile.name} workouts={workouts} myScores={myScores} onScoreLogged={loadMyScores} canManage={true} />
           )}
           {isCoach && coachTab === "players" && <PlayersPanel allScores={allScores} workouts={workouts} />}
+          {isCoach && coachTab === "settings" && (
+            <div className="panel active">
+              <div className="section-title">Settings</div>
+              <div className="section-sub" style={{ marginBottom: 20 }}>Customize your sidebar</div>
+              <button onClick={() => setShowReorderModal(true)} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                🔀 Customize Sidebar
+              </button>
+            </div>
+          )}
           {isCoach && coachTab === "profile" && (
             <div className="panel active">
               <div className="section-title">My Profile</div>
@@ -475,6 +519,9 @@ export default function App() {
             <div className="panel active">
               <div className="section-title">Settings</div>
               <div className="section-sub" style={{ marginBottom: 20 }}>Configure your Winning Wall platform</div>
+              <button onClick={() => setShowReorderModal(true)} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 20 }}>
+                🔀 Customize Sidebar
+              </button>
               <AdminSettings />
             </div>
           )}
@@ -539,8 +586,14 @@ export default function App() {
       {showReorderModal && (isCoach || isAdmin) && user && (
         <NavReorderModal
           userId={user.id}
-          items={(isAdmin ? adminNavOrder : coachNavOrder).map(k => (isAdmin ? ADMIN_NAV_CONFIG : COACH_NAV_CONFIG).find(i => i.key === k)!).filter(Boolean)}
-          onSaved={(newOrder) => { if (isAdmin) setAdminNavOrder(newOrder); else setCoachNavOrder(newOrder); }}
+          items={(isAdmin ? adminNavOrder : coachNavOrder)
+            .map(k => (isAdmin ? ADMIN_NAV_CONFIG : COACH_NAV_CONFIG).find(i => i.key === k))
+            .filter((i): i is NavItemConfig => !!i)
+            .map(i => ({ ...i, section: resolveSection(i) }))}
+          onSaved={(newOrder, newSections) => {
+            if (isAdmin) setAdminNavOrder(newOrder); else setCoachNavOrder(newOrder);
+            setNavSections(newSections);
+          }}
           onClose={() => setShowReorderModal(false)}
         />
       )}
