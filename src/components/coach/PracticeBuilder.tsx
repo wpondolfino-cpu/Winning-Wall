@@ -52,8 +52,12 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   const [dragBlockId, setDragBlockId] = useState<string | null>(null);
   const [groupingTarget, setGroupingTarget] = useState<{ drill: SegmentDrill; segment: BlockSegment } | null>(null);
   const [savedGroupingsCache, setSavedGroupingsCache] = useState<Record<string, SavedGrouping[]>>({});
-  const [drillPickerTarget, setDrillPickerTarget] = useState<{ segment: BlockSegment; block: PracticeBlock } | null>(null);
+  const [drillPickerTarget, setDrillPickerTarget] = useState<{ segment: BlockSegment; block: PracticeBlock; replacing?: SegmentDrill } | null>(null);
   const [drillsById, setDrillsById] = useState<Record<string, PracticeDrillLibraryDrill>>({});
+  const [editingDrillDetails, setEditingDrillDetails] = useState<{ drill: SegmentDrill; block: PracticeBlock } | null>(null);
+  const [detailsLabel, setDetailsLabel] = useState("");
+  const [detailsGoal, setDetailsGoal] = useState("");
+  const [detailsCoach, setDetailsCoach] = useState("");
 
   // Local, editable copies of date/time/roster before saving.
   const [date, setDate]         = useState("");
@@ -243,8 +247,17 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
 
   async function handlePickDrill(drill: PracticeDrillLibraryDrill) {
     if (!drillPickerTarget) return;
-    const { segment, block } = drillPickerTarget;
+    const { segment, block, replacing } = drillPickerTarget;
     setDrillsById(prev => ({ ...prev, [drill.id]: drill }));
+
+    if (replacing) {
+      // Swapping which drill this slot points to — keep its own duration/label/goal/coach as-is.
+      await updateSegmentDrill(replacing.id, { drill_id: drill.id });
+      await refreshBlock(block.id);
+      setDrillPickerTarget(null);
+      return;
+    }
+
     const existing = drillsBySeg[segment.id] ?? [];
     await createSegmentDrill(segment.id, {
       drill_id: drill.id,
@@ -269,6 +282,25 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   async function handleDeleteDrill(drill: SegmentDrill, blockId: string) {
     await deleteSegmentDrill(drill.id);
     await refreshBlock(blockId);
+  }
+
+  function openDrillDetails(drill: SegmentDrill, block: PracticeBlock) {
+    setDetailsLabel(drill.label ?? "");
+    setDetailsGoal(drill.goal_text ?? "");
+    setDetailsCoach(drill.coach_name ?? "");
+    setEditingDrillDetails({ drill, block });
+  }
+
+  async function saveDrillDetails() {
+    if (!editingDrillDetails) return;
+    const { drill, block } = editingDrillDetails;
+    await updateSegmentDrill(drill.id, {
+      label: detailsLabel.trim() || null,
+      goal_text: detailsGoal.trim() || null,
+      coach_name: detailsCoach.trim() || null,
+    });
+    await refreshBlock(block.id);
+    setEditingDrillDetails(null);
   }
 
   async function openGroupingEditor(drill: SegmentDrill, segment: BlockSegment) {
@@ -481,6 +513,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                               <input type="number" min={1} value={d.duration_minutes}
                                 onChange={e => handleEditDrillDuration(d, block.id, Math.max(1, parseInt(e.target.value) || 1))}
                                 style={{ ...inputStyle, width: 44, padding: "3px 4px" }} />
+                              <button onClick={() => openDrillDetails(d, block)} style={smallBtn}>Edit</button>
                               <button onClick={() => openGroupingEditor(d, seg)} style={smallBtn}>Groups</button>
                               <button onClick={() => handleDeleteDrill(d, block.id)} style={dangerSmallBtn}>✕</button>
                             </div>
@@ -515,6 +548,42 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
             )}
           </div>
         </>
+      )}
+
+      {editingDrillDetails && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setEditingDrillDetails(null)}>
+          <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(420px, 96vw)", padding: 20 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", marginBottom: 10 }}>
+              Edit — {editingDrillDetails.drill.drill_id ? (drillsById[editingDrillDetails.drill.drill_id]?.title ?? "Drill") : "Drill"}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div>
+                <div style={fieldLabel}>Station/sub-label (optional)</div>
+                <input value={detailsLabel} onChange={e => setDetailsLabel(e.target.value)} placeholder="e.g. Station 1, Guards" style={inputStyle} />
+              </div>
+              <div>
+                <div style={fieldLabel}>Goal</div>
+                <input value={detailsGoal} onChange={e => setDetailsGoal(e.target.value)} placeholder="e.g. Transition finishing" style={inputStyle} />
+              </div>
+              <div>
+                <div style={fieldLabel}>Coach</div>
+                <input value={detailsCoach} onChange={e => setDetailsCoach(e.target.value)} placeholder="e.g. Coach Weston" style={inputStyle} />
+              </div>
+              <button
+                onClick={() => {
+                  const seg = Object.entries(segByBlock).flatMap(([, segs]) => segs).find(s => (drillsBySeg[s.id] ?? []).some(d => d.id === editingDrillDetails.drill.id));
+                  if (seg) { setDrillPickerTarget({ segment: seg, block: editingDrillDetails.block, replacing: editingDrillDetails.drill }); setEditingDrillDetails(null); }
+                }}
+                style={smallBtn}>
+                Change which drill this is
+              </button>
+              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <button onClick={saveDrillDetails} style={primaryBtn}>Save</button>
+                <button onClick={() => setEditingDrillDetails(null)} style={smallBtn}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {drillPickerTarget && (
