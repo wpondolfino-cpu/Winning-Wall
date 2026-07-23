@@ -7,9 +7,11 @@
 import { useState, useEffect } from "react";
 import {
   Roster, RosterWithCount, getRosters, createRoster, updateRoster,
-  archiveRoster, restoreRoster,
+  archiveRoster, restoreRoster, deleteRoster, getAllPlayersLite, setPlayerRoster,
+  PlayerForRosterPicker,
 } from "../../lib/practicePlanner";
 import SavedGroupingsManager from "./SavedGroupingsManager";
+import AddPlayersToRosterModal from "./AddPlayersToRosterModal";
 
 const PRESET_COLORS = ["#1a3fa8", "#8a8f98", "#e8e8e8", "#f0c040", "#5de098", "#d85a30", "#993c56"];
 
@@ -36,15 +38,28 @@ export default function RosterManager({ onChanged }: Props = {}) {
   const [editColor, setEditColor]   = useState("");
   const [editCoach, setEditCoach]   = useState("");
   const [groupingsRoster, setGroupingsRoster] = useState<RosterWithCount | null>(null);
+  const [addPlayersRoster, setAddPlayersRoster] = useState<RosterWithCount | null>(null);
+  const [allPlayers, setAllPlayers] = useState<PlayerForRosterPicker[]>([]);
+  const [expandedRosterId, setExpandedRosterId] = useState<string | null>(null);
+  const [movingPlayerId, setMovingPlayerId] = useState<string | null>(null);
 
   useEffect(() => { load(); }, []);
 
   async function load() {
     setLoading(true);
-    const [active, all] = await Promise.all([getRosters(false), getRosters(true)]);
+    const [active, all, players] = await Promise.all([getRosters(false), getRosters(true), getAllPlayersLite()]);
     setRosters(active);
     setArchived(all.filter(r => r.status === "archived"));
+    setAllPlayers(players);
     setLoading(false);
+  }
+
+  async function handleMovePlayer(playerId: string, newRosterId: string) {
+    setMovingPlayerId(playerId);
+    const { error } = await setPlayerRoster(playerId, newRosterId || null);
+    if (error) setError(error);
+    await load(); onChanged?.();
+    setMovingPlayerId(null);
   }
 
   async function handleCreate() {
@@ -91,6 +106,14 @@ export default function RosterManager({ onChanged }: Props = {}) {
     await load(); onChanged?.();
   }
 
+  async function handleDelete(r: RosterWithCount) {
+    const memberWarning = r.member_count > 0 ? ` ${r.member_count} player${r.member_count === 1 ? "" : "s"} currently on it will show as having no roster.` : "";
+    if (!window.confirm(`Permanently delete "${r.name}"? This can't be undone.${memberWarning} Any saved groupings for this roster will be deleted too.`)) return;
+    const { error } = await deleteRoster(r.id);
+    if (error) { setError(error); return; }
+    await load(); onChanged?.();
+  }
+
   function RosterRow({ r, archived: isArchived }: { r: RosterWithCount; archived?: boolean }) {
     const isEditing = editingId === r.id;
     return (
@@ -131,6 +154,14 @@ export default function RosterManager({ onChanged }: Props = {}) {
               </div>
             </div>
             {!isArchived && (
+              <button onClick={() => setExpandedRosterId(expandedRosterId === r.id ? null : r.id)} style={smallBtn}>
+                {expandedRosterId === r.id ? "Hide" : "Players"}
+              </button>
+            )}
+            {!isArchived && (
+              <button onClick={() => setAddPlayersRoster(r)} style={smallBtn}>+ Add Players</button>
+            )}
+            {!isArchived && (
               <button onClick={() => startEdit(r)} style={smallBtn}>Edit</button>
             )}
             {!isArchived && (
@@ -142,6 +173,28 @@ export default function RosterManager({ onChanged }: Props = {}) {
             {isArchived && (
               <button onClick={() => handleRestore(r)} style={smallBtn}>Restore</button>
             )}
+            <button onClick={() => handleDelete(r)} style={dangerSmallBtn}>Delete</button>
+          </div>
+        )}
+        {!isEditing && !isArchived && expandedRosterId === r.id && (
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 6 }}>
+            {allPlayers.filter(p => p.home_roster_id === r.id).length === 0 && (
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>No players on {r.name} yet.</div>
+            )}
+            {allPlayers.filter(p => p.home_roster_id === r.id).map(p => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 12, flex: 1 }}>{p.name}</span>
+                <select
+                  value={r.id}
+                  disabled={movingPlayerId === p.id}
+                  onChange={e => handleMovePlayer(p.id, e.target.value)}
+                  style={{ ...inputStyle, width: 150, padding: "4px 8px", fontSize: 11 }}
+                >
+                  {rosters.map(ro => <option key={ro.id} value={ro.id}>{ro.name}</option>)}
+                  <option value="">— No roster —</option>
+                </select>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -218,6 +271,14 @@ export default function RosterManager({ onChanged }: Props = {}) {
       {groupingsRoster && (
         <SavedGroupingsManager roster={groupingsRoster} onClose={() => setGroupingsRoster(null)} />
       )}
+
+      {addPlayersRoster && (
+        <AddPlayersToRosterModal
+          roster={addPlayersRoster}
+          onClose={() => setAddPlayersRoster(null)}
+          onAdded={() => { load(); onChanged?.(); }}
+        />
+      )}
     </div>
   );
 }
@@ -236,5 +297,9 @@ const secondaryBtn: React.CSSProperties = {
 };
 const smallBtn: React.CSSProperties = {
   background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6,
+  padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer",
+};
+const dangerSmallBtn: React.CSSProperties = {
+  background: "rgba(226,75,74,0.08)", border: "1px solid rgba(226,75,74,0.2)", color: "#ff7b7b", borderRadius: 6,
   padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer",
 };
