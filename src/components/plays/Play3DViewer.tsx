@@ -399,7 +399,13 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
               ballMesh.position.z = mt * mt * w1.z + 2 * mt * t * wc.z + t * t * w2.z;
               // A real shot goes up and comes back down into the rim,
               // rather than sliding flat across the floor like a pass.
-              ballMesh.position.y = 0.5 + Math.sin(t * Math.PI) * 2.2;
+              // Rises from roughly hand height, peaks well above the rim,
+              // and arrives at rim height exactly when it reaches the
+              // hoop's x/z position — the old formula came back down to
+              // floor height by the time it got there, making it look like
+              // it fell short instead of going through the rim.
+              const startH = 1.4, rimH = 2.0, peakBump = 2.0;
+              ballMesh.position.y = startH + (rimH - startH) * t + Math.sin(t * Math.PI) * peakBump;
             } else {
               ballMesh.position.x = fromBall.x + (toBall.x - fromBall.x) * t;
               ballMesh.position.z = fromBall.z + (toBall.z - fromBall.z) * t;
