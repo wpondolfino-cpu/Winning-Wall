@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { Play, RosterPlayer, PlayFrame } from "../../lib/plays";
+import { Play, RosterPlayer, PlayFrame, resolvePassEndpoint } from "../../lib/plays";
 import { courtLines, hoopPositions } from "./courtGeometry";
 
 interface Props {
@@ -411,7 +411,8 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
             const shotAction = [...animFromFrame.actions].reverse().find((a) => a.type === "shot" && a.curve);
             if (passAction?.curve) {
               const mt = 1 - t;
-              const w1 = toWorld(passAction.x1, passAction.y1), wc = toWorld(passAction.curve.x, passAction.curve.y), w2 = toWorld(passAction.x2, passAction.y2);
+              const target = resolvePassEndpoint(animFromFrame, passAction);
+              const w1 = toWorld(passAction.x1, passAction.y1), wc = toWorld(passAction.curve.x, passAction.curve.y), w2 = toWorld(target.x, target.y);
               ballMesh.position.x = mt * mt * w1.x + 2 * mt * t * wc.x + t * t * w2.x;
               ballMesh.position.z = mt * mt * w1.z + 2 * mt * t * wc.z + t * t * w2.z;
               ballMesh.position.y = 0.5;
