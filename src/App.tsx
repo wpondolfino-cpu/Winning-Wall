@@ -24,14 +24,16 @@ import LiftingPanel from "./components/lifting";
 import AnnouncementPanel from "./components/coach/AnnouncementPanel";
 import SendNotificationPanel from "./components/coach/SendNotificationPanel";
 import NavReorderModal, { NavItemConfig } from "./components/NavReorderModal";
+import PracticeWeeksList from "./components/coach/PracticeWeeksList";
+import PracticeDrillLibrary from "./components/coach/PracticeDrillLibrary";
 import DrillLibrary from "./components/DrillLibrary";
 import PlaysHub from "./components/plays/PlaysHub";
 import PlaybookManager from "./components/coach/PlaybookManager";
 import GameStatsHub from "./components/game-stats/GameStatsHub";
 
 type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "more";
-type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "profile";
-type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "profile";
+type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "practices" | "practicelibrary" | "profile";
+type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "practices" | "practicelibrary" | "profile";
 
 const COACH_NAV_CONFIG: NavItemConfig[] = [
   { key: "workouts",      icon: "➕", label: "Manage Workouts" },
@@ -45,6 +47,8 @@ const COACH_NAV_CONFIG: NavItemConfig[] = [
   { key: "plays",         icon: "🏀", label: "Plays" },
   { key: "playbooks",     icon: "📋", label: "Playbooks" },
   { key: "gamestats",     icon: "📊", label: "Analytics" },
+  { key: "practicelibrary", icon: "📒", label: "Practice Drills" },
+  { key: "practices",     icon: "🗓️", label: "Practices" },
   { key: "profile",       icon: "👤", label: "My Profile" },
 ];
 const COACH_NAV_DEFAULT_ORDER = COACH_NAV_CONFIG.map(i => i.key);
@@ -63,6 +67,8 @@ const ADMIN_NAV_CONFIG: NavItemConfig[] = [
   { key: "gamestats",     icon: "📊", label: "Analytics" },
   { key: "admin",         icon: "👑", label: "Admin" },
   { key: "settings",      icon: "⚙️", label: "Settings" },
+  { key: "practicelibrary", icon: "📒", label: "Practice Drills" },
+  { key: "practices",     icon: "🗓️", label: "Practices" },
   { key: "profile",       icon: "👤", label: "My Profile" },
 ];
 const ADMIN_NAV_DEFAULT_ORDER = ADMIN_NAV_CONFIG.map(i => i.key);
@@ -429,6 +435,8 @@ export default function App() {
           {isCoach && coachTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} />}
           {isCoach && coachTab === "plays" && <PlaysHub currentUserRole="coach" />}
           {isCoach && coachTab === "playbooks" && <PlaybookManager />}
+          {isCoach && coachTab === "practices" && <PracticeWeeksList />}
+          {isCoach && coachTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
           {isCoach && coachTab === "gamestats" && <GameStatsHub currentUserRole="coach" userId={user.id} />}
           {isCoach && coachTab === "leaderboard" && <Leaderboard canManage={true} />}
           {isCoach && coachTab === "announcements" && (<><AnnouncementPanel isAdmin={false} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
@@ -452,6 +460,8 @@ export default function App() {
           {isAdmin && adminTab === "plays" && <PlaysHub currentUserRole="admin" />}
           {isAdmin && adminTab === "gamestats" && <GameStatsHub currentUserRole="admin" userId={user.id} />}
           {isAdmin && adminTab === "playbooks" && <PlaybookManager />}
+          {isAdmin && adminTab === "practices" && <PracticeWeeksList />}
+          {isAdmin && adminTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
           {isAdmin && adminTab === "leaderboard" && <Leaderboard canManage={true} />}
           {isAdmin && adminTab === "announcements" && (<><AnnouncementPanel isAdmin={true} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
           {isAdmin && adminTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isAdmin={true} />}
