@@ -174,11 +174,14 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   async function handleAddBlock() {
     const id = await ensurePracticeSaved();
     if (!id) return;
-    const { id: blockId } = await createBlock(id, 10);
-    if (blockId) {
-      // New blocks default to one combined segment spanning every roster.
-      await createSegment(blockId, "combined", null);
+    const { id: blockId, error: blockErr } = await createBlock(id, 10);
+    if (!blockId) {
+      alert("Couldn't add the block: " + (blockErr ?? "unknown error"));
+      return;
     }
+    // New blocks default to one combined segment spanning every roster.
+    const { error: segErr } = await createSegment(blockId, "combined", null);
+    if (segErr) alert("Block was created but the segment failed: " + segErr);
     await load();
   }
 
