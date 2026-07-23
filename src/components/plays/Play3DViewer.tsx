@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { Play, RosterPlayer, PlayFrame, resolvePassEndpoint } from "../../lib/plays";
+import { Play, RosterPlayer, PlayFrame, PlayAction, resolvePassEndpoint, playerActionSequence, localActionProgress } from "../../lib/plays";
 import { courtLines, hoopPositions } from "./courtGeometry";
 
 interface Props {
@@ -382,19 +382,47 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
         animFromFrame.players.forEach((fp, i) => {
           const tp = animToFrame!.players[i];
           if (!tp || !playerGroups[i]) return;
-          // If this player's movement was drawn as a curl (curve set on
-          // their cut/dribble/screen), follow that curve instead of
-          // cutting straight from A to B — otherwise curved routes look
-          // right in 2D but players run straight through each other in 3D.
-          const sourced = fp.id ? animFromFrame!.actions.find(
-            (a) => a.sourcePlayerId === fp.id && (a.type === "move" || a.type === "dribble" || a.type === "screen")
-          ) : undefined;
+          const fullSeq = fp.id ? playerActionSequence(animFromFrame!, fp.id) : [];
           let x: number, z: number;
-          if (sourced?.curve) {
-            const mt = 1 - t;
-            const w1 = toWorld(sourced.x1, sourced.y1), wc = toWorld(sourced.curve.x, sourced.curve.y), w2 = toWorld(sourced.x2, sourced.y2);
-            x = mt * mt * w1.x + 2 * mt * t * wc.x + t * t * w2.x;
-            z = mt * mt * w1.z + 2 * mt * t * wc.z + t * t * w2.z;
+          if (fullSeq.length > 0) {
+            // Figure out which of this player's actions is "active" right
+            // now, then walk backward from there to find their most recent
+            // movement (a non-movement action like a pass in between just
+            // means they're standing still to make it, not gliding).
+            const total = fullSeq.length;
+            const activeIdx = Math.min(total - 1, Math.floor(t * total));
+            let moveAction: PlayAction | undefined;
+            let moveActionIdx = -1;
+            for (let k = activeIdx; k >= 0; k--) {
+              if (fullSeq[k].type === "move" || fullSeq[k].type === "dribble" || fullSeq[k].type === "screen") {
+                moveAction = fullSeq[k]; moveActionIdx = k; break;
+              }
+            }
+            if (moveAction && moveActionIdx === activeIdx) {
+              // The active slot IS a movement — animate along it, following
+              // its curve if it has one (see note above on curved routes).
+              const localT = localActionProgress(t, moveAction, animFromFrame!);
+              if (moveAction.curve) {
+                const mt = 1 - localT;
+                const w1 = toWorld(moveAction.x1, moveAction.y1), wc = toWorld(moveAction.curve.x, moveAction.curve.y), w2 = toWorld(moveAction.x2, moveAction.y2);
+                x = mt * mt * w1.x + 2 * mt * localT * wc.x + localT * localT * w2.x;
+                z = mt * mt * w1.z + 2 * mt * localT * wc.z + localT * localT * w2.z;
+              } else {
+                const from = toWorld(moveAction.x1, moveAction.y1), to = toWorld(moveAction.x2, moveAction.y2);
+                x = from.x + (to.x - from.x) * localT;
+                z = from.z + (to.z - from.z) * localT;
+              }
+            } else if (moveAction) {
+              // The active slot is something else (e.g. a pass) that comes
+              // after their last movement — hold at that movement's end.
+              const w = toWorld(moveAction.x2, moveAction.y2);
+              x = w.x; z = w.z;
+            } else {
+              // No movement has happened yet in their sequence — still at
+              // their starting spot for this step.
+              const w = toWorld(fp.x, fp.y);
+              x = w.x; z = w.z;
+            }
           } else {
             const from = toWorld(fp.x, fp.y), to = toWorld(tp.x, tp.y);
             x = from.x + (to.x - from.x) * t;
