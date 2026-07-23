@@ -529,9 +529,16 @@ export async function deleteSavedGrouping(groupingId: string): Promise<{ error: 
 // mixed segment ends up close to even per team (e.g. 4 Varsity/2 JV
 // when counts don't divide evenly is fine — see chat). Anyone beyond
 // a group's size cap lands in `bench`.
+// Distributes players into `numGroups` groups, spreading each roster's
+// players round-robin across the groups so a mixed segment ends up
+// close to even per team (e.g. 4 Varsity/2 JV when counts don't divide
+// evenly is fine — see chat). `groupSize` is a target, not a hard cap —
+// when the count doesn't divide cleanly some groups end up with one
+// extra rather than benching anyone; the coach can drag players
+// between groups afterward if a different split is wanted.
 export function generateBalancedGroups<P extends { id: string; home_roster_id: string | null }>(
   players: P[], groupSize: number, numGroups: number
-): { groups: string[][]; bench: string[] } {
+): { groups: string[][] } {
   const groups: string[][] = Array.from({ length: numGroups }, () => []);
   const byRoster: Record<string, P[]> = {};
   players.forEach(p => {
@@ -541,14 +548,7 @@ export function generateBalancedGroups<P extends { id: string; home_roster_id: s
   Object.values(byRoster).forEach(list => {
     list.forEach((p, i) => groups[i % numGroups].push(p.id));
   });
-  const bench: string[] = [];
-  groups.forEach(g => {
-    while (g.length > groupSize) {
-      const removed = g.pop();
-      if (removed) bench.push(removed);
-    }
-  });
-  return { groups, bench };
+  return { groups };
 }
 
 const GROUP_LABELS = ["Group A", "Group B", "Group C", "Group D", "Group E", "Group F", "Group G", "Group H"];
@@ -828,4 +828,99 @@ export async function bulkSetPlayerRoster(playerIds: string[], rosterId: string)
   if (playerIds.length === 0) return { error: null };
   const { error } = await supabase.from("profiles").update({ home_roster_id: rosterId }).in("id", playerIds);
   return { error: error?.message ?? null };
+}
+
+// ── Print data assembly ──────────────────────────────────────
+// Gathers everything needed to render a clean printable sheet for one
+// or more practices: schedule (time/drill/goal/coach) plus group
+// assignments, all names resolved (rosters, drills, coaches, players)
+// instead of raw ids.
+
+export interface PrintDrillGroup { label: string; memberNames: string[]; }
+export interface PrintDrill {
+  title: string; label: string | null; duration_minutes: number;
+  goal_text: string | null; coachNames: string[]; groups: PrintDrillGroup[];
+}
+export interface PrintSegment { rosterName: string | null; drills: PrintDrill[]; }
+export interface PrintBlock { start: string; end: string; duration_minutes: number; segments: PrintSegment[]; }
+export interface PrintPractice {
+  id: string; practice_date: string; start_time: string; rosterNames: string[]; blocks: PrintBlock[];
+}
+
+export async function getPracticePrintData(practiceId: string): Promise<PrintPractice | null> {
+  const practice = await getPractice(practiceId);
+  if (!practice) return null;
+
+  const [allRosters, allDrills, allCoaches] = await Promise.all([
+    getRosters(true), getPracticeDrillLibrary(), getAssignableCoaches(),
+  ]);
+  const rosterNameById = Object.fromEntries(allRosters.map(r => [r.id, r.name]));
+  const drillTitleById = Object.fromEntries(allDrills.drills.map(d => [d.id, d.title]));
+  const coachNameById = Object.fromEntries(allCoaches.map(c => [c.id, c.name]));
+
+  const blocks = await getPracticeBlocks(practiceId);
+  const timed = computeBlockTimes(practice.start_time, blocks);
+
+  // Collect every player id referenced in any group so we can resolve
+  // names in one batch instead of per-group round trips.
+  const allMemberIds = new Set<string>();
+  const blockPrintData: PrintBlock[] = [];
+
+  for (const block of timed) {
+    const segs = await getSegments(block.id);
+    const segPrintData: PrintSegment[] = [];
+    for (const seg of segs) {
+      const drills = await getSegmentDrills(seg.id);
+      const drillPrintData: PrintDrill[] = [];
+      for (const d of drills) {
+        const groups = await getSegmentDrillGroups(d.id);
+        groups.forEach(g => g.member_ids.forEach(id => allMemberIds.add(id)));
+        drillPrintData.push({
+          title: d.drill_id ? (drillTitleById[d.drill_id] ?? "Untitled drill") : (d.label ?? "Untitled drill"),
+          label: d.drill_id ? d.label : null, // avoid double-showing label as both title and label for legacy ad-hoc entries
+          duration_minutes: d.duration_minutes,
+          goal_text: d.goal_text,
+          coachNames: (d.coach_ids ?? []).map(id => coachNameById[id]).filter(Boolean) as string[],
+          groups: groups.map(g => ({ label: g.group_label ?? "Group", memberNames: [] /* filled below */ })),
+        });
+        // stash raw groups temporarily on the drill for name-filling after batch lookup
+        (drillPrintData[drillPrintData.length - 1] as any)._rawGroups = groups;
+      }
+      segPrintData.push({
+        rosterName: seg.scope_type === "roster" && seg.roster_id ? (rosterNameById[seg.roster_id] ?? null) : null,
+        drills: drillPrintData,
+      });
+    }
+    blockPrintData.push({ start: block.start, end: block.end, duration_minutes: block.duration_minutes, segments: segPrintData });
+  }
+
+  const { data: memberProfiles } = allMemberIds.size > 0
+    ? await supabase.from("profiles").select("id,name").in("id", Array.from(allMemberIds))
+    : { data: [] as any[] };
+  const nameById = Object.fromEntries((memberProfiles ?? []).map((p: any) => [p.id, p.name]));
+
+  blockPrintData.forEach(b => b.segments.forEach(s => s.drills.forEach((d: any) => {
+    const raw = d._rawGroups as SegmentDrillGroup[] | undefined;
+    if (raw) d.groups = raw.map(g => ({ label: g.group_label ?? "Group", memberNames: g.member_ids.map(id => nameById[id]).filter(Boolean) }));
+    delete d._rawGroups;
+  })));
+
+  return {
+    id: practice.id,
+    practice_date: practice.practice_date,
+    start_time: practice.start_time,
+    rosterNames: practice.roster_ids.map(id => rosterNameById[id]).filter(Boolean) as string[],
+    blocks: blockPrintData,
+  };
+}
+
+// Batched group-count lookup for a set of segment_drills — powers the
+// "N groups" chip in the builder without opening the full editor.
+export async function getGroupCountsForDrills(segmentDrillIds: string[]): Promise<Record<string, number>> {
+  if (segmentDrillIds.length === 0) return {};
+  const { data, error } = await supabase.from("segment_drill_groups").select("segment_drill_id").in("segment_drill_id", segmentDrillIds);
+  if (error || !data) return {};
+  const counts: Record<string, number> = {};
+  data.forEach((row: any) => { counts[row.segment_drill_id] = (counts[row.segment_drill_id] ?? 0) + 1; });
+  return counts;
 }
