@@ -490,10 +490,17 @@ export default function PlayCanvas({
           });
           return best >= 0 ? frame.players[best] : null;
         };
-        const source = nearestPlayer(dragStart.x, dragStart.y);
+        // An explicit player selection always wins over proximity guessing
+        // for who this action belongs to — draw it anywhere on the court
+        // and it's still assigned to the selected player, not whoever the
+        // line happens to start near.
+        const selectedPlayer = selected?.kind === "player" ? frame.players[selected.index] : null;
+        const source = selectedPlayer ?? nearestPlayer(dragStart.x, dragStart.y);
         const target = tool === "pass" ? nearestPlayer(p.x, p.y) : null;
+        const startX = selectedPlayer ? selectedPlayer.x : dragStart.x;
+        const startY = selectedPlayer ? selectedPlayer.y : dragStart.y;
         onAddAction?.({
-          type: tool as ActionType, x1: dragStart.x, y1: dragStart.y, x2: p.x, y2: p.y,
+          type: tool as ActionType, x1: startX, y1: startY, x2: p.x, y2: p.y,
           sourcePlayerId: source?.id, targetPlayerId: target?.id,
         });
         const linked = [source?.id, target?.id].filter(Boolean) as string[];
