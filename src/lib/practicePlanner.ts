@@ -802,3 +802,30 @@ export async function getAssignableCoaches(): Promise<CoachLite[]> {
   if (error) { console.error("Failed to load coaches:", error); return []; }
   return data ?? [];
 }
+
+// Permanently removes a roster. Any player whose home_roster_id
+// pointed here reverts to "no roster" (the FK is ON DELETE SET NULL).
+// Saved groupings tied to this roster are deleted too (their own FK
+// cascades). Past practices keep whatever roster ids they already
+// stored — this doesn't rewrite practice history, it just means that
+// id no longer resolves to a real roster name if displayed later.
+export async function deleteRoster(id: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("rosters").delete().eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+// ── Bulk roster assignment (used by the "Add Players" picker) ────
+
+export interface PlayerForRosterPicker { id: string; name: string; home_roster_id: string | null; }
+
+export async function getAllPlayersLite(): Promise<PlayerForRosterPicker[]> {
+  const { data, error } = await supabase.from("profiles").select("id,name,home_roster_id").eq("role", "player").order("name", { ascending: true });
+  if (error) { console.error("Failed to load players:", error); return []; }
+  return data ?? [];
+}
+
+export async function bulkSetPlayerRoster(playerIds: string[], rosterId: string): Promise<{ error: string | null }> {
+  if (playerIds.length === 0) return { error: null };
+  const { error } = await supabase.from("profiles").update({ home_roster_id: rosterId }).in("id", playerIds);
+  return { error: error?.message ?? null };
+}
