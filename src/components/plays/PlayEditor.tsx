@@ -36,6 +36,7 @@ const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "screen", label: "Screen", icon: "⊥" },
   { tool: "handoff", label: "Handoff", icon: "✱" },
   { tool: "shot", label: "Shot", icon: "🏀" },
+  { tool: "lob", label: "Lob", icon: "🙌" },
   { tool: "text", label: "Text", icon: "T" },
   { tool: "erase", label: "Erase", icon: "⌫" },
 ];
@@ -151,7 +152,31 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const addPlayer = useCallback((p: PlayPlayer) => { pushHistory(); updateFrame((f) => ({ ...f, players: [...f.players, p] })); }, [frames, frameIdx]);
   const addDefender = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, defenders: [...f.defenders, { x, y }] })); }, [frames, frameIdx]);
   const setBall = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, ball: { x, y }, ballHolderId: null })); }, [frames, frameIdx]);
-  const addAction = useCallback((a: PlayAction) => { pushHistory(); updateFrame((f) => ({ ...f, actions: [...f.actions, a] })); }, [frames, frameIdx]);
+  const addAction = useCallback((a: PlayAction) => {
+    pushHistory();
+    if (a.type === "lob") {
+      // The ball's actual destination is the hoop, not wherever the lob
+      // was dragged to — the drag endpoint was only used to detect who's
+      // catching it (already resolved into targetPlayerId by this point).
+      const hoops = hoopPositions(courtTemplate);
+      let target = hoops[0];
+      let bestDist = Infinity;
+      for (const h of hoops) {
+        const d = Math.hypot(h.x - a.x2, h.y - a.y2);
+        if (d < bestDist) { bestDist = d; target = h; }
+      }
+      // A gentle bow, same approach as Shot — this also drives the 3D
+      // arc, so it shouldn't depend on the user manually bending the line.
+      const mx = (a.x1 + target.x) / 2, my = (a.y1 + target.y) / 2;
+      const dx = target.x - a.x1, dy = target.y - a.y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const bow = Math.min(40, len * 0.25);
+      const curve = { x: mx + nx * bow, y: my + ny * bow };
+      a = { ...a, x2: target.x, y2: target.y, curve };
+    }
+    updateFrame((f) => ({ ...f, actions: [...f.actions, a] }));
+  }, [frames, frameIdx, courtTemplate]);
   const addDrawing = useCallback((points: { x: number; y: number }[]) => {
     pushHistory();
     updateFrame((f) => ({ ...f, drawings: [...(f.drawings ?? []), { points }] }));
@@ -355,7 +380,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     // handoff marker wins, then whoever a pass targeted, then a continuing
     // dribbler, then whoever already held it.
     let ballHolderId: string | null = last.ballHolderId ?? null;
-    const tookShot = last.actions.some((a) => a.type === "shot");
+    const tookShot = last.actions.some((a) => a.type === "shot" || a.type === "lob");
     if (tookShot) {
       ballHolderId = null;
     } else {
@@ -375,7 +400,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
     let ball = last.ball ? { ...last.ball } : null;
     if (tookShot) {
-      const shotAction = [...last.actions].reverse().find((a) => a.type === "shot");
+      const shotAction = [...last.actions].reverse().find((a) => a.type === "shot" || a.type === "lob");
       if (shotAction) ball = { x: shotAction.x2, y: shotAction.y2 };
     } else if (ballHolderId) {
       const holder = players.find((p) => p.id === ballHolderId);
@@ -640,6 +665,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↪ Redo</button>
             <button onClick={() => { setTool("shot"); setStampAction(null); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "shot" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>🏀 Shot</button>
+            <button onClick={() => { setTool("lob"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "lob" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>🙌 Lob</button>
             <button onClick={() => { setTool("zone"); setStampAction(null); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "zone" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>▦ Zone shading</button>
           </div>
