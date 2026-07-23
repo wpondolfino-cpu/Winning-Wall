@@ -430,6 +430,11 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           }
           playerGroups[i].position.x = x;
           playerGroups[i].position.z = z;
+          // A player being lobbed to jumps to meet the ball — timed the
+          // same way as the ball's own arc, so they peak together, and
+          // naturally back at floor level by the end of the beat.
+          const lobCatch = fp.id ? animFromFrame!.actions.find((a) => a.type === "lob" && a.targetPlayerId === fp.id) : undefined;
+          playerGroups[i].position.y = lobCatch ? Math.sin(t * Math.PI) * 1.3 : 0;
         });
         if (ballMesh) {
           const fromBall = getBallWorldPos(animFromFrame);
@@ -437,6 +442,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           if (fromBall && toBall) {
             const passAction = [...animFromFrame.actions].reverse().find((a) => a.type === "pass" && a.targetPlayerId && a.curve);
             const shotAction = [...animFromFrame.actions].reverse().find((a) => a.type === "shot" && a.curve);
+            const lobAction = [...animFromFrame.actions].reverse().find((a) => a.type === "lob" && a.curve);
             if (passAction?.curve) {
               const mt = 1 - t;
               const target = resolvePassEndpoint(animFromFrame, passAction);
@@ -458,6 +464,16 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
               // it fell short instead of going through the rim.
               const startH = 1.4, rimH = 2.0, peakBump = 2.0;
               ballMesh.position.y = startH + (rimH - startH) * t + Math.sin(t * Math.PI) * peakBump;
+            } else if (lobAction?.curve) {
+              const mt = 1 - t;
+              const w1 = toWorld(lobAction.x1, lobAction.y1), wc = toWorld(lobAction.curve.x, lobAction.curve.y), w2 = toWorld(lobAction.x2, lobAction.y2);
+              ballMesh.position.x = mt * mt * w1.x + 2 * mt * t * wc.x + t * t * w2.x;
+              ballMesh.position.z = mt * mt * w1.z + 2 * mt * t * wc.z + t * t * w2.z;
+              // Higher, floatier arc than a shot — a lob needs to clear
+              // defenders and give the receiver room to jump up and meet
+              // it before it continues into the hoop.
+              const startH = 1.5, rimH = 2.0, peakBump = 3.2;
+              ballMesh.position.y = startH + (rimH - startH) * t + Math.sin(t * Math.PI) * peakBump;
             } else {
               ballMesh.position.x = fromBall.x + (toBall.x - fromBall.x) * t;
               ballMesh.position.z = fromBall.z + (toBall.z - fromBall.z) * t;
@@ -466,7 +482,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           }
         }
         if (t >= 1) {
-          const hadShot = animFromFrame.actions.some((a) => a.type === "shot");
+          const hadShot = animFromFrame.actions.some((a) => a.type === "shot" || a.type === "lob");
           if (hadShot) {
             fallStart = now;
           } else {
