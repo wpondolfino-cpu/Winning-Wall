@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import PlayCanvas, { CANVAS_W, CANVAS_H } from "./PlayCanvas";
+import { hoopPositions } from "./courtGeometry";
 import {
   Play, PlayData, PlayFrame, PlayPlayer, PlayAction, ActionType,
   CourtTemplate, COURT_TEMPLATES, COURT_TEMPLATE_LABELS,
@@ -23,7 +24,7 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | null;
+type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "shot" | null;
 
 const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "select", label: "Move", icon: "✥" },
@@ -34,12 +35,14 @@ const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "dribble", label: "Dribble", icon: "〜" },
   { tool: "screen", label: "Screen", icon: "⊥" },
   { tool: "handoff", label: "Handoff", icon: "✱" },
+  { tool: "shot", label: "Shot", icon: "🏀" },
   { tool: "text", label: "Text", icon: "T" },
   { tool: "erase", label: "Erase", icon: "⌫" },
 ];
 // Used less often — tucked behind "More tools" instead of permanently
 // taking up space in the main row.
 const MORE_TOOLS: { tool: Tool; label: string; icon: string }[] = [
+  { tool: "cone", label: "Cone", icon: "▲" },
   { tool: "defender", label: "Defender", icon: "✕" },
   { tool: "draw", label: "Draw", icon: "✎" },
   { tool: "zone", label: "Zone shading", icon: "▦" },
@@ -68,7 +71,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const [isMobile] = useState(() => window.innerWidth < 768);
   const [mobileStage, setMobileStage] = useState<"draw" | "confirm" | "naming">("draw");
   const [showMoreTools, setShowMoreTools] = useState(false);
-  const [selected, setSelected] = useState<{ kind: "player" | "defender" | "ball" | "action" | "text" | "zone"; index: number } | null>(null);
+  const [selected, setSelected] = useState<{ kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone"; index: number } | null>(null);
   const [history, setHistory] = useState<PlayFrame[][]>([]);
   const [future, setFuture] = useState<PlayFrame[][]>([]);
   const [saving, setSaving] = useState(false);
@@ -227,6 +230,40 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     updateFrame((f) => ({ ...f, zones: (f.zones ?? []).map((z, i) => i === idx ? { ...z, x, y } : z) }));
   }, [frames, frameIdx]);
 
+  function addCone(x: number, y: number) {
+    pushHistory();
+    updateFrame((f) => ({ ...f, cones: [...(f.cones ?? []), { x, y }] }));
+  }
+  const moveCone = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, cones: (f.cones ?? []).map((c, i) => i === idx ? { x, y } : c) }));
+  }, [frames, frameIdx]);
+
+  function addShot(playerIdx: number) {
+    const player = frame.players[playerIdx];
+    if (!player) return;
+    const hoops = hoopPositions(courtTemplate);
+    let target = hoops[0];
+    let bestDist = Infinity;
+    for (const h of hoops) {
+      const d = Math.hypot(h.x - player.x, h.y - player.y);
+      if (d < bestDist) { bestDist = d; target = h; }
+    }
+    // A gentle bow away from the straight line, for a shot-arc look rather
+    // than a flat line to the rim.
+    const mx = (player.x + target.x) / 2, my = (player.y + target.y) / 2;
+    const dx = target.x - player.x, dy = target.y - player.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    const bow = Math.min(40, len * 0.25);
+    const curve = { x: mx + nx * bow, y: my + ny * bow };
+    pushHistory();
+    updateFrame((f) => ({
+      ...f,
+      actions: [...f.actions, { type: "shot" as const, x1: player.x, y1: player.y, x2: target.x, y2: target.y, curve, sourcePlayerId: player.id }],
+    }));
+  }
+
   function deleteSelected() {
     if (!selected) return;
     pushHistory();
@@ -236,6 +273,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     else if (selected.kind === "action") updateFrame((f) => ({ ...f, actions: f.actions.filter((_, i) => i !== selected.index) }));
     else if (selected.kind === "text") updateFrame((f) => ({ ...f, texts: (f.texts ?? []).filter((_, i) => i !== selected.index) }));
     else if (selected.kind === "zone") updateFrame((f) => ({ ...f, zones: (f.zones ?? []).filter((_, i) => i !== selected.index) }));
+    else if (selected.kind === "cone") updateFrame((f) => ({ ...f, cones: (f.cones ?? []).filter((_, i) => i !== selected.index) }));
     setSelected(null);
   }
 
@@ -294,6 +332,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       }),
       texts: (f.texts ?? []).filter((t) => !near(t, 20)),
       zones: (f.zones ?? []).filter((z) => !(x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h)),
+      cones: (f.cones ?? []).filter((c) => !near(c, 16)),
     }));
   }
 
@@ -310,25 +349,34 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       return { ...base, handoff: false };
     });
 
-    // Ball possession carries forward: an explicit handoff marker wins,
-    // then whoever a pass targeted, then a continuing dribbler, then
-    // whoever already held it.
+    // Ball possession carries forward: a shot ends possession outright
+    // (nobody's holding a ball that just went up), otherwise an explicit
+    // handoff marker wins, then whoever a pass targeted, then a continuing
+    // dribbler, then whoever already held it.
     let ballHolderId: string | null = last.ballHolderId ?? null;
-    const handoffPlayer = last.players.find((p) => p.handoff);
-    if (handoffPlayer?.id) {
-      ballHolderId = handoffPlayer.id;
+    const tookShot = last.actions.some((a) => a.type === "shot");
+    if (tookShot) {
+      ballHolderId = null;
     } else {
-      const passTarget = [...last.actions].reverse().find((a) => a.type === "pass" && a.targetPlayerId);
-      if (passTarget?.targetPlayerId) {
-        ballHolderId = passTarget.targetPlayerId;
+      const handoffPlayer = last.players.find((p) => p.handoff);
+      if (handoffPlayer?.id) {
+        ballHolderId = handoffPlayer.id;
       } else {
-        const dribbler = [...last.actions].reverse().find((a) => a.type === "dribble" && a.sourcePlayerId);
-        if (dribbler?.sourcePlayerId) ballHolderId = dribbler.sourcePlayerId;
+        const passTarget = [...last.actions].reverse().find((a) => a.type === "pass" && a.targetPlayerId);
+        if (passTarget?.targetPlayerId) {
+          ballHolderId = passTarget.targetPlayerId;
+        } else {
+          const dribbler = [...last.actions].reverse().find((a) => a.type === "dribble" && a.sourcePlayerId);
+          if (dribbler?.sourcePlayerId) ballHolderId = dribbler.sourcePlayerId;
+        }
       }
     }
 
     let ball = last.ball ? { ...last.ball } : null;
-    if (ballHolderId) {
+    if (tookShot) {
+      const shotAction = [...last.actions].reverse().find((a) => a.type === "shot");
+      if (shotAction) ball = { x: shotAction.x2, y: shotAction.y2 };
+    } else if (ballHolderId) {
       const holder = players.find((p) => p.id === ballHolderId);
       if (holder) ball = { x: holder.x, y: holder.y };
     }
@@ -575,6 +623,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         </button>
         {showMoreTools && (
           <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8, padding: 8, background: "var(--surface2)", borderRadius: 8 }}>
+            <button onClick={() => { setTool("cone"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "cone" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>▲ Cone</button>
             <button onClick={() => { setTool("defender"); setStampAction(null); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "defender" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>✕ Defender</button>
             <button onClick={() => { setTool("draw"); setStampAction(null); setShowMoreTools(false); }}
@@ -587,6 +637,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "handoff" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>✱ Handoff</button>
             <button onClick={() => { redo(); setShowMoreTools(false); }} disabled={!future.length}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↪ Redo</button>
+            <button onClick={() => { setTool("shot"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "shot" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>🏀 Shot</button>
             <button onClick={() => { setTool("zone"); setStampAction(null); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "zone" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>▦ Zone shading</button>
           </div>
@@ -617,6 +669,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onMovePlayer={movePlayer} onMoveDefender={moveDefender} onMoveBall={moveBall}
             onMoveActionPoint={moveActionPoint} onMoveActionWhole={moveActionWhole} onSetActionCurve={setActionCurve}
             onAddText={addText} onMoveText={moveText} onEditText={editText} onAddZone={addZone} onMoveZone={moveZone}
+            onAddCone={addCone} onMoveCone={moveCone} onAddShot={addShot}
             selected={selected} onSelect={setSelected} onAddDrawing={addDrawing}
             playSignal={playSignal} onPlayDone={handlePreviewBeatDone}
           />
@@ -773,6 +826,9 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onEditText={editText}
             onAddZone={addZone}
             onMoveZone={moveZone}
+            onAddCone={addCone}
+            onMoveCone={moveCone}
+            onAddShot={addShot}
             selected={selected}
             onSelect={setSelected}
             onAddDrawing={addDrawing}
