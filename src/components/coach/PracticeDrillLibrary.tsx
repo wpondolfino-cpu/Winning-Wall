@@ -84,22 +84,37 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
   async function saveDrill() {
     if (!editDrill || !editDrill.title?.trim()) return;
     if (editDrill.id) {
-      await updatePracticeDrill(editDrill.id, {
+      const { error } = await updatePracticeDrill(editDrill.id, {
         title: editDrill.title, description: editDrill.description ?? null, video_url: editDrill.video_url ?? null,
         category_name: editDrill.category_name ?? null, default_duration_minutes: editDrill.default_duration_minutes ?? null,
         default_group_size: editDrill.default_group_size ?? null, default_num_groups: editDrill.default_num_groups ?? null,
         linked_play_id: editDrill.linked_play_id ?? null, tags: editDrill.tags ?? [],
       });
+      if (error) { alert("Couldn't save: " + error); return; }
+      setEditDrill(null);
+      await load();
     } else {
-      await createPracticeDrill({
+      const { id, error } = await createPracticeDrill({
         title: editDrill.title, description: editDrill.description ?? undefined, video_url: editDrill.video_url ?? undefined,
         category_name: editDrill.category_name ?? null, default_duration_minutes: editDrill.default_duration_minutes ?? null,
         default_group_size: editDrill.default_group_size ?? null, default_num_groups: editDrill.default_num_groups ?? null,
         linked_play_id: editDrill.linked_play_id ?? null, tags: editDrill.tags ?? [],
       });
+      if (error || !id) { alert("Couldn't create drill: " + (error ?? "unknown error")); return; }
+      setEditDrill(null);
+      if (isPicker) {
+        // Creating a drill mid-practice-build both saves it to the library
+        // AND drops it straight into the practice — no separate trip needed.
+        onPick!({
+          id, title: editDrill.title, description: editDrill.description ?? null, video_url: editDrill.video_url ?? null,
+          category_name: editDrill.category_name ?? null, default_duration_minutes: editDrill.default_duration_minutes ?? null,
+          default_group_size: editDrill.default_group_size ?? null, default_num_groups: editDrill.default_num_groups ?? null,
+          linked_play_id: editDrill.linked_play_id ?? null, is_starred: false, created_at: new Date().toISOString(),
+        });
+      } else {
+        await load();
+      }
     }
-    setEditDrill(null);
-    await load();
   }
 
   async function handleDeleteDrill(d: PracticeDrillLibraryDrill) {
@@ -142,7 +157,7 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
           {isPicker ? "Add a drill" : "Practice Drill Library"}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          {canManage && !isPicker && <button onClick={startNewDrill} style={primaryBtn}>+ New drill</button>}
+          {canManage && <button onClick={startNewDrill} style={primaryBtn}>+ New drill</button>}
           {isPicker && <button onClick={onClose} style={smallBtn}>Cancel</button>}
         </div>
       </div>
