@@ -21,7 +21,7 @@ import {
   updateSegmentDrill, deleteSegmentDrill, autoSplitSegmentDrillDurations,
   getAttendanceOverrides, setAttendanceOverride, clearAttendanceOverride,
   computeEffectiveAttendees, computeBlockTimes, totalDurationMinutes,
-  formatDuration, columnTotals, getSavedGroupings, getAssignableCoaches, CoachLite,
+  formatDuration, columnTotals, getSavedGroupings, getAssignableCoaches, CoachLite, getGroupCountsForDrills,
 } from "../../lib/practicePlanner";
 import GroupingEditor from "./GroupingEditor";
 import PracticeDrillLibrary from "./PracticeDrillLibrary";
@@ -58,10 +58,18 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   const [coachPickerTarget, setCoachPickerTarget] = useState<{ drill: SegmentDrill; block: PracticeBlock } | null>(null);
   const [coachSelection, setCoachSelection] = useState<Set<string>>(new Set());
   const [detailsLabel, setDetailsLabel] = useState("");
-  const [detailsGoal, setDetailsGoal] = useState("");
   const [coaches, setCoaches] = useState<CoachLite[]>([]);
   const [blockDurationDrafts, setBlockDurationDrafts] = useState<Record<string, string>>({});
   const [drillDurationDrafts, setDrillDurationDrafts] = useState<Record<string, string>>({});
+  const [notesDrafts, setNotesDrafts] = useState<Record<string, string>>({});
+  const [groupCounts, setGroupCounts] = useState<Record<string, number>>({});
+
+  function hexToRgba(hex: string, alpha: number): string {
+    const clean = hex.replace("#", "");
+    const bigint = parseInt(clean.length === 3 ? clean.split("").map(c => c + c).join("") : clean, 16);
+    const r = (bigint >> 16) & 255, g = (bigint >> 8) & 255, b = bigint & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
 
   // Local, editable copies of date/time/roster before saving.
   const [date, setDate]         = useState("");
@@ -75,6 +83,11 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
     if (missing.length === 0) return;
     const { data } = await supabase.from("practice_drills_library").select("*").in("id", missing);
     if (data) setDrillsById(prev => ({ ...prev, ...Object.fromEntries(data.map((d: any) => [d.id, d])) }));
+  }
+
+  async function refreshGroupCounts(allDrills: SegmentDrill[]) {
+    const counts = await getGroupCountsForDrills(allDrills.map(d => d.id));
+    setGroupCounts(prev => ({ ...prev, ...counts }));
   }
 
   const load = useCallback(async () => {
@@ -99,7 +112,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
         const allSegs = Object.values(segMap).flat() as BlockSegment[];
         const drillEntries = await Promise.all(allSegs.map(async s => [s.id, await getSegmentDrills(s.id)] as const));
         setDrillsBySeg(Object.fromEntries(drillEntries));
-        await cacheDrillTitles(drillEntries.flatMap(([, ds]) => ds));
+        const allDrills = drillEntries.flatMap(([, ds]) => ds);
+        await cacheDrillTitles(allDrills);
+        await refreshGroupCounts(allDrills);
       }
     } else {
       setDate(new Date().toISOString().slice(0, 10));
@@ -116,7 +131,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
     setSegByBlock(prev => ({ ...prev, [blockId]: segs }));
     const drillEntries = await Promise.all(segs.map(async s => [s.id, await getSegmentDrills(s.id)] as const));
     setDrillsBySeg(prev => ({ ...prev, ...Object.fromEntries(drillEntries) }));
-    await cacheDrillTitles(drillEntries.flatMap(([, ds]) => ds));
+    const allDrills = drillEntries.flatMap(([, ds]) => ds);
+    await cacheDrillTitles(allDrills);
+    await refreshGroupCounts(allDrills);
   }
 
   // ── Save practice metadata (create or update) ───────────────
@@ -283,6 +300,11 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
     await refreshBlock(blockId);
   }
 
+  async function handleEditNotes(drill: SegmentDrill, blockId: string, text: string) {
+    await updateSegmentDrill(drill.id, { goal_text: text.trim() || null });
+    await refreshBlock(blockId);
+  }
+
   async function handleDeleteDrill(drill: SegmentDrill, blockId: string) {
     await deleteSegmentDrill(drill.id);
     await refreshBlock(blockId);
@@ -290,7 +312,6 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
 
   function openDrillDetails(drill: SegmentDrill, block: PracticeBlock) {
     setDetailsLabel(drill.label ?? "");
-    setDetailsGoal(drill.goal_text ?? "");
     setEditingDrillDetails({ drill, block });
   }
 
@@ -299,7 +320,6 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
     const { drill, block } = editingDrillDetails;
     await updateSegmentDrill(drill.id, {
       label: detailsLabel.trim() || null,
-      goal_text: detailsGoal.trim() || null,
     });
     await refreshBlock(block.id);
     setEditingDrillDetails(null);
@@ -477,60 +497,85 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
 
       {practice && (
         <>
-          {/* ── Blocks ── */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 }}>
-            {timedBlocks.map(block => {
-              const segs = segByBlock[block.id] ?? [];
-              const isSplit = segs.length > 1 || (segs.length === 1 && segs[0].scope_type === "roster");
-              return (
-                <div key={block.id}
-                  draggable
-                  onDragStart={() => handleBlockDragStart(block.id)}
-                  onDragOver={e => handleBlockDragOver(block.id, e)}
-                  onDragEnd={handleBlockDragEnd}
-                  style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                    <span style={{ cursor: "grab", color: "var(--muted)" }}>⠿</span>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--gold)" }}>{block.start}–{block.end}</div>
-                    <input type="number" min={1}
-                      value={blockDurationDrafts[block.id] ?? String(block.duration_minutes)}
-                      onChange={e => setBlockDurationDrafts(prev => ({ ...prev, [block.id]: e.target.value }))}
-                      onBlur={e => {
-                        const n = Math.max(1, parseInt(e.target.value) || block.duration_minutes);
-                        setBlockDurationDrafts(prev => { const next = { ...prev }; delete next[block.id]; return next; });
-                        handleBlockDuration(block, n);
-                      }}
-                      style={{ ...inputStyle, width: 60 }} />
-                    <span style={{ fontSize: 11, color: "var(--muted)" }}>min</span>
-                    {rosterIds.length > 1 && (
-                      <button onClick={() => toggleSplitByTeam(block, isSplit)} style={smallBtn}>
-                        {isSplit ? "Combine columns" : "Split by team"}
-                      </button>
-                    )}
-                    <div style={{ flex: 1 }} />
-                    <button onClick={() => handleDeleteBlock(block.id)} style={dangerSmallBtn}>Delete block</button>
-                  </div>
+          {/* ── Schedule table ── */}
+          <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", marginBottom: 12 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "var(--surface)", textAlign: "left" }}>
+                  <th style={{ padding: "8px 10px", fontSize: 11, color: "var(--muted)", width: 120 }}>Time</th>
+                  <th style={{ padding: "8px 10px", fontSize: 11, color: "var(--muted)" }}>Drill</th>
+                  <th style={{ padding: "8px 10px", fontSize: 11, color: "var(--muted)" }}>Notes</th>
+                  <th style={{ padding: "8px 10px", fontSize: 11, color: "var(--muted)", width: 130 }}>Group</th>
+                  <th style={{ padding: "8px 10px", fontSize: 11, color: "var(--muted)", width: 140 }}>Coach</th>
+                </tr>
+              </thead>
+              <tbody>
+                {timedBlocks.flatMap((block, blockIndex) => {
+                  const segs = segByBlock[block.id] ?? [];
+                  const isSplit = segs.length > 1 || (segs.length === 1 && segs[0].scope_type === "roster");
+                  const dataRowCount = segs.reduce((sum, s) => sum + (drillsBySeg[s.id] ?? []).length, 0);
+                  const totalRows = Math.max(1, dataRowCount + segs.length);
+                  let rowsRenderedSoFar = 0;
 
-                  <div style={{ display: "grid", gridTemplateColumns: `repeat(${segs.length}, 1fr)`, gap: 8 }}>
-                    {segs.map(seg => {
-                      const roster = seg.roster_id ? rosters.find(r => r.id === seg.roster_id) : null;
-                      const drills = drillsBySeg[seg.id] ?? [];
-                      return (
-                        <div key={seg.id} style={{ background: "var(--surface2)", borderRadius: 8, padding: 8, gridColumn: seg.scope_type === "combined" ? `1 / -1` : undefined }}>
-                          {roster && (
-                            <div style={{ fontSize: 11, fontWeight: 700, color: roster.color, marginBottom: 6 }}>{roster.name}</div>
+                  const timeCell = (
+                    <td rowSpan={totalRows} style={{ padding: "10px", verticalAlign: "top", borderRight: "1px solid var(--border)", borderTop: blockIndex > 0 ? "2px solid var(--border)" : undefined }}>
+                      <div draggable onDragStart={() => handleBlockDragStart(block.id)} onDragOver={e => handleBlockDragOver(block.id, e)} onDragEnd={handleBlockDragEnd} style={{ cursor: "grab" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: "var(--gold)", whiteSpace: "nowrap" }}>
+                          <span style={{ color: "var(--muted)" }}>⠿</span> {block.start}–{block.end}
+                        </div>
+                        <div style={{ display: "flex", gap: 4, alignItems: "center", marginTop: 4 }}>
+                          <input type="number" min={1}
+                            value={blockDurationDrafts[block.id] ?? String(block.duration_minutes)}
+                            onChange={e => setBlockDurationDrafts(prev => ({ ...prev, [block.id]: e.target.value }))}
+                            onBlur={e => {
+                              const n = Math.max(1, parseInt(e.target.value) || block.duration_minutes);
+                              setBlockDurationDrafts(prev => { const next = { ...prev }; delete next[block.id]; return next; });
+                              handleBlockDuration(block, n);
+                            }}
+                            style={{ ...inputStyle, width: 40, padding: "2px 4px", fontSize: 11 }} />
+                          <span style={{ fontSize: 9, color: "var(--muted)" }}>min</span>
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                          {rosterIds.length > 1 && (
+                            <button onClick={() => toggleSplitByTeam(block, isSplit)} style={{ ...smallBtn, fontSize: 9, padding: "3px 6px" }}>
+                              {isSplit ? "Combine" : "Split"}
+                            </button>
                           )}
-                          {drills.map(d => (
-                            <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 0", borderTop: "1px solid var(--border)" }}>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: 12, fontWeight: 600 }}>
-                                  {d.drill_id ? (drillsById[d.drill_id]?.title ?? "Loading…") : (d.label ?? "Untitled drill")}
-                                  {d.drill_id && d.label && <span style={{ fontWeight: 400, color: "var(--muted)" }}> — {d.label}</span>}
-                                </div>
-                                {(d.goal_text || (d.coach_ids && d.coach_ids.length > 0)) && (
-                                  <div style={{ fontSize: 10, color: "var(--muted)" }}>{[d.goal_text, d.coach_ids && d.coach_ids.length > 0 && `Coach: ${d.coach_ids.map(id => coaches.find(c => c.id === id)?.name).filter(Boolean).join(", ")}`].filter(Boolean).join(" · ")}</div>
-                                )}
+                          <button onClick={() => handleDeleteBlock(block.id)} style={{ ...dangerSmallBtn, fontSize: 9, padding: "3px 6px" }}>Delete</button>
+                        </div>
+                      </div>
+                    </td>
+                  );
+
+                  const blockRows: JSX.Element[] = [];
+
+                  segs.forEach(seg => {
+                    const roster = seg.roster_id ? rosters.find(r => r.id === seg.roster_id) : null;
+                    const drills = drillsBySeg[seg.id] ?? [];
+                    const rowBg = roster ? hexToRgba(roster.color, 0.12) : "transparent";
+                    const rowBorder = roster ? hexToRgba(roster.color, 0.35) : "var(--border)";
+
+                    drills.forEach(d => {
+                      const isVeryFirstRow = rowsRenderedSoFar === 0;
+                      rowsRenderedSoFar++;
+                      const gCount = groupCounts[d.id] ?? 0;
+                      blockRows.push(
+                        <tr key={d.id} style={{ background: rowBg, borderTop: isVeryFirstRow && blockIndex > 0 ? undefined : `1px solid ${rowBorder}` }}>
+                          {isVeryFirstRow && timeCell}
+                          <td style={{ padding: "10px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                                {d.drill_id ? (drillsById[d.drill_id]?.title ?? "Loading…") : (d.label ?? "Untitled drill")}
+                              </span>
+                              <span onClick={() => openDrillDetails(d, block)} title="Edit" style={{ cursor: "pointer", color: "var(--muted)", fontSize: 12 }}>✎</span>
+                              <span onClick={() => handleDeleteDrill(d, block.id)} title="Remove" style={{ cursor: "pointer", color: "#ff7b7b", fontSize: 12, marginLeft: "auto" }}>✕</span>
+                            </div>
+                            {(roster || (d.drill_id && d.label)) && (
+                              <div style={{ fontSize: 10, color: roster ? roster.color : "var(--muted)", marginTop: 2, fontWeight: roster ? 700 : 400 }}>
+                                {roster ? roster.name : d.label}
                               </div>
+                            )}
+                            <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>
                               <input type="number" min={1}
                                 value={drillDurationDrafts[d.id] ?? String(d.duration_minutes)}
                                 onChange={e => setDrillDurationDrafts(prev => ({ ...prev, [d.id]: e.target.value }))}
@@ -539,23 +584,57 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                                   setDrillDurationDrafts(prev => { const next = { ...prev }; delete next[d.id]; return next; });
                                   handleEditDrillDuration(d, block.id, n);
                                 }}
-                                style={{ ...inputStyle, width: 44, padding: "3px 4px" }} />
-                              <button onClick={() => openDrillDetails(d, block)} style={smallBtn}>Edit</button>
-                              <button onClick={() => openCoachPicker(d, block)} style={smallBtn}>Coaches</button>
-                              <button onClick={() => openGroupingEditor(d, seg)} style={smallBtn}>Groups</button>
-                              <button onClick={() => handleDeleteDrill(d, block.id)} style={dangerSmallBtn}>✕</button>
+                                style={{ ...inputStyle, width: 40, padding: "2px 4px", fontSize: 10 }} />
+                              <span style={{ fontSize: 9, color: "var(--muted)" }}>min</span>
                             </div>
-                          ))}
-                          <button onClick={() => handleAddDrill(seg, block)} style={{ ...smallBtn, width: "100%", marginTop: 6 }}>
-                            + {drills.length > 0 ? "Add station/drill" : "Add drill"}
-                          </button>
-                        </div>
+                          </td>
+                          <td style={{ padding: "10px" }}>
+                            <input
+                              value={notesDrafts[d.id] ?? (d.goal_text ?? "")}
+                              onChange={e => setNotesDrafts(prev => ({ ...prev, [d.id]: e.target.value }))}
+                              onBlur={e => {
+                                setNotesDrafts(prev => { const next = { ...prev }; delete next[d.id]; return next; });
+                                handleEditNotes(d, block.id, e.target.value);
+                              }}
+                              placeholder="Add a note…"
+                              style={{ width: "100%", background: "transparent", border: "none", borderBottom: "1px dashed transparent", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none", padding: "2px 0" }}
+                              onFocus={e => { e.target.style.borderBottom = "1px dashed var(--border)"; }}
+                            />
+                          </td>
+                          <td style={{ padding: "10px" }}>
+                            <button onClick={() => openGroupingEditor(d, seg)} style={smallBtn}>
+                              {gCount > 0 ? `${gCount} group${gCount === 1 ? "" : "s"}` : "+ Groups"}
+                            </button>
+                          </td>
+                          <td style={{ padding: "10px" }}>
+                            <button onClick={() => openCoachPicker(d, block)} style={smallBtn}>
+                              {(d.coach_ids ?? []).length > 0
+                                ? d.coach_ids.map(id => coaches.find(c => c.id === id)?.name).filter(Boolean).join(", ")
+                                : "+ Coach"}
+                            </button>
+                          </td>
+                        </tr>
                       );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
+                    });
+
+                    const isVeryFirstRow = rowsRenderedSoFar === 0;
+                    rowsRenderedSoFar++;
+                    blockRows.push(
+                      <tr key={`${seg.id}-add`} style={{ borderTop: isVeryFirstRow && blockIndex > 0 ? undefined : "1px dashed var(--border)" }}>
+                        {isVeryFirstRow && timeCell}
+                        <td colSpan={4} style={{ padding: "6px 10px" }}>
+                          <button onClick={() => handleAddDrill(seg, block)} style={{ ...smallBtn, fontSize: 11 }}>
+                            + {roster ? `Add drill for ${roster.name}` : drills.length > 0 ? "Add station/drill" : "Add drill"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  });
+
+                  return blockRows;
+                })}
+              </tbody>
+            </table>
           </div>
 
           <button onClick={handleAddBlock} style={{ ...secondaryBtn, width: "100%", padding: "10px", border: "1px dashed var(--border)" }}>
@@ -588,10 +667,6 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
               <div>
                 <div style={fieldLabel}>Station/sub-label (optional)</div>
                 <input value={detailsLabel} onChange={e => setDetailsLabel(e.target.value)} placeholder="e.g. Station 1, Guards" style={inputStyle} />
-              </div>
-              <div>
-                <div style={fieldLabel}>Goal</div>
-                <input value={detailsGoal} onChange={e => setDetailsGoal(e.target.value)} placeholder="e.g. Transition finishing" style={inputStyle} />
               </div>
               <button
                 onClick={() => {
