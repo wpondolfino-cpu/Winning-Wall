@@ -23,7 +23,7 @@ export const COURT_TEMPLATE_LABELS: Record<CourtTemplate, string> = {
 // the coordinate system stays constant so saved actions/forks stay valid
 // across templates.
 
-export type ActionType = "move" | "pass" | "dribble" | "screen";
+export type ActionType = "move" | "pass" | "dribble" | "screen" | "shot";
 
 export interface PlayPoint { x: number; y: number; }
 
@@ -95,6 +95,8 @@ export interface PlayFrame {
   texts?: PlayText[];
   /** Shaded zones. Optional for backward compatibility. */
   zones?: PlayZone[];
+  /** Practice-drill cone markers. Optional for backward compatibility. */
+  cones?: PlayPoint[];
 }
 
 export interface PlayData {
