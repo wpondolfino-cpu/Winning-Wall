@@ -58,6 +58,8 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   const [detailsLabel, setDetailsLabel] = useState("");
   const [detailsGoal, setDetailsGoal] = useState("");
   const [detailsCoach, setDetailsCoach] = useState("");
+  const [blockDurationDrafts, setBlockDurationDrafts] = useState<Record<string, string>>({});
+  const [drillDurationDrafts, setDrillDurationDrafts] = useState<Record<string, string>>({});
 
   // Local, editable copies of date/time/roster before saving.
   const [date, setDate]         = useState("");
@@ -477,8 +479,14 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                     <span style={{ cursor: "grab", color: "var(--muted)" }}>⠿</span>
                     <div style={{ fontSize: 13, fontWeight: 600, color: "var(--gold)" }}>{block.start}–{block.end}</div>
-                    <input type="number" min={1} value={block.duration_minutes}
-                      onChange={e => handleBlockDuration(block, Math.max(1, parseInt(e.target.value) || 1))}
+                    <input type="number" min={1}
+                      value={blockDurationDrafts[block.id] ?? String(block.duration_minutes)}
+                      onChange={e => setBlockDurationDrafts(prev => ({ ...prev, [block.id]: e.target.value }))}
+                      onBlur={e => {
+                        const n = Math.max(1, parseInt(e.target.value) || block.duration_minutes);
+                        setBlockDurationDrafts(prev => { const next = { ...prev }; delete next[block.id]; return next; });
+                        handleBlockDuration(block, n);
+                      }}
                       style={{ ...inputStyle, width: 60 }} />
                     <span style={{ fontSize: 11, color: "var(--muted)" }}>min</span>
                     {rosterIds.length > 1 && (
@@ -510,8 +518,14 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                                   <div style={{ fontSize: 10, color: "var(--muted)" }}>{[d.goal_text, d.coach_name && `Coach: ${d.coach_name}`].filter(Boolean).join(" · ")}</div>
                                 )}
                               </div>
-                              <input type="number" min={1} value={d.duration_minutes}
-                                onChange={e => handleEditDrillDuration(d, block.id, Math.max(1, parseInt(e.target.value) || 1))}
+                              <input type="number" min={1}
+                                value={drillDurationDrafts[d.id] ?? String(d.duration_minutes)}
+                                onChange={e => setDrillDurationDrafts(prev => ({ ...prev, [d.id]: e.target.value }))}
+                                onBlur={e => {
+                                  const n = Math.max(1, parseInt(e.target.value) || d.duration_minutes);
+                                  setDrillDurationDrafts(prev => { const next = { ...prev }; delete next[d.id]; return next; });
+                                  handleEditDrillDuration(d, block.id, n);
+                                }}
                                 style={{ ...inputStyle, width: 44, padding: "3px 4px" }} />
                               <button onClick={() => openDrillDetails(d, block)} style={smallBtn}>Edit</button>
                               <button onClick={() => openGroupingEditor(d, seg)} style={smallBtn}>Groups</button>
