@@ -229,6 +229,12 @@ function ActionShape({ a }: { a: PlayAction }) {
       </g>
     );
   }
+  if (a.type === "lob") {
+    return (
+      <path d={linePath(a)} fill="none" stroke="#8a4fd6" strokeWidth={2.5}
+        strokeDasharray="5,3" markerEnd="url(#pc-arrow-solid)" />
+    );
+  }
   if (a.type === "pass") {
     return (
       <g>
@@ -407,7 +413,7 @@ export default function PlayCanvas({
       if (ballHit && within(ballHit, 12)) { setMoveDrag({ kind: "ball" }); setMovePos(p); return; }
       for (let i = 0; i < frame.actions.length; i++) {
         const a = frame.actions[i];
-        if ((a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen") && within(curveHandlePos(a), 11)) {
+        if ((a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen" || a.type === "lob") && within(curveHandlePos(a), 11)) {
           setMoveDrag({ kind: "actionCurve", index: i }); setMovePos(p); return;
         }
       }
@@ -479,7 +485,7 @@ export default function PlayCanvas({
       return;
     }
     if (!edit || !dragStart || !tool) return;
-    if (["move", "pass", "dribble", "screen"].includes(tool)) {
+    if (["move", "pass", "dribble", "screen", "lob"].includes(tool)) {
       const p = pointFromEvent(e);
       if (Math.hypot(p.x - dragStart.x, p.y - dragStart.y) > 8) {
         const nearestPlayer = (x: number, y: number) => {
@@ -496,7 +502,7 @@ export default function PlayCanvas({
         // line happens to start near.
         const selectedPlayer = selected?.kind === "player" ? frame.players[selected.index] : null;
         const source = selectedPlayer ?? nearestPlayer(dragStart.x, dragStart.y);
-        const target = tool === "pass" ? nearestPlayer(p.x, p.y) : null;
+        const target = (tool === "pass" || tool === "lob") ? nearestPlayer(p.x, p.y) : null;
         // If the selected player already has an action in this step (e.g.
         // a screen), a new one chains onto the end of it — starting where
         // the previous one left off, one slot further in their sequence —
@@ -716,7 +722,7 @@ export default function PlayCanvas({
       })()}
 
       {edit && tool === "select" && displayFrame.actions.map((a, i) => {
-        const chp = (a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen") ? curveHandlePos(a) : null;
+        const chp = (a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen" || a.type === "lob") ? curveHandlePos(a) : null;
         return (
           <g key={i}>
             <circle cx={a.x1} cy={a.y1} r={6} fill="var(--gold)" opacity={0.85} />
