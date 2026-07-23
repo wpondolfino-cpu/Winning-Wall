@@ -37,6 +37,43 @@ export interface PlayAction {
   sourcePlayerId?: string;
   /** For passes — the player this action ends at, auto-detected by proximity to (x2,y2). Drives ball-possession carry-forward. */
   targetPlayerId?: string;
+  /**
+   * This action's position (0-based) in its source player's ordered
+   * sequence within this step — e.g. a screen (0) then a roll (1) for the
+   * same player in one beat. Undefined/0 for a player's only action.
+   * Carry-forward and animation always use the highest-indexed action for
+   * a given player as their true final destination for the step.
+   */
+  sequenceIndex?: number;
+}
+
+/** All of a given player's actions in a frame, in sequence order (lowest sequenceIndex first). */
+export function playerActionSequence(frame: PlayFrame, playerId: string): PlayAction[] {
+  return frame.actions
+    .filter((a) => a.sourcePlayerId === playerId)
+    .sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0));
+}
+
+/**
+ * Given the whole beat's overall progress (0-1), returns this action's own
+ * local progress (0-1) within its slice of that timeline — e.g. a screen
+ * (index 0 of 2) plays across the first half of the beat, a roll (index 1
+ * of 2) across the second half. Before its slice starts, local progress is
+ * 0 (sits at its own start); after its slice ends, it's 1 (sits at its own
+ * end) — so a player's actions appear to flow continuously into each
+ * other rather than all animating across the full beat at once.
+ */
+export function localActionProgress(globalT: number, action: PlayAction, frame: PlayFrame): number {
+  if (!action.sourcePlayerId) return globalT;
+  const seq = playerActionSequence(frame, action.sourcePlayerId);
+  const total = seq.length;
+  if (total <= 1) return globalT;
+  const idx = action.sequenceIndex ?? 0;
+  const sliceSize = 1 / total;
+  const sliceStart = idx * sliceSize;
+  if (globalT < sliceStart) return 0;
+  if (globalT > sliceStart + sliceSize) return 1;
+  return (globalT - sliceStart) / sliceSize;
 }
 
 /** Generates a stable id for a newly-placed player. Not cryptographically meaningful — just needs to be unique within a play. */
