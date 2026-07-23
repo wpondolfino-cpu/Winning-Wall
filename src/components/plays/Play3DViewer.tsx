@@ -316,6 +316,11 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
     let animFromFrame: PlayFrame | null = null;
     let animToFrame: PlayFrame | null = null;
     let elapsed = 0;
+    // After a made shot, the ball drops from rim height to the floor over
+    // this many ms instead of snapping there instantly when the next step
+    // takes over.
+    let fallStart: number | null = null;
+    const FALL_DURATION = 550;
     let lastTickTime = performance.now();
 
     function beginNextBeat(): boolean {
@@ -326,6 +331,17 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
       animToFrame = p.data.frames[nextIdx];
       elapsed = 0;
       return true;
+    }
+
+    function advanceBeat() {
+      const nextIdx = stateRef.current.frameIdx + 1;
+      setFrameIdx(nextIdx);
+      stateRef.current = { ...stateRef.current, frameIdx: nextIdx };
+      const more = isPlayingRef.current && beginNextBeat();
+      if (!more) {
+        animFromFrame = null; animToFrame = null; elapsed = 0;
+        if (isPlayingRef.current) pause();
+      }
     }
 
     function startOrResume() {
@@ -353,7 +369,14 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
       raf = requestAnimationFrame(tick);
       const dt = now - lastTickTime;
       lastTickTime = now;
-      if (animFromFrame && animToFrame) {
+      if (fallStart !== null) {
+        const ft = Math.min(1, (now - fallStart) / FALL_DURATION);
+        if (ballMesh) ballMesh.position.y = 2.0 + (0.5 - 2.0) * ft;
+        if (ft >= 1) {
+          fallStart = null;
+          advanceBeat();
+        }
+      } else if (animFromFrame && animToFrame) {
         if (isPlayingRef.current) elapsed += dt;
         const t = Math.min(1, elapsed / (1500 / stateRef.current.speed));
         animFromFrame.players.forEach((fp, i) => {
@@ -414,13 +437,11 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           }
         }
         if (t >= 1) {
-          const nextIdx = stateRef.current.frameIdx + 1;
-          setFrameIdx(nextIdx);
-          stateRef.current = { ...stateRef.current, frameIdx: nextIdx };
-          const more = isPlayingRef.current && beginNextBeat();
-          if (!more) {
-            animFromFrame = null; animToFrame = null; elapsed = 0;
-            if (isPlayingRef.current) pause();
+          const hadShot = animFromFrame.actions.some((a) => a.type === "shot");
+          if (hadShot) {
+            fallStart = now;
+          } else {
+            advanceBeat();
           }
         }
       }
