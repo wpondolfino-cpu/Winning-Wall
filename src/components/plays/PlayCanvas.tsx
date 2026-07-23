@@ -9,7 +9,7 @@
 import { useRef, useState, useEffect, type MouseEvent as ReactMouseEvent } from "react";
 import type { CourtTemplate, PlayFrame, PlayPlayer, PlayAction, ActionType, PlayText, PlayZone } from "../../lib/plays";
 import type { RosterPlayer } from "../../lib/plays";
-import { resolvePassEndpoint } from "../../lib/plays";
+import { resolvePassEndpoint, localActionProgress, playerActionSequence } from "../../lib/plays";
 import { genPlayerId } from "../../lib/plays";
 
 export const CANVAS_W = 600;
@@ -497,11 +497,20 @@ export default function PlayCanvas({
         const selectedPlayer = selected?.kind === "player" ? frame.players[selected.index] : null;
         const source = selectedPlayer ?? nearestPlayer(dragStart.x, dragStart.y);
         const target = tool === "pass" ? nearestPlayer(p.x, p.y) : null;
-        const startX = selectedPlayer ? selectedPlayer.x : dragStart.x;
-        const startY = selectedPlayer ? selectedPlayer.y : dragStart.y;
+        // If the selected player already has an action in this step (e.g.
+        // a screen), a new one chains onto the end of it — starting where
+        // the previous one left off, one slot further in their sequence —
+        // instead of restarting from their original position.
+        const existingSeq = selectedPlayer?.id
+          ? frame.actions.filter((a) => a.sourcePlayerId === selectedPlayer.id).sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0))
+          : [];
+        const priorAction = existingSeq[existingSeq.length - 1];
+        const startX = priorAction ? priorAction.x2 : selectedPlayer ? selectedPlayer.x : dragStart.x;
+        const startY = priorAction ? priorAction.y2 : selectedPlayer ? selectedPlayer.y : dragStart.y;
+        const sequenceIndex = selectedPlayer ? existingSeq.length : undefined;
         onAddAction?.({
           type: tool as ActionType, x1: startX, y1: startY, x2: p.x, y2: p.y,
-          sourcePlayerId: source?.id, targetPlayerId: target?.id,
+          sourcePlayerId: source?.id, targetPlayerId: target?.id, sequenceIndex,
         });
         const linked = [source?.id, target?.id].filter(Boolean) as string[];
         if (linked.length) {
@@ -611,6 +620,19 @@ export default function PlayCanvas({
         return <ActionShape key={i} a={{ ...a, x2: resolved.x, y2: resolved.y }} />;
       })}
 
+      {displayFrame.actions.map((a, i) => {
+        if (!a.sourcePlayerId) return null;
+        const seq = playerActionSequence(displayFrame, a.sourcePlayerId);
+        if (seq.length <= 1) return null;
+        const order = (a.sequenceIndex ?? 0) + 1;
+        return (
+          <g key={"seq-" + i}>
+            <circle cx={a.x1} cy={a.y1} r={8} fill="var(--gold)" stroke="#5a4200" strokeWidth={1} />
+            <text x={a.x1} y={a.y1 + 3} textAnchor="middle" fontSize={10} fontWeight={700} fill="#2a1e00">{order}</text>
+          </g>
+        );
+      })}
+
       {(displayFrame.drawings ?? []).map((d, i) => (
         <path key={i} d={pointsToPath(d.points)} fill="none" stroke="var(--gold)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
       ))}
@@ -707,14 +729,15 @@ export default function PlayCanvas({
       {animT !== null && frame.actions.map((a, i) => {
         if (a.type === "screen") return null;
         const endpoint = a.type === "pass" ? resolvePassEndpoint(frame, a) : { x: a.x2, y: a.y2 };
+        const localT = localActionProgress(animT, a, frame);
         let x: number, y: number;
         if (a.curve) {
-          const t = animT, mt = 1 - t;
+          const t = localT, mt = 1 - t;
           x = mt * mt * a.x1 + 2 * mt * t * a.curve.x + t * t * endpoint.x;
           y = mt * mt * a.y1 + 2 * mt * t * a.curve.y + t * t * endpoint.y;
         } else {
-          x = a.x1 + (endpoint.x - a.x1) * animT;
-          y = a.y1 + (endpoint.y - a.y1) * animT;
+          x = a.x1 + (endpoint.x - a.x1) * localT;
+          y = a.y1 + (endpoint.y - a.y1) * localT;
         }
         const isShot = a.type === "shot";
         return <circle key={i} cx={x} cy={y} r={a.type === "pass" ? 6 : isShot ? 7 : 9} fill={isShot ? "#EF9F27" : "#378ADD"} stroke={isShot ? "#854F0B" : undefined} strokeWidth={isShot ? 1.5 : 0} opacity={0.9} />;
