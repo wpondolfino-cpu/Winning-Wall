@@ -99,6 +99,28 @@ export interface PlayFrame {
   cones?: PlayPoint[];
 }
 
+/**
+ * Where a pass actually ends, for animation purposes — not necessarily the
+ * fixed (x2,y2) recorded when it was drawn. If the receiver is also
+ * cutting/dribbling/screening to a new spot in this same step (e.g. an
+ * alley-oop, or any pass to someone who's also moving), the pass should
+ * arrive wherever THEY end up, not a stale fixed point. Otherwise it lands
+ * on the receiver's current position, in case they were moved after the
+ * pass was drawn. Falls back to the action's own x2/y2 if there's no
+ * resolvable target (legacy passes, or ones without a detected receiver).
+ */
+export function resolvePassEndpoint(frame: PlayFrame, action: PlayAction): { x: number; y: number } {
+  if (action.type === "pass" && action.targetPlayerId) {
+    const receiverMove = frame.actions.find(
+      (a) => a.sourcePlayerId === action.targetPlayerId && (a.type === "move" || a.type === "dribble" || a.type === "screen")
+    );
+    if (receiverMove) return { x: receiverMove.x2, y: receiverMove.y2 };
+    const receiver = frame.players.find((p) => p.id === action.targetPlayerId);
+    if (receiver) return { x: receiver.x, y: receiver.y };
+  }
+  return { x: action.x2, y: action.y2 };
+}
+
 export interface PlayData {
   /** true = every player shows an avatar by default; false = numbered circles by default. */
   avatarsDefault: boolean;
