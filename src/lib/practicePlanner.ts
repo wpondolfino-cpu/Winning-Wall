@@ -70,7 +70,8 @@ export interface SegmentDrill {
   label: string | null;
   duration_minutes: number;
   goal_text: string | null;
-  coach_name: string | null;
+  coach_name: string | null; // legacy single free-text field, superseded by coach_ids
+  coach_ids: string[];       // real coach/admin profile ids — supports multiple coaches per drill
   group_size: number | null;
   num_groups: number | null;
 }
@@ -789,5 +790,15 @@ export async function getRecentlyUsedDrills(limit = 8): Promise<PracticeDrillLib
 export async function getPlaysForLinking(): Promise<{ id: string; title: string }[]> {
   const { data, error } = await supabase.from("plays").select("id,title").order("title", { ascending: true });
   if (error) return [];
+  return data ?? [];
+}
+
+// ── Assignable coaches (for the multi-coach picker on a drill) ────
+
+export interface CoachLite { id: string; name: string; }
+
+export async function getAssignableCoaches(): Promise<CoachLite[]> {
+  const { data, error } = await supabase.from("profiles").select("id,name").in("role", ["coach", "admin"]).order("name", { ascending: true });
+  if (error) { console.error("Failed to load coaches:", error); return []; }
   return data ?? [];
 }
