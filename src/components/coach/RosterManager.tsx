@@ -9,6 +9,7 @@ import {
   Roster, RosterWithCount, getRosters, createRoster, updateRoster,
   archiveRoster, restoreRoster,
 } from "../../lib/practicePlanner";
+import SavedGroupingsManager from "./SavedGroupingsManager";
 
 const PRESET_COLORS = ["#1a3fa8", "#8a8f98", "#e8e8e8", "#f0c040", "#5de098", "#d85a30", "#993c56"];
 
@@ -34,6 +35,7 @@ export default function RosterManager({ onChanged }: Props = {}) {
   const [editName, setEditName]     = useState("");
   const [editColor, setEditColor]   = useState("");
   const [editCoach, setEditCoach]   = useState("");
+  const [groupingsRoster, setGroupingsRoster] = useState<RosterWithCount | null>(null);
 
   useEffect(() => { load(); }, []);
 
@@ -131,6 +133,9 @@ export default function RosterManager({ onChanged }: Props = {}) {
             {!isArchived && (
               <button onClick={() => startEdit(r)} style={smallBtn}>Edit</button>
             )}
+            {!isArchived && (
+              <button onClick={() => setGroupingsRoster(r)} style={smallBtn}>Groupings</button>
+            )}
             {r.roster_type === "seasonal" && !isArchived && (
               <button onClick={() => handleArchive(r)} style={smallBtn}>Archive</button>
             )}
@@ -208,6 +213,10 @@ export default function RosterManager({ onChanged }: Props = {}) {
             </div>
           )}
         </div>
+      )}
+
+      {groupingsRoster && (
+        <SavedGroupingsManager roster={groupingsRoster} onClose={() => setGroupingsRoster(null)} />
       )}
     </div>
   );
