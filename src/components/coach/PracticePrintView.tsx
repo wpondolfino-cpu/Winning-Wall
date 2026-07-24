@@ -47,7 +47,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
         <div style={{ fontWeight: 700, color: "#222" }}>Print Preview — {practiceIds.length} practice{practiceIds.length === 1 ? "" : "s"}</div>
         <div style={{ display: "flex", gap: 10 }}>
           <button onClick={() => window.print()} style={{ background: "#1a3fa8", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontWeight: 600, cursor: "pointer" }}>Print / Save as PDF</button>
-          <button onClick={onClose} style={{ background: "#e5e5e5", border: "none", borderRadius: 8, padding: "8px 18px", fontWeight: 600, cursor: "pointer" }}>Close</button>
+          <button onClick={onClose} style={{ background: "#fff", border: "1px solid #999", color: "#222", borderRadius: 8, padding: "8px 18px", fontWeight: 600, cursor: "pointer" }}>Close</button>
         </div>
       </div>
 
@@ -84,7 +84,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                     <tr key={`${bi}-${ri}`} style={{ borderBottom: "1px solid #ddd", verticalAlign: "top" }}>
                       {ri === 0 && (
                         <td rowSpan={rows.length} style={{ padding: "6px 8px", fontWeight: 700, whiteSpace: "nowrap" }}>
-                          {formatClock(b.start)}–{formatClock(b.end)}
+                          {b.start}–{b.end}
                         </td>
                       )}
                       <td style={{ padding: "6px 8px" }}>
