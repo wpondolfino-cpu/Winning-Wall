@@ -9,9 +9,10 @@ import { hoopPositions } from "./courtGeometry";
 import {
   Play, PlayData, PlayFrame, PlayPlayer, PlayAction, ActionType,
   CourtTemplate, COURT_TEMPLATES, COURT_TEMPLATE_LABELS,
-  SavedAction, RosterPlayer, PlayShareTarget,
+  SavedAction, Formation, RosterPlayer, PlayShareTarget,
   emptyPlayData, createPlay, updatePlay, deletePlay, genPlayerId, playerActionSequence,
-  getMySavedActions, createSavedAction, deleteSavedAction,
+  getSavedActions, createSavedAction, deleteSavedAction,
+  getFormations, createFormation, deleteFormation,
   getRoster, getStaff, sharePlay,
 } from "../../lib/plays";
 import { getPlayCategories, PlayCategory } from "../../lib/playCategories";
@@ -97,6 +98,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
   const [savedActions, setSavedActions] = useState<SavedAction[]>([]);
+  const [formations, setFormations] = useState<Formation[]>([]);
   const [stampAction, setStampAction] = useState<SavedAction | null>(null);
   const [stampPreviewPos, setStampPreviewPos] = useState<{ x: number; y: number } | null>(null);
   const [staff, setStaff] = useState<PlayShareTarget[]>([]);
@@ -104,9 +106,12 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
   useEffect(() => {
     getRoster().then(setRoster).catch(console.error);
-    getMySavedActions().then(setSavedActions).catch(console.error);
+    getSavedActions().then(setSavedActions).catch(console.error);
     if (currentUserRole === "player") getStaff().then(setStaff).catch(console.error);
-    else getPlayCategories().then(setPlayCategories).catch(console.error);
+    else {
+      getPlayCategories().then(setPlayCategories).catch(console.error);
+      if (!existingPlay) getFormations().then(setFormations).catch(console.error);
+    }
   }, [currentUserRole]);
 
   // Keyboard shortcuts. Skipped while typing in a text field so native
@@ -522,6 +527,31 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     } catch (e: any) { showToast("Error: " + e.message); }
   }
 
+  // Formations are positions-only starting points (offense OR defense,
+  // never both) — applying one replaces just that side of the current
+  // frame, leaving the ball/other side/everything else untouched. That
+  // lets a coach apply an offense formation and a defense formation
+  // independently to build the full starting picture.
+  function applyFormation(f: Formation) {
+    pushHistory();
+    if (f.side === "offense") {
+      updateFrame((fr) => ({ ...fr, players: (f.data.players ?? []).map((p) => ({ ...p, id: genPlayerId() })) }));
+    } else {
+      updateFrame((fr) => ({ ...fr, defenders: f.data.defenders ?? [] }));
+    }
+  }
+
+  async function saveCurrentFrameAsFormation(side: "offense" | "defense") {
+    const name = window.prompt(`Name this ${side} formation (e.g. "${side === "offense" ? "Horns" : "2-3 zone"}")`);
+    if (!name) return;
+    const data = side === "offense" ? { players: frame.players } : { defenders: frame.defenders };
+    try {
+      const saved = await createFormation(name, side, data);
+      setFormations((f) => [saved, ...f]);
+      showToast(`Saved "${name}"`);
+    } catch (e: any) { showToast("Error: " + e.message); }
+  }
+
   function computeStampGhost(action: SavedAction, x: number, y: number) {
     const d = action.data;
     const anchor = d.players[0] ?? d.ball ?? d.defenders[0] ?? (d.actions[0] ? { x: d.actions[0].x1, y: d.actions[0].y1 } : { x: 0, y: 0 });
@@ -809,12 +839,35 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           ▶ Preview & save
         </button>
 
+        {!existingPlay && currentUserRole !== "player" && (
+          <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginBottom: 12 }}>
+            <h3 style={{ fontSize: 13, margin: "0 0 8px", color: "var(--text)" }}>Formations</h3>
+            {formations.map((f) => (
+              <div key={f.id} style={{ display: "flex", gap: 4, marginBottom: 4, alignItems: "center" }}>
+                <button onClick={() => applyFormation(f)} style={{ flex: 1, textAlign: "left", padding: "6px 8px", fontSize: 12 }}>
+                  {f.side === "offense" ? "🟠 O" : "🔵 D"} {f.name}
+                </button>
+                {currentUserRole === "admin" && (
+                  <button onClick={async () => { await deleteFormation(f.id); setFormations((s) => s.filter((x) => x.id !== f.id)); }} style={{ padding: "6px 8px", fontSize: 11 }}>✕</button>
+                )}
+              </div>
+            ))}
+            {formations.length === 0 && <p style={{ fontSize: 12, color: "var(--muted)" }}>None yet.</p>}
+            <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+              <button onClick={() => saveCurrentFrameAsFormation("offense")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save offense</button>
+              <button onClick={() => saveCurrentFrameAsFormation("defense")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save defense</button>
+            </div>
+          </div>
+        )}
+
         <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
           <h3 style={{ fontSize: 13, margin: "0 0 8px", color: "var(--text)" }}>Saved actions</h3>
           {savedActions.map((a) => (
             <div key={a.id} style={{ display: "flex", gap: 4, marginBottom: 4 }}>
               <button onClick={() => setStampAction(a)} style={{ flex: 1, textAlign: "left", padding: "6px 8px", fontSize: 12 }}>🔖 {a.name}</button>
-              <button onClick={async () => { await deleteSavedAction(a.id); setSavedActions((s) => s.filter((x) => x.id !== a.id)); }} style={{ padding: "6px 8px", fontSize: 11 }}>✕</button>
+              {(currentUserRole === "player" || currentUserRole === "admin") && (
+                <button onClick={async () => { await deleteSavedAction(a.id); setSavedActions((s) => s.filter((x) => x.id !== a.id)); }} style={{ padding: "6px 8px", fontSize: 11 }}>✕</button>
+              )}
             </div>
           ))}
           {savedActions.length === 0 && <p style={{ fontSize: 12, color: "var(--muted)" }}>None yet.</p>}
@@ -1017,13 +1070,36 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       </div>
 
       <div>
+        {!existingPlay && currentUserRole !== "player" && (
+          <div style={{ marginBottom: 16 }}>
+            <h3 style={{ fontSize: 14, marginBottom: 8 }}>Formations</h3>
+            {formations.map((f) => (
+              <div key={f.id} style={{ display: "flex", gap: 4, marginBottom: 4, alignItems: "center" }}>
+                <button onClick={() => applyFormation(f)} style={{ flex: 1, textAlign: "left", padding: "6px 8px", fontSize: 13 }}>
+                  {f.side === "offense" ? "🟠 O" : "🔵 D"} {f.name}
+                </button>
+                {currentUserRole === "admin" && (
+                  <button onClick={async () => { await deleteFormation(f.id); setFormations((s) => s.filter((x) => x.id !== f.id)); }} style={{ padding: "6px 8px", fontSize: 12 }}>✕</button>
+                )}
+              </div>
+            ))}
+            {formations.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>None yet.</p>}
+            <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+              <button onClick={() => saveCurrentFrameAsFormation("offense")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save offense</button>
+              <button onClick={() => saveCurrentFrameAsFormation("defense")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save defense</button>
+            </div>
+          </div>
+        )}
+
         <h3 style={{ fontSize: 14, marginBottom: 8 }}>Saved actions</h3>
         {savedActions.map((a) => (
           <div key={a.id} style={{ display: "flex", gap: 4, marginBottom: 4 }}>
             <button onClick={() => setStampAction(a)} style={{ flex: 1, textAlign: "left", padding: "6px 8px", fontSize: 13 }}>
               🔖 {a.name}
             </button>
-            <button onClick={async () => { await deleteSavedAction(a.id); setSavedActions((s) => s.filter((x) => x.id !== a.id)); }} style={{ padding: "6px 8px", fontSize: 12 }}>✕</button>
+            {(currentUserRole === "player" || currentUserRole === "admin") && (
+              <button onClick={async () => { await deleteSavedAction(a.id); setSavedActions((s) => s.filter((x) => x.id !== a.id)); }} style={{ padding: "6px 8px", fontSize: 12 }}>✕</button>
+            )}
           </div>
         ))}
         {savedActions.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>None yet.</p>}
