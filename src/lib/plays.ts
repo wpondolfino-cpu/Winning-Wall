@@ -180,6 +180,8 @@ export interface Play {
   court_template: CourtTemplate;
   data: PlayData;
   forked_from: string | null;
+  /** Optional YouTube URL — e.g. game film of the team actually running this play. */
+  video_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -216,6 +218,7 @@ export async function createPlay(play: {
   court_template?: CourtTemplate;
   data?: PlayData;
   forked_from?: string | null;
+  video_url?: string | null;
 }): Promise<Play> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
@@ -228,6 +231,7 @@ export async function createPlay(play: {
       court_template: play.court_template ?? "half",
       data: play.data ?? emptyPlayData(),
       forked_from: play.forked_from ?? null,
+      video_url: play.video_url ?? null,
     })
     .select()
     .single();
@@ -235,7 +239,7 @@ export async function createPlay(play: {
   return data as Play;
 }
 
-export async function updatePlay(id: string, patch: Partial<Pick<Play, "title" | "tags" | "court_template" | "data">>) {
+export async function updatePlay(id: string, patch: Partial<Pick<Play, "title" | "tags" | "court_template" | "data" | "video_url">>) {
   const { error } = await supabase.from("plays").update(patch).eq("id", id);
   if (error) throw error;
 }
@@ -245,7 +249,7 @@ export async function deletePlay(id: string) {
   if (error) throw error;
 }
 
-/** Duplicate a play as a new one owned by the current user — used for forking. */
+/** Duplicate a play as a new one owned by the current user — used for forking. Carries the video over as a starting point, same as every other field; the copy owner can clear it. */
 export async function forkPlay(source: Play, newTitle?: string): Promise<Play> {
   return createPlay({
     title: newTitle ?? `${source.title} (copy)`,
@@ -253,6 +257,7 @@ export async function forkPlay(source: Play, newTitle?: string): Promise<Play> {
     court_template: source.court_template,
     data: source.data,
     forked_from: source.id,
+    video_url: source.video_url,
   });
 }
 
@@ -358,6 +363,8 @@ export interface Playbook {
   description: string | null;
   status: PlaybookStatus;
   created_by: string;
+  /** Optional YouTube URL — a higher-level walkthrough covering the whole playbook. */
+  video_url: string | null;
   created_at: string;
 }
 
@@ -380,18 +387,18 @@ export async function getMyAssignedPlaybooks(): Promise<(Playbook & { share_id: 
   return (data ?? []).map((row: any) => ({ ...row.playbooks, share_id: row.id, viewed_at: row.viewed_at })).filter((p: any) => p.id);
 }
 
-export async function createPlaybook(name: string, description?: string): Promise<Playbook> {
+export async function createPlaybook(name: string, description?: string, video_url?: string): Promise<Playbook> {
   const { data: { user } } = await supabase.auth.getUser();
   const { data, error } = await supabase
     .from("playbooks")
-    .insert({ name, description: description ?? null, status: "draft", created_by: user?.id })
+    .insert({ name, description: description ?? null, status: "draft", created_by: user?.id, video_url: video_url ?? null })
     .select()
     .single();
   if (error) throw error;
   return data as Playbook;
 }
 
-export async function updatePlaybook(id: string, patch: Partial<Pick<Playbook, "name" | "description">>) {
+export async function updatePlaybook(id: string, patch: Partial<Pick<Playbook, "name" | "description" | "video_url">>) {
   const { error } = await supabase.from("playbooks").update(patch).eq("id", id);
   if (error) throw error;
 }
