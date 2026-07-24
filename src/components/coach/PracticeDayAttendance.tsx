@@ -155,23 +155,39 @@ export default function PracticeDayAttendance({ practiceId, onClose, onSaved }: 
                 const isCallUp = rosterCallUps.some(c => c.id === p.id);
                 return (
                   <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <button onClick={() => toggleExcuse(p.id)}
-                      style={{
+                    {isCallUp ? (
+                      // Call-ups don't get an excuse toggle — "excused" and "called up"
+                      // share one override row in the database, so toggling this would
+                      // silently overwrite (and lose) their call-up record. If they're
+                      // not coming after all, remove the call-up entirely instead.
+                      <div style={{
                         flex: 1, display: "flex", justifyContent: "space-between", alignItems: "center",
-                        padding: "9px 12px", borderRadius: 8, border: "1px solid var(--border)",
-                        background: "var(--surface)", cursor: "pointer", textAlign: "left",
+                        padding: "9px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)",
                       }}>
-                      <span style={{ fontSize: 13, color: excused ? "var(--muted)" : "var(--text)", textDecoration: excused ? "line-through" : "none" }}>
-                        {p.name}
-                      </span>
-                      <span style={{
-                        fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
-                        background: excused ? "rgba(255,107,107,0.12)" : "rgba(40,180,80,0.15)",
-                        color: excused ? "#ff7b7b" : "#5de098",
-                      }}>
-                        {excused ? "Excused" : "Present"}
-                      </span>
-                    </button>
+                        <span style={{ fontSize: 13, color: "var(--text)" }}>{p.name}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "rgba(40,180,80,0.15)", color: "#5de098" }}>
+                          Present
+                        </span>
+                      </div>
+                    ) : (
+                      <button onClick={() => toggleExcuse(p.id)}
+                        style={{
+                          flex: 1, display: "flex", justifyContent: "space-between", alignItems: "center",
+                          padding: "9px 12px", borderRadius: 8, border: "1px solid var(--border)",
+                          background: "var(--surface)", cursor: "pointer", textAlign: "left",
+                        }}>
+                        <span style={{ fontSize: 13, color: excused ? "var(--muted)" : "var(--text)", textDecoration: excused ? "line-through" : "none" }}>
+                          {p.name}
+                        </span>
+                        <span style={{
+                          fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
+                          background: excused ? "rgba(255,107,107,0.12)" : "rgba(40,180,80,0.15)",
+                          color: excused ? "#ff7b7b" : "#5de098",
+                        }}>
+                          {excused ? "Excused" : "Present"}
+                        </span>
+                      </button>
+                    )}
                     {isCallUp && <button onClick={() => removeCallUp(p.id)} title="Remove call-up" style={iconBtn}>✕</button>}
                   </div>
                 );
