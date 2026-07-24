@@ -90,6 +90,16 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
     setGroupCounts(prev => ({ ...prev, ...counts }));
   }
 
+  // Patches one drill's fields in local state directly — used after a
+  // save we already know succeeded, so there's no need to re-fetch the
+  // whole block from the server just to reflect a single field change.
+  function patchLocalDrill(segmentId: string, drillId: string, patch: Partial<SegmentDrill>) {
+    setDrillsBySeg(prev => ({
+      ...prev,
+      [segmentId]: (prev[segmentId] ?? []).map(d => d.id === drillId ? { ...d, ...patch } : d),
+    }));
+  }
+
   const load = useCallback(async () => {
     setLoading(true);
     const [r, w, c] = await Promise.all([getRosters(), getPracticeWeeks(), getAssignableCoaches()]);
@@ -205,21 +215,28 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
       return;
     }
     // New blocks default to one combined segment spanning every roster.
-    const { error: segErr } = await createSegment(blockId, "combined", null);
-    if (segErr) alert("Block was created but the segment failed: " + segErr);
-    await load();
+    const { id: segId, error: segErr } = await createSegment(blockId, "combined", null);
+    if (segErr || !segId) { alert("Block was created but the segment failed: " + (segErr ?? "unknown error")); return; }
+    setBlocks(prev => [...prev, { id: blockId, practice_id: id, order_index: prev.length, duration_minutes: 10 }]);
+    setSegByBlock(prev => ({ ...prev, [blockId]: [{ id: segId, block_id: blockId, scope_type: "combined", roster_id: null }] }));
+    setDrillsBySeg(prev => ({ ...prev, [segId]: [] }));
   }
 
   async function handleBlockDuration(block: PracticeBlock, minutes: number) {
-    await updateBlock(block.id, { duration_minutes: minutes });
+    const { error } = await updateBlock(block.id, { duration_minutes: minutes });
+    if (error) { alert("Couldn't save duration: " + error); return; }
     setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, duration_minutes: minutes } : b));
-    // Re-split any multi-drill segments in this block to the new duration.
+    // Re-split any multi-drill segments in this block to the new duration —
+    // compute the even split locally instead of re-fetching from the server.
     const segs = segByBlock[block.id] ?? [];
     for (const s of segs) {
       const drills = drillsBySeg[s.id] ?? [];
-      if (drills.length > 1) await autoSplitSegmentDrillDurations(s.id, minutes);
+      if (drills.length > 1) {
+        await autoSplitSegmentDrillDurations(s.id, minutes);
+        const each = Math.max(1, Math.floor(minutes / drills.length));
+        setDrillsBySeg(prev => ({ ...prev, [s.id]: (prev[s.id] ?? []).map(d => ({ ...d, duration_minutes: each })) }));
+      }
     }
-    await refreshBlock(block.id);
   }
 
   async function handleDeleteBlock(blockId: string) {
@@ -273,41 +290,60 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
 
     if (replacing) {
       // Swapping which drill this slot points to — keep its own duration/label/goal/coach as-is.
-      await updateSegmentDrill(replacing.id, { drill_id: drill.id });
-      await refreshBlock(block.id);
+      const { error } = await updateSegmentDrill(replacing.id, { drill_id: drill.id });
+      if (error) { alert("Couldn't change drill: " + error); return; }
+      patchLocalDrill(segment.id, replacing.id, { drill_id: drill.id });
       setDrillPickerTarget(null);
       return;
     }
 
     const existing = drillsBySeg[segment.id] ?? [];
-    await createSegmentDrill(segment.id, {
+    const label = existing.length > 0 ? `Station ${existing.length + 1}` : null;
+    const duration = drill.default_duration_minutes ?? block.duration_minutes;
+    const { id: newId, error } = await createSegmentDrill(segment.id, {
       drill_id: drill.id,
       order_index: existing.length,
       // A 2nd+ drill in the same segment is a station split — auto-label it;
       // the first/only drill just takes the drill's own title, no label needed.
-      label: existing.length > 0 ? `Station ${existing.length + 1}` : null,
-      duration_minutes: drill.default_duration_minutes ?? block.duration_minutes,
+      label,
+      duration_minutes: duration,
       group_size: drill.default_group_size ?? null,
       num_groups: drill.default_num_groups ?? null,
     });
-    await autoSplitSegmentDrillDurations(segment.id, block.duration_minutes);
-    await refreshBlock(block.id);
+    if (error || !newId) { alert("Couldn't add drill: " + (error ?? "unknown error")); return; }
+
+    const newDrill: SegmentDrill = {
+      id: newId, segment_id: segment.id, drill_id: drill.id, order_index: existing.length,
+      label, duration_minutes: duration, goal_text: null, coach_name: null, coach_ids: [],
+      group_size: drill.default_group_size ?? null, num_groups: drill.default_num_groups ?? null,
+    };
+    let updatedList = [...existing, newDrill];
+
+    if (updatedList.length > 1) {
+      await autoSplitSegmentDrillDurations(segment.id, block.duration_minutes);
+      const each = Math.max(1, Math.floor(block.duration_minutes / updatedList.length));
+      updatedList = updatedList.map(d => ({ ...d, duration_minutes: each }));
+    }
+    setDrillsBySeg(prev => ({ ...prev, [segment.id]: updatedList }));
     setDrillPickerTarget(null);
   }
 
   async function handleEditDrillDuration(drill: SegmentDrill, blockId: string, minutes: number) {
-    await updateSegmentDrill(drill.id, { duration_minutes: minutes });
-    await refreshBlock(blockId);
+    const { error } = await updateSegmentDrill(drill.id, { duration_minutes: minutes });
+    if (error) { alert("Couldn't save duration: " + error); return; }
+    patchLocalDrill(drill.segment_id, drill.id, { duration_minutes: minutes });
   }
 
   async function handleEditNotes(drill: SegmentDrill, blockId: string, text: string) {
-    await updateSegmentDrill(drill.id, { goal_text: text.trim() || null });
-    await refreshBlock(blockId);
+    const { error } = await updateSegmentDrill(drill.id, { goal_text: text.trim() || null });
+    if (error) { alert("Couldn't save note: " + error); return; }
+    patchLocalDrill(drill.segment_id, drill.id, { goal_text: text.trim() || null });
   }
 
   async function handleDeleteDrill(drill: SegmentDrill, blockId: string) {
-    await deleteSegmentDrill(drill.id);
-    await refreshBlock(blockId);
+    const { error } = await deleteSegmentDrill(drill.id);
+    if (error) { alert("Couldn't delete: " + error); return; }
+    setDrillsBySeg(prev => ({ ...prev, [drill.segment_id]: (prev[drill.segment_id] ?? []).filter(d => d.id !== drill.id) }));
   }
 
   function openDrillDetails(drill: SegmentDrill, block: PracticeBlock) {
@@ -317,11 +353,12 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
 
   async function saveDrillDetails() {
     if (!editingDrillDetails) return;
-    const { drill, block } = editingDrillDetails;
-    await updateSegmentDrill(drill.id, {
+    const { drill } = editingDrillDetails;
+    const { error } = await updateSegmentDrill(drill.id, {
       label: detailsLabel.trim() || null,
     });
-    await refreshBlock(block.id);
+    if (error) { alert("Couldn't save: " + error); return; }
+    patchLocalDrill(drill.segment_id, drill.id, { label: detailsLabel.trim() || null });
     setEditingDrillDetails(null);
   }
 
@@ -332,9 +369,10 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
 
   async function saveCoachPicker() {
     if (!coachPickerTarget) return;
-    const { drill, block } = coachPickerTarget;
-    await updateSegmentDrill(drill.id, { coach_ids: Array.from(coachSelection) });
-    await refreshBlock(block.id);
+    const { drill } = coachPickerTarget;
+    const { error } = await updateSegmentDrill(drill.id, { coach_ids: Array.from(coachSelection) });
+    if (error) { alert("Couldn't save coaches: " + error); return; }
+    patchLocalDrill(drill.segment_id, drill.id, { coach_ids: Array.from(coachSelection) });
     setCoachPickerTarget(null);
   }
 
@@ -730,7 +768,11 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
               : rosterIds.flatMap(id => savedGroupingsCache[id] ?? [])
           }
           onClose={() => setGroupingTarget(null)}
-          onChanged={() => {}}
+          onChanged={() => {
+            getGroupCountsForDrills([groupingTarget.drill.id]).then(counts => {
+              setGroupCounts(prev => ({ ...prev, [groupingTarget.drill.id]: counts[groupingTarget.drill.id] ?? 0 }));
+            });
+          }}
         />
       )}
     </div>
