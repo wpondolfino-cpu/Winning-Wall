@@ -7,7 +7,7 @@
 // actions and forked plays stay valid if the template changes later.
 
 import { useRef, useState, useEffect, type MouseEvent as ReactMouseEvent } from "react";
-import type { CourtTemplate, PlayFrame, PlayPlayer, PlayAction, ActionType, PlayText, PlayZone } from "../../lib/plays";
+import type { CourtTemplate, PlayFrame, PlayPlayer, PlayAction, ActionType, PlayText, PlayZone, PlayPoint } from "../../lib/plays";
 import type { RosterPlayer } from "../../lib/plays";
 import { resolvePassEndpoint, localActionProgress, playerActionSequence } from "../../lib/plays";
 import { genPlayerId } from "../../lib/plays";
@@ -55,6 +55,8 @@ interface Props {
   onMoveCone?: (index: number, x: number, y: number) => void;
   /** "shot" tool — click a player to stamp a shot action from them to the nearest hoop. */
   onAddShot?: (index: number) => void;
+  /** A ghost preview of where a saved action's players/ball/lines would land if stamped right now — follows the cursor while a stamp is armed, so placement isn't a blind guess. */
+  stampPreview?: { players: PlayPlayer[]; ball: PlayPoint | null; actions: PlayAction[] } | null;
   /** Bump this number to play the current frame's actions once. */
   playSignal?: number;
   onPlayDone?: () => void;
@@ -343,7 +345,7 @@ export default function PlayCanvas({
   frame, courtTemplate, avatarsDefault, roster = {}, edit = false, tool = null,
   onAddPlayer, onAddDefender, onSetBall, onAddAction, onErase, onToggleAvatar,
   onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff, onSetActionCurve,
-  onAddText, onMoveText, onEditText, onAddZone, onMoveZone, onAddCone, onMoveCone, onAddShot,
+  onAddText, onMoveText, onEditText, onAddZone, onMoveZone, onAddCone, onMoveCone, onAddShot, stampPreview,
   playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect, selfOverride = null, speed = 1,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -748,6 +750,21 @@ export default function PlayCanvas({
         const isShot = a.type === "shot";
         return <circle key={i} cx={x} cy={y} r={a.type === "pass" ? 6 : isShot ? 7 : 9} fill={isShot ? "#EF9F27" : "#378ADD"} stroke={isShot ? "#854F0B" : undefined} strokeWidth={isShot ? 1.5 : 0} opacity={0.9} />;
       })}
+
+      {stampPreview && (
+        <g opacity={0.5} pointerEvents="none">
+          {stampPreview.actions.map((a, i) => <ActionShape key={"ghost-a-" + i} a={a} />)}
+          {stampPreview.ball && (
+            <circle cx={stampPreview.ball.x} cy={stampPreview.ball.y} r={8} fill="#EF9F27" stroke="#854F0B" strokeWidth={1.5} strokeDasharray="2,2" />
+          )}
+          {stampPreview.players.map((p, i) => (
+            <g key={"ghost-p-" + i}>
+              <circle cx={p.x} cy={p.y} r={14} fill="#1a3fa8" stroke="var(--gold)" strokeWidth={1.5} strokeDasharray="3,2" />
+              <text x={p.x} y={p.y + 4} textAnchor="middle" fontSize={11} fontWeight={700} fill="#fff">{p.num}</text>
+            </g>
+          ))}
+        </g>
+      )}
     </svg>
   );
 }
