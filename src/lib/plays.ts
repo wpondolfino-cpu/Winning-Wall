@@ -134,6 +134,8 @@ export interface PlayFrame {
   zones?: PlayZone[];
   /** Practice-drill cone markers. Optional for backward compatibility. */
   cones?: PlayPoint[];
+  /** Coach position markers ("C" in a circle) — shows where the coach stands for a drill, distinct from cones. Optional for backward compatibility. */
+  coachMarkers?: PlayPoint[];
 }
 
 /**
