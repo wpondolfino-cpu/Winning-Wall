@@ -372,6 +372,18 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
       if (fallStart !== null) {
         const ft = Math.min(1, (now - fallStart) / FALL_DURATION);
         if (ballMesh) ballMesh.position.y = 2.0 + (0.5 - 2.0) * ft;
+        // If a lob just finished, the catching player comes back down to
+        // the floor during this same window, alongside the ball — not
+        // already standing on the ground while the ball is still falling.
+        if (animFromFrame) {
+          const lob = animFromFrame.actions.find((a) => a.type === "lob");
+          if (lob?.targetPlayerId) {
+            const idx = animFromFrame.players.findIndex((p) => p.id === lob.targetPlayerId);
+            if (idx >= 0 && playerGroups[idx]) {
+              playerGroups[idx].position.y = 1.3 * (1 - ft);
+            }
+          }
+        }
         if (ft >= 1) {
           fallStart = null;
           advanceBeat();
@@ -434,15 +446,15 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           // same way as the ball's own arc, so they peak together, and
           // naturally back at floor level by the end of the beat.
           const lobCatch = fp.id ? animFromFrame!.actions.find((a) => a.type === "lob" && a.targetPlayerId === fp.id) : undefined;
-          // Peaks later than the flight's raw midpoint — the catcher
-          // stands near the hoop, which is where the ball's flight ENDS,
-          // not its midpoint, so their jump needs to peak late in the
-          // beat to actually meet the ball where it is.
-          // Peaks later still (~78% through the flight) and spends more
-          // time near the top (hang time) rather than a razor-thin instant
-          // peak — gives a wider, more forgiving window for the ball to
-          // actually be there when the player's near their highest point.
-          playerGroups[i].position.y = lobCatch ? Math.pow(Math.sin(Math.PI * Math.pow(t, 3.2)), 0.7) * 1.3 : 0;
+          // Rises the whole flight and peaks exactly at t=1 — right when
+          // the ball actually arrives at the hoop — instead of the old
+          // approach of peaking mid-flight and returning to floor by t=1,
+          // which meant the player was always back on the ground by the
+          // time the ball actually got there, no matter where the peak
+          // was shifted to. Landing now happens during the same smoothed
+          // fall phase as the ball (see below), not before it.
+          const jumpAmplitude = 1.3;
+          playerGroups[i].position.y = lobCatch ? Math.sin((Math.PI / 2) * Math.pow(t, 1.5)) * jumpAmplitude : 0;
         });
         if (ballMesh) {
           const fromBall = getBallWorldPos(animFromFrame);
@@ -483,7 +495,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
               // timing as the catcher's jump (see below), so the ball's
               // own high point lines up with when it's actually near them.
               const startH = 1.5, rimH = 2.0, peakBump = 0.8;
-              ballMesh.position.y = startH + (rimH - startH) * t + Math.sin(Math.PI * Math.pow(t, 3.2)) * peakBump;
+              ballMesh.position.y = startH + (rimH - startH) * t + Math.sin(t * Math.PI) * peakBump;
             } else {
               ballMesh.position.x = fromBall.x + (toBall.x - fromBall.x) * t;
               ballMesh.position.z = fromBall.z + (toBall.z - fromBall.z) * t;
