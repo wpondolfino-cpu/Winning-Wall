@@ -35,7 +35,7 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "shot" | null;
+type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | null;
 
 const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "select", label: "Move", icon: "✥" },
@@ -50,6 +50,7 @@ const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "lob", label: "Lob", icon: "🙌" },
   { tool: "text", label: "Text", icon: "T" },
   { tool: "cone", label: "Cone", icon: "▲" },
+  { tool: "coach", label: "Coach", icon: "C" },
   { tool: "defender", label: "Defender", icon: "✕" },
   { tool: "erase", label: "Erase", icon: "⌫" },
 ];
@@ -87,7 +88,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const [showPreview3D, setShowPreview3D] = useState(false);
   const [mobileStage, setMobileStage] = useState<"draw" | "confirm" | "naming">("draw");
   const [showMoreTools, setShowMoreTools] = useState(false);
-  const [selected, setSelected] = useState<{ kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone"; index: number } | null>(null);
+  const [selected, setSelected] = useState<{ kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone" | "coach"; index: number } | null>(null);
   const [history, setHistory] = useState<PlayFrame[][]>([]);
   const [future, setFuture] = useState<PlayFrame[][]>([]);
   const [saving, setSaving] = useState(false);
@@ -281,6 +282,15 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     updateFrame((f) => ({ ...f, cones: (f.cones ?? []).map((c, i) => i === idx ? { x, y } : c) }));
   }, [frames, frameIdx]);
 
+  function addCoach(x: number, y: number) {
+    pushHistory();
+    updateFrame((f) => ({ ...f, coachMarkers: [...(f.coachMarkers ?? []), { x, y }] }));
+  }
+  const moveCoach = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, coachMarkers: (f.coachMarkers ?? []).map((c, i) => i === idx ? { x, y } : c) }));
+  }, [frames, frameIdx]);
+
   function addShot(playerIdx: number) {
     const player = frame.players[playerIdx];
     if (!player) return;
@@ -316,6 +326,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     else if (selected.kind === "text") updateFrame((f) => ({ ...f, texts: (f.texts ?? []).filter((_, i) => i !== selected.index) }));
     else if (selected.kind === "zone") updateFrame((f) => ({ ...f, zones: (f.zones ?? []).filter((_, i) => i !== selected.index) }));
     else if (selected.kind === "cone") updateFrame((f) => ({ ...f, cones: (f.cones ?? []).filter((_, i) => i !== selected.index) }));
+    else if (selected.kind === "coach") updateFrame((f) => ({ ...f, coachMarkers: (f.coachMarkers ?? []).filter((_, i) => i !== selected.index) }));
     setSelected(null);
   }
 
@@ -716,6 +727,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8, padding: 8, background: "var(--surface2)", borderRadius: 8 }}>
             <button onClick={() => { setTool("cone"); setStampAction(null); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "cone" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>▲ Cone</button>
+            <button onClick={() => { setTool("coach"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "coach" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>Ⓒ Coach</button>
             <button onClick={() => { setTool("defender"); setStampAction(null); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "defender" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>✕ Defender</button>
             <button onClick={() => { setTool("draw"); setStampAction(null); setShowMoreTools(false); }}
@@ -772,7 +785,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onMovePlayer={movePlayer} onMoveDefender={moveDefender} onMoveBall={moveBall}
             onMoveActionPoint={moveActionPoint} onMoveActionWhole={moveActionWhole} onSetActionCurve={setActionCurve}
             onAddText={addText} onMoveText={moveText} onEditText={editText} onAddZone={addZone} onMoveZone={moveZone}
-            onAddCone={addCone} onMoveCone={moveCone} onAddShot={addShot}
+            onAddCone={addCone} onMoveCone={moveCone} onAddCoach={addCoach} onMoveCoach={moveCoach} onAddShot={addShot}
             selected={selected} onSelect={setSelected} onAddDrawing={addDrawing}
             playSignal={playSignal} onPlayDone={handlePreviewBeatDone}
             stampPreview={stampAction && stampPreviewPos ? computeStampGhost(stampAction, stampPreviewPos.x, stampPreviewPos.y) : null}
@@ -955,6 +968,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onMoveZone={moveZone}
             onAddCone={addCone}
             onMoveCone={moveCone}
+            onAddCoach={addCoach}
+            onMoveCoach={moveCoach}
             onAddShot={addShot}
             selected={selected}
             onSelect={setSelected}
