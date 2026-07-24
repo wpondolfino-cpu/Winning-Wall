@@ -323,6 +323,11 @@ export async function getPlayShares(playId: string) {
 }
 
 // ── Saved actions (reusable stamps like "Flare screen") ─────
+// Player-created ones are private to that player. Coach/admin-created
+// ones are shared across the whole coaching staff — any staff member
+// can see and stamp them in, but only an admin can edit or delete one
+// (see migration 081). This function returns whatever the RLS read
+// policy allows for the current user, which already handles that split.
 export interface SavedAction {
   id: string;
   created_by: string;
@@ -332,13 +337,12 @@ export interface SavedAction {
   created_at: string;
 }
 
-export async function getMySavedActions(): Promise<SavedAction[]> {
+export async function getSavedActions(): Promise<SavedAction[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
   const { data, error } = await supabase
     .from("saved_actions")
     .select("*")
-    .eq("created_by", user.id)
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data ?? [];
@@ -358,6 +362,43 @@ export async function createSavedAction(name: string, frame: PlayFrame, category
 
 export async function deleteSavedAction(id: string) {
   const { error } = await supabase.from("saved_actions").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ── Formations (shared offense/defense starting positions, e.g.
+//    "Horns" or "2-3 zone") — coach/admin only, positions only (no
+//    motion), applied when starting a brand-new play. Every formation
+//    is staff-shared by definition; any coach/admin can add one, only
+//    an admin can delete one (see migration 081). ──────────────────
+export interface Formation {
+  id: string;
+  created_by: string;
+  name: string;
+  side: "offense" | "defense";
+  data: { players?: PlayPlayer[]; defenders?: PlayDefender[] };
+  created_at: string;
+}
+
+export async function getFormations(): Promise<Formation[]> {
+  const { data, error } = await supabase.from("formations").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function createFormation(name: string, side: "offense" | "defense", data: Formation["data"]): Promise<Formation> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+  const { data: row, error } = await supabase
+    .from("formations")
+    .insert({ created_by: user.id, name, side, data })
+    .select()
+    .single();
+  if (error) throw error;
+  return row as Formation;
+}
+
+export async function deleteFormation(id: string) {
+  const { error } = await supabase.from("formations").delete().eq("id", id);
   if (error) throw error;
 }
 
