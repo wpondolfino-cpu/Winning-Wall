@@ -478,7 +478,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
               // it before it continues into the hoop. Same later-peak
               // timing as the catcher's jump (see below), so the ball's
               // own high point lines up with when it's actually near them.
-              const startH = 1.5, rimH = 2.0, peakBump = 1.4;
+              const startH = 1.5, rimH = 2.0, peakBump = 0.8;
               ballMesh.position.y = startH + (rimH - startH) * t + Math.sin(Math.PI * Math.pow(t, 2.2)) * peakBump;
             } else {
               ballMesh.position.x = fromBall.x + (toBall.x - fromBall.x) * t;
