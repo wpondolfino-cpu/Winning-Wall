@@ -84,6 +84,12 @@ class ThreeDErrorBoundary extends Component<{ children: ReactNode; onBack: () =>
   }
 }
 
+function getYouTubeId(url?: string | null): string | null {
+  if (!url) return null;
+  const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([^&?/\s]+)/);
+  return match ? match[1] : null;
+}
+
 function filterPlays<T extends { title: string; tags: string[] }>(plays: T[], search: string): T[] {
   const q = search.trim().toLowerCase();
   if (!q) return plays;
@@ -180,6 +186,16 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
         <button onClick={() => setOpenPlaybook(null)} style={{ marginBottom: 10 }}>← Back</button>
         <h2 style={{ fontSize: 18, marginBottom: 4 }}>{openPlaybook.pb.name}</h2>
         {openPlaybook.pb.description && <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>{openPlaybook.pb.description}</p>}
+        {getYouTubeId(openPlaybook.pb.video_url) && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>🎬 Walkthrough</div>
+            <div style={{ position: "relative", paddingTop: "56.25%", background: "#000", borderRadius: 10, overflow: "hidden" }}>
+              <iframe src={`https://www.youtube.com/embed/${getYouTubeId(openPlaybook.pb.video_url)}?rel=0&modestbranding=1`} title={openPlaybook.pb.name}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen
+                style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
+            </div>
+          </div>
+        )}
         {openPlaybook.plays.length > 0 && (
           <button onClick={() => setPrintPlays({ plays: openPlaybook.plays, playbookName: openPlaybook.pb.name })} style={{ marginBottom: 10, padding: "6px 12px" }}>
             🖨️ Print / export this playbook
@@ -332,6 +348,16 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
   return (
     <div>
       <h2 style={{ fontSize: 18, margin: "0 0 8px" }}>{play.title}</h2>
+      {getYouTubeId(play.video_url) && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>🎬 Game film</div>
+          <div style={{ position: "relative", paddingTop: "56.25%", background: "#000", borderRadius: 10, overflow: "hidden" }}>
+            <iframe src={`https://www.youtube.com/embed/${getYouTubeId(play.video_url)}?rel=0&modestbranding=1`} title={play.title}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen
+              style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
+          </div>
+        </div>
+      )}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
         <button onClick={onBack} style={{ padding: "8px 10px", fontSize: 13, flexShrink: 0 }}>← Back</button>
         <button onClick={() => { setFrameIdx(0); playAll(); }} className="coach-add-btn" style={{ flex: 1, justifyContent: "center", padding: "8px 6px", fontSize: 13 }}>▶ Watch play</button>
