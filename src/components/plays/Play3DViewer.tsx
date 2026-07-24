@@ -434,7 +434,11 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           // same way as the ball's own arc, so they peak together, and
           // naturally back at floor level by the end of the beat.
           const lobCatch = fp.id ? animFromFrame!.actions.find((a) => a.type === "lob" && a.targetPlayerId === fp.id) : undefined;
-          playerGroups[i].position.y = lobCatch ? Math.sin(t * Math.PI) * 1.3 : 0;
+          // Peaks later than the flight's raw midpoint — the catcher
+          // stands near the hoop, which is where the ball's flight ENDS,
+          // not its midpoint, so their jump needs to peak late in the
+          // beat to actually meet the ball where it is.
+          playerGroups[i].position.y = lobCatch ? Math.sin(Math.PI * Math.pow(t, 2.2)) * 1.3 : 0;
         });
         if (ballMesh) {
           const fromBall = getBallWorldPos(animFromFrame);
@@ -471,9 +475,11 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
               ballMesh.position.z = mt * mt * w1.z + 2 * mt * t * wc.z + t * t * w2.z;
               // Higher, floatier arc than a shot — a lob needs to clear
               // defenders and give the receiver room to jump up and meet
-              // it before it continues into the hoop.
+              // it before it continues into the hoop. Same later-peak
+              // timing as the catcher's jump (see below), so the ball's
+              // own high point lines up with when it's actually near them.
               const startH = 1.5, rimH = 2.0, peakBump = 1.4;
-              ballMesh.position.y = startH + (rimH - startH) * t + Math.sin(t * Math.PI) * peakBump;
+              ballMesh.position.y = startH + (rimH - startH) * t + Math.sin(Math.PI * Math.pow(t, 2.2)) * peakBump;
             } else {
               ballMesh.position.x = fromBall.x + (toBall.x - fromBall.x) * t;
               ballMesh.position.z = fromBall.z + (toBall.z - fromBall.z) * t;
