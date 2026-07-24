@@ -64,6 +64,7 @@ function cloneFrames(frames: PlayFrame[]): PlayFrame[] { return JSON.parse(JSON.
 export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onClose }: Props) {
   const [title, setTitle] = useState(existingPlay?.title ?? "");
   const [tagsInput, setTagsInput] = useState((existingPlay?.tags ?? []).join(", "));
+  const [videoUrl, setVideoUrl] = useState(existingPlay?.video_url ?? "");
   const [courtTemplate, setCourtTemplate] = useState<CourtTemplate>(existingPlay?.court_template ?? "half");
   const [avatarsDefault, setAvatarsDefault] = useState(existingPlay?.data?.avatarsDefault ?? true);
   const [frames, setFrames] = useState<PlayFrame[]>(() => {
@@ -558,13 +559,14 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     setSaving(true);
     const data: PlayData = { avatarsDefault, frames };
     const tags = tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
+    const video_url = videoUrl.trim() || null;
     try {
       if (existingPlay) {
-        await updatePlay(existingPlay.id, { title: title.trim(), tags, court_template: courtTemplate, data });
+        await updatePlay(existingPlay.id, { title: title.trim(), tags, court_template: courtTemplate, data, video_url });
         showToast("Saved");
-        onSaved?.({ ...existingPlay, title: title.trim(), tags, court_template: courtTemplate, data });
+        onSaved?.({ ...existingPlay, title: title.trim(), tags, court_template: courtTemplate, data, video_url });
       } else {
-        const created = await createPlay({ title: title.trim(), tags, court_template: courtTemplate, data });
+        const created = await createPlay({ title: title.trim(), tags, court_template: courtTemplate, data, video_url });
         showToast("Play saved");
         onSaved?.(created);
       }
@@ -603,6 +605,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       court_template: courtTemplate,
       data: { avatarsDefault, frames },
       forked_from: existingPlay?.forked_from ?? null,
+      video_url: videoUrl.trim() || null,
       created_at: existingPlay?.created_at ?? "",
       updated_at: existingPlay?.updated_at ?? "",
     };
@@ -640,6 +643,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Play title (required)"
               style={{ width: "100%", marginBottom: 8, background: "var(--surface)", border: title.trim() ? "1px solid var(--border)" : "2px solid var(--gold)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
             <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder="Tags (optional)"
+              style={{ width: "100%", marginBottom: 8, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film URL (optional, YouTube)"
               style={{ width: "100%", marginBottom: 14, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => setMobileStage("draw")} style={{ flex: 1, padding: 10 }}>Cancel</button>
@@ -832,6 +837,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           </select>
         </div>
         <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder="Tags (comma separated: inbounds, press break, BLOB...)"
+          style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+        <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film URL (optional, YouTube — e.g. footage of the team running this play)"
           style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
 
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: showMoreTools ? 6 : 8 }}>
