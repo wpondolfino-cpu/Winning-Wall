@@ -7,12 +7,14 @@
 
 import { useState, useEffect, useCallback } from "react";
 import {
-  PracticeWeek, Practice, getPracticeWeeks, getPracticesInWeek,
+  PracticeWeek, Practice, RosterWithCount, Season, getPracticeWeeks, getPracticesInWeek,
   getPracticeAttentionCount, suggestNextWeekName, renamePracticeWeek,
-  deletePracticeWeek, deletePractice,
+  deletePracticeWeek, deletePractice, getRosters, getSeasons, getCurrentSeason,
+  startNewSeason, suggestNextSeasonName,
 } from "../../lib/practicePlanner";
 import PracticeBuilder from "./PracticeBuilder";
 import PracticePrintView from "./PracticePrintView";
+import PracticeDayAttendance from "./PracticeDayAttendance";
 
 interface WeekRowState {
   week: PracticeWeek;
@@ -30,19 +32,38 @@ export default function PracticeWeeksList() {
   const [printIds, setPrintIds] = useState<string[] | null>(null);
   const [editingWeekId, setEditingWeekId] = useState<string | null>(null);
   const [editingWeekName, setEditingWeekName] = useState("");
+  const [attendanceForId, setAttendanceForId] = useState<string | null>(null);
+  const [activeRosters, setActiveRosters] = useState<RosterWithCount[]>([]);
+  const [archivedRosters, setArchivedRosters] = useState<RosterWithCount[]>([]);
+  const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
+  const [showArchiveRow, setShowArchiveRow] = useState(false);
+  const [seasons, setSeasons] = useState<Season[]>([]);
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
+  const [startingSeason, setStartingSeason] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const weeks = await getPracticeWeeks(); // newest first, per the lib helper
+    const [weeks, allActiveRosters, allRosters, seasonList, currentSeason] = await Promise.all([
+      getPracticeWeeks(), // newest first, per the lib helper
+      getRosters(),
+      getRosters(true),
+      getSeasons(),
+      getCurrentSeason(),
+    ]);
     const rowData = await Promise.all(weeks.map(async w => {
       const practices = await getPracticesInWeek(w.id);
       const attentionEntries = await Promise.all(practices.map(async p => [p.id, await getPracticeAttentionCount(p.id)] as const));
       return { week: w, practices, attention: Object.fromEntries(attentionEntries) };
     }));
     setRows(rowData);
+    setActiveRosters(allActiveRosters);
+    setArchivedRosters(allRosters.filter(r => r.status === "archived"));
+    setSeasons(seasonList);
+    if (activeTeamId === null && allActiveRosters.length > 0) setActiveTeamId(allActiveRosters[0].id);
+    if (selectedSeasonId === null) setSelectedSeasonId(currentSeason?.id ?? null);
     if (rowData.length > 0 && openWeekId === null) setOpenWeekId(rowData[0].week.id);
     setLoading(false);
-  }, [openWeekId]);
+  }, [openWeekId, activeTeamId, selectedSeasonId]);
 
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -88,8 +109,31 @@ export default function PracticeWeeksList() {
     await load();
   }
 
+  async function handleStartNewSeason() {
+    const suggested = suggestNextSeasonName();
+    const name = window.prompt("Name the new season:", suggested);
+    if (!name || !name.trim()) return;
+    if (!window.confirm(`Start "${name.trim()}" as the new season? Existing weeks stay right where they are — only new weeks will use it.`)) return;
+    setStartingSeason(true);
+    const { id, error } = await startNewSeason(name.trim());
+    setStartingSeason(false);
+    if (error) { alert("Error: " + error); return; }
+    setSelectedSeasonId(id);
+    await load();
+  }
+
   if (printIds) {
     return <PracticePrintView practiceIds={printIds} onClose={() => setPrintIds(null)} />;
+  }
+
+  if (attendanceForId) {
+    return (
+      <PracticeDayAttendance
+        practiceId={attendanceForId}
+        onClose={() => setAttendanceForId(null)}
+        onSaved={() => load()}
+      />
+    );
   }
 
   if (openPracticeId || creatingNew) {
@@ -101,6 +145,18 @@ export default function PracticeWeeksList() {
       />
     );
   }
+
+  // A week shows up under a team's tab only if it has at least one
+  // practice that team is part of, in the currently selected season —
+  // and only that team's practices render inside it, so a mixed
+  // Varsity + JV practice appears (in full) under both tabs.
+  const visibleRows = rows
+    .filter(({ week }) => week.season_id === selectedSeasonId)
+    .map(({ week, practices, attention }) => ({
+      week, attention,
+      practices: practices.filter(p => activeTeamId !== null && p.roster_ids.includes(activeTeamId)),
+    }))
+    .filter(({ practices }) => practices.length > 0);
 
   return (
     <div>
@@ -116,13 +172,53 @@ export default function PracticeWeeksList() {
         </div>
       </div>
 
+      {activeRosters.length > 0 && (
+        <div style={{ display: "flex", gap: 4, alignItems: "center", background: "var(--surface2)", borderRadius: 10, padding: 4, marginBottom: 10, border: "1px solid var(--border)" }}>
+          {activeRosters.map(r => (
+            <button key={r.id} onClick={() => setActiveTeamId(r.id)}
+              style={{ flex: 1, padding: "8px 6px", borderRadius: 7, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTeamId === r.id ? "var(--royal)" : "transparent", color: activeTeamId === r.id ? "#fff" : "var(--muted)", transition: "all .2s" }}>
+              {r.name}
+            </button>
+          ))}
+          {archivedRosters.length > 0 && (
+            <button onClick={() => setShowArchiveRow(s => !s)} title="Archived teams"
+              style={{ flexShrink: 0, padding: "8px 8px", borderRadius: 7, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, background: "transparent", color: "var(--muted)", display: "flex", alignItems: "center", gap: 3 }}>
+              🗄️ {archivedRosters.length}
+            </button>
+          )}
+        </div>
+      )}
+
+      {showArchiveRow && archivedRosters.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+          {archivedRosters.map(r => (
+            <button key={r.id} onClick={() => { setActiveTeamId(r.id); setShowArchiveRow(false); }}
+              style={{ textAlign: "left", padding: "7px 10px", border: "1px dashed var(--border)", borderRadius: 8, background: "transparent", color: "var(--muted)", fontFamily: "inherit", fontSize: 12, cursor: "pointer" }}>
+              🗄️ {r.name} (archived) — view past practices
+            </button>
+          ))}
+        </div>
+      )}
+
+      {seasons.length > 0 && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
+          <select value={selectedSeasonId ?? ""} onChange={e => setSelectedSeasonId(e.target.value)}
+            style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+            {seasons.map(s => <option key={s.id} value={s.id}>{s.name} season{s.is_current ? " (current)" : ""}</option>)}
+          </select>
+          <button onClick={handleStartNewSeason} disabled={startingSeason} style={secondaryBtn}>
+            {startingSeason ? "Starting…" : "+ New season"}
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div style={{ color: "var(--muted)", fontSize: 13, padding: "20px 0" }}>Loading…</div>
-      ) : rows.length === 0 ? (
-        <div style={{ color: "var(--muted)", fontSize: 13, padding: "20px 0" }}>No practice weeks yet — create your first practice above to get started.</div>
+      ) : visibleRows.length === 0 ? (
+        <div style={{ color: "var(--muted)", fontSize: 13, padding: "20px 0" }}>No practices for this team in this season yet.</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {rows.map(({ week, practices, attention }) => {
+          {visibleRows.map(({ week, practices, attention }) => {
             const open = openWeekId === week.id;
             const totalFlags = Object.values(attention).reduce((a, b) => a + b, 0);
             return (
@@ -158,7 +254,7 @@ export default function PracticeWeeksList() {
                     ) : (
                       <>
                         <button onClick={e => startEditWeek(week, e)} style={iconBtn} title="Rename week">✎</button>
-                        <button onClick={e => handleDeleteWeek(week, practices.length, e)} style={iconBtn} title="Delete week">🗑️</button>
+                        <button onClick={e => handleDeleteWeek(week, rows.find(r => r.week.id === week.id)?.practices.length ?? practices.length, e)} style={iconBtn} title="Delete week">🗑️</button>
                       </>
                     )}
                     <span style={{ fontSize: 14, color: "var(--muted)" }}>{open ? "▲" : "▼"}</span>
@@ -183,6 +279,21 @@ export default function PracticeWeeksList() {
                             {flags > 0 && (
                               <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 5, background: "rgba(240,192,64,0.15)", color: "var(--gold)" }}>⚠ {flags}</span>
                             )}
+                            <button
+                              onClick={e => { e.stopPropagation(); if (p.status === "published") setAttendanceForId(p.id); }}
+                              disabled={p.status !== "published"}
+                              title={p.status !== "published" ? "Publish this practice to take attendance" : p.attendance_taken_at ? "View or edit attendance" : "Take attendance"}
+                              style={{
+                                fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 6, border: "none", fontFamily: "inherit",
+                                cursor: p.status === "published" ? "pointer" : "not-allowed",
+                                opacity: p.status === "published" ? 1 : 0.35,
+                                background: p.status === "published" ? "var(--royal)" : "var(--surface)",
+                                color: p.status === "published" ? "#fff" : "var(--muted)",
+                              }}>
+                              {p.attendance_taken_at
+                                ? `✔ ${new Date(p.attendance_taken_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`
+                                : "Attendance"}
+                            </button>
                             <span style={{
                               fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5,
                               background: p.status === "published" ? "rgba(40,180,80,0.15)" : "rgba(240,192,64,0.12)",
