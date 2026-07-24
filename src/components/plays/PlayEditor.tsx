@@ -48,13 +48,13 @@ const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "shot", label: "Shot", icon: "🏀" },
   { tool: "lob", label: "Lob", icon: "🙌" },
   { tool: "text", label: "Text", icon: "T" },
+  { tool: "cone", label: "Cone", icon: "▲" },
+  { tool: "defender", label: "Defender", icon: "✕" },
   { tool: "erase", label: "Erase", icon: "⌫" },
 ];
 // Used less often — tucked behind "More tools" instead of permanently
 // taking up space in the main row.
 const MORE_TOOLS: { tool: Tool; label: string; icon: string }[] = [
-  { tool: "cone", label: "Cone", icon: "▲" },
-  { tool: "defender", label: "Defender", icon: "✕" },
   { tool: "draw", label: "Draw", icon: "✎" },
   { tool: "zone", label: "Zone shading", icon: "▦" },
 ];
@@ -65,7 +65,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const [title, setTitle] = useState(existingPlay?.title ?? "");
   const [tagsInput, setTagsInput] = useState((existingPlay?.tags ?? []).join(", "));
   const [courtTemplate, setCourtTemplate] = useState<CourtTemplate>(existingPlay?.court_template ?? "half");
-  const [avatarsDefault, setAvatarsDefault] = useState(existingPlay?.data?.avatarsDefault ?? false);
+  const [avatarsDefault, setAvatarsDefault] = useState(existingPlay?.data?.avatarsDefault ?? true);
   const [frames, setFrames] = useState<PlayFrame[]>(() => {
     const initial = existingPlay?.data?.frames ?? emptyPlayData().frames;
     // Plays saved before player identity existed have no `id` on their
@@ -93,6 +93,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
   const [savedActions, setSavedActions] = useState<SavedAction[]>([]);
   const [stampAction, setStampAction] = useState<SavedAction | null>(null);
+  const [stampPreviewPos, setStampPreviewPos] = useState<{ x: number; y: number } | null>(null);
   const [staff, setStaff] = useState<PlayShareTarget[]>([]);
   const [showShare, setShowShare] = useState(false);
 
@@ -505,6 +506,20 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     } catch (e: any) { showToast("Error: " + e.message); }
   }
 
+  function computeStampGhost(action: SavedAction, x: number, y: number) {
+    const d = action.data;
+    const anchor = d.players[0] ?? d.ball ?? d.defenders[0] ?? (d.actions[0] ? { x: d.actions[0].x1, y: d.actions[0].y1 } : { x: 0, y: 0 });
+    const dx = x - anchor.x, dy = y - anchor.y;
+    return {
+      players: d.players.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy })),
+      ball: d.ball ? { x: d.ball.x + dx, y: d.ball.y + dy } : null,
+      actions: d.actions.map((a) => ({
+        ...a, x1: a.x1 + dx, y1: a.y1 + dy, x2: a.x2 + dx, y2: a.y2 + dy,
+        curve: a.curve ? { x: a.curve.x + dx, y: a.curve.y + dy } : undefined,
+      })),
+    };
+  }
+
   function stampActionAt(action: SavedAction, x: number, y: number) {
     pushHistory();
     const d = action.data;
@@ -718,7 +733,17 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
             const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
             stampActionAt(stampAction, x, y);
+            setStampPreviewPos(null);
           }}
+          onMouseMove={(e) => {
+            if (!stampAction) return;
+            const svg = (e.currentTarget as HTMLDivElement).querySelector("svg")!;
+            const rect = svg.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
+            const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
+            setStampPreviewPos({ x, y });
+          }}
+          onMouseLeave={() => setStampPreviewPos(null)}
           style={{ background: "var(--surface2)", borderRadius: 12, padding: 10, marginBottom: 8 }}
         >
           <PlayCanvas
@@ -732,6 +757,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onAddCone={addCone} onMoveCone={moveCone} onAddShot={addShot}
             selected={selected} onSelect={setSelected} onAddDrawing={addDrawing}
             playSignal={playSignal} onPlayDone={handlePreviewBeatDone}
+            stampPreview={stampAction && stampPreviewPos ? computeStampGhost(stampAction, stampPreviewPos.x, stampPreviewPos.y) : null}
           />
         </div>
 
@@ -830,6 +856,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
                 {icon} {label}
               </button>
             ))}
+            <button onClick={() => { flipCurrentStep(); setShowMoreTools(false); }} style={{ padding: "6px 10px", fontSize: 13, border: "1px solid var(--border)", borderRadius: "8px", background: "var(--surface)" }}>↔ Flip step</button>
+            <button onClick={() => { flipEntirePlay(); setShowMoreTools(false); }} style={{ padding: "6px 10px", fontSize: 13, border: "1px solid var(--border)", borderRadius: "8px", background: "var(--surface)" }}>↔ Flip entire play</button>
           </div>
         )}
 
@@ -838,8 +866,6 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           <button onClick={redo} disabled={!future.length} style={{ padding: "6px 10px" }}>↪ Redo</button>
           {selected && <button onClick={deleteSelected} style={{ padding: "6px 10px" }}>🗑 Delete selected</button>}
           {selected && selected.kind === "player" && <button onClick={duplicateSelectedPlayer} style={{ padding: "6px 10px" }}>⧉ Duplicate player</button>}
-          <button onClick={flipCurrentStep} style={{ padding: "6px 10px" }}>↔ Flip step</button>
-          <button onClick={flipEntirePlay} style={{ padding: "6px 10px" }}>↔ Flip entire play</button>
           <button onClick={() => setAvatarsDefault((v) => !v)} style={{ padding: "6px 10px" }}>
             Avatars: {avatarsDefault ? "on" : "off"}
           </button>
@@ -862,7 +888,17 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
             const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
             stampActionAt(stampAction, x, y);
+            setStampPreviewPos(null);
           }}
+          onMouseMove={(e) => {
+            if (!stampAction) return;
+            const svg = (e.currentTarget as HTMLDivElement).querySelector("svg")!;
+            const rect = svg.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
+            const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
+            setStampPreviewPos({ x, y });
+          }}
+          onMouseLeave={() => setStampPreviewPos(null)}
           style={{ background: "var(--surface2)", borderRadius: 12, padding: 12 }}
         >
           <PlayCanvas
@@ -898,6 +934,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onAddDrawing={addDrawing}
             playSignal={playSignal}
             onPlayDone={handlePreviewBeatDone}
+            stampPreview={stampAction && stampPreviewPos ? computeStampGhost(stampAction, stampPreviewPos.x, stampPreviewPos.y) : null}
           />
         </div>
 
