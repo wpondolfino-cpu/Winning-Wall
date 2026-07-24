@@ -3,7 +3,7 @@
 // players drawing up their own plays — same component, access is governed
 // by RLS on the plays table, not by role checks here).
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense, type ComponentType } from "react";
 import PlayCanvas, { CANVAS_W, CANVAS_H } from "./PlayCanvas";
 import { hoopPositions } from "./courtGeometry";
 import {
@@ -14,6 +14,16 @@ import {
   getMySavedActions, createSavedAction, deleteSavedAction,
   getRoster, getStaff, sharePlay,
 } from "../../lib/plays";
+
+// Lazy-loaded for the same reason as the viewer — three.js is a large
+// dependency most editing sessions never touch. Typed explicitly, same
+// workaround as PlayViewer.tsx, since lazy()'s own inference through the
+// dynamic import doesn't resolve Play3DViewer's actual props correctly.
+const Play3DViewer = lazy(() => import("./Play3DViewer")) as unknown as ComponentType<{
+  play: Play;
+  roster: Record<string, RosterPlayer>;
+  onBack: () => void;
+}>;
 
 interface Props {
   /** Pass an existing play to edit it; omit to start a new blank play. */
@@ -70,6 +80,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const [frameIdx, setFrameIdx] = useState(0);
   const [tool, setTool] = useState<Tool>("player");
   const [isMobile] = useState(() => window.innerWidth < 768);
+  const [showPreview3D, setShowPreview3D] = useState(false);
   const [mobileStage, setMobileStage] = useState<"draw" | "confirm" | "naming">("draw");
   const [showMoreTools, setShowMoreTools] = useState(false);
   const [selected, setSelected] = useState<{ kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone"; index: number } | null>(null);
@@ -566,6 +577,27 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
   const rosterMap: Record<string, RosterPlayer> = Object.fromEntries(roster.map((r) => [r.id, r]));
 
+  if (showPreview3D) {
+    // A draft Play built straight from the editor's current in-memory
+    // state — no save needed to preview in 3D while still constructing it.
+    const draftPlay: Play = {
+      id: existingPlay?.id ?? "draft",
+      created_by: existingPlay?.created_by ?? "",
+      title: title || "Untitled play",
+      tags: [],
+      court_template: courtTemplate,
+      data: { avatarsDefault, frames },
+      forked_from: existingPlay?.forked_from ?? null,
+      created_at: existingPlay?.created_at ?? "",
+      updated_at: existingPlay?.updated_at ?? "",
+    };
+    return (
+      <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Loading 3D view…</div>}>
+        <Play3DViewer play={draftPlay} roster={rosterMap} onBack={() => setShowPreview3D(false)} />
+      </Suspense>
+    );
+  }
+
   // --- Mobile layout: reorganized toolbar, court moved up front, and a
   // combined preview -> confirm -> name/tags -> save flow instead of an
   // always-visible title field. Desktop below is untouched. ---
@@ -713,6 +745,9 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           <button onClick={addFrame} style={{ padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface2)", color: "var(--muted)" }}>+</button>
         </div>
 
+        <button onClick={() => setShowPreview3D(true)} style={{ width: "100%", padding: "8px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface2)", color: "var(--text)", marginBottom: 8 }}>
+          🧊 Watch live
+        </button>
         <button onClick={previewAllBeats} className="coach-add-btn" style={{ width: "100%", justifyContent: "center", marginBottom: 16 }}>
           ▶ Preview & save
         </button>
@@ -810,6 +845,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           </button>
           <button onClick={() => setPlaySignal((s) => s + 1)} className="coach-add-btn">▶ Play frame</button>
           {frames.length > 1 && <button onClick={previewAllBeats} style={{ padding: "6px 10px" }}>▶▶ Preview full play</button>}
+          <button onClick={() => setShowPreview3D(true)} style={{ padding: "6px 10px" }}>🧊 Watch live</button>
         </div>
 
         {stampAction && (
