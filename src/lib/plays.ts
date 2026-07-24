@@ -166,7 +166,7 @@ export interface PlayData {
 
 export function emptyPlayData(): PlayData {
   return {
-    avatarsDefault: false,
+    avatarsDefault: true,
     frames: [{ players: [], defenders: [], ball: null, actions: [], drawings: [] }],
   };
 }
