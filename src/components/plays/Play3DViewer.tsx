@@ -438,7 +438,11 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           // stands near the hoop, which is where the ball's flight ENDS,
           // not its midpoint, so their jump needs to peak late in the
           // beat to actually meet the ball where it is.
-          playerGroups[i].position.y = lobCatch ? Math.sin(Math.PI * Math.pow(t, 2.2)) * 1.3 : 0;
+          // Peaks later still (~78% through the flight) and spends more
+          // time near the top (hang time) rather than a razor-thin instant
+          // peak — gives a wider, more forgiving window for the ball to
+          // actually be there when the player's near their highest point.
+          playerGroups[i].position.y = lobCatch ? Math.pow(Math.sin(Math.PI * Math.pow(t, 3.2)), 0.7) * 1.3 : 0;
         });
         if (ballMesh) {
           const fromBall = getBallWorldPos(animFromFrame);
@@ -479,7 +483,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
               // timing as the catcher's jump (see below), so the ball's
               // own high point lines up with when it's actually near them.
               const startH = 1.5, rimH = 2.0, peakBump = 0.8;
-              ballMesh.position.y = startH + (rimH - startH) * t + Math.sin(Math.PI * Math.pow(t, 2.2)) * peakBump;
+              ballMesh.position.y = startH + (rimH - startH) * t + Math.sin(Math.PI * Math.pow(t, 3.2)) * peakBump;
             } else {
               ballMesh.position.x = fromBall.x + (toBall.x - fromBall.x) * t;
               ballMesh.position.z = fromBall.z + (toBall.z - fromBall.z) * t;
