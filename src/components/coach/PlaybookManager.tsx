@@ -20,12 +20,19 @@ const STATUS_COLOR: Record<string, { bg: string; color: string; label: string }>
 
 const inputStyle = { width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" as const };
 
+function getYouTubeId(url?: string | null): string | null {
+  if (!url) return null;
+  const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([^&?/\s]+)/);
+  return match ? match[1] : null;
+}
+
 export default function PlaybookManager() {
   const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDesc, setNewDesc] = useState("");
+  const [newVideoUrl, setNewVideoUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -36,8 +43,8 @@ export default function PlaybookManager() {
     if (!newName.trim()) return;
     setSaving(true);
     try {
-      await createPlaybook(newName.trim(), newDesc.trim() || undefined);
-      setNewName(""); setNewDesc(""); setShowForm(false);
+      await createPlaybook(newName.trim(), newDesc.trim() || undefined, newVideoUrl.trim() || undefined);
+      setNewName(""); setNewDesc(""); setNewVideoUrl(""); setShowForm(false);
       await load();
     } catch (e: any) { alert("Error: " + e.message); }
     finally { setSaving(false); }
@@ -77,6 +84,7 @@ export default function PlaybookManager() {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Playbook name (e.g. Baseline out-of-bounds sets)" style={inputStyle} />
             <input value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Description (optional)" style={inputStyle} />
+            <input value={newVideoUrl} onChange={(e) => setNewVideoUrl(e.target.value)} placeholder="🎬 Walkthrough video URL (optional, YouTube)" style={inputStyle} />
             <div style={{ fontSize: 11, color: "var(--muted)", padding: "8px 10px", background: "rgba(240,192,64,0.06)", borderRadius: 8, border: "1px solid rgba(240,192,64,0.15)" }}>
               📝 Playbooks start as <strong style={{ color: "var(--gold)" }}>Draft</strong> — add plays and assign players, then hit <strong style={{ color: "#5de098" }}>Publish</strong>.
             </div>
@@ -146,6 +154,19 @@ function PlaybookDetail({ playbook, onChanged }: { playbook: Playbook; onChanged
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
   const [showAssign, setShowAssign] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [editingVideo, setEditingVideo] = useState(false);
+  const [videoDraft, setVideoDraft] = useState(playbook.video_url ?? "");
+  const [savingVideo, setSavingVideo] = useState(false);
+
+  async function saveVideo() {
+    setSavingVideo(true);
+    try {
+      await updatePlaybook(playbook.id, { video_url: videoDraft.trim() || null });
+      setEditingVideo(false);
+      onChanged();
+    } catch (e: any) { alert("Error: " + e.message); }
+    finally { setSavingVideo(false); }
+  }
 
   useEffect(() => { refresh(); }, [playbook.id]);
 
@@ -186,6 +207,32 @@ function PlaybookDetail({ playbook, onChanged }: { playbook: Playbook; onChanged
 
   return (
     <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>🎬 Walkthrough video</span>
+          <button onClick={() => { setVideoDraft(playbook.video_url ?? ""); setEditingVideo((v) => !v); }}
+            style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 8px", fontSize: 11, cursor: "pointer" }}>
+            {editingVideo ? "✕ Cancel" : playbook.video_url ? "Edit" : "+ Add video"}
+          </button>
+        </div>
+        {editingVideo ? (
+          <div style={{ display: "flex", gap: 6 }}>
+            <input value={videoDraft} onChange={(e) => setVideoDraft(e.target.value)} placeholder="YouTube URL" style={inputStyle} />
+            <button onClick={saveVideo} disabled={savingVideo} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 7, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>
+              {savingVideo ? "Saving…" : "Save"}
+            </button>
+          </div>
+        ) : getYouTubeId(playbook.video_url) ? (
+          <div style={{ position: "relative", paddingTop: "56.25%", background: "#000", borderRadius: 10, overflow: "hidden" }}>
+            <iframe src={`https://www.youtube.com/embed/${getYouTubeId(playbook.video_url)}?rel=0&modestbranding=1`} title={playbook.name}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen
+              style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>No video added yet.</div>
+        )}
+      </div>
+
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Plays in this playbook</div>
       {plays.map((p) => (
         <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", fontSize: 13, color: "var(--text)" }}>
