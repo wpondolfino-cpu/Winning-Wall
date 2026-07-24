@@ -182,6 +182,8 @@ export interface Play {
   forked_from: string | null;
   /** Optional YouTube URL — e.g. game film of the team actually running this play. */
   video_url: string | null;
+  /** Coach/admin-organizational category (e.g. "BLOBs") — see lib/playCategories.ts. Null for plays created before this existed, or any player-authored play. */
+  category: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -219,6 +221,7 @@ export async function createPlay(play: {
   data?: PlayData;
   forked_from?: string | null;
   video_url?: string | null;
+  category?: string | null;
 }): Promise<Play> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
@@ -232,6 +235,7 @@ export async function createPlay(play: {
       data: play.data ?? emptyPlayData(),
       forked_from: play.forked_from ?? null,
       video_url: play.video_url ?? null,
+      category: play.category ?? null,
     })
     .select()
     .single();
@@ -239,7 +243,7 @@ export async function createPlay(play: {
   return data as Play;
 }
 
-export async function updatePlay(id: string, patch: Partial<Pick<Play, "title" | "tags" | "court_template" | "data" | "video_url">>) {
+export async function updatePlay(id: string, patch: Partial<Pick<Play, "title" | "tags" | "court_template" | "data" | "video_url" | "category">>) {
   const { error } = await supabase.from("plays").update(patch).eq("id", id);
   if (error) throw error;
 }
@@ -249,7 +253,7 @@ export async function deletePlay(id: string) {
   if (error) throw error;
 }
 
-/** Duplicate a play as a new one owned by the current user — used for forking. Carries the video over as a starting point, same as every other field; the copy owner can clear it. */
+/** Duplicate a play as a new one owned by the current user — used for forking. Carries the video and category over as a starting point, same as every other field; the copy owner can clear it. */
 export async function forkPlay(source: Play, newTitle?: string): Promise<Play> {
   return createPlay({
     title: newTitle ?? `${source.title} (copy)`,
@@ -258,6 +262,7 @@ export async function forkPlay(source: Play, newTitle?: string): Promise<Play> {
     data: source.data,
     forked_from: source.id,
     video_url: source.video_url,
+    category: source.category,
   });
 }
 
