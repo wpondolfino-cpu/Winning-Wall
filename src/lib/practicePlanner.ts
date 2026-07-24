@@ -29,11 +29,22 @@ export interface AttendanceOverride {
   player_id: string;
   override_type: "call_up" | "excused";
   reason: string | null;
+  /** Which of the practice's rosters this call-up is joining — only set for override_type "call_up". Lets a mixed practice (e.g. Varsity + JV) show a called-up player in the right team section instead of one undifferentiated list. */
+  called_up_to_roster_id: string | null;
+}
+
+export interface Season {
+  id: string;
+  name: string;
+  is_current: boolean;
+  created_at: string;
 }
 
 export interface PracticeWeek {
   id: string;
   name: string;
+  /** The shared season this week belongs to — set automatically to whatever season is current at the time the week is created. */
+  season_id: string | null;
   created_at: string;
 }
 
@@ -44,6 +55,8 @@ export interface Practice {
   start_time: string; // "HH:MM:SS"
   roster_ids: string[];
   status: "draft" | "published";
+  /** Set by the explicit "Complete attendance" action on the Practice Day screen. Overwritten (not logged) on every later re-completion — null means attendance hasn't been taken yet. */
+  attendance_taken_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -155,12 +168,17 @@ export async function setAttendanceOverride(
   practiceId: string,
   playerId: string,
   overrideType: "call_up" | "excused",
-  reason?: string
+  reason?: string,
+  calledUpToRosterId?: string | null
 ): Promise<{ error: string | null }> {
   const { error } = await supabase
     .from("practice_attendance_overrides")
     .upsert(
-      { practice_id: practiceId, player_id: playerId, override_type: overrideType, reason: reason?.trim() || null },
+      {
+        practice_id: practiceId, player_id: playerId, override_type: overrideType,
+        reason: reason?.trim() || null,
+        called_up_to_roster_id: overrideType === "call_up" ? (calledUpToRosterId ?? null) : null,
+      },
       { onConflict: "practice_id,player_id" }
     );
   return { error: error?.message ?? null };
@@ -173,6 +191,21 @@ export async function clearAttendanceOverride(practiceId: string, playerId: stri
     .eq("practice_id", practiceId)
     .eq("player_id", playerId);
   return { error: error?.message ?? null };
+}
+
+/** Stamps (or re-stamps) attendance_taken_at with the current time — called by the explicit "Complete attendance" action, never automatically on a checkbox toggle. Overwrites any prior value; no history is kept. */
+export async function markAttendanceTaken(practiceId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from("practices")
+    .update({ attendance_taken_at: new Date().toISOString() })
+    .eq("id", practiceId);
+  return { error: error?.message ?? null };
+}
+
+/** Best-effort "last name" for sort purposes — the profile schema only stores one free-text name field, so this takes the last whitespace-separated token (e.g. "Marcus Boyd" -> "Boyd"). Falls back to the full name for single-word entries. */
+export function lastNameKey(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return (parts[parts.length - 1] || name).toLowerCase();
 }
 
 // Computes who actually shows up to a practice: home-roster members
@@ -268,9 +301,10 @@ export async function getPracticeWeeks(): Promise<PracticeWeek[]> {
 
 export async function createPracticeWeek(name: string): Promise<{ id: string | null; error: string | null }> {
   const { data: { user } } = await supabase.auth.getUser();
+  const current = await getCurrentSeason();
   const { data, error } = await supabase
     .from("practice_weeks")
-    .insert({ name: name.trim(), created_by: user?.id })
+    .insert({ name: name.trim(), created_by: user?.id, season_id: current?.id ?? null })
     .select("id")
     .single();
   return { id: data?.id ?? null, error: error?.message ?? null };
@@ -285,6 +319,41 @@ export function suggestNextWeekName(existingWeeks: PracticeWeek[]): string {
     if (match) maxN = Math.max(maxN, parseInt(match[1], 10));
   });
   return `Week ${maxN + 1}`;
+}
+
+// ── Seasons (one shared season across every team) ──────────────
+
+export async function getSeasons(): Promise<Season[]> {
+  const { data, error } = await supabase.from("seasons").select("*").order("created_at", { ascending: false });
+  if (error) { console.error("Failed to load seasons:", error); return []; }
+  return data ?? [];
+}
+
+export async function getCurrentSeason(): Promise<Season | null> {
+  const { data, error } = await supabase.from("seasons").select("*").eq("is_current", true).maybeSingle();
+  if (error) { console.error("Failed to load current season:", error); return null; }
+  return data;
+}
+
+/** "2026-27"-style default for the upcoming season, based on today's date — a season is assumed to start mid-year (around July), so a suggestion made anytime from July through December proposes thisYear-nextYear, and January through June proposes lastYear-thisYear. Always just a starting point in the "Start new season" prompt, not enforced. */
+export function suggestNextSeasonName(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const startYear = now.getMonth() >= 6 ? y : y - 1; // getMonth() is 0-based; 6 = July
+  return `${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`;
+}
+
+/** Closes out whatever season is current and opens a new one. Existing weeks keep whatever season_id they already had — only weeks created after this point pick up the new season. */
+export async function startNewSeason(name: string): Promise<{ id: string | null; error: string | null }> {
+  const { data: { user } } = await supabase.auth.getUser();
+  const { error: clearError } = await supabase.from("seasons").update({ is_current: false }).eq("is_current", true);
+  if (clearError) return { id: null, error: clearError.message };
+  const { data, error } = await supabase
+    .from("seasons")
+    .insert({ name: name.trim(), is_current: true, created_by: user?.id })
+    .select("id")
+    .single();
+  return { id: data?.id ?? null, error: error?.message ?? null };
 }
 
 // ── Practices CRUD ───────────────────────────────────────────
