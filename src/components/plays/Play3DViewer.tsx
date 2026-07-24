@@ -163,13 +163,14 @@ export default function Play3DViewer({ play, roster, onBack, selfOverride = null
     let playerGroups: THREE.Group[] = [];
     let defenderGroups: THREE.Group[] = [];
     let coneGroups: THREE.Group[] = [];
+    let coachGroups: THREE.Group[] = [];
     let ballMesh: THREE.Mesh | null = null;
     const textureLoader = new THREE.TextureLoader();
 
     function clearEntities() {
-      [...playerGroups, ...defenderGroups, ...coneGroups].forEach((g) => scene.remove(g));
+      [...playerGroups, ...defenderGroups, ...coneGroups, ...coachGroups].forEach((g) => scene.remove(g));
       if (ballMesh) scene.remove(ballMesh);
-      playerGroups = []; defenderGroups = []; coneGroups = []; ballMesh = null;
+      playerGroups = []; defenderGroups = []; coneGroups = []; coachGroups = []; ballMesh = null;
     }
 
     // Mirrors the 2D canvas's getBallPos — the ball follows whoever holds
@@ -208,6 +209,31 @@ function makeJerseyNumberTexture(num: number, mirrored = false): THREE.CanvasTex
   const text = String(num);
   ctx.strokeText(text, w / 2, h / 2 + 2);
   ctx.fillText(text, w / 2, h / 2 + 2);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+// Same technique as the jersey number texture above, sized for a round
+// puck-style marker instead of a body-mounted plane.
+function makeCoachMarkerTexture(): THREE.CanvasTexture {
+  const size = 64;
+  const canvas = document.createElement("canvas");
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = "#2f4a7a";
+  ctx.beginPath();
+  ctx.arc(size / 2, size / 2, size / 2 - 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#1a2c4c";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 34px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("C", size / 2, size / 2 + 2);
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
   return tex;
@@ -298,6 +324,20 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
         g.position.set(w.x, 0, w.z);
         scene.add(g);
         coneGroups[i] = g;
+      });
+      (frame.coachMarkers ?? []).forEach((c, i) => {
+        const g = new THREE.Group();
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.04, 20), new THREE.MeshStandardMaterial({ color: 0x2f4a7a }));
+        base.position.y = 0.02;
+        g.add(base);
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeCoachMarkerTexture(), transparent: true }));
+        sprite.position.y = 0.55;
+        sprite.scale.set(0.5, 0.5, 0.5);
+        g.add(sprite);
+        const w = toWorld(c.x, c.y);
+        g.position.set(w.x, 0, w.z);
+        scene.add(g);
+        coachGroups[i] = g;
       });
       const ballW = getBallWorldPos(frame);
       if (ballW) {
