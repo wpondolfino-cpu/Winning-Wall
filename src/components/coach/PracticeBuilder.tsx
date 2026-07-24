@@ -412,9 +412,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
     setOverrides(await getAttendanceOverrides(practice.id));
   }
 
-  async function addCallUp(playerId: string) {
+  async function addCallUp(playerId: string, targetRosterId: string) {
     if (!practice) { alert("Save the practice first."); return; }
-    await setAttendanceOverride(practice.id, playerId, "call_up");
+    await setAttendanceOverride(practice.id, playerId, "call_up", undefined, targetRosterId);
     setOverrides(await getAttendanceOverrides(practice.id));
   }
 
@@ -534,20 +534,35 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
               {calledUpIds.size > 0 && (
                 <div style={{ marginBottom: 8 }}>
                   <div style={{ fontSize: 11, color: "var(--gold)", marginBottom: 4 }}>Called up:</div>
-                  {players.filter(p => calledUpIds.has(p.id)).map(p => (
-                    <div key={p.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "2px 0" }}>
-                      <span>{p.name}</span>
-                      <button onClick={() => removeCallUp(p.id)} style={{ ...smallBtn, padding: "2px 8px" }}>Remove</button>
-                    </div>
-                  ))}
+                  {players.filter(p => calledUpIds.has(p.id)).map(p => {
+                    const ov = overrides.find(o => o.player_id === p.id && o.override_type === "call_up");
+                    const targetRoster = rosters.find(r => r.id === ov?.called_up_to_roster_id);
+                    return (
+                      <div key={p.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "2px 0" }}>
+                        <span>{p.name}{targetRoster && rosterIds.length > 1 && <span style={{ color: "var(--muted)" }}> — to {targetRoster.name}</span>}</span>
+                        <button onClick={() => removeCallUp(p.id)} style={{ ...smallBtn, padding: "2px 8px" }}>Remove</button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
-              <select onChange={e => { if (e.target.value) addCallUp(e.target.value); e.target.value = ""; }} style={inputStyle} defaultValue="">
-                <option value="">+ Call up a player…</option>
-                {players.filter(p => !relevantPlayers.some(r => r.id === p.id) && !calledUpIds.has(p.id)).map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+              {rosterIds.length > 1 ? (
+                rosters.filter(r => rosterIds.includes(r.id)).map(r => (
+                  <select key={r.id} onChange={e => { if (e.target.value) addCallUp(e.target.value, r.id); e.target.value = ""; }} style={{ ...inputStyle, marginBottom: 6 }} defaultValue="">
+                    <option value="">+ Call up a player to {r.name}…</option>
+                    {players.filter(p => !relevantPlayers.some(x => x.id === p.id) && !calledUpIds.has(p.id)).map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                ))
+              ) : (
+                <select onChange={e => { if (e.target.value) addCallUp(e.target.value, rosterIds[0]); e.target.value = ""; }} style={inputStyle} defaultValue="">
+                  <option value="">+ Call up a player…</option>
+                  {players.filter(p => !relevantPlayers.some(r => r.id === p.id) && !calledUpIds.has(p.id)).map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              )}
             </div>
           )}
         </div>
