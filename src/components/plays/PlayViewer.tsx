@@ -8,6 +8,8 @@ import { supabase } from "../../lib/supabase";
 import { getProfile } from "../../lib/auth";
 import PlayCanvas from "./PlayCanvas";
 import PlayPrintView from "./PlayPrintView";
+import PlayCategoryManagerModal from "./PlayCategoryManagerModal";
+import { PlayCategory, getPlayCategories } from "../../lib/playCategories";
 import {
   Play, RosterPlayer, getMyPlays, getPlaysSharedWithMe, getMyAssignedPlaybooks,
   getPlaybookPlays, getPlayShares, revokePlayShare, markPlayViewed, markPlaybookViewed,
@@ -112,7 +114,20 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
   const [printPlays, setPrintPlays] = useState<{ plays: Play[]; playbookName?: string } | null>(null);
   const [search, setSearch] = useState("");
 
-  useEffect(() => { load(); getRoster().then(setRoster).catch(console.error); }, []);
+  // Coach/admin only — a category-and-tag browse layout on top of "My
+  // plays", same pattern as the Drill Library. Players keep the plain
+  // title/tag search above untouched.
+  const [playCategories, setPlayCategories] = useState<PlayCategory[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState<string>("All");
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const isStaff = currentUserRole === "coach" || currentUserRole === "admin";
+
+  useEffect(() => {
+    load();
+    getRoster().then(setRoster).catch(console.error);
+    if (isStaff) getPlayCategories().then(setPlayCategories).catch(console.error);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function load() {
     const [mine, shared, pbs] = await Promise.all([getMyPlays(), getPlaysSharedWithMe(), getMyAssignedPlaybooks()]);
@@ -151,6 +166,19 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
   }
 
   const rosterMap: Record<string, RosterPlayer> = Object.fromEntries(roster.map((r) => [r.id, r]));
+
+  // Tags scoped to the active category so irrelevant tags don't show up
+  // (e.g. a BLOB tag while browsing Sets) — mirrors Drill Library.
+  const availableTagsInCategory = Array.from(new Set(
+    myPlays.filter((p) => categoryFilter === "All" || p.category === categoryFilter).flatMap((p) => p.tags)
+  ));
+
+  const mineFiltered = filterPlays(myPlays, search).filter((p) => {
+    if (!isStaff) return true;
+    if (categoryFilter !== "All" && p.category !== categoryFilter) return false;
+    if (tagFilter && !p.tags.includes(tagFilter)) return false;
+    return true;
+  });
 
   if (printPlays) {
     return <PlayPrintView plays={printPlays.plays} playbookName={printPlays.playbookName} roster={rosterMap} onBack={() => setPrintPlays(null)} />;
@@ -221,6 +249,32 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
         )}
       </div>
 
+      {tab === "mine" && isStaff && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+          {["All", ...playCategories.map((c) => c.name)].map((c) => (
+            <button key={c} onClick={() => { setCategoryFilter(c); setTagFilter(null); }}
+              style={{ padding: "5px 12px", borderRadius: 7, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600, background: categoryFilter === c ? "var(--royal)" : "var(--surface2)", color: categoryFilter === c ? "#fff" : "var(--muted)" }}>
+              {c}
+            </button>
+          ))}
+          <button onClick={() => setShowCategoryManager(true)}
+            style={{ padding: "5px 10px", borderRadius: 7, border: "1px dashed var(--border)", cursor: "pointer", fontFamily: "inherit", fontSize: 12, background: "transparent", color: "var(--muted)" }}>
+            + category
+          </button>
+        </div>
+      )}
+
+      {tab === "mine" && isStaff && categoryFilter !== "All" && availableTagsInCategory.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, paddingLeft: 8 }}>
+          {availableTagsInCategory.map((t) => (
+            <button key={t} onClick={() => setTagFilter((f) => (f === t ? null : t))}
+              style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid var(--border)", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, background: tagFilter === t ? "var(--gold)" : "transparent", color: tagFilter === t ? "#1a1a1a" : "var(--muted)" }}>
+              🏷️ {t}
+            </button>
+          ))}
+        </div>
+      )}
+
       {(tab === "mine" || tab === "shared") && (
         <input
           value={search}
@@ -233,7 +287,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
       {tab === "mine" && (
         <>
           {onCreateNew && <button onClick={onCreateNew} className="coach-add-btn" style={{ width: "100%", justifyContent: "center", marginBottom: 10 }}>+ Draw a new play</button>}
-          {filterPlays(myPlays, search).map((p) => (
+          {mineFiltered.map((p) => (
             <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6, border: "1px solid var(--border)", borderRadius: 8 }}>
               <button onClick={() => setOpenPlay(p)} style={{ flex: 1, textAlign: "left", padding: "10px 12px", background: "none", border: "none", color: "var(--text)", cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>
                 {p.title}
@@ -259,7 +313,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
             </div>
           ))}
           {myPlays.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>No plays yet.</p>}
-          {myPlays.length > 0 && filterPlays(myPlays, search).length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>No plays match "{search}".</p>}
+          {myPlays.length > 0 && mineFiltered.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>No plays match this filter.</p>}
         </>
       )}
 
@@ -287,6 +341,12 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
 
       {toast && <p style={{ fontSize: 13, color: "var(--gold)", marginTop: 8 }}>{toast}</p>}
       {sharePopupPlay && <SharePopup play={sharePopupPlay} onClose={() => setSharePopupPlay(null)} />}
+      {showCategoryManager && (
+        <PlayCategoryManagerModal
+          onClose={() => setShowCategoryManager(false)}
+          onChanged={() => getPlayCategories().then(setPlayCategories).catch(console.error)}
+        />
+      )}
     </div>
   );
 }
