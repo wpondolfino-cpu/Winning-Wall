@@ -25,6 +25,7 @@ import {
 } from "../../lib/practicePlanner";
 import GroupingEditor from "./GroupingEditor";
 import PracticeDrillLibrary from "./PracticeDrillLibrary";
+import PracticePrintView from "./PracticePrintView";
 import type { PracticeDrillLibraryDrill } from "../../lib/practicePlanner";
 
 interface PlayerLite { id: string; name: string; home_roster_id: string | null; }
@@ -53,6 +54,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   const [groupingTarget, setGroupingTarget] = useState<{ drill: SegmentDrill; segment: BlockSegment } | null>(null);
   const [savedGroupingsCache, setSavedGroupingsCache] = useState<Record<string, SavedGrouping[]>>({});
   const [drillPickerTarget, setDrillPickerTarget] = useState<{ segment: BlockSegment; block: PracticeBlock; replacing?: SegmentDrill } | null>(null);
+  const [showPrint, setShowPrint] = useState(false);
   const [drillsById, setDrillsById] = useState<Record<string, PracticeDrillLibraryDrill>>({});
   const [editingDrillDetails, setEditingDrillDetails] = useState<{ drill: SegmentDrill; block: PracticeBlock } | null>(null);
   const [coachPickerTarget, setCoachPickerTarget] = useState<{ drill: SegmentDrill; block: PracticeBlock } | null>(null);
@@ -171,6 +173,16 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
     const id = await ensurePracticeSaved();
     setSaving(false);
     if (id) onSaved();
+  }
+
+  // Autosaves a single metadata field the instant it changes, once the
+  // practice already exists — matches how every other edit in this
+  // builder behaves, so there's nothing left that only saves on a
+  // manual button click.
+  async function autosaveMeta(patch: Partial<Pick<Practice, "practice_date" | "start_time" | "roster_ids" | "week_id">>) {
+    if (!practice) return; // brand-new practice — needs "Create practice" first
+    const { error } = await updatePractice(practice.id, patch);
+    if (error) alert("Couldn't save: " + error);
   }
 
   async function handlePublish() {
@@ -422,6 +434,10 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
 
   if (loading) return <div style={{ padding: 20, color: "var(--muted)", fontSize: 13 }}>Loading…</div>;
 
+  if (showPrint && practice) {
+    return <PracticePrintView practiceIds={[practice.id]} onClose={() => setShowPrint(false)} />;
+  }
+
   return (
     <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: "18px 20px" }}>
       {/* ── Header / metadata ── */}
@@ -443,6 +459,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
         <div style={{ display: "flex", gap: 8 }}>
           {practice?.status === "published" && <button onClick={handleUnpublish} style={secondaryBtn}>Revert to draft</button>}
           {practice?.status === "draft" && <button onClick={handlePublish} style={primaryBtn}>Publish</button>}
+          {practice && <button onClick={() => setShowPrint(true)} style={secondaryBtn}>🖨️ Print</button>}
           {practice && <button onClick={handleDuplicate} style={secondaryBtn}>Duplicate</button>}
           {practice && <button onClick={handleDelete} style={dangerBtn}>Delete</button>}
           <button onClick={onClose} style={secondaryBtn}>Close</button>
@@ -452,11 +469,11 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
         <div>
           <div style={fieldLabel}>Date</div>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} />
+          <input type="date" value={date} onChange={e => { setDate(e.target.value); autosaveMeta({ practice_date: e.target.value }); }} style={inputStyle} />
         </div>
         <div>
           <div style={fieldLabel}>Start time</div>
-          <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} style={inputStyle} />
+          <input type="time" value={startTime} onChange={e => { setStartTime(e.target.value); autosaveMeta({ start_time: e.target.value }); }} style={inputStyle} />
         </div>
         <div style={{ minWidth: 220 }}>
           <div style={fieldLabel}>Team(s)</div>
@@ -464,7 +481,11 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
             {rosters.map(r => (
               <label key={r.id} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text)", cursor: "pointer" }}>
                 <input type="checkbox" checked={rosterIds.includes(r.id)}
-                  onChange={e => setRosterIds(prev => e.target.checked ? [...prev, r.id] : prev.filter(id => id !== r.id))} />
+                  onChange={e => {
+                    const next = e.target.checked ? [...rosterIds, r.id] : rosterIds.filter(id => id !== r.id);
+                    setRosterIds(next);
+                    autosaveMeta({ roster_ids: next });
+                  }} />
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.color, display: "inline-block" }} />
                 {r.name}
               </label>
@@ -475,7 +496,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
           <div style={fieldLabel}>Week</div>
           {!showNewWeek ? (
             <div style={{ display: "flex", gap: 6 }}>
-              <select value={weekId ?? ""} onChange={e => setWeekId(e.target.value || null)} style={inputStyle}>
+              <select value={weekId ?? ""} onChange={e => { const v = e.target.value || null; setWeekId(v); autosaveMeta({ week_id: v }); }} style={inputStyle}>
                 <option value="">— No week —</option>
                 {weeks.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
@@ -490,6 +511,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
         </div>
         <div style={{ alignSelf: "flex-end" }}>
           <button onClick={handleSaveMeta} disabled={saving} style={primaryBtn}>{saving ? "Saving…" : practice ? "Save changes" : "Create practice"}</button>
+          {practice && <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4 }}>Changes above save automatically</div>}
         </div>
       </div>
 
