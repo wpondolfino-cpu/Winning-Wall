@@ -472,7 +472,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
               // Higher, floatier arc than a shot — a lob needs to clear
               // defenders and give the receiver room to jump up and meet
               // it before it continues into the hoop.
-              const startH = 1.5, rimH = 2.0, peakBump = 3.2;
+              const startH = 1.5, rimH = 2.0, peakBump = 1.4;
               ballMesh.position.y = startH + (rimH - startH) * t + Math.sin(t * Math.PI) * peakBump;
             } else {
               ballMesh.position.x = fromBall.x + (toBall.x - fromBall.x) * t;
