@@ -23,7 +23,7 @@ interface Props {
   roster?: Record<string, RosterPlayer>;
   /** When true, clicks/drags on the court edit the frame via the callbacks below. */
   edit?: boolean;
-  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "shot" | null;
+  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | null;
   onAddPlayer?: (p: PlayPlayer) => void;
   onAddDefender?: (x: number, y: number) => void;
   onSetBall?: (x: number, y: number) => void;
@@ -53,6 +53,9 @@ interface Props {
   /** "cone" tool — click the court to place a practice-drill cone marker. */
   onAddCone?: (x: number, y: number) => void;
   onMoveCone?: (index: number, x: number, y: number) => void;
+  /** "coach" tool — click the court to place a coach position marker ("C" in a circle), showing where the coach stands for a drill. */
+  onAddCoach?: (x: number, y: number) => void;
+  onMoveCoach?: (index: number, x: number, y: number) => void;
   /** "shot" tool — click a player to stamp a shot action from them to the nearest hoop. */
   onAddShot?: (index: number) => void;
   /** A ghost preview of where a saved action's players/ball/lines would land if stamped right now — follows the cursor while a stamp is armed, so placement isn't a blind guess. */
@@ -65,8 +68,8 @@ interface Props {
   /** Override the court's background fill — used by PlayPrintView for a lighter, ink-friendly tone. */
   courtBg?: string;
   /** "select" tool — the currently selected element, highlighted, and what Delete/Backspace acts on. */
-  selected?: { kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone"; index: number } | null;
-  onSelect?: (sel: { kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone"; index: number } | null) => void;
+  selected?: { kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone" | "coach"; index: number } | null;
+  onSelect?: (sel: { kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone" | "coach"; index: number } | null) => void;
   /** Viewer-only, local override — renders this one player (by stable id) with the viewer's own avatar, regardless of what's actually linked in the play data. Never persisted or saved. */
   selfOverride?: { playerId: string; avatarUrl: string | null } | null;
 }
@@ -345,7 +348,7 @@ export default function PlayCanvas({
   frame, courtTemplate, avatarsDefault, roster = {}, edit = false, tool = null,
   onAddPlayer, onAddDefender, onSetBall, onAddAction, onErase, onToggleAvatar,
   onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff, onSetActionCurve,
-  onAddText, onMoveText, onEditText, onAddZone, onMoveZone, onAddCone, onMoveCone, onAddShot, stampPreview,
+  onAddText, onMoveText, onEditText, onAddZone, onMoveZone, onAddCone, onMoveCone, onAddCoach, onMoveCoach, onAddShot, stampPreview,
   playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect, selfOverride = null, speed = 1,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -357,7 +360,7 @@ export default function PlayCanvas({
   const nextNum = (frame.players.length % 5) + 1;
 
   type MoveDrag =
-    | { kind: "player" | "defender" | "text" | "cone"; index: number }
+    | { kind: "player" | "defender" | "text" | "cone" | "coach"; index: number }
     | { kind: "zone"; index: number; offsetX: number; offsetY: number }
     | { kind: "ball" }
     | { kind: "actionStart" | "actionEnd"; index: number }
@@ -394,6 +397,7 @@ export default function PlayCanvas({
       return;
     }
     if (tool === "cone") { onAddCone?.(p.x, p.y); return; }
+    if (tool === "coach") { onAddCoach?.(p.x, p.y); return; }
     if (tool === "shot") {
       let closest = -1, closestDist = 20;
       frame.players.forEach((pl, i) => {
@@ -446,6 +450,9 @@ export default function PlayCanvas({
       for (let i = 0; i < (frame.cones ?? []).length; i++) {
         if (within(frame.cones![i], 16)) { setMoveDrag({ kind: "cone", index: i }); setMovePos(p); return; }
       }
+      for (let i = 0; i < (frame.coachMarkers ?? []).length; i++) {
+        if (within(frame.coachMarkers![i], 16)) { setMoveDrag({ kind: "coach", index: i }); setMovePos(p); return; }
+      }
       onSelect?.(null);
       return;
     }
@@ -481,6 +488,7 @@ export default function PlayCanvas({
       }
       else if (moveDrag.kind === "text") { onMoveText?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "text", index: moveDrag.index }); }
       else if (moveDrag.kind === "cone") { onMoveCone?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "cone", index: moveDrag.index }); }
+      else if (moveDrag.kind === "coach") { onMoveCoach?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "coach", index: moveDrag.index }); }
       else if (moveDrag.kind === "zone") { onMoveZone?.(moveDrag.index, p.x - moveDrag.offsetX, p.y - moveDrag.offsetY); onSelect?.({ kind: "zone", index: moveDrag.index }); }
       setMoveDrag(null);
       setMovePos(null);
@@ -583,6 +591,8 @@ export default function PlayCanvas({
       displayFrame = { ...frame, texts: (frame.texts ?? []).map((t, i) => i === moveDrag.index ? { ...t, x: movePos.x, y: movePos.y } : t) };
     } else if (moveDrag.kind === "cone") {
       displayFrame = { ...frame, cones: (frame.cones ?? []).map((c, i) => i === moveDrag.index ? { ...c, x: movePos.x, y: movePos.y } : c) };
+    } else if (moveDrag.kind === "coach") {
+      displayFrame = { ...frame, coachMarkers: (frame.coachMarkers ?? []).map((c, i) => i === moveDrag.index ? { ...c, x: movePos.x, y: movePos.y } : c) };
     } else if (moveDrag.kind === "zone") {
       displayFrame = { ...frame, zones: (frame.zones ?? []).map((z, i) => i === moveDrag.index ? { ...z, x: movePos.x - moveDrag.offsetX, y: movePos.y - moveDrag.offsetY } : z) };
     }
@@ -686,6 +696,13 @@ export default function PlayCanvas({
         </g>
       ))}
 
+      {(displayFrame.coachMarkers ?? []).map((c, i) => (
+        <g key={i}>
+          <circle cx={c.x} cy={c.y} r={13} fill="#2f4a7a" stroke="#1a2c4c" strokeWidth={1.5} />
+          <text x={c.x} y={c.y + 1} textAnchor="middle" dominantBaseline="middle" fontSize={14} fontWeight={700} fill="#fff">C</text>
+        </g>
+      ))}
+
       {ballPos && (
         <circle cx={ballPos.x} cy={ballPos.y} r={8} fill="#EF9F27" stroke="#854F0B" strokeWidth={1.5} />
       )}
@@ -717,6 +734,9 @@ export default function PlayCanvas({
       )}
       {selected && selected.kind === "cone" && (displayFrame.cones ?? [])[selected.index] && (
         <circle cx={(displayFrame.cones ?? [])[selected.index].x} cy={(displayFrame.cones ?? [])[selected.index].y} r={16} fill="none" stroke="var(--gold)" strokeWidth={2} strokeDasharray="4,3" />
+      )}
+      {selected && selected.kind === "coach" && (displayFrame.coachMarkers ?? [])[selected.index] && (
+        <circle cx={(displayFrame.coachMarkers ?? [])[selected.index].x} cy={(displayFrame.coachMarkers ?? [])[selected.index].y} r={17} fill="none" stroke="var(--gold)" strokeWidth={2} strokeDasharray="4,3" />
       )}
       {selected && selected.kind === "zone" && (displayFrame.zones ?? [])[selected.index] && (() => {
         const z = (displayFrame.zones ?? [])[selected.index];
