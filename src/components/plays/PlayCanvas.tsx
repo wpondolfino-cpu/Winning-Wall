@@ -18,7 +18,6 @@ export const CANVAS_H = 420;
 interface Props {
   frame: PlayFrame;
   courtTemplate: CourtTemplate;
-  avatarsDefault: boolean;
   /** profile_id -> roster info, used to resolve a player's avatar/name. */
   roster?: Record<string, RosterPlayer>;
   /** When true, clicks/drags on the court edit the frame via the callbacks below. */
@@ -29,7 +28,6 @@ interface Props {
   onSetBall?: (x: number, y: number) => void;
   onAddAction?: (a: PlayAction) => void;
   onErase?: (x: number, y: number) => void;
-  onToggleAvatar?: (index: number) => void;
   /** "handoff" tool — click a player to stamp/unstamp the handoff marker on them. */
   onToggleHandoff?: (index: number) => void;
   /** "select" tool — drag an existing player/defender/ball, or either end (or the whole line) of an existing action. */
@@ -291,14 +289,12 @@ function distToAction(px: number, py: number, a: PlayAction) {
 
 const FACE_COLORS = ["#378ADD", "#639922", "#D85A30", "#D4537E", "#7F77DD"];
 
-function PlayerIcon({ p, showAvatar, avatarUrl, onDoubleClick }: {
-  p: PlayPlayer; showAvatar: boolean; avatarUrl?: string | null; onDoubleClick?: () => void;
-}) {
+function PlayerIcon({ p, avatarUrl }: { p: PlayPlayer; avatarUrl?: string | null }) {
   const color = FACE_COLORS[(p.num - 1 + 5) % 5];
-  if (showAvatar && avatarUrl) {
+  if (avatarUrl) {
     const clipId = `pc-clip-${p.num}-${Math.round(p.x)}-${Math.round(p.y)}`;
     return (
-      <g style={{ cursor: onDoubleClick ? "pointer" : undefined }} onDoubleClick={onDoubleClick}>
+      <g>
         <defs><clipPath id={clipId}><circle cx={p.x} cy={p.y} r={14} /></clipPath></defs>
         <circle cx={p.x} cy={p.y} r={15} fill="var(--surface)" stroke={color} strokeWidth={2} />
         <image href={avatarUrl} x={p.x - 14} y={p.y - 14} width={28} height={28} clipPath={`url(#${clipId})`} />
@@ -313,25 +309,8 @@ function PlayerIcon({ p, showAvatar, avatarUrl, onDoubleClick }: {
       </g>
     );
   }
-  if (showAvatar) {
-    // Avatar mode on, but this player has no photo on file yet — fall back gracefully.
-    return (
-      <g style={{ cursor: onDoubleClick ? "pointer" : undefined }} onDoubleClick={onDoubleClick}>
-        <circle cx={p.x} cy={p.y} r={14} fill={color} opacity={0.18} stroke={color} strokeWidth={2} />
-        <text x={p.x} y={p.y + 5} textAnchor="middle" fontSize={13} fill={color}>?</text>
-        <circle cx={p.x + 10} cy={p.y + 10} r={7} fill="var(--surface)" stroke={color} strokeWidth={1.5} />
-        <text x={p.x + 10} y={p.y + 13} textAnchor="middle" fontSize={9} fontWeight={500} fill={color}>{p.num}</text>
-        {p.handoff && (
-          <g>
-            <circle cx={p.x - 10} cy={p.y - 10} r={7} fill="var(--surface)" stroke="var(--gold)" strokeWidth={1.5} />
-            <text x={p.x - 10} y={p.y - 7} textAnchor="middle" fontSize={12} fontWeight={700} fill="var(--gold)">*</text>
-          </g>
-        )}
-      </g>
-    );
-  }
   return (
-    <g style={{ cursor: onDoubleClick ? "pointer" : undefined }} onDoubleClick={onDoubleClick}>
+    <g>
       <circle cx={p.x} cy={p.y} r={13} fill="#E6F1FB" stroke="#185FA5" strokeWidth={2} />
       <text x={p.x} y={p.y + 4} textAnchor="middle" fontSize={12} fontWeight={500} fill="#0C447C">{p.num}</text>
       {p.handoff && (
@@ -345,8 +324,8 @@ function PlayerIcon({ p, showAvatar, avatarUrl, onDoubleClick }: {
 }
 
 export default function PlayCanvas({
-  frame, courtTemplate, avatarsDefault, roster = {}, edit = false, tool = null,
-  onAddPlayer, onAddDefender, onSetBall, onAddAction, onErase, onToggleAvatar,
+  frame, courtTemplate, roster = {}, edit = false, tool = null,
+  onAddPlayer, onAddDefender, onSetBall, onAddAction, onErase,
   onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff, onSetActionCurve,
   onAddText, onMoveText, onEditText, onAddZone, onMoveZone, onAddCone, onMoveCone, onAddCoach, onMoveCoach, onAddShot, stampPreview,
   playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect, selfOverride = null, speed = 1,
@@ -661,15 +640,12 @@ export default function PlayCanvas({
       {displayFrame.players.map((p, i) => {
         const isSelf = !!(selfOverride && p.id === selfOverride.playerId);
         const rp = p.profile_id ? roster[p.profile_id] : undefined;
-        const showAvatar = isSelf ? true : (p.showAvatar ?? avatarsDefault);
         const avatarUrl = isSelf ? selfOverride!.avatarUrl : rp?.avatar_url;
         return (
           <PlayerIcon
             key={i}
             p={p}
-            showAvatar={showAvatar}
             avatarUrl={avatarUrl}
-            onDoubleClick={edit ? () => onToggleAvatar?.(i) : undefined}
           />
         );
       })}
