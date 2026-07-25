@@ -1,6 +1,6 @@
 // src/components/lifting/ExerciseBank.tsx
 import { useState, useEffect } from "react";
-import { BankExercise, MuscleGroup, MUSCLE_GROUPS, getExerciseBank, upsertBankExercise } from "./lifting";
+import { BankExercise, MuscleGroup, MUSCLE_GROUPS, getExerciseBank, upsertBankExercise, getYouTubeId } from "./lifting";
 import { supabase } from "../../lib/supabase";
 
 interface Props {
@@ -134,11 +134,6 @@ export default function ExerciseBank({ playerId, canManage }: Props) {
     return acc;
   }, {} as Record<string, BankExercise[]>);
 
-  function getYouTubeId(url?: string): string | null {
-    if (!url) return null;
-    const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([^&?/\s]+)/);
-    return match ? match[1] : null;
-  }
 
   return (
     <div>
