@@ -60,8 +60,6 @@ export default function PlayPrintView({ plays, playbookName, roster = {}, onBack
                   <PlayCanvas
                     frame={frame}
                     courtTemplate={play.court_template}
-                    avatarsDefault={false}
-                    roster={roster}
                     edit={false}
                     courtBg="#f3e4c8"
                   />
