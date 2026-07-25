@@ -2,7 +2,8 @@
 // All Supabase queries for the lifting module
 
 import { supabase } from "../../lib/supabase";
-export { getYouTubeId } from "../../lib/youtube";
+import { getYouTubeId } from "../../lib/youtube";
+export { getYouTubeId };
 
 export type MuscleGroup = "Chest" | "Back" | "Legs" | "Shoulders" | "Arms" | "Core" | "Athletic" | "Other";
 export const MUSCLE_GROUPS: MuscleGroup[] = ["Chest", "Back", "Legs", "Shoulders", "Arms", "Core", "Athletic", "Other"];
