@@ -588,11 +588,33 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       if (p.id) idMap.set(p.id, newId);
       return { ...p, id: newId, x: p.x + dx, y: p.y + dy, num: ((baseCount + i) % 5) + 1 };
     });
-    const newActions = d.actions.map((a) => ({
-      ...a, x1: a.x1 + dx, y1: a.y1 + dy, x2: a.x2 + dx, y2: a.y2 + dy,
-      sourcePlayerId: a.sourcePlayerId ? idMap.get(a.sourcePlayerId) : undefined,
-      targetPlayerId: a.targetPlayerId ? idMap.get(a.targetPlayerId) : undefined,
-    }));
+    // A saved action with no players in it (e.g. arrows drawn, then the
+    // players deleted before saving, specifically so the stamp is
+    // player-agnostic) has nothing for idMap to remap — its lines would
+    // otherwise land with no sourcePlayerId/targetPlayerId at all, which
+    // breaks "carry the player to where their line ends" on the next step
+    // even when the arrows are visually placed right on top of real
+    // players. So: for any line idMap can't resolve, fall back to
+    // checking whether its (now-positioned) start/end actually lands on a
+    // real player already on the court, same proximity check manual
+    // drawing already uses, and link to them if so.
+    const allPlayersAfterStamp = [...frame.players, ...newPlayers];
+    function nearestRealPlayer(px: number, py: number): string | undefined {
+      let best: string | undefined; let bestDist = 22;
+      allPlayersAfterStamp.forEach((p) => {
+        if (!p.id) return;
+        const dd = Math.hypot(p.x - px, p.y - py);
+        if (dd < bestDist) { bestDist = dd; best = p.id; }
+      });
+      return best;
+    }
+    const newActions = d.actions.map((a) => {
+      const tx1 = a.x1 + dx, ty1 = a.y1 + dy, tx2 = a.x2 + dx, ty2 = a.y2 + dy;
+      const sourcePlayerId = (a.sourcePlayerId && idMap.get(a.sourcePlayerId)) ?? nearestRealPlayer(tx1, ty1);
+      const targetPlayerId = (a.targetPlayerId && idMap.get(a.targetPlayerId))
+        ?? ((a.type === "pass" || a.type === "lob") ? nearestRealPlayer(tx2, ty2) : undefined);
+      return { ...a, x1: tx1, y1: ty1, x2: tx2, y2: ty2, sourcePlayerId, targetPlayerId };
+    });
     updateFrame((f) => ({
       players: [...f.players, ...newPlayers],
       defenders: [...f.defenders, ...d.defenders.map((def) => ({ x: def.x + dx, y: def.y + dy }))],
