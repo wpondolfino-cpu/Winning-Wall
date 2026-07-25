@@ -72,7 +72,6 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const [category, setCategory] = useState(existingPlay?.category ?? "");
   const [playCategories, setPlayCategories] = useState<PlayCategory[]>([]);
   const [courtTemplate, setCourtTemplate] = useState<CourtTemplate>(existingPlay?.court_template ?? "half");
-  const [avatarsDefault, setAvatarsDefault] = useState(existingPlay?.data?.avatarsDefault ?? true);
   const [frames, setFrames] = useState<PlayFrame[]>(() => {
     const initial = existingPlay?.data?.frames ?? emptyPlayData().frames;
     // Plays saved before player identity existed have no `id` on their
@@ -206,10 +205,6 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     pushHistory();
     updateFrame((f) => ({ ...f, drawings: [...(f.drawings ?? []), { points }] }));
   }, [frames, frameIdx]);
-  const toggleAvatar = useCallback((idx: number) => {
-    pushHistory();
-    updateFrame((f) => ({ ...f, players: f.players.map((p, i) => i === idx ? { ...p, showAvatar: !(p.showAvatar ?? avatarsDefault) } : p) }));
-  }, [frames, frameIdx, avatarsDefault]);
   const toggleHandoff = useCallback((idx: number) => {
     pushHistory();
     updateFrame((f) => ({ ...f, players: f.players.map((p, i) => i === idx ? { ...p, handoff: !p.handoff } : p) }));
@@ -610,7 +605,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   async function handleSave() {
     if (!title.trim()) { showToast("Give the play a title first"); return; }
     setSaving(true);
-    const data: PlayData = { avatarsDefault, frames };
+    const data: PlayData = { frames };
     const tags = tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
     const video_url = videoUrl.trim() || null;
     const categoryValue = currentUserRole === "player" ? (existingPlay?.category ?? null) : (category || null);
@@ -657,7 +652,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       title: title || "Untitled play",
       tags: [],
       court_template: courtTemplate,
-      data: { avatarsDefault, frames },
+      data: { frames },
       forked_from: existingPlay?.forked_from ?? null,
       video_url: videoUrl.trim() || null,
       category: existingPlay?.category ?? null,
@@ -679,7 +674,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       return (
         <div>
           <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 12, marginBottom: 12 }}>
-            <PlayCanvas frame={frames[frames.length - 1]} courtTemplate={courtTemplate} avatarsDefault={avatarsDefault} roster={rosterMap} edit={false} />
+            <PlayCanvas frame={frames[frames.length - 1]} courtTemplate={courtTemplate} roster={rosterMap} edit={false} />
           </div>
           <p style={{ textAlign: "center", fontSize: 14, color: "var(--text)", marginBottom: 10 }}>Look good?</p>
           <div style={{ display: "flex", gap: 8 }}>
@@ -760,10 +755,6 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             style={{ padding: "6px 2px", fontSize: 10, border: tool === "erase" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: tool === "erase" ? "rgba(240,192,64,0.12)" : "var(--surface2)", color: "var(--text)" }}>
             ⌫ Erase
           </button>
-          <button onClick={() => setAvatarsDefault((v) => !v)}
-            style={{ padding: "6px 2px", fontSize: 10, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface2)", color: "var(--text)" }}>
-            Avatars: {avatarsDefault ? "on" : "off"}
-          </button>
         </div>
 
         <button onClick={() => setShowMoreTools((v) => !v)}
@@ -825,10 +816,10 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           style={{ background: "var(--surface2)", borderRadius: 12, padding: 10, marginBottom: 8 }}
         >
           <PlayCanvas
-            frame={frame} courtTemplate={courtTemplate} avatarsDefault={avatarsDefault} roster={rosterMap}
+            frame={frame} courtTemplate={courtTemplate} roster={rosterMap}
             edit={!stampAction} tool={tool}
             onAddPlayer={addPlayer} onAddDefender={addDefender} onSetBall={setBall} onAddAction={addAction}
-            onErase={eraseNear} onToggleAvatar={toggleAvatar} onToggleHandoff={toggleHandoff}
+            onErase={eraseNear} onToggleHandoff={toggleHandoff}
             onMovePlayer={movePlayer} onMoveDefender={moveDefender} onMoveBall={moveBall}
             onMoveActionPoint={moveActionPoint} onMoveActionWhole={moveActionWhole} onSetActionCurve={setActionCurve}
             onAddText={addText} onMoveText={moveText} onEditText={editText} onAddZone={addZone} onMoveZone={moveZone}
@@ -968,9 +959,6 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           <button onClick={redo} disabled={!future.length} style={{ padding: "6px 10px" }}>↪ Redo</button>
           {selected && <button onClick={deleteSelected} style={{ padding: "6px 10px" }}>🗑 Delete selected</button>}
           {selected && selected.kind === "player" && <button onClick={duplicateSelectedPlayer} style={{ padding: "6px 10px" }}>⧉ Duplicate player</button>}
-          <button onClick={() => setAvatarsDefault((v) => !v)} style={{ padding: "6px 10px" }}>
-            Avatars: {avatarsDefault ? "on" : "off"}
-          </button>
           <button onClick={() => setPlaySignal((s) => s + 1)} className="coach-add-btn">▶ Play frame</button>
           {frames.length > 1 && <button onClick={previewAllBeats} style={{ padding: "6px 10px" }}>▶▶ Preview full play</button>}
           <button onClick={() => setShowPreview3D(true)} style={{ padding: "6px 10px" }}>🧊 Watch live</button>
@@ -1006,7 +994,6 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           <PlayCanvas
             frame={frame}
             courtTemplate={courtTemplate}
-            avatarsDefault={avatarsDefault}
             roster={rosterMap}
             edit={!stampAction}
             tool={tool}
@@ -1015,7 +1002,6 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onSetBall={setBall}
             onAddAction={addAction}
             onErase={eraseNear}
-            onToggleAvatar={toggleAvatar}
             onToggleHandoff={toggleHandoff}
             onMovePlayer={movePlayer}
             onMoveDefender={moveDefender}
