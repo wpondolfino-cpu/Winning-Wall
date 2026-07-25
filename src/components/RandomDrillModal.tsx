@@ -10,6 +10,7 @@ import { useState, useMemo, useEffect } from "react";
 import { Workout } from "../lib/supabase";
 import { randomDrillPool, pickRandomDrill } from "../lib/randomDrill";
 import { getCategories } from "../lib/categories";
+import { getYouTubeId } from "../lib/youtube";
 
 interface Props {
   drills: Workout[];
@@ -18,11 +19,6 @@ interface Props {
   onLogScore?: (workoutId: string, filters: { category: string; tags: string[] }) => void;
 }
 
-function getYouTubeId(url?: string): string | null {
-  if (!url) return null;
-  const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([^&?/\s]+)/);
-  return match ? match[1] : null;
-}
 
 export default function RandomDrillModal({ drills, canManage, onClose, onLogScore }: Props) {
   const [categories, setCategories] = useState<string[]>([]);
