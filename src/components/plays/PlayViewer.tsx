@@ -442,7 +442,6 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
         <PlayCanvas
           frame={frame}
           courtTemplate={play.court_template}
-          avatarsDefault={play.data.avatarsDefault}
           roster={rosterMap}
           edit={false}
           playSignal={playSignal}
