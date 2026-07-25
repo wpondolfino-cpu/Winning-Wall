@@ -18,7 +18,7 @@ import {
   setPracticeStatus, deletePractice, duplicatePractice, getPracticeBlocks,
   createBlock, updateBlock, deleteBlock, reorderBlocks, getSegments,
   createSegment, deleteSegment, getSegmentDrills, createSegmentDrill,
-  updateSegmentDrill, deleteSegmentDrill, autoSplitSegmentDrillDurations,
+  updateSegmentDrill, deleteSegmentDrill, autoSplitSegmentDrillDurations, reorderSegmentDrills,
   getAttendanceOverrides, setAttendanceOverride, clearAttendanceOverride,
   computeEffectiveAttendees, computeBlockTimes, totalDurationMinutes,
   formatDuration, columnTotals, getSavedGroupings, getAssignableCoaches, CoachLite, getGroupCountsForDrills,
@@ -358,6 +358,25 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
     setDrillsBySeg(prev => ({ ...prev, [drill.segment_id]: (prev[drill.segment_id] ?? []).filter(d => d.id !== drill.id) }));
   }
 
+  // Swaps a drill with its neighbor above/below within the same segment
+  // (multi-drill "stations" only — order otherwise has no effect on how
+  // the practice actually runs, just how it reads on the plan/printout).
+  async function handleMoveDrill(segmentId: string, drillId: string, direction: "up" | "down") {
+    const current = drillsBySeg[segmentId] ?? [];
+    const idx = current.findIndex(d => d.id === drillId);
+    const swapWith = direction === "up" ? idx - 1 : idx + 1;
+    if (idx < 0 || swapWith < 0 || swapWith >= current.length) return;
+    const reordered = [...current];
+    [reordered[idx], reordered[swapWith]] = [reordered[swapWith], reordered[idx]];
+    setDrillsBySeg(prev => ({ ...prev, [segmentId]: reordered.map((d, i) => ({ ...d, order_index: i })) }));
+    try {
+      await reorderSegmentDrills(reordered.map(d => d.id));
+    } catch (e: any) {
+      alert("Couldn't save the new order: " + e.message);
+      setDrillsBySeg(prev => ({ ...prev, [segmentId]: current }));
+    }
+  }
+
   function openDrillDetails(drill: SegmentDrill, block: PracticeBlock) {
     setDetailsLabel(drill.label ?? "");
     setEditingDrillDetails({ drill, block });
@@ -639,6 +658,14 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                           {isVeryFirstRow && timeCell}
                           <td style={{ padding: "10px" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              {drills.length > 1 && (
+                                <span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                                  <span onClick={() => handleMoveDrill(seg.id, d.id, "up")} title="Move up"
+                                    style={{ cursor: d.id === drills[0].id ? "default" : "pointer", opacity: d.id === drills[0].id ? 0.25 : 1, color: "var(--muted)", fontSize: 9, lineHeight: 1 }}>▲</span>
+                                  <span onClick={() => handleMoveDrill(seg.id, d.id, "down")} title="Move down"
+                                    style={{ cursor: d.id === drills[drills.length - 1].id ? "default" : "pointer", opacity: d.id === drills[drills.length - 1].id ? 0.25 : 1, color: "var(--muted)", fontSize: 9, lineHeight: 1 }}>▼</span>
+                                </span>
+                              )}
                               <span style={{ fontSize: 13, fontWeight: 600 }}>
                                 {d.drill_id ? (drillsById[d.drill_id]?.title ?? "Loading…") : (d.label ?? "Untitled drill")}
                               </span>
