@@ -595,9 +595,19 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     // breaks "carry the player to where their line ends" on the next step
     // even when the arrows are visually placed right on top of real
     // players. So: for any line idMap can't resolve, fall back to
-    // checking whether its (now-positioned) start/end actually lands on a
+    // checking whether its (now-positioned) start actually lands on a
     // real player already on the court, same proximity check manual
     // drawing already uses, and link to them if so.
+    //
+    // Important: this has to be resolved per ORIGINAL player, not per
+    // line. A chained sequence (e.g. screen into a cut, or cut into
+    // another cut) is two actions sharing one original sourcePlayerId —
+    // only the first one's start point is actually standing on a real
+    // player; the second starts wherever the first one visually ends,
+    // which is empty space. So every action that shared an original
+    // sourcePlayerId resolves to whichever real player the FIRST action
+    // in that chain (lowest sequenceIndex) lands on, not resolved
+    // independently line-by-line.
     const allPlayersAfterStamp = [...frame.players, ...newPlayers];
     function nearestRealPlayer(px: number, py: number): string | undefined {
       let best: string | undefined; let bestDist = 22;
@@ -608,9 +618,23 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       });
       return best;
     }
+    const unmappedGroups = new Map<string, PlayAction[]>(); // original sourcePlayerId -> its actions, for ones idMap can't resolve
+    d.actions.forEach((a) => {
+      if (a.sourcePlayerId && !idMap.has(a.sourcePlayerId)) {
+        const g = unmappedGroups.get(a.sourcePlayerId) ?? [];
+        g.push(a);
+        unmappedGroups.set(a.sourcePlayerId, g);
+      }
+    });
+    const groupResolved = new Map<string, string | undefined>(); // original sourcePlayerId -> resolved real player id
+    unmappedGroups.forEach((actionsInGroup, originalId) => {
+      const first = [...actionsInGroup].sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0))[0];
+      groupResolved.set(originalId, nearestRealPlayer(first.x1 + dx, first.y1 + dy));
+    });
     const newActions = d.actions.map((a) => {
       const tx1 = a.x1 + dx, ty1 = a.y1 + dy, tx2 = a.x2 + dx, ty2 = a.y2 + dy;
-      const sourcePlayerId = (a.sourcePlayerId && idMap.get(a.sourcePlayerId)) ?? nearestRealPlayer(tx1, ty1);
+      const sourcePlayerId = (a.sourcePlayerId && idMap.get(a.sourcePlayerId))
+        ?? (a.sourcePlayerId ? groupResolved.get(a.sourcePlayerId) : nearestRealPlayer(tx1, ty1));
       const targetPlayerId = (a.targetPlayerId && idMap.get(a.targetPlayerId))
         ?? ((a.type === "pass" || a.type === "lob") ? nearestRealPlayer(tx2, ty2) : undefined);
       return { ...a, x1: tx1, y1: ty1, x2: tx2, y2: ty2, sourcePlayerId, targetPlayerId };
