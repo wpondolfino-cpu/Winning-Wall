@@ -7,6 +7,7 @@
 import { useState, useEffect } from "react";
 import { supabase, Workout, getWorkouts } from "../lib/supabase";
 import { getCategories } from "../lib/categories";
+import { getYouTubeId } from "../lib/youtube";
 import WorkoutBuilder from "./coach/WorkoutBuilder";
 import RandomDrillModal from "./RandomDrillModal";
 import CategoryManagerModal from "./CategoryManagerModal";
@@ -130,11 +131,6 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
     finally { setDeleting(null); }
   }
 
-  function getYouTubeId(url?: string): string | null {
-    if (!url) return null;
-    const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([^&?/\s]+)/);
-    return match ? match[1] : null;
-  }
 
   if (showBuilder || editDrill) {
     return (
