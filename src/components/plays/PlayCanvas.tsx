@@ -22,7 +22,7 @@ interface Props {
   roster?: Record<string, RosterPlayer>;
   /** When true, clicks/drags on the court edit the frame via the callbacks below. */
   edit?: boolean;
-  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "pickRole" | null;
+  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | null;
   onAddPlayer?: (p: PlayPlayer) => void;
   onAddDefender?: (x: number, y: number) => void;
   onSetBall?: (x: number, y: number) => void;
@@ -57,10 +57,7 @@ interface Props {
   /** "shot" tool — click a player to stamp a shot action from them to the nearest hoop. */
   onAddShot?: (index: number) => void;
   /** A ghost preview of where a saved action's players/ball/lines would land if stamped right now — follows the cursor while a stamp is armed, so placement isn't a blind guess. */
-  /** "pickRole" tool — click an existing player to assign them to the next role of a saved action being applied. */
-  onPickRole?: (playerId: string) => void;
-  /** Players already assigned a role while applying a saved action, shown with a gold ring + role number. */
-  pickedRoleIds?: string[];
+  stampPreview?: { players: PlayPlayer[]; ball: PlayPoint | null; actions: PlayAction[] } | null;
   /** Bump this number to play the current frame's actions once. */
   playSignal?: number;
   onPlayDone?: () => void;
@@ -330,7 +327,7 @@ export default function PlayCanvas({
   frame, courtTemplate, roster = {}, edit = false, tool = null,
   onAddPlayer, onAddDefender, onSetBall, onAddAction, onErase,
   onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff, onSetActionCurve,
-  onAddText, onMoveText, onEditText, onAddZone, onMoveZone, onAddCone, onMoveCone, onAddCoach, onMoveCoach, onAddShot, onPickRole, pickedRoleIds,
+  onAddText, onMoveText, onEditText, onAddZone, onMoveZone, onAddCone, onMoveCone, onAddCoach, onMoveCoach, onAddShot, stampPreview,
   playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect, selfOverride = null, speed = 1,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -387,15 +384,6 @@ export default function PlayCanvas({
         if (d < closestDist) { closest = i; closestDist = d; }
       });
       if (closest >= 0) onAddShot?.(closest);
-      return;
-    }
-    if (tool === "pickRole") {
-      let closest = -1, closestDist = 20;
-      frame.players.forEach((pl, i) => {
-        const d = Math.hypot(pl.x - p.x, pl.y - p.y);
-        if (d < closestDist) { closest = i; closestDist = d; }
-      });
-      if (closest >= 0 && frame.players[closest].id) onPickRole?.(frame.players[closest].id!);
       return;
     }
     if (tool === "select") {
@@ -759,17 +747,20 @@ export default function PlayCanvas({
         return <circle key={i} cx={x} cy={y} r={a.type === "pass" ? 6 : isShot ? 7 : 9} fill={isShot ? "#EF9F27" : "#378ADD"} stroke={isShot ? "#854F0B" : undefined} strokeWidth={isShot ? 1.5 : 0} opacity={0.9} />;
       })}
 
-      {(pickedRoleIds ?? []).map((id, i) => {
-        const pl = frame.players.find((p) => p.id === id);
-        if (!pl) return null;
-        return (
-          <g key={"role-" + id} pointerEvents="none">
-            <circle cx={pl.x} cy={pl.y} r={19} fill="none" stroke="var(--gold)" strokeWidth={2.5} strokeDasharray="4,3" />
-            <circle cx={pl.x - 15} cy={pl.y - 15} r={9} fill="var(--gold)" stroke="#7a5c0e" strokeWidth={1} />
-            <text x={pl.x - 15} y={pl.y - 11} textAnchor="middle" fontSize={11} fontWeight={700} fill="#1a1206">{i + 1}</text>
-          </g>
-        );
-      })}
+      {stampPreview && (
+        <g opacity={0.5} pointerEvents="none">
+          {stampPreview.actions.map((a, i) => <ActionShape key={"ghost-a-" + i} a={a} />)}
+          {stampPreview.ball && (
+            <circle cx={stampPreview.ball.x} cy={stampPreview.ball.y} r={8} fill="#EF9F27" stroke="#854F0B" strokeWidth={1.5} strokeDasharray="2,2" />
+          )}
+          {stampPreview.players.map((p, i) => (
+            <g key={"ghost-p-" + i}>
+              <circle cx={p.x} cy={p.y} r={14} fill="#1a3fa8" stroke="var(--gold)" strokeWidth={1.5} strokeDasharray="3,2" />
+              <text x={p.x} y={p.y + 4} textAnchor="middle" fontSize={11} fontWeight={700} fill="#fff">{p.num}</text>
+            </g>
+          ))}
+        </g>
+      )}
     </svg>
   );
 }
