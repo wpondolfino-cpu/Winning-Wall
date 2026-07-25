@@ -93,10 +93,8 @@ export interface PlayPlayer {
   /** Jersey number shown on the icon. */
   num: number;
   x: number; y: number;
-  /** Links to a real roster profile so the viewer can resolve their avatar. */
+  /** Links to a real roster profile so the viewer can resolve their avatar. An avatar shows automatically whenever this is set and that profile has one — no separate on/off toggle. */
   profile_id?: string | null;
-  /** Per-player override — shows an avatar even if the play-wide default is off. */
-  showAvatar?: boolean;
   /** Marks this player as receiving a handoff at this point in the beat — stamp it on top of wherever a dribble/cut ends. */
   handoff?: boolean;
 }
@@ -161,14 +159,11 @@ export function resolvePassEndpoint(frame: PlayFrame, action: PlayAction): { x: 
 }
 
 export interface PlayData {
-  /** true = every player shows an avatar by default; false = numbered circles by default. */
-  avatarsDefault: boolean;
   frames: PlayFrame[];
 }
 
 export function emptyPlayData(): PlayData {
   return {
-    avatarsDefault: true,
     frames: [{ players: [], defenders: [], ball: null, actions: [], drawings: [] }],
   };
 }
