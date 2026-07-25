@@ -317,42 +317,18 @@ export async function getPlayShares(playId: string) {
   return data ?? [];
 }
 
-// ── Saved actions (reusable motions like "Flare screen") ────────
+// ── Saved actions (reusable stamps like "Flare screen") ─────
 // Player-created ones are private to that player. Coach/admin-created
 // ones are shared across the whole coaching staff — any staff member
-// can see and apply them, but only an admin can edit or delete one
-// (see migration 081).
-//
-// A saved action stores the SHAPE of a motion between a small number
-// of "roles" (role 0, role 1, ...) — never actual jersey numbers or
-// absolute court position. Applying one always means picking real,
-// already-placed players to fill each role; it never creates new
-// players. This is deliberate: a "flare screen" saved with #1 and #2
-// should be just as usable when #3 and #4 are the ones who need to
-// run it, wherever they currently happen to be standing.
-export interface SavedActionLine {
-  type: ActionType;
-  x1: number; y1: number; x2: number; y2: number;
-  curve?: { x: number; y: number };
-  /** Index into the saved action's roles (0-based) — which role performs/receives this action, if any. A line can reference zero, one, or two roles. */
-  sourceRole?: number;
-  targetRole?: number;
-  sequenceIndex?: number;
-}
-
-export interface SavedActionData {
-  roleCount: number;
-  /** Each role's position at save time — the reference frame every line's coordinates and sourceRole/targetRole are measured against. Not shown or used directly on apply; only relative math (see applySavedAction) is. */
-  rolePositions: PlayPoint[];
-  actions: SavedActionLine[];
-}
-
+// can see and stamp them in, but only an admin can edit or delete one
+// (see migration 081). This function returns whatever the RLS read
+// policy allows for the current user, which already handles that split.
 export interface SavedAction {
   id: string;
   created_by: string;
   name: string;
   category: string | null;
-  data: SavedActionData;
+  data: PlayFrame;
   created_at: string;
 }
 
@@ -367,110 +343,21 @@ export async function getSavedActions(): Promise<SavedAction[]> {
   return data ?? [];
 }
 
-export async function createSavedAction(name: string, data: SavedActionData, category?: string): Promise<SavedAction> {
+export async function createSavedAction(name: string, frame: PlayFrame, category?: string): Promise<SavedAction> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
-  const { data: row, error } = await supabase
+  const { data, error } = await supabase
     .from("saved_actions")
-    .insert({ created_by: user.id, name, category: category ?? null, data })
+    .insert({ created_by: user.id, name, category: category ?? null, data: frame })
     .select()
     .single();
   if (error) throw error;
-  return row as SavedAction;
+  return data as SavedAction;
 }
 
 export async function deleteSavedAction(id: string) {
   const { error } = await supabase.from("saved_actions").delete().eq("id", id);
   if (error) throw error;
-}
-
-/**
- * Builds the saved action's data from whatever's actually drawn in a
- * frame right now: every action that touches at least one of the
- * given player IDs (in the order those players were picked — that
- * order becomes role 0, role 1, ...), stored relative to those
- * players' current positions.
- */
-export function buildSavedActionData(frame: PlayFrame, orderedPlayerIds: string[]): SavedActionData {
-  const rolePositions = orderedPlayerIds.map((id) => {
-    const p = frame.players.find((pl) => pl.id === id);
-    return { x: p?.x ?? 0, y: p?.y ?? 0 };
-  });
-  const roleOf = (playerId?: string) => (playerId ? orderedPlayerIds.indexOf(playerId) : -1);
-  const actions: SavedActionLine[] = frame.actions
-    .filter((a) => roleOf(a.sourcePlayerId) >= 0 || roleOf(a.targetPlayerId) >= 0)
-    .map((a) => {
-      const sr = roleOf(a.sourcePlayerId);
-      const tr = roleOf(a.targetPlayerId);
-      return {
-        type: a.type, x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, curve: a.curve,
-        sourceRole: sr >= 0 ? sr : undefined,
-        targetRole: tr >= 0 ? tr : undefined,
-        sequenceIndex: a.sequenceIndex,
-      };
-    });
-  return { roleCount: orderedPlayerIds.length, rolePositions, actions };
-}
-
-/**
- * The reverse of buildSavedActionData — re-anchors a saved action's
- * lines onto real, already-placed players (matched to roles by
- * `realPlayers` order), producing PlayActions ready to drop into a
- * frame. A line touching two roles is rotated/scaled/translated so it
- * connects those two real players exactly, wherever they're actually
- * standing (not wherever they were when the action was saved). A line
- * touching only one role is translated to start at that real player's
- * position, keeping its original direction/length.
- */
-export function applySavedAction(data: SavedActionData, realPlayers: PlayPlayer[]): PlayAction[] {
-  function transformPoint(pt: PlayPoint, sr?: number, tr?: number): PlayPoint {
-    // Two-role line: derive rotate+scale+translate from the one known
-    // correspondence (saved role0->role1 maps to real role0->role1),
-    // then apply that same transform to any other point on the line
-    // (e.g. a curve control point).
-    if (sr !== undefined && tr !== undefined && data.rolePositions[sr] && data.rolePositions[tr] && realPlayers[sr] && realPlayers[tr]) {
-      const savedA = data.rolePositions[sr], savedB = data.rolePositions[tr];
-      const realA = realPlayers[sr], realB = realPlayers[tr];
-      const savedVec = { x: savedB.x - savedA.x, y: savedB.y - savedA.y };
-      const realVec = { x: realB.x - realA.x, y: realB.y - realA.y };
-      const savedLen = Math.hypot(savedVec.x, savedVec.y) || 1;
-      const realLen = Math.hypot(realVec.x, realVec.y) || 1;
-      const scale = realLen / savedLen;
-      const angle = Math.atan2(realVec.y, realVec.x) - Math.atan2(savedVec.y, savedVec.x);
-      const cos = Math.cos(angle), sin = Math.sin(angle);
-      const relX = pt.x - savedA.x, relY = pt.y - savedA.y;
-      const rx = (relX * cos - relY * sin) * scale;
-      const ry = (relX * sin + relY * cos) * scale;
-      return { x: realA.x + rx, y: realA.y + ry };
-    }
-    // Single-role line: pure translate, anchored at whichever role it touches.
-    const role = sr !== undefined ? sr : tr;
-    if (role !== undefined && data.rolePositions[role] && realPlayers[role]) {
-      const saved = data.rolePositions[role], real = realPlayers[role];
-      return { x: pt.x + (real.x - saved.x), y: pt.y + (real.y - saved.y) };
-    }
-    // No role touches this line at all (shouldn't normally happen, since
-    // buildSavedActionData only keeps lines that touch a role) — fall
-    // back to translating by role 0's delta so it at least moves with
-    // the rest of the shape instead of staying at its saved coordinates.
-    if (data.rolePositions[0] && realPlayers[0]) {
-      const saved = data.rolePositions[0], real = realPlayers[0];
-      return { x: pt.x + (real.x - saved.x), y: pt.y + (real.y - saved.y) };
-    }
-    return pt;
-  }
-
-  return data.actions.map((a) => {
-    const p1 = transformPoint({ x: a.x1, y: a.y1 }, a.sourceRole, a.targetRole);
-    const p2 = transformPoint({ x: a.x2, y: a.y2 }, a.sourceRole, a.targetRole);
-    const curve = a.curve ? transformPoint(a.curve, a.sourceRole, a.targetRole) : undefined;
-    return {
-      type: a.type, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, curve,
-      sourcePlayerId: a.sourceRole !== undefined ? realPlayers[a.sourceRole]?.id : undefined,
-      targetPlayerId: a.targetRole !== undefined ? realPlayers[a.targetRole]?.id : undefined,
-      sequenceIndex: a.sequenceIndex,
-    };
-  });
 }
 
 // ── Formations (shared offense/defense starting positions, e.g.
