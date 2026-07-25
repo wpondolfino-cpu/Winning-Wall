@@ -16,6 +16,7 @@ import {
   getRoster, getStaff, sharePlay,
 } from "../../lib/plays";
 import { getPlayCategories, PlayCategory } from "../../lib/playCategories";
+import TemplatePickerModal from "./TemplatePickerModal";
 
 // Lazy-loaded for the same reason as the viewer — three.js is a large
 // dependency most editing sessions never touch. Typed explicitly, same
@@ -99,6 +100,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
   const [savedActions, setSavedActions] = useState<SavedAction[]>([]);
   const [formations, setFormations] = useState<Formation[]>([]);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [stampAction, setStampAction] = useState<SavedAction | null>(null);
   const [stampPreviewPos, setStampPreviewPos] = useState<{ x: number; y: number } | null>(null);
   const [staff, setStaff] = useState<PlayShareTarget[]>([]);
@@ -539,6 +541,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     } else {
       updateFrame((fr) => ({ ...fr, defenders: f.data.defenders ?? [] }));
     }
+    setShowTemplatePicker(false);
   }
 
   async function saveCurrentFrameAsFormation(side: "offense" | "defense") {
@@ -550,6 +553,11 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       setFormations((f) => [saved, ...f]);
       showToast(`Saved "${name}"`);
     } catch (e: any) { showToast("Error: " + e.message); }
+  }
+
+  async function handleDeleteFormation(id: string) {
+    await deleteFormation(id);
+    setFormations((s) => s.filter((x) => x.id !== id));
   }
 
   function computeStampGhost(action: SavedAction, x: number, y: number) {
@@ -707,6 +715,15 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
               </button>
             </div>
             {toast && <p style={{ fontSize: 13, color: "var(--gold)", marginTop: 10, textAlign: "center" }}>{toast}</p>}
+            {showTemplatePicker && (
+              <TemplatePickerModal
+                formations={formations}
+                canDelete={currentUserRole === "admin"}
+                onPick={applyFormation}
+                onDelete={handleDeleteFormation}
+                onClose={() => setShowTemplatePicker(false)}
+              />
+            )}
           </div>
         </div>
       );
@@ -841,19 +858,11 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
         {!existingPlay && currentUserRole !== "player" && (
           <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginBottom: 12 }}>
-            <h3 style={{ fontSize: 13, margin: "0 0 8px", color: "var(--text)" }}>Formations</h3>
-            {formations.map((f) => (
-              <div key={f.id} style={{ display: "flex", gap: 4, marginBottom: 4, alignItems: "center" }}>
-                <button onClick={() => applyFormation(f)} style={{ flex: 1, textAlign: "left", padding: "6px 8px", fontSize: 12 }}>
-                  {f.side === "offense" ? "🟠 O" : "🔵 D"} {f.name}
-                </button>
-                {currentUserRole === "admin" && (
-                  <button onClick={async () => { await deleteFormation(f.id); setFormations((s) => s.filter((x) => x.id !== f.id)); }} style={{ padding: "6px 8px", fontSize: 11 }}>✕</button>
-                )}
-              </div>
-            ))}
-            {formations.length === 0 && <p style={{ fontSize: 12, color: "var(--muted)" }}>None yet.</p>}
-            <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+            <h3 style={{ fontSize: 13, margin: "0 0 8px", color: "var(--text)" }}>Templates</h3>
+            <button onClick={() => setShowTemplatePicker(true)} className="coach-add-btn" style={{ width: "100%", justifyContent: "center", marginBottom: 6 }}>
+              🖼️ Pick a template
+            </button>
+            <div style={{ display: "flex", gap: 4 }}>
               <button onClick={() => saveCurrentFrameAsFormation("offense")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save offense</button>
               <button onClick={() => saveCurrentFrameAsFormation("defense")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save defense</button>
             </div>
@@ -1067,24 +1076,25 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         )}
 
         {toast && <p style={{ fontSize: 13, color: "var(--gold)", marginTop: 8 }}>{toast}</p>}
+        {showTemplatePicker && (
+          <TemplatePickerModal
+            formations={formations}
+            canDelete={currentUserRole === "admin"}
+            onPick={applyFormation}
+            onDelete={handleDeleteFormation}
+            onClose={() => setShowTemplatePicker(false)}
+          />
+        )}
       </div>
 
       <div>
         {!existingPlay && currentUserRole !== "player" && (
           <div style={{ marginBottom: 16 }}>
-            <h3 style={{ fontSize: 14, marginBottom: 8 }}>Formations</h3>
-            {formations.map((f) => (
-              <div key={f.id} style={{ display: "flex", gap: 4, marginBottom: 4, alignItems: "center" }}>
-                <button onClick={() => applyFormation(f)} style={{ flex: 1, textAlign: "left", padding: "6px 8px", fontSize: 13 }}>
-                  {f.side === "offense" ? "🟠 O" : "🔵 D"} {f.name}
-                </button>
-                {currentUserRole === "admin" && (
-                  <button onClick={async () => { await deleteFormation(f.id); setFormations((s) => s.filter((x) => x.id !== f.id)); }} style={{ padding: "6px 8px", fontSize: 12 }}>✕</button>
-                )}
-              </div>
-            ))}
-            {formations.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>None yet.</p>}
-            <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+            <h3 style={{ fontSize: 14, marginBottom: 8 }}>Templates</h3>
+            <button onClick={() => setShowTemplatePicker(true)} className="coach-add-btn" style={{ width: "100%", justifyContent: "center", marginBottom: 6 }}>
+              🖼️ Pick a template
+            </button>
+            <div style={{ display: "flex", gap: 4 }}>
               <button onClick={() => saveCurrentFrameAsFormation("offense")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save offense</button>
               <button onClick={() => saveCurrentFrameAsFormation("defense")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save defense</button>
             </div>
