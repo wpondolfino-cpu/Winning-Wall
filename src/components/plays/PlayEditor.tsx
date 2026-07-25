@@ -37,7 +37,7 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | null;
+type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "pickRole" | null;
 
 const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "select", label: "Move", icon: "✥" },
@@ -134,7 +134,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         deleteSelected();
       } else if (e.key === "Escape") {
         setTool(null);
-        setStampAction(null);
+        clearApplyingAction();
         setSelected(null);
       }
     }
@@ -581,6 +581,14 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     setTool(null);
   }
 
+  // Same cleanup, but leaves the current tool alone — used by every other
+  // toolbar button, which is switching to its OWN tool in the same click
+  // and would have that immediately overwritten if this also touched tool.
+  function clearApplyingAction() {
+    setApplyingAction(null);
+    setPickedRoleIds([]);
+  }
+
   function handlePickRole(playerId: string) {
     if (!applyingAction) return;
     if (pickedRoleIds.includes(playerId)) return; // same real player can't fill two roles
@@ -740,7 +748,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             { tool: "dribble" as Tool, label: "Dribble", icon: "〜" },
             { tool: "screen" as Tool, label: "Screen", icon: "⊥" },
           ].map(({ tool: t, label, icon }) => (
-            <button key={label} onClick={() => { setTool(t); setStampAction(null); }}
+            <button key={label} onClick={() => { setTool(t); clearApplyingAction(); }}
               style={{ padding: "6px 2px", fontSize: 10, border: tool === t ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: tool === t ? "rgba(240,192,64,0.12)" : "var(--surface2)", color: "var(--text)" }}>
               {icon} {label}
             </button>
@@ -749,7 +757,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             style={{ padding: "6px 2px", fontSize: 10, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface2)", color: "var(--text)" }}>
             ↩ Undo
           </button>
-          <button onClick={() => { setTool("erase"); setStampAction(null); }}
+          <button onClick={() => { setTool("erase"); clearApplyingAction(); }}
             style={{ padding: "6px 2px", fontSize: 10, border: tool === "erase" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: tool === "erase" ? "rgba(240,192,64,0.12)" : "var(--surface2)", color: "var(--text)" }}>
             ⌫ Erase
           </button>
@@ -761,27 +769,27 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         </button>
         {showMoreTools && (
           <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8, padding: 8, background: "var(--surface2)", borderRadius: 8 }}>
-            <button onClick={() => { setTool("cone"); setStampAction(null); setShowMoreTools(false); }}
+            <button onClick={() => { setTool("cone"); clearApplyingAction(); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "cone" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>▲ Cone</button>
-            <button onClick={() => { setTool("coach"); setStampAction(null); setShowMoreTools(false); }}
+            <button onClick={() => { setTool("coach"); clearApplyingAction(); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "coach" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>Ⓒ Coach</button>
-            <button onClick={() => { setTool("defender"); setStampAction(null); setShowMoreTools(false); }}
+            <button onClick={() => { setTool("defender"); clearApplyingAction(); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "defender" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>✕ Defender</button>
-            <button onClick={() => { setTool("draw"); setStampAction(null); setShowMoreTools(false); }}
+            <button onClick={() => { setTool("draw"); clearApplyingAction(); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "draw" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>✎ Draw</button>
             <button onClick={() => { flipEntirePlay(); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↔ Flip entire play</button>
             <button onClick={() => { flipCurrentStep(); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↔ Flip step</button>
-            <button onClick={() => { setTool("handoff"); setStampAction(null); setShowMoreTools(false); }}
+            <button onClick={() => { setTool("handoff"); clearApplyingAction(); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "handoff" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>✱ Handoff</button>
             <button onClick={() => { redo(); setShowMoreTools(false); }} disabled={!future.length}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↪ Redo</button>
-            <button onClick={() => { setTool("shot"); setStampAction(null); setShowMoreTools(false); }}
+            <button onClick={() => { setTool("shot"); clearApplyingAction(); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "shot" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>🏀 Shot</button>
-            <button onClick={() => { setTool("lob"); setStampAction(null); setShowMoreTools(false); }}
+            <button onClick={() => { setTool("lob"); clearApplyingAction(); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "lob" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>🙌 Lob</button>
-            <button onClick={() => { setTool("zone"); setStampAction(null); setShowMoreTools(false); }}
+            <button onClick={() => { setTool("zone"); clearApplyingAction(); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "zone" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>▦ Zone shading</button>
           </div>
         )}
@@ -908,7 +916,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: showMoreTools ? 6 : 8 }}>
           {PRIMARY_TOOLS.map(({ tool: t, label, icon }) => (
-            <button key={label} onClick={() => { setTool(t); setStampAction(null); }}
+            <button key={label} onClick={() => { setTool(t); clearApplyingAction(); }}
               style={{ padding: "6px 10px", fontSize: 13, border: tool === t ? "2px solid var(--gold)" : "1px solid var(--border)", borderRadius: "8px", background: tool === t ? "rgba(240,192,64,0.12)" : "transparent" }}>
               {icon} {label}
             </button>
@@ -923,7 +931,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         {showMoreTools && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, padding: "8px 8px", background: "var(--surface2)", borderRadius: 8 }}>
             {MORE_TOOLS.map(({ tool: t, label, icon }) => (
-              <button key={label} onClick={() => { setTool(t); setStampAction(null); setShowMoreTools(false); }}
+              <button key={label} onClick={() => { setTool(t); clearApplyingAction(); setShowMoreTools(false); }}
                 style={{ padding: "6px 10px", fontSize: 13, border: tool === t ? "2px solid var(--gold)" : "1px solid var(--border)", borderRadius: "8px", background: tool === t ? "rgba(240,192,64,0.12)" : "var(--surface)" }}>
                 {icon} {label}
               </button>
