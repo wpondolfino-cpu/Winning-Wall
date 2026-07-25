@@ -11,7 +11,7 @@ import {
   CourtTemplate, COURT_TEMPLATES, COURT_TEMPLATE_LABELS,
   SavedAction, Formation, RosterPlayer, PlayShareTarget,
   emptyPlayData, createPlay, updatePlay, deletePlay, genPlayerId, playerActionSequence,
-  getSavedActions, createSavedAction, deleteSavedAction,
+  getSavedActions, createSavedAction, deleteSavedAction, buildSavedActionData, applySavedAction,
   getFormations, createFormation, deleteFormation,
   getRoster, getStaff, sharePlay,
 } from "../../lib/plays";
@@ -100,8 +100,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const [savedActions, setSavedActions] = useState<SavedAction[]>([]);
   const [formations, setFormations] = useState<Formation[]>([]);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
-  const [stampAction, setStampAction] = useState<SavedAction | null>(null);
-  const [stampPreviewPos, setStampPreviewPos] = useState<{ x: number; y: number } | null>(null);
+  const [applyingAction, setApplyingAction] = useState<SavedAction | null>(null);
+  const [pickedRoleIds, setPickedRoleIds] = useState<string[]>([]);
   const [staff, setStaff] = useState<PlayShareTarget[]>([]);
   const [showShare, setShowShare] = useState(false);
 
@@ -515,11 +515,22 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   }
 
   async function saveCurrentFrameAsAction() {
+    // Captures whichever players are actually touched by an action right
+    // now (in frame.players order) as the saved action's roles — no
+    // separate selection step, just draw the screen/cut normally first.
+    const involvedIds = frame.players
+      .map((p) => p.id)
+      .filter((id): id is string => !!id && frame.actions.some((a) => a.sourcePlayerId === id || a.targetPlayerId === id));
+    if (involvedIds.length === 0) {
+      alert("Draw an action (screen, cut, pass...) between at least one player first, then save it.");
+      return;
+    }
     const name = window.prompt("Name this action (e.g. \"Flare screen\")");
     if (!name) return;
     try {
-      const saved = await createSavedAction(name, frame);
-      setSavedActions((a) => [saved, ...a]);
+      const data = buildSavedActionData(frame, involvedIds);
+      const saved = await createSavedAction(name, data);
+      setSavedActions((a) => [...a, saved].sort((x, y) => x.name.localeCompare(y.name)));
       showToast(`Saved "${name}"`);
     } catch (e: any) { showToast("Error: " + e.message); }
   }
@@ -555,51 +566,38 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     setFormations((s) => s.filter((x) => x.id !== id));
   }
 
-  function computeStampGhost(action: SavedAction, x: number, y: number) {
-    const d = action.data;
-    const anchor = d.players[0] ?? d.ball ?? d.defenders[0] ?? (d.actions[0] ? { x: d.actions[0].x1, y: d.actions[0].y1 } : { x: 0, y: 0 });
-    const dx = x - anchor.x, dy = y - anchor.y;
-    return {
-      players: d.players.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy })),
-      ball: d.ball ? { x: d.ball.x + dx, y: d.ball.y + dy } : null,
-      actions: d.actions.map((a) => ({
-        ...a, x1: a.x1 + dx, y1: a.y1 + dy, x2: a.x2 + dx, y2: a.y2 + dy,
-        curve: a.curve ? { x: a.curve.x + dx, y: a.curve.y + dy } : undefined,
-      })),
-    };
+  // Applying a saved action never creates new players — it re-anchors the
+  // saved motion onto real players already on the court, picked one role
+  // at a time via the "pickRole" tool (see PlayCanvas's onPickRole).
+  function startApplyAction(action: SavedAction) {
+    setApplyingAction(action);
+    setPickedRoleIds([]);
+    setTool("pickRole");
   }
 
-  function stampActionAt(action: SavedAction, x: number, y: number) {
+  function cancelApplyAction() {
+    setApplyingAction(null);
+    setPickedRoleIds([]);
+    setTool(null);
+  }
+
+  function handlePickRole(playerId: string) {
+    if (!applyingAction) return;
+    if (pickedRoleIds.includes(playerId)) return; // same real player can't fill two roles
+    const next = [...pickedRoleIds, playerId];
+    if (next.length < applyingAction.data.roleCount) {
+      setPickedRoleIds(next);
+      return;
+    }
+    // Last role just picked — build and insert the real actions now.
     pushHistory();
-    const d = action.data;
-    // Anchor to the first available point in the saved action so the stamp
-    // lands with that point under the click.
-    const anchor = d.players[0] ?? d.ball ?? d.defenders[0] ?? (d.actions[0] ? { x: d.actions[0].x1, y: d.actions[0].y1 } : { x: 0, y: 0 });
-    const dx = x - anchor.x, dy = y - anchor.y;
-    const baseCount = frame.players.length;
-    // Stamped players are new, distinct players — give each a fresh id
-    // rather than reusing whatever the saved template's players had (which
-    // could collide with existing players, or with another copy of this
-    // same stamp used elsewhere). Remap the stamped actions' source/target
-    // links through the same table so they still point at the right player.
-    const idMap = new Map<string, string>();
-    const newPlayers = d.players.map((p, i) => {
-      const newId = genPlayerId();
-      if (p.id) idMap.set(p.id, newId);
-      return { ...p, id: newId, x: p.x + dx, y: p.y + dy, num: ((baseCount + i) % 5) + 1 };
-    });
-    const newActions = d.actions.map((a) => ({
-      ...a, x1: a.x1 + dx, y1: a.y1 + dy, x2: a.x2 + dx, y2: a.y2 + dy,
-      sourcePlayerId: a.sourcePlayerId ? idMap.get(a.sourcePlayerId) : undefined,
-      targetPlayerId: a.targetPlayerId ? idMap.get(a.targetPlayerId) : undefined,
-    }));
-    updateFrame((f) => ({
-      players: [...f.players, ...newPlayers],
-      defenders: [...f.defenders, ...d.defenders.map((def) => ({ x: def.x + dx, y: def.y + dy }))],
-      ball: f.ball ?? (d.ball ? { x: d.ball.x + dx, y: d.ball.y + dy } : null),
-      actions: [...f.actions, ...newActions],
-    }));
-    setStampAction(null);
+    const realPlayers = next.map((id) => frame.players.find((p) => p.id === id)).filter((p): p is PlayPlayer => !!p);
+    const newActions = applySavedAction(applyingAction.data, realPlayers);
+    updateFrame((f) => ({ ...f, actions: [...f.actions, ...newActions] }));
+    showToast(`Applied "${applyingAction.name}"`);
+    setApplyingAction(null);
+    setPickedRoleIds([]);
+    setTool(null);
   }
 
   async function handleSave() {
@@ -788,36 +786,17 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           </div>
         )}
 
-        {stampAction && (
+        {applyingAction && (
           <p style={{ fontSize: 12, color: "var(--gold)", marginBottom: 6 }}>
-            Tap the court to stamp in "{stampAction.name}" — <button onClick={() => setStampAction(null)} style={{ fontSize: 11 }}>cancel</button>
+            Tap player {pickedRoleIds.length + 1} of {applyingAction.data.roleCount} for "{applyingAction.name}" —{" "}
+            <button onClick={cancelApplyAction} style={{ fontSize: 11 }}>cancel</button>
           </p>
         )}
 
-        <div
-          onClickCapture={(e) => {
-            if (!stampAction) return;
-            const svg = (e.currentTarget as HTMLDivElement).querySelector("svg")!;
-            const rect = svg.getBoundingClientRect();
-            const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
-            const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
-            stampActionAt(stampAction, x, y);
-            setStampPreviewPos(null);
-          }}
-          onMouseMove={(e) => {
-            if (!stampAction) return;
-            const svg = (e.currentTarget as HTMLDivElement).querySelector("svg")!;
-            const rect = svg.getBoundingClientRect();
-            const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
-            const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
-            setStampPreviewPos({ x, y });
-          }}
-          onMouseLeave={() => setStampPreviewPos(null)}
-          style={{ background: "var(--surface2)", borderRadius: 12, padding: 10, marginBottom: 8 }}
-        >
+        <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 10, marginBottom: 8 }}>
           <PlayCanvas
             frame={frame} courtTemplate={courtTemplate} roster={rosterMap}
-            edit={!stampAction} tool={tool}
+            edit tool={tool}
             onAddPlayer={addPlayer} onAddDefender={addDefender} onSetBall={setBall} onAddAction={addAction}
             onErase={eraseNear} onToggleHandoff={toggleHandoff}
             onMovePlayer={movePlayer} onMoveDefender={moveDefender} onMoveBall={moveBall}
@@ -826,7 +805,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onAddCone={addCone} onMoveCone={moveCone} onAddCoach={addCoach} onMoveCoach={moveCoach} onAddShot={addShot}
             selected={selected} onSelect={setSelected} onAddDrawing={addDrawing}
             playSignal={playSignal} onPlayDone={handlePreviewBeatDone}
-            stampPreview={stampAction && stampPreviewPos ? computeStampGhost(stampAction, stampPreviewPos.x, stampPreviewPos.y) : null}
+            onPickRole={handlePickRole} pickedRoleIds={pickedRoleIds}
           />
         </div>
 
@@ -864,7 +843,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           <h3 style={{ fontSize: 13, margin: "0 0 8px", color: "var(--text)" }}>Saved actions</h3>
           {savedActions.map((a) => (
             <div key={a.id} style={{ display: "flex", gap: 4, marginBottom: 4 }}>
-              <button onClick={() => setStampAction(a)} style={{ flex: 1, textAlign: "left", padding: "6px 8px", fontSize: 12 }}>🔖 {a.name}</button>
+              <button onClick={() => startApplyAction(a)} style={{ flex: 1, textAlign: "left", padding: "6px 8px", fontSize: 12 }}>🔖 {a.name}</button>
               {(currentUserRole === "player" || currentUserRole === "admin") && (
                 <button onClick={async () => { await deleteSavedAction(a.id); setSavedActions((s) => s.filter((x) => x.id !== a.id)); }} style={{ padding: "6px 8px", fontSize: 11 }}>✕</button>
               )}
@@ -964,38 +943,19 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           <button onClick={() => setShowPreview3D(true)} style={{ padding: "6px 10px" }}>🧊 Watch live</button>
         </div>
 
-        {stampAction && (
+        {applyingAction && (
           <p style={{ fontSize: 13, color: "var(--gold)", marginBottom: 6 }}>
-            Click the court to stamp in "{stampAction.name}" — <button onClick={() => setStampAction(null)} style={{ fontSize: 12 }}>cancel</button>
+            Tap player {pickedRoleIds.length + 1} of {applyingAction.data.roleCount} for "{applyingAction.name}" —{" "}
+            <button onClick={cancelApplyAction} style={{ fontSize: 12 }}>cancel</button>
           </p>
         )}
 
-        <div
-          onClickCapture={(e) => {
-            if (!stampAction) return;
-            const svg = (e.currentTarget as HTMLDivElement).querySelector("svg")!;
-            const rect = svg.getBoundingClientRect();
-            const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
-            const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
-            stampActionAt(stampAction, x, y);
-            setStampPreviewPos(null);
-          }}
-          onMouseMove={(e) => {
-            if (!stampAction) return;
-            const svg = (e.currentTarget as HTMLDivElement).querySelector("svg")!;
-            const rect = svg.getBoundingClientRect();
-            const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
-            const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
-            setStampPreviewPos({ x, y });
-          }}
-          onMouseLeave={() => setStampPreviewPos(null)}
-          style={{ background: "var(--surface2)", borderRadius: 12, padding: 12 }}
-        >
+        <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 12 }}>
           <PlayCanvas
             frame={frame}
             courtTemplate={courtTemplate}
             roster={rosterMap}
-            edit={!stampAction}
+            edit
             tool={tool}
             onAddPlayer={addPlayer}
             onAddDefender={addDefender}
@@ -1024,7 +984,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onAddDrawing={addDrawing}
             playSignal={playSignal}
             onPlayDone={handlePreviewBeatDone}
-            stampPreview={stampAction && stampPreviewPos ? computeStampGhost(stampAction, stampPreviewPos.x, stampPreviewPos.y) : null}
+            onPickRole={handlePickRole}
+            pickedRoleIds={pickedRoleIds}
           />
         </div>
 
@@ -1090,7 +1051,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         <h3 style={{ fontSize: 14, marginBottom: 8 }}>Saved actions</h3>
         {savedActions.map((a) => (
           <div key={a.id} style={{ display: "flex", gap: 4, marginBottom: 4 }}>
-            <button onClick={() => setStampAction(a)} style={{ flex: 1, textAlign: "left", padding: "6px 8px", fontSize: 13 }}>
+            <button onClick={() => startApplyAction(a)} style={{ flex: 1, textAlign: "left", padding: "6px 8px", fontSize: 13 }}>
               🔖 {a.name}
             </button>
             {(currentUserRole === "player" || currentUserRole === "admin") && (
