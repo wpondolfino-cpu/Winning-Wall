@@ -4,6 +4,7 @@
 // PracticeBuilder's "Add drill" button). Same underlying data either way.
 
 import { useState, useEffect, useCallback } from "react";
+import { getYouTubeId } from "../../lib/youtube";
 import {
   PracticeDrillCategory, PracticeDrillLibraryDrill, getPracticeDrillCategories,
   createPracticeDrillCategory, getPracticeDrillTags, getPracticeDrillLibrary,
@@ -17,11 +18,6 @@ interface Props {
   onClose?: () => void;
 }
 
-function getYouTubeId(url?: string | null): string | null {
-  if (!url) return null;
-  const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([^&?/\s]+)/);
-  return match ? match[1] : null;
-}
 
 export default function PracticeDrillLibrary({ canManage = true, onPick, onClose }: Props) {
   const isPicker = !!onPick;
