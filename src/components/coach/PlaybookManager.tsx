@@ -4,6 +4,7 @@
 // Workout Groups.
 
 import { useState, useEffect } from "react";
+import { getYouTubeId } from "../../lib/youtube";
 import {
   Playbook, Play, RosterPlayer,
   getPlaybooks, createPlaybook, updatePlaybook, setPlaybookStatus, deletePlaybook,
@@ -20,11 +21,6 @@ const STATUS_COLOR: Record<string, { bg: string; color: string; label: string }>
 
 const inputStyle = { width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" as const };
 
-function getYouTubeId(url?: string | null): string | null {
-  if (!url) return null;
-  const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([^&?/\s]+)/);
-  return match ? match[1] : null;
-}
 
 export default function PlaybookManager() {
   const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
