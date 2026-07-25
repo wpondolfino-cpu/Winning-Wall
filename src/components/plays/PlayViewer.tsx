@@ -10,6 +10,7 @@ import PlayCanvas from "./PlayCanvas";
 import PlayPrintView from "./PlayPrintView";
 import PlayCategoryManagerModal from "./PlayCategoryManagerModal";
 import { PlayCategory, getPlayCategories } from "../../lib/playCategories";
+import { getYouTubeId } from "../../lib/youtube";
 import {
   Play, RosterPlayer, getMyPlays, getPlaysSharedWithMe, getMyAssignedPlaybooks,
   getPlaybookPlays, getPlayShares, revokePlayShare, markPlayViewed, markPlaybookViewed,
@@ -86,11 +87,6 @@ class ThreeDErrorBoundary extends Component<{ children: ReactNode; onBack: () =>
   }
 }
 
-function getYouTubeId(url?: string | null): string | null {
-  if (!url) return null;
-  const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([^&?/\s]+)/);
-  return match ? match[1] : null;
-}
 
 function filterPlays<T extends { title: string; tags: string[] }>(plays: T[], search: string): T[] {
   const q = search.trim().toLowerCase();
