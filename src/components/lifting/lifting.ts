@@ -2,6 +2,7 @@
 // All Supabase queries for the lifting module
 
 import { supabase } from "../../lib/supabase";
+export { getYouTubeId } from "../../lib/youtube";
 
 export type MuscleGroup = "Chest" | "Back" | "Legs" | "Shoulders" | "Arms" | "Core" | "Athletic" | "Other";
 export const MUSCLE_GROUPS: MuscleGroup[] = ["Chest", "Back", "Legs", "Shoulders", "Arms", "Core", "Athletic", "Other"];
@@ -312,11 +313,6 @@ export function estimateDuration(dayExercises: DayExercise[]): number {
   }, 0);
 }
 
-export function getYouTubeId(url?: string): string | null {
-  if (!url) return null;
-  const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([^&?/\s]+)/);
-  return match ? match[1] : null;
-}
 
 export function getYouTubeEmbedUrl(url?: string): string | null {
   if (!url) return null;
