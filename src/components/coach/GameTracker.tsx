@@ -614,12 +614,22 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
             </Section>
           )}
           <Section label="What happened" accent>
-            <Grid cols={team === "us" ? 4 : 2}>
+            <Grid cols={3}>
               <Btn onClick={chooseShot}>Shot</Btn>
               <Btn onClick={chooseTurnover}>Turnover</Btn>
-              {team === "us" && <Btn onClick={() => chooseSetOrMotion("set")}>Set</Btn>}
-              {team === "us" && <Btn onClick={() => chooseSetOrMotion("motion")}>Motion</Btn>}
+              <Btn
+                subtitle={team === "us" ? "Still our ball" : "Still their ball"}
+                onClick={() => { pushHistory(); setStep("oob_reclassify"); }}
+              >
+                Foul/Jump/OOB
+              </Btn>
             </Grid>
+            {team === "us" && (
+              <Grid cols={2} style={{ marginTop: 8 }}>
+                <Btn onClick={() => chooseSetOrMotion("set")}>Set</Btn>
+                <Btn onClick={() => chooseSetOrMotion("motion")}>Motion</Btn>
+              </Grid>
+            )}
           </Section>
         </>
       )}
@@ -629,7 +639,12 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
           <Grid cols={3}>
             <Btn onClick={chooseShot}>Shot</Btn>
             <Btn onClick={chooseTurnover}>Turnover</Btn>
-            <Btn onClick={() => { pushHistory(); setStep("oob_reclassify"); }}>Foul/Out of Bounds</Btn>
+            <Btn
+              subtitle={team === "us" ? "Still our ball" : "Still their ball"}
+              onClick={() => { pushHistory(); setStep("oob_reclassify"); }}
+            >
+              Foul/Jump/OOB
+            </Btn>
           </Grid>
           {team === "us" && (
             <Grid cols={2} style={{ marginTop: 8 }}>
@@ -678,8 +693,11 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
               <Btn onClick={() => selectShot(3, false)}>Miss 3</Btn>
             </Grid>
             <Grid cols={4} style={{ marginTop: 8 }}>
-              <Btn subtitle="Tipped OOB -- still this team's ball" onClick={() => { pushHistory(); setStep("oob_reclassify"); }}>
-                Foul/Out of Bounds
+              <Btn
+                subtitle={team === "us" ? "Still our ball" : "Still their ball"}
+                onClick={() => { pushHistory(); setStep("oob_reclassify"); }}
+              >
+                Foul/Jump/OOB
               </Btn>
               <Btn onClick={() => { pushHistory(); setStep("turnover_type"); }}>Turnover</Btn>
               <Btn onClick={() => { pushHistory(); setStep("ft_attempts"); }}>FT trip</Btn>
