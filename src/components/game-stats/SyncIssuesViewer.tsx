@@ -47,6 +47,13 @@ export default function SyncIssuesViewer() {
     await load();
   }
 
+  async function discardAll() {
+    if (!queued || queued.length === 0) return;
+    if (!window.confirm(`Discard all ${queued.length} queued possessions? None of them will ever be saved -- this can't be undone.`)) return;
+    for (const p of queued) await removeFromQueue(p.id);
+    await load();
+  }
+
   if (queued === null) return <div className="card">Loading queue…</div>;
 
   const errorFor = (id: string) => errors.find((e) => e.id === id)?.message;
@@ -64,6 +71,17 @@ export default function SyncIssuesViewer() {
           {retrying ? "Retrying…" : "Retry all"}
         </button>
       </div>
+
+      {queued.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <button
+            style={{ padding: "6px 12px", fontSize: 12, borderRadius: 8, border: "1px solid var(--border)", background: "transparent", color: "#8a2f2f", cursor: "pointer" }}
+            onClick={discardAll}
+          >
+            Discard all {queued.length}
+          </button>
+        </div>
+      )}
 
       {queued.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)", padding: "10px 0" }}>Nothing queued — everything's synced.</div>}
 
