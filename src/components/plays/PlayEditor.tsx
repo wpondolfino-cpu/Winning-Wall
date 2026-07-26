@@ -578,8 +578,12 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     const anchor = d.players[0] ?? d.ball ?? d.defenders[0] ?? (d.actions[0] ? { x: d.actions[0].x1, y: d.actions[0].y1 } : { x: 0, y: 0 });
     const dx = x - anchor.x, dy = y - anchor.y;
 
-    function within22(px: number, py: number, players: PlayPlayer[]): string | undefined {
-      let best: string | undefined; let bestDist = 22;
+    // A player circle's own radius is ~13, so 40 gives real forgiveness
+    // for "near, not exactly touching" placement — wide enough to catch
+    // an approximate stamp, still tight enough that two separate players
+    // standing at a normal spacing won't both fall inside it by mistake.
+    function withinLinkRadius(px: number, py: number, players: PlayPlayer[]): string | undefined {
+      let best: string | undefined; let bestDist = 40;
       players.forEach((p) => {
         if (!p.id) return;
         const dd = Math.hypot(p.x - px, p.y - py);
@@ -615,7 +619,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         const first = [...actionsInGroup].sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0))[0];
         const saved = { x: first.x1, y: first.y1 };
         const guess = tf(saved);
-        const realId = within22(guess.x, guess.y, frame.players);
+        const realId = withinLinkRadius(guess.x, guess.y, frame.players);
         if (realId) out.push({ originalId, saved, realId });
       });
       return out;
@@ -677,7 +681,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
     const allPlayersAfterStamp = [...frame.players, ...newPlayers];
     function nearestRealPlayer(px: number, py: number): string | undefined {
-      return within22(px, py, allPlayersAfterStamp);
+      return withinLinkRadius(px, py, allPlayersAfterStamp);
     }
     const groupResolved = new Map<string, string | undefined>();
     groups.forEach((actionsInGroup, originalId) => {
