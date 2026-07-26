@@ -57,11 +57,14 @@ export function playerActionSequence(frame: PlayFrame, playerId: string): PlayAc
 /**
  * Given the whole beat's overall progress (0-1), returns this action's own
  * local progress (0-1) within its slice of that timeline — e.g. a screen
- * (index 0 of 2) plays across the first half of the beat, a roll (index 1
- * of 2) across the second half. Before its slice starts, local progress is
- * 0 (sits at its own start); after its slice ends, it's 1 (sits at its own
- * end) — so a player's actions appear to flow continuously into each
- * other rather than all animating across the full beat at once.
+ * (index 0 of 2) plays across the first part of the beat, a roll (index 1
+ * of 2) across the second part. Before its slice starts, local progress is
+ * 0 (sits at its own start); after its slice's movement portion ends, it's
+ * 1 (sits at its own end) and stays there — so a player visibly finishes
+ * each action and holds there for a moment before the next one in their
+ * sequence begins, rather than the whole sequence blending into one
+ * continuous motion (a screener should visibly set the pick and hold,
+ * not blur straight into rolling).
  */
 export function localActionProgress(globalT: number, action: PlayAction, frame: PlayFrame): number {
   if (!action.sourcePlayerId) return globalT;
@@ -71,9 +74,14 @@ export function localActionProgress(globalT: number, action: PlayAction, frame: 
   const idx = action.sequenceIndex ?? 0;
   const sliceSize = 1 / total;
   const sliceStart = idx * sliceSize;
+  // Only the first 70% of each action's slice is actual movement — the
+  // remaining 30% is the hold, where the player has already arrived and
+  // stays put until the next action's slice starts moving them again.
+  const MOVE_FRACTION = 0.7;
+  const moveSize = sliceSize * MOVE_FRACTION;
   if (globalT < sliceStart) return 0;
-  if (globalT > sliceStart + sliceSize) return 1;
-  return (globalT - sliceStart) / sliceSize;
+  if (globalT > sliceStart + moveSize) return 1;
+  return (globalT - sliceStart) / moveSize;
 }
 
 /** Generates a stable id for a newly-placed player. Not cryptographically meaningful — just needs to be unique within a play. */
