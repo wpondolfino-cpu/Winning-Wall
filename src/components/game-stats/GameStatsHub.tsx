@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { finishGame, isGameFinal, computeFinalScore, reopenGame, syncQueue, listSavedReports, deleteSavedReport, listSeasons, type SavedReport, type Possession } from "../../lib/gameStats";
+import { finishGame, isGameFinal, computeFinalScore, reopenGame, endQuarter, reopenQuarter, nextOpenQuarter, syncQueue, listSavedReports, deleteSavedReport, listSeasons, type SavedReport, type Possession } from "../../lib/gameStats";
 import GamesHistory from "../coach/GamesHistory";
 import GameTracker from "../coach/GameTracker";
 import GameReport, { ReportScope } from "./GameReport";
@@ -38,6 +38,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   const [reportsView, setReportsView] = useState<ReportsView>({ mode: "history" });
   const [quarter, setQuarter] = useState(1);
   const [gameFinal, setGameFinal] = useState<boolean | null>(null);
+  const [closedQuarters, setClosedQuarters] = useState<number[]>([]);
   const [activeOpponent, setActiveOpponent] = useState<string>("");
   const [finishing, setFinishing] = useState(false);
   const [finalUs, setFinalUs] = useState("");
@@ -49,15 +50,18 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   const activeGameId = gamesView.mode === "track" || gamesView.mode === "report" || gamesView.mode === "edit" ? gamesView.gameId : null;
 
   useEffect(() => {
-    if (!activeGameId) { setGameFinal(null); setActiveOpponent(""); return; }
+    if (!activeGameId) { setGameFinal(null); setActiveOpponent(""); setClosedQuarters([]); return; }
     supabase
       .from("games")
-      .select("final_score_us, final_score_them, opponent")
+      .select("final_score_us, final_score_them, opponent, closed_quarters")
       .eq("id", activeGameId)
       .single()
       .then(({ data }) => {
         setGameFinal(data ? isGameFinal(data as any) : false);
         setActiveOpponent((data as any)?.opponent ?? "");
+        const closed = ((data as any)?.closed_quarters as number[] | null) ?? [];
+        setClosedQuarters(closed);
+        setQuarter(nextOpenQuarter(closed));
       });
   }, [activeGameId]);
 
@@ -91,6 +95,20 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
     }
   }
 
+  async function handleEndQuarter(gameId: string, q: number) {
+    if (!window.confirm(`End Q${q}? No new possessions can be logged against it until you reopen it.`)) return;
+    const { error, closedQuarters: next } = await endQuarter(gameId, q, closedQuarters);
+    if (error) { alert("Error: " + error); return; }
+    setClosedQuarters(next);
+    setQuarter(nextOpenQuarter(next));
+  }
+
+  async function handleReopenQuarter(gameId: string, q: number) {
+    const { error, closedQuarters: next } = await reopenQuarter(gameId, q, closedQuarters);
+    if (error) { alert("Error: " + error); return; }
+    setClosedQuarters(next);
+  }
+
   if (currentUserRole === "player") {
     return <PlayerGamesList userId={userId} />;
   }
@@ -113,6 +131,9 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
           gameFinal={gameFinal}
           activeOpponent={activeOpponent}
           setGameFinal={setGameFinal}
+          closedQuarters={closedQuarters}
+          onEndQuarter={handleEndQuarter}
+          onReopenQuarter={handleReopenQuarter}
           finishing={finishing}
           setFinishing={setFinishing}
           finalUs={finalUs}
@@ -147,6 +168,9 @@ function GamesTab({
   gameFinal,
   setGameFinal,
   activeOpponent,
+  closedQuarters,
+  onEndQuarter,
+  onReopenQuarter,
   finishing,
   setFinishing,
   finalUs,
@@ -169,6 +193,9 @@ function GamesTab({
   gameFinal: boolean | null;
   setGameFinal: (v: boolean | null) => void;
   activeOpponent: string;
+  closedQuarters: number[];
+  onEndQuarter: (gameId: string, q: number) => void;
+  onReopenQuarter: (gameId: string, q: number) => void;
   finishing: boolean;
   setFinishing: (b: boolean) => void;
   finalUs: string;
@@ -193,6 +220,7 @@ function GamesTab({
           userId={userId}
           onOpenGame={(gameId) => setView({ mode: "track", gameId })}
           onEditGame={(gameId, opponent) => setView({ mode: "edit", gameId, opponent })}
+          onViewReport={(gameId, opponent) => { setReportSel({ kind: "game" }); setView({ mode: "report", gameId, opponent }); }}
         />
       </div>
     );
@@ -221,6 +249,12 @@ function GamesTab({
         <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
           <button onClick={() => setView({ mode: "list" })} style={backBtn}>← Games</button>
           <button
+            onClick={() => { setReportSel({ kind: "game" }); setView({ mode: "report", gameId: view.gameId, opponent: activeOpponent }); }}
+            style={backBtn}
+          >
+            Stats →
+          </button>
+          <button
             onClick={async () => {
               if (!window.confirm("Reopen this game for tracking? Its final score will be cleared until you finish it again.")) return;
               await reopenGame(view.gameId);
@@ -238,6 +272,7 @@ function GamesTab({
   }
 
   if (view.mode === "track") {
+    const quarterClosed = closedQuarters.includes(quarter);
     return (
       <div>
         <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -245,7 +280,7 @@ function GamesTab({
           <div className="role-tabs" style={{ margin: 0 }}>
             {[1, 2, 3, 4].map((q) => (
               <button key={q} className={`role-tab ${quarter === q ? "active" : ""}`} onClick={() => setQuarter(q)}>
-                Q{q}
+                Q{q}{closedQuarters.includes(q) ? " 🔒" : ""}
               </button>
             ))}
           </div>
@@ -255,6 +290,12 @@ function GamesTab({
           >
             View report →
           </button>
+          {!gameFinal && !quarterClosed && (
+            <button onClick={() => onEndQuarter(view.gameId, quarter)} style={backBtn}>End Q{quarter}</button>
+          )}
+          {!gameFinal && quarterClosed && (
+            <button onClick={() => onReopenQuarter(view.gameId, quarter)} style={backBtn}>Reopen Q{quarter}</button>
+          )}
           {!gameFinal && <button onClick={() => startFinishing(view.gameId)} style={backBtn}>Finish game</button>}
         </div>
         {finishing && (
@@ -281,7 +322,13 @@ function GamesTab({
             )}
           </div>
         )}
-        <GameTracker gameId={view.gameId} userId={userId} quarter={quarter} />
+        {quarterClosed ? (
+          <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
+            Q{quarter} is closed to new tracking. Use "Reopen Q{quarter}" above if that happened too early, or switch to another quarter tab.
+          </div>
+        ) : (
+          <GameTracker gameId={view.gameId} userId={userId} quarter={quarter} />
+        )}
       </div>
     );
   }
