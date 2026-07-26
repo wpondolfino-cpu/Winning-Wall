@@ -578,12 +578,17 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     const anchor = d.players[0] ?? d.ball ?? d.defenders[0] ?? (d.actions[0] ? { x: d.actions[0].x1, y: d.actions[0].y1 } : { x: 0, y: 0 });
     const dx = x - anchor.x, dy = y - anchor.y;
 
-    // A player circle's own radius is ~13, so 40 gives real forgiveness
-    // for "near, not exactly touching" placement — wide enough to catch
-    // an approximate stamp, still tight enough that two separate players
-    // standing at a normal spacing won't both fall inside it by mistake.
+    // A player circle's own radius is ~13; the court itself is 600
+    // units wide. 100 gives generous forgiveness for an imprecise
+    // stamp — it always links to whichever real player is CLOSEST, so
+    // this doesn't risk picking the wrong one over the right one when
+    // both are nearby. The real tradeoff is a sloppy stamp reaching
+    // past its intended player and catching an unrelated one standing
+    // elsewhere, in a spot that would've correctly come up empty at a
+    // tighter radius. Widened from 40 on request; dial back down if
+    // that ever actually happens.
     function withinLinkRadius(px: number, py: number, players: PlayPlayer[]): string | undefined {
-      let best: string | undefined; let bestDist = 40;
+      let best: string | undefined; let bestDist = 100;
       players.forEach((p) => {
         if (!p.id) return;
         const dd = Math.hypot(p.x - px, p.y - py);
