@@ -100,7 +100,7 @@ type Step =
   | "flags"
   | "turnover_type"
   | "shot_quality"
-  | "and1_check"
+  | "and1_shot"
   | "and1_ft"
   | "oreb_check"
   | "ft_attempts"
@@ -109,7 +109,6 @@ type Step =
 interface PendingShot {
   shotType: 2 | 3;
   made: boolean;
-  quality?: "great" | "good" | "live" | "tough";
 }
 
 interface PendingCommit {
@@ -296,16 +295,13 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     resetForNextPossession();
   }
 
-  /** Make: asks about an and-1 before committing (see and1_check/and1_ft
-      steps). Miss: doesn't commit yet -- it becomes a pendingCommit and
-      routes to "offensive rebound?" first, since only a make or an
-      unrebounded miss actually ends a trip. */
+  /** Make: commits immediately (with quality, for us). Miss: doesn't commit
+      yet -- it becomes a pendingCommit and routes to "offensive rebound?"
+      first, since only a make or an unrebounded miss actually ends a trip. */
   function commitPendingShot(quality: "great" | "good" | "live" | "tough") {
     if (!pendingShot) return;
     if (pendingShot.made) {
-      pushHistory();
-      setPendingShot({ ...pendingShot, quality });
-      setStep("and1_check");
+      commit("fg_made", { shot_type: pendingShot.shotType, points: pendingShot.shotType, shot_quality: quality });
     } else {
       pushHistory();
       setPendingCommit({
@@ -316,6 +312,16 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       });
       setStep("oreb_check");
     }
+  }
+
+  /** And-1 is its own button (next to FT trip), not a prompt after every
+      make -- picking a shot type here skips shot_quality/quality choice
+      entirely, since a bonus FT trip auto-grades as "great" the same way
+      a plain FT trip already does. */
+  function selectAnd1Shot(shotType: 2 | 3) {
+    pushHistory();
+    setPendingShot({ shotType, made: true });
+    setStep("and1_ft");
   }
 
   /** Shared by every Make/Miss button (flags screen and quick_shot screen).
@@ -635,8 +641,9 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
             <Btn onClick={() => selectShot(3, true)}>Make 3</Btn>
             <Btn onClick={() => selectShot(3, false)}>Miss 3</Btn>
           </Grid>
-          <Grid cols={2} style={{ marginTop: 8 }}>
+          <Grid cols={3} style={{ marginTop: 8 }}>
             <Btn onClick={() => { pushHistory(); setStep("ft_attempts"); }}>FT trip</Btn>
+            <Btn onClick={() => { pushHistory(); setStep("and1_shot"); }}>And-1</Btn>
             <Btn onClick={undo} style={{ color: "var(--muted)" }}>Undo</Btn>
           </Grid>
         </Section>
@@ -645,7 +652,6 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       {step === "flags" && (() => {
         const isDirectBlobSlob = (possessionType === "blob" || possessionType === "slob") && !orebOccurred;
         const showPaintTouch = possessionType !== "transition" && !isDirectBlobSlob;
-        const showOob = team === "us" && possessionType === "half_court";
         return (
           <>
             {showPaintTouch && (
@@ -664,18 +670,17 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
               <Btn onClick={() => selectShot(3, true)}>Make 3</Btn>
               <Btn onClick={() => selectShot(3, false)}>Miss 3</Btn>
             </Grid>
-            <Grid cols={3} style={{ marginTop: 8 }}>
-              <Btn onClick={() => { pushHistory(); setStep("turnover_type"); }}>Turnover</Btn>
-            <Btn onClick={() => { pushHistory(); setStep("ft_attempts"); }}>FT trip</Btn>
-            <Btn onClick={undo} style={{ color: "var(--muted)" }}>Undo</Btn>
-          </Grid>
-          {showOob && (
-            <Grid cols={1} style={{ marginTop: 8 }}>
-              <Btn subtitle="Tipped out of bounds -- still our ball" onClick={() => { pushHistory(); setStep("oob_reclassify"); }}>
+            <Grid cols={4} style={{ marginTop: 8 }}>
+              <Btn subtitle="Tipped OOB -- still this team's ball" onClick={() => { pushHistory(); setStep("oob_reclassify"); }}>
                 Out of bounds
               </Btn>
+              <Btn onClick={() => { pushHistory(); setStep("turnover_type"); }}>Turnover</Btn>
+              <Btn onClick={() => { pushHistory(); setStep("ft_attempts"); }}>FT trip</Btn>
+              <Btn onClick={() => { pushHistory(); setStep("and1_shot"); }}>And-1</Btn>
             </Grid>
-          )}
+            <Grid cols={1} style={{ marginTop: 8 }}>
+              <Btn onClick={undo} style={{ color: "var(--muted)" }}>Undo</Btn>
+            </Grid>
           </>
         );
       })()}
@@ -689,6 +694,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
                 setPossessionType("blob");
                 setHalfCourtType(null);
                 setPlayCallId(null);
+                setDefenseScheme(null);
                 setStep("oob_result");
               }}
             >
@@ -700,6 +706,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
                 setPossessionType("slob");
                 setHalfCourtType(null);
                 setPlayCallId(null);
+                setDefenseScheme(null);
                 setStep("oob_result");
               }}
             >
@@ -729,16 +736,11 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
         </Section>
       )}
 
-      {step === "and1_check" && pendingShot && (
-        <Section label="And-1?" accent>
+      {step === "and1_shot" && (
+        <Section label="And-1 -- which shot?" accent>
           <Grid cols={2}>
-            <Btn
-              tone="success"
-              onClick={() => commit("fg_made", { shot_type: pendingShot.shotType, points: pendingShot.shotType, shot_quality: pendingShot.quality ?? null })}
-            >
-              No
-            </Btn>
-            <Btn onClick={() => { pushHistory(); setStep("and1_ft"); }}>Yes -- fouled</Btn>
+            <Btn onClick={() => selectAnd1Shot(2)}>Make 2</Btn>
+            <Btn onClick={() => selectAnd1Shot(3)}>Make 3</Btn>
           </Grid>
         </Section>
       )}
@@ -752,7 +754,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
                 commit("fg_made", {
                   shot_type: pendingShot.shotType,
                   points: pendingShot.shotType + 1,
-                  shot_quality: pendingShot.quality ?? null,
+                  shot_quality: team === "us" ? "great" : null,
                   absorbed_ft_attempts: 1,
                   absorbed_ft_made: 1,
                 })
@@ -765,7 +767,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
                 commit("fg_made", {
                   shot_type: pendingShot.shotType,
                   points: pendingShot.shotType,
-                  shot_quality: pendingShot.quality ?? null,
+                  shot_quality: team === "us" ? "great" : null,
                   absorbed_ft_attempts: 1,
                   absorbed_ft_made: 0,
                 })
