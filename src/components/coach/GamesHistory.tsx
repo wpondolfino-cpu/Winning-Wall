@@ -22,9 +22,10 @@ interface Props {
   userId: string;
   onOpenGame: (gameId: string) => void;
   onEditGame: (gameId: string, opponent: string) => void;
+  onViewReport: (gameId: string, opponent: string) => void;
 }
 
-export default function GamesHistory({ userId, onOpenGame, onEditGame }: Props) {
+export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewReport }: Props) {
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -196,6 +197,9 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame }: Props) 
                   <button style={actionBtn} onClick={() => startFinishing(g.id)}>
                     Finish game
                   </button>
+                )}
+                {final && (
+                  <button style={actionBtn} onClick={() => onViewReport(g.id, g.opponent)}>Stats</button>
                 )}
                 {final && (
                   <button style={actionBtn} onClick={() => onEditGame(g.id, g.opponent)}>Edit stats</button>
