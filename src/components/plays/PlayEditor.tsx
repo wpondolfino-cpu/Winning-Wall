@@ -573,78 +573,142 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     pushHistory();
     const d = action.data;
     // Anchor to the first available point in the saved action so the stamp
-    // lands with that point under the click.
+    // lands with that point under the click — this is the fallback used
+    // for anything that isn't tied to an identified real player below.
     const anchor = d.players[0] ?? d.ball ?? d.defenders[0] ?? (d.actions[0] ? { x: d.actions[0].x1, y: d.actions[0].y1 } : { x: 0, y: 0 });
     const dx = x - anchor.x, dy = y - anchor.y;
-    const baseCount = frame.players.length;
-    // Stamped players are new, distinct players — give each a fresh id
-    // rather than reusing whatever the saved template's players had (which
-    // could collide with existing players, or with another copy of this
-    // same stamp used elsewhere). Remap the stamped actions' source/target
-    // links through the same table so they still point at the right player.
-    const idMap = new Map<string, string>();
-    const newPlayers = d.players.map((p, i) => {
-      const newId = genPlayerId();
-      if (p.id) idMap.set(p.id, newId);
-      return { ...p, id: newId, x: p.x + dx, y: p.y + dy, num: ((baseCount + i) % 5) + 1 };
-    });
-    // A saved action with no players in it (e.g. arrows drawn, then the
-    // players deleted before saving, specifically so the stamp is
-    // player-agnostic) has nothing for idMap to remap — its lines would
-    // otherwise land with no sourcePlayerId/targetPlayerId at all, which
-    // breaks "carry the player to where their line ends" on the next step
-    // even when the arrows are visually placed right on top of real
-    // players. So: for any line idMap can't resolve, fall back to
-    // checking whether its (now-positioned) start actually lands on a
-    // real player already on the court, same proximity check manual
-    // drawing already uses, and link to them if so.
-    //
-    // Important: this has to be resolved per ORIGINAL player, not per
-    // line. A chained sequence (e.g. screen into a cut, or cut into
-    // another cut) is two actions sharing one original sourcePlayerId —
-    // only the first one's start point is actually standing on a real
-    // player; the second starts wherever the first one visually ends,
-    // which is empty space. So every action that shared an original
-    // sourcePlayerId resolves to whichever real player the FIRST action
-    // in that chain (lowest sequenceIndex) lands on, not resolved
-    // independently line-by-line.
-    const allPlayersAfterStamp = [...frame.players, ...newPlayers];
-    function nearestRealPlayer(px: number, py: number): string | undefined {
+
+    function within22(px: number, py: number, players: PlayPlayer[]): string | undefined {
       let best: string | undefined; let bestDist = 22;
-      allPlayersAfterStamp.forEach((p) => {
+      players.forEach((p) => {
         if (!p.id) return;
         const dd = Math.hypot(p.x - px, p.y - py);
         if (dd < bestDist) { bestDist = dd; best = p.id; }
       });
       return best;
     }
-    const unmappedGroups = new Map<string, PlayAction[]>(); // original sourcePlayerId -> its actions, for ones idMap can't resolve
+
+    const baseCount = frame.players.length;
+    // Stamped players are new, distinct players — give each a fresh id
+    // rather than reusing whatever the saved template's players had (which
+    // could collide with existing players, or with another copy of this
+    // same stamp used elsewhere). Assign the new ids now (positions come
+    // later, once the transform below is finalized) so the id-remapping
+    // table is already complete by the time anything needs to check it.
+    const idMap = new Map<string, string>();
+    d.players.forEach((p) => { if (p.id) idMap.set(p.id, genPlayerId()); });
+
+    // One representative saved point per original source-player NOT already
+    // covered by idMap (i.e. a saved action with no players of its own,
+    // arrows only) — its first action in sequence order.
+    const groups = new Map<string, PlayAction[]>();
     d.actions.forEach((a) => {
-      if (a.sourcePlayerId && !idMap.has(a.sourcePlayerId)) {
-        const g = unmappedGroups.get(a.sourcePlayerId) ?? [];
-        g.push(a);
-        unmappedGroups.set(a.sourcePlayerId, g);
-      }
+      if (!a.sourcePlayerId || idMap.has(a.sourcePlayerId)) return;
+      const g = groups.get(a.sourcePlayerId) ?? [];
+      g.push(a);
+      groups.set(a.sourcePlayerId, g);
     });
-    const groupResolved = new Map<string, string | undefined>(); // original sourcePlayerId -> resolved real player id
-    unmappedGroups.forEach((actionsInGroup, originalId) => {
+
+    function detectMatches(tf: (p: { x: number; y: number }) => { x: number; y: number }) {
+      const out: { originalId: string; saved: { x: number; y: number }; realId: string }[] = [];
+      groups.forEach((actionsInGroup, originalId) => {
+        const first = [...actionsInGroup].sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0))[0];
+        const saved = { x: first.x1, y: first.y1 };
+        const guess = tf(saved);
+        const realId = within22(guess.x, guess.y, frame.players);
+        if (realId) out.push({ originalId, saved, realId });
+      });
+      return out;
+    }
+
+    // Start with a flat translate, see what it finds nearby, and if two
+    // different roles land on two different real players, upgrade to a
+    // proper rotate + scale + translate using those two as a frame of
+    // reference — then re-check with that better placement, since a more
+    // accurate guess can reveal additional real players a flat offset
+    // would have missed entirely.
+    let transform = (p: { x: number; y: number }) => ({ x: p.x + dx, y: p.y + dy });
+    let matches = detectMatches(transform);
+    if (matches.length >= 2 && matches[0].realId !== matches[1].realId) {
+      const [m0, m1] = matches;
+      const real0 = frame.players.find((p) => p.id === m0.realId)!;
+      const real1 = frame.players.find((p) => p.id === m1.realId)!;
+      const savedVec = { x: m1.saved.x - m0.saved.x, y: m1.saved.y - m0.saved.y };
+      const realVec = { x: real1.x - real0.x, y: real1.y - real0.y };
+      const savedLen = Math.hypot(savedVec.x, savedVec.y) || 1;
+      const realLen = Math.hypot(realVec.x, realVec.y) || 1;
+      const scale = realLen / savedLen;
+      const angle = Math.atan2(realVec.y, realVec.x) - Math.atan2(savedVec.y, savedVec.x);
+      const cos = Math.cos(angle), sin = Math.sin(angle);
+      transform = (p) => {
+        const relX = p.x - m0.saved.x, relY = p.y - m0.saved.y;
+        return { x: real0.x + (relX * cos - relY * sin) * scale, y: real0.y + (relX * sin + relY * cos) * scale };
+      };
+      matches = detectMatches(transform);
+    }
+
+    // The key fix: every role that matched a real player gets its OWN
+    // exact correction — not just the two used to build the transform
+    // above. That transform gets everything roughly in the right place
+    // (and is all that's used for anything with no real player nearby,
+    // like a decorative curve), but for a role we've actually identified,
+    // "roughly right" isn't good enough — nudge that role's whole chain
+    // (start, end, and any later chained action) by whatever's needed to
+    // land it exactly on the real player, same amount for every point in
+    // that role's own actions so the shape/length of their motion is
+    // preserved, just correctly positioned.
+    const roleOffset = new Map<string, { dx: number; dy: number }>();
+    matches.forEach((m) => {
+      const real = frame.players.find((p) => p.id === m.realId)!;
+      const guess = transform(m.saved);
+      roleOffset.set(m.originalId, { dx: real.x - guess.x, dy: real.y - guess.y });
+    });
+    function placePoint(pt: { x: number; y: number }, roleId?: string) {
+      const g = transform(pt);
+      const off = roleId ? roleOffset.get(roleId) : undefined;
+      return off ? { x: g.x + off.dx, y: g.y + off.dy } : g;
+    }
+
+    const newPlayers = d.players.map((p, i) => {
+      const newId = (p.id && idMap.get(p.id)) ?? genPlayerId();
+      const t = transform({ x: p.x, y: p.y });
+      return { ...p, id: newId, x: t.x, y: t.y, num: ((baseCount + i) % 5) + 1 };
+    });
+
+    const allPlayersAfterStamp = [...frame.players, ...newPlayers];
+    function nearestRealPlayer(px: number, py: number): string | undefined {
+      return within22(px, py, allPlayersAfterStamp);
+    }
+    const groupResolved = new Map<string, string | undefined>();
+    groups.forEach((actionsInGroup, originalId) => {
+      const already = matches.find((m) => m.originalId === originalId)?.realId;
+      if (already) { groupResolved.set(originalId, already); return; }
       const first = [...actionsInGroup].sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0))[0];
-      groupResolved.set(originalId, nearestRealPlayer(first.x1 + dx, first.y1 + dy));
+      const t = placePoint({ x: first.x1, y: first.y1 });
+      groupResolved.set(originalId, nearestRealPlayer(t.x, t.y));
     });
+
     const newActions = d.actions.map((a) => {
-      const tx1 = a.x1 + dx, ty1 = a.y1 + dy, tx2 = a.x2 + dx, ty2 = a.y2 + dy;
+      const roleId = a.sourcePlayerId && !idMap.has(a.sourcePlayerId) ? a.sourcePlayerId : undefined;
+      const p1 = placePoint({ x: a.x1, y: a.y1 }, roleId);
+      const p2 = placePoint({ x: a.x2, y: a.y2 }, roleId);
+      const curve = a.curve ? placePoint(a.curve, roleId) : undefined;
       const sourcePlayerId = (a.sourcePlayerId && idMap.get(a.sourcePlayerId))
-        ?? (a.sourcePlayerId ? groupResolved.get(a.sourcePlayerId) : nearestRealPlayer(tx1, ty1));
+        ?? (roleId ? groupResolved.get(roleId) : undefined);
       const targetPlayerId = (a.targetPlayerId && idMap.get(a.targetPlayerId))
-        ?? ((a.type === "pass" || a.type === "lob") ? nearestRealPlayer(tx2, ty2) : undefined);
-      return { ...a, x1: tx1, y1: ty1, x2: tx2, y2: ty2, sourcePlayerId, targetPlayerId };
+        ?? ((a.type === "pass" || a.type === "lob") ? nearestRealPlayer(p2.x, p2.y) : undefined);
+      return { ...a, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, curve, sourcePlayerId, targetPlayerId };
     });
-    updateFrame((f) => ({
-      players: [...f.players, ...newPlayers],
-      defenders: [...f.defenders, ...d.defenders.map((def) => ({ x: def.x + dx, y: def.y + dy }))],
-      ball: f.ball ?? (d.ball ? { x: d.ball.x + dx, y: d.ball.y + dy } : null),
-      actions: [...f.actions, ...newActions],
-    }));
+    updateFrame((f) => {
+      const transformedDefenders = d.defenders.map((def) => transform({ x: def.x, y: def.y }));
+      const transformedBall = d.ball ? transform({ x: d.ball.x, y: d.ball.y }) : null;
+      return {
+        players: [...f.players, ...newPlayers],
+        defenders: [...f.defenders, ...transformedDefenders],
+        ball: f.ball ?? transformedBall,
+        actions: [...f.actions, ...newActions],
+      };
+    });
     setStampAction(null);
   }
 
