@@ -190,6 +190,7 @@ export interface Game {
   final_score_them: number | null;
   status: "draft" | "published";
   notes: string | null;
+  closed_quarters: number[];
 }
 
 export interface SavedReport {
@@ -438,7 +439,15 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   const paintTouchSingle = trips.filter((p) => p.paint_touch).length;
   const paintTouchBoth = trips.filter((p) => p.paint_touch_both_sides).length;
   const transitionTripsArr = trips.filter((p) => p.possession_type === "transition");
-  const halfCourtTripsArr = trips.filter((p) => p.possession_type === "half_court");
+  // A blob/slob possession that flowed into a set/motion look (oob_result
+  // === "flowed_half_court") keeps possession_type "blob"/"slob" for BLOB
+  // effectiveness purposes -- but the actual shot came from a half-court
+  // action, so it belongs in half-court efficiency too, not just possessions
+  // that started half-court outright.
+  const halfCourtTripsArr = trips.filter((p) =>
+    p.possession_type === "half_court" ||
+    ((p.possession_type === "blob" || p.possession_type === "slob") && p.oob_result === "flowed_half_court")
+  );
 
   const efg = fgaCount ? ((made2 + made3) + 0.5 * made3) / fgaCount * 100 : 0;
   const fg2Pct = fga2.length ? (made2 / fga2.length) * 100 : 0;
@@ -483,7 +492,9 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
 }
 
 /**
- * Extra Possessions: (our OREB + our TOV) minus (their OREB + their TOV).
+ * Extra Possessions: (our OREB + their TOV) minus (their OREB + our TOV).
+ * Our own offensive rebounds and their turnovers both count in our favor;
+ * their offensive rebounds and our own turnovers both count against us.
  * Positive is good for us, negative is bad -- colored by sign, not against
  * a goal target. This is inherently a two-team number (needs both sides'
  * OREB/TOV at once), unlike the rest of computeTeamStats which only looks
@@ -492,8 +503,8 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
 export function computeExtraPossessions(possessions: Possession[]): { us: number; opponent: number } {
   const orebFor = (team: Team) => possessions.filter((p) => p.team === team).reduce((s, p) => s + p.oreb_count, 0);
   const tovFor = (team: Team) => possessions.filter((p) => p.team === team && p.outcome === "turnover").length;
-  const usTotal = orebFor("us") + tovFor("us");
-  const oppTotal = orebFor("opponent") + tovFor("opponent");
+  const usTotal = orebFor("us") + tovFor("opponent");
+  const oppTotal = orebFor("opponent") + tovFor("us");
   const us = usTotal - oppTotal;
   return { us, opponent: -us };
 }
@@ -601,14 +612,16 @@ export function computePlayCallEffectiveness(possessions: Possession[], playCall
   }).sort((a, b) => b.calls - a.calls);
 }
 
-/** BLOB/SLOB breakdown: direct shot attempts (and makes), flowed into a half-court set, or turned it over right off the action. */
+/** BLOB/SLOB breakdown: direct shot attempts (and makes), flowed into a half-court set (and how many of those still scored), or turned it over right off the action. */
 export function computeOobEffectiveness(possessions: Possession[], type: "blob" | "slob") {
   const trips = possessions.filter((p) => p.team === "us" && p.possession_type === type);
   const directShots = trips.filter((p) => p.oob_result === "direct_shot");
   const scored = directShots.filter((p) => p.points > 0).length;
-  const flowed = trips.filter((p) => p.oob_result === "flowed_half_court").length;
+  const flowedTrips = trips.filter((p) => p.oob_result === "flowed_half_court");
+  const flowed = flowedTrips.length;
+  const scoredOnFlow = flowedTrips.filter((p) => p.points > 0).length;
   const turnovers = trips.filter((p) => p.oob_result === "turnover").length;
-  return { total: trips.length, directAttempts: directShots.length, scored, flowed, turnovers };
+  return { total: trips.length, directAttempts: directShots.length, scored, flowed, scoredOnFlow, turnovers };
 }
 
 export interface DefenseSchemeSummary {
@@ -679,6 +692,26 @@ export async function listSeasons(): Promise<string[]> {
 /** Undoes finishGame -- clears the final score so the game goes back to being trackable. The escape hatch for "finished too early." */
 export async function reopenGame(gameId: string) {
   return supabase.from("games").update({ final_score_us: null, final_score_them: null }).eq("id", gameId);
+}
+
+/** Escape hatch for a quarter closed too early -- reopens it for tracking, mirroring reopenGame's escape hatch for the whole-game lock. */
+export async function reopenQuarter(gameId: string, quarter: number, currentClosed: number[]): Promise<{ error: string | null; closedQuarters: number[] }> {
+  const next = currentClosed.filter((q) => q !== quarter);
+  const { error } = await supabase.from("games").update({ closed_quarters: next }).eq("id", gameId);
+  return { error: error?.message ?? null, closedQuarters: error ? currentClosed : next };
+}
+
+/** Closes a quarter to new tracking input during a live, still-in-progress game -- a lighter, narrower lock than finishGame's whole-game lock, meant to stop a possession from accidentally getting logged against a quarter that's already moved on. */
+export async function endQuarter(gameId: string, quarter: number, currentClosed: number[]): Promise<{ error: string | null; closedQuarters: number[] }> {
+  const next = Array.from(new Set([...currentClosed, quarter])).sort((a, b) => a - b);
+  const { error } = await supabase.from("games").update({ closed_quarters: next }).eq("id", gameId);
+  return { error: error?.message ?? null, closedQuarters: error ? currentClosed : next };
+}
+
+/** Lowest quarter (1-4) not yet closed -- used to default the quarter tab to wherever tracking should actually pick up, instead of always defaulting to Q1. */
+export function nextOpenQuarter(closedQuarters: number[]): number {
+  for (let q = 1; q <= 4; q++) if (!closedQuarters.includes(q)) return q;
+  return 4;
 }
 
 /** A game is only editable/correctable once it's been explicitly finished (final score set) -- this keeps live entry and post-game correction from colliding. */
