@@ -45,6 +45,11 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
   const [emoji, setEmoji]               = useState("🏀");
   const [scoringType, setScoringType]   = useState<ScoringType>("competitive");
   const [scoringMetric, setScoringMetric] = useState("shots made");
+  // "seconds (fastest wins)" already implied lower-is-better on its own
+  // (via a sign-flip trick in the ranking function); "attempts (fewest
+  // wins)" is the new option that opts into the same real, general flag
+  // instead of needing its own special case.
+  const lowerIsBetter = scoringMetric === "seconds (fastest wins)" || scoringMetric === "attempts (fewest wins)";
   const [firstPts, setFirstPts]         = useState("5");
   const [secondPts, setSecondPts]       = useState("3");
   const [thirdPts, setThirdPts]         = useState("1");
@@ -127,6 +132,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
         video_url: videoUrl || undefined, emoji,
         scoring_type: scoringType,
         scoring_metric: (scoringType === "competitive" || scoringType === "multi_spot") ? scoringMetric : undefined,
+        lower_is_better: (scoringType === "competitive" || scoringType === "multi_spot") ? lowerIsBetter : undefined,
         flat_points: scoringType === "flat" ? parseInt(flatPoints) : undefined,
         timer_duration: timerDuration,
         publish_date: publishDate || undefined,
@@ -146,6 +152,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
           ...base,
           flat_points: scoringType === "flat" ? parseInt(flatPoints) : null,
           scoring_metric: (scoringType === "competitive" || scoringType === "multi_spot") ? scoringMetric : null,
+          lower_is_better: (scoringType === "competitive" || scoringType === "multi_spot") ? lowerIsBetter : null,
           first_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(firstPts) || 3 : null,
           second_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(secondPts) || 2 : null,
           third_place_pts: (scoringType === "competitive" || scoringType === "multi_spot") ? parseInt(thirdPts) || 1 : null,
@@ -308,6 +315,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
               <option value="shots made">Shots Made</option>
               <option value="reps completed">Reps Completed</option>
               <option value="seconds (fastest wins)">Time — Fastest Wins</option>
+              <option value="attempts (fewest wins)">Attempts — Fewest Wins</option>
               <option value="points scored">Points Scored</option>
             </select>
           </div>
