@@ -76,6 +76,7 @@ export interface Workout {
   emoji: string;
   scoring_type: ScoringType;
   scoring_metric?: string;
+  lower_is_better?: boolean;
   flat_points?: number;
   first_place_pts?: number;
   second_place_pts?: number;
