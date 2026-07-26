@@ -583,6 +583,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
           <PlayCallPicker
             plays={playsForCategory(halfCourtType)}
             drawn={unlinkedDrawnFor(halfCourtType)}
+            selectedId={playCallId}
             onPick={(id) => { pushHistory(); setPlayCallId(id); setStep("flags"); }}
             onPickDrawn={(dp) => pickDrawnPlay(dp, halfCourtType, "flags")}
             adding={addingPlayFor === halfCourtType}
@@ -601,7 +602,8 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
               <PlayCallPicker
                 plays={playsForCategory(possessionType)}
                 drawn={unlinkedDrawnFor(possessionType)}
-                onPick={(id) => setPlayCallId(id)}
+                selectedId={playCallId}
+                onPick={(id) => { pushHistory(); setPlayCallId(id); }}
                 onPickDrawn={(dp) => pickDrawnPlay(dp, possessionType, "oob_result")}
                 adding={addingPlayFor === possessionType}
                 onStartAdd={() => setAddingPlayFor(possessionType)}
@@ -904,6 +906,7 @@ function Btn({
 function PlayCallPicker({
   plays,
   drawn,
+  selectedId,
   onPick,
   onPickDrawn,
   adding,
@@ -914,6 +917,7 @@ function PlayCallPicker({
 }: {
   plays: PlayCall[];
   drawn: DrawnPlay[];
+  selectedId?: string | null;
   onPick: (id: string) => void;
   onPickDrawn: (play: DrawnPlay) => void;
   adding: boolean;
@@ -924,15 +928,23 @@ function PlayCallPicker({
 }) {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-      {plays.map((p) => (
-        <button
-          key={p.id}
-          onClick={() => onPick(p.id)}
-          style={{ padding: "10px 16px", fontSize: 14, borderRadius: 20, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", cursor: "pointer" }}
-        >
-          {p.name}
-        </button>
-      ))}
+      {plays.map((p) => {
+        const active = p.id === selectedId;
+        return (
+          <button
+            key={p.id}
+            onClick={() => onPick(p.id)}
+            style={{
+              padding: "10px 16px", fontSize: 14, borderRadius: 20, cursor: "pointer",
+              border: active ? "2px solid var(--gold)" : "1px solid var(--border)",
+              background: active ? "rgba(240,192,64,0.15)" : "var(--surface2)",
+              color: "var(--text)", fontWeight: active ? 700 : 400,
+            }}
+          >
+            {active ? "✓ " : ""}{p.name}
+          </button>
+        );
+      })}
       {drawn.map((dp) => (
         <button
           key={dp.id}
