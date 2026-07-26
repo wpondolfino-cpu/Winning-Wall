@@ -93,12 +93,15 @@ type Step =
   | "halfcourt_type"
   | "play_call"
   | "oob_result"
+  | "oob_reclassify"
   | "press_result"
   | "action_branch"
   | "quick_shot"
   | "flags"
   | "turnover_type"
   | "shot_quality"
+  | "and1_check"
+  | "and1_ft"
   | "oreb_check"
   | "ft_attempts"
   | "ft_points";
@@ -106,6 +109,7 @@ type Step =
 interface PendingShot {
   shotType: 2 | 3;
   made: boolean;
+  quality?: "great" | "good" | "live" | "tough";
 }
 
 interface PendingCommit {
@@ -292,13 +296,16 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     resetForNextPossession();
   }
 
-  /** Make: commits immediately (with quality, for us). Miss: doesn't commit
-      yet -- it becomes a pendingCommit and routes to "offensive rebound?"
-      first, since only a make or an unrebounded miss actually ends a trip. */
+  /** Make: asks about an and-1 before committing (see and1_check/and1_ft
+      steps). Miss: doesn't commit yet -- it becomes a pendingCommit and
+      routes to "offensive rebound?" first, since only a make or an
+      unrebounded miss actually ends a trip. */
   function commitPendingShot(quality: "great" | "good" | "live" | "tough") {
     if (!pendingShot) return;
     if (pendingShot.made) {
-      commit("fg_made", { shot_type: pendingShot.shotType, points: pendingShot.shotType, shot_quality: quality });
+      pushHistory();
+      setPendingShot({ ...pendingShot, quality });
+      setStep("and1_check");
     } else {
       pushHistory();
       setPendingCommit({
@@ -638,6 +645,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
       {step === "flags" && (() => {
         const isDirectBlobSlob = (possessionType === "blob" || possessionType === "slob") && !orebOccurred;
         const showPaintTouch = possessionType !== "transition" && !isDirectBlobSlob;
+        const showOob = team === "us" && possessionType === "half_court";
         return (
           <>
             {showPaintTouch && (
@@ -661,9 +669,45 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
             <Btn onClick={() => { pushHistory(); setStep("ft_attempts"); }}>FT trip</Btn>
             <Btn onClick={undo} style={{ color: "var(--muted)" }}>Undo</Btn>
           </Grid>
+          {showOob && (
+            <Grid cols={1} style={{ marginTop: 8 }}>
+              <Btn subtitle="Tipped out of bounds -- still our ball" onClick={() => { pushHistory(); setStep("oob_reclassify"); }}>
+                Out of bounds
+              </Btn>
+            </Grid>
+          )}
           </>
         );
       })()}
+
+      {step === "oob_reclassify" && (
+        <Section label="Inbounding from" accent>
+          <Grid cols={2}>
+            <Btn
+              onClick={() => {
+                pushHistory();
+                setPossessionType("blob");
+                setHalfCourtType(null);
+                setPlayCallId(null);
+                setStep("oob_result");
+              }}
+            >
+              BLOB
+            </Btn>
+            <Btn
+              onClick={() => {
+                pushHistory();
+                setPossessionType("slob");
+                setHalfCourtType(null);
+                setPlayCallId(null);
+                setStep("oob_result");
+              }}
+            >
+              SLOB
+            </Btn>
+          </Grid>
+        </Section>
+      )}
 
       {step === "turnover_type" && (
         <Section label="Turnover type">
@@ -681,6 +725,54 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
             <Btn tone="success" subtitle="Open, Catch & Shoot " onClick={() => commitPendingShot("good")}>Good</Btn>
             <Btn tone="warning" subtitle="Player specific & Shot clock" onClick={() => commitPendingShot("live")}>Live</Btn>
             <Btn tone="danger" subtitle="Contested & Early" onClick={() => commitPendingShot("tough")}>Tough</Btn>
+          </Grid>
+        </Section>
+      )}
+
+      {step === "and1_check" && pendingShot && (
+        <Section label="And-1?" accent>
+          <Grid cols={2}>
+            <Btn
+              tone="success"
+              onClick={() => commit("fg_made", { shot_type: pendingShot.shotType, points: pendingShot.shotType, shot_quality: pendingShot.quality ?? null })}
+            >
+              No
+            </Btn>
+            <Btn onClick={() => { pushHistory(); setStep("and1_ft"); }}>Yes -- fouled</Btn>
+          </Grid>
+        </Section>
+      )}
+
+      {step === "and1_ft" && pendingShot && (
+        <Section label="Bonus free throw" accent>
+          <Grid cols={2}>
+            <Btn
+              tone="success"
+              onClick={() =>
+                commit("fg_made", {
+                  shot_type: pendingShot.shotType,
+                  points: pendingShot.shotType + 1,
+                  shot_quality: pendingShot.quality ?? null,
+                  absorbed_ft_attempts: 1,
+                  absorbed_ft_made: 1,
+                })
+              }
+            >
+              Made
+            </Btn>
+            <Btn
+              onClick={() =>
+                commit("fg_made", {
+                  shot_type: pendingShot.shotType,
+                  points: pendingShot.shotType,
+                  shot_quality: pendingShot.quality ?? null,
+                  absorbed_ft_attempts: 1,
+                  absorbed_ft_made: 0,
+                })
+              }
+            >
+              Missed
+            </Btn>
           </Grid>
         </Section>
       )}
