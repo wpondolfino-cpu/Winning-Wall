@@ -626,12 +626,17 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
 
       {step === "action_branch" && (
         <Section label="What happened">
-          <Grid cols={team === "us" ? 4 : 2}>
+          <Grid cols={3}>
             <Btn onClick={chooseShot}>Shot</Btn>
             <Btn onClick={chooseTurnover}>Turnover</Btn>
-            {team === "us" && <Btn onClick={() => chooseSetOrMotion("set")}>Set</Btn>}
-            {team === "us" && <Btn onClick={() => chooseSetOrMotion("motion")}>Motion</Btn>}
+            <Btn onClick={() => { pushHistory(); setStep("oob_reclassify"); }}>Foul/Out of Bounds</Btn>
           </Grid>
+          {team === "us" && (
+            <Grid cols={2} style={{ marginTop: 8 }}>
+              <Btn onClick={() => chooseSetOrMotion("set")}>Set</Btn>
+              <Btn onClick={() => chooseSetOrMotion("motion")}>Motion</Btn>
+            </Grid>
+          )}
         </Section>
       )}
 
@@ -674,7 +679,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
             </Grid>
             <Grid cols={4} style={{ marginTop: 8 }}>
               <Btn subtitle="Tipped OOB -- still this team's ball" onClick={() => { pushHistory(); setStep("oob_reclassify"); }}>
-                Out of bounds
+                Foul/Out of Bounds
               </Btn>
               <Btn onClick={() => { pushHistory(); setStep("turnover_type"); }}>Turnover</Btn>
               <Btn onClick={() => { pushHistory(); setStep("ft_attempts"); }}>FT trip</Btn>
