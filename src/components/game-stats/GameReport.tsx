@@ -233,14 +233,14 @@ export function ReportBody({
                   <div style={{ fontSize: 12, color: "var(--muted)" }}>BLOB</div>
                   <div style={{ fontSize: 15, fontWeight: 500 }}>
                     {blob.scored}-for-{blob.directAttempts} direct
-                    <span style={{ fontSize: 12, color: "var(--muted)" }}> · {blob.flowed} flowed to HC · {blob.turnovers} TO</span>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}> · {blob.flowed} flowed to HC ({blob.scoredOnFlow} scored) · {blob.turnovers} TO</span>
                   </div>
                 </div>
                 <div className="stat-card">
                   <div style={{ fontSize: 12, color: "var(--muted)" }}>SLOB</div>
                   <div style={{ fontSize: 15, fontWeight: 500 }}>
                     {slob.scored}-for-{slob.directAttempts} direct
-                    <span style={{ fontSize: 12, color: "var(--muted)" }}> · {slob.flowed} flowed to HC · {slob.turnovers} TO</span>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}> · {slob.flowed} flowed to HC ({slob.scoredOnFlow} scored) · {slob.turnovers} TO</span>
                   </div>
                 </div>
               </div>
