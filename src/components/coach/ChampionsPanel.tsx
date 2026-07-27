@@ -25,7 +25,7 @@ export default function ChampionsPanel() {
       // Crown based on the CURRENT PERIOD's standings — not all-time totals,
       // since that's what the biweekly reset is actually meant to reward.
       const periodStandings = await getCurrentPeriodStandings();
-      await crownBiweeklyWinners(periodStandings);
+      const winnerIds = await crownBiweeklyWinners(periodStandings);
 
       // Auto-save snapshot to History tab
       try {
@@ -37,7 +37,10 @@ export default function ChampionsPanel() {
           total_points: e.total_points,
           workouts_completed: e.workouts_completed,
           avatar_url: (e as any).avatar_url,
-          is_period_champion: e.is_period_champion,
+          // Use the freshly-selected winners, not the stale is_period_champion
+          // flag (which reflects the PREVIOUS crowning, captured before
+          // crownBiweeklyWinners ran its update).
+          is_period_champion: winnerIds.has(e.id),
         }));
         await supabase.from("period_snapshots").insert({
           period_name: periodName || `Period ${new Date().toLocaleDateString()}`,
