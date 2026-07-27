@@ -45,7 +45,7 @@ export default function ChampionsPanel() {
         await supabase.from("period_snapshots").insert({
           period_name: periodName || `Period ${new Date().toLocaleDateString()}`,
           period_start: periodStart.toISOString().split("T")[0],
-          period_end: new Date().toISOString().split("T")[0],
+          period_end: periodEnd.toISOString().split("T")[0],
           snapshot: snapshotData,
         });
       } catch (snapErr) {
