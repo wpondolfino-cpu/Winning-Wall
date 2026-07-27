@@ -6,7 +6,8 @@
 
 import { Formation } from "../../lib/plays";
 
-export default function TemplatePreview({ data, side }: { data: Formation["data"]; side: "offense" | "defense" }) {
+export default function TemplatePreview({ data, side }: { data: Formation["data"]; side: Formation["side"] }) {
+  const isPlayerBased = side !== "defense";
   return (
     <svg viewBox="0 0 600 420" style={{ width: "100%", height: "auto", display: "block", background: "#3a2a17", borderRadius: 8 }}>
       {/* Simplified half-court markings so the snapshot reads as a court, not just floating dots */}
@@ -15,7 +16,7 @@ export default function TemplatePreview({ data, side }: { data: Formation["data"
       <rect x="220" y="4" width="160" height="180" fill="none" stroke="#6b5637" strokeWidth="3" />
       <circle cx="300" cy="380" r="10" fill="none" stroke="#6b5637" strokeWidth="3" />
 
-      {side === "offense" && (data.players ?? []).map((p, i) => (
+      {isPlayerBased && (data.players ?? []).map((p, i) => (
         <g key={i}>
           <circle cx={p.x} cy={p.y} r={22} fill="#EF9F27" stroke="#854F0B" strokeWidth={2.5} />
           <text x={p.x} y={p.y + 8} textAnchor="middle" fontSize={22} fontWeight={700} fill="#1a1206">{p.num}</text>
