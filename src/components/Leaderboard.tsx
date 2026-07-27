@@ -110,7 +110,11 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
 
   async function deleteSnapshot(snapId: string) {
     if (!window.confirm("Delete this snapshot? This can't be undone.")) return;
-    await supabase.from("period_snapshots").delete().eq("id", snapId);
+    const { error } = await supabase.from("period_snapshots").delete().eq("id", snapId);
+    if (error) {
+      alert("Couldn't delete: " + error.message);
+      return;
+    }
     setSnapshots(prev => prev.filter(s => s.id !== snapId));
   }
 
