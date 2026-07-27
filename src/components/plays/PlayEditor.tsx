@@ -17,6 +17,7 @@ import {
 } from "../../lib/plays";
 import { getPlayCategories, PlayCategory } from "../../lib/playCategories";
 import TemplatePickerModal from "./TemplatePickerModal";
+import TemplateEditorModal from "./TemplateEditorModal";
 
 // Lazy-loaded for the same reason as the viewer — three.js is a large
 // dependency most editing sessions never touch. Typed explicitly, same
@@ -100,6 +101,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const [savedActions, setSavedActions] = useState<SavedAction[]>([]);
   const [formations, setFormations] = useState<Formation[]>([]);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<Formation | null>(null);
   const [stampAction, setStampAction] = useState<SavedAction | null>(null);
   const [stampPreviewPos, setStampPreviewPos] = useState<{ x: number; y: number } | null>(null);
   const [staff, setStaff] = useState<PlayShareTarget[]>([]);
@@ -531,18 +533,20 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   // independently to build the full starting picture.
   function applyFormation(f: Formation) {
     pushHistory();
-    if (f.side === "offense") {
-      updateFrame((fr) => ({ ...fr, players: (f.data.players ?? []).map((p) => ({ ...p, id: genPlayerId() })) }));
-    } else {
+    if (f.side === "defense") {
       updateFrame((fr) => ({ ...fr, defenders: f.data.defenders ?? [] }));
+    } else {
+      // offense, blob, and slob templates all store player positions the same way.
+      updateFrame((fr) => ({ ...fr, players: (f.data.players ?? []).map((p) => ({ ...p, id: genPlayerId() })) }));
     }
     setShowTemplatePicker(false);
   }
 
-  async function saveCurrentFrameAsFormation(side: "offense" | "defense") {
-    const name = window.prompt(`Name this ${side} formation (e.g. "${side === "offense" ? "Horns" : "2-3 zone"}")`);
+  async function saveCurrentFrameAsFormation(side: Formation["side"]) {
+    const examples: Record<Formation["side"], string> = { offense: "Horns", defense: "2-3 zone", blob: "Box", slob: "Stack" };
+    const name = window.prompt(`Name this ${side} template (e.g. "${examples[side]}")`);
     if (!name) return;
-    const data = side === "offense" ? { players: frame.players } : { defenders: frame.defenders };
+    const data = side === "defense" ? { defenders: frame.defenders } : { players: frame.players };
     try {
       const saved = await createFormation(name, side, data);
       setFormations((f) => [saved, ...f]);
@@ -742,6 +746,34 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     finally { setSaving(false); }
   }
 
+  /** If you close a brand-new play (never saved) that actually has
+      something drawn on it, silently save it as a real play instead of
+      losing it — same fields handleSave would use, just an auto title
+      if none was typed. Only for never-saved plays; editing an existing
+      one and closing without hitting Save still just discards the
+      in-progress edit, since silently overwriting an already-shared
+      play without an explicit Save click would be a bad surprise. */
+  async function handleClose() {
+    const hasContent = frame.players.length > 0 || frame.actions.length > 0 || frames.length > 1;
+    if (!existingPlay && hasContent) {
+      const tags = tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
+      const categoryValue = currentUserRole === "player" ? null : (category || null);
+      try {
+        await createPlay({
+          title: title.trim() || `Untitled draft ${new Date().toLocaleDateString()}`,
+          tags,
+          court_template: courtTemplate,
+          data: { frames },
+          video_url: videoUrl.trim() || null,
+          category: categoryValue,
+        });
+      } catch {
+        // Best-effort — closing shouldn't get blocked just because the autosave failed.
+      }
+    }
+    onClose?.();
+  }
+
   async function handleShare(staffId: string) {
     if (!existingPlay) { showToast("Save the play first, then share it"); return; }
     try {
@@ -835,7 +867,18 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
                 canDelete={currentUserRole === "admin"}
                 onPick={applyFormation}
                 onDelete={handleDeleteFormation}
+                onEdit={(f) => { setEditingTemplate(f); setShowTemplatePicker(false); }}
                 onClose={() => setShowTemplatePicker(false)}
+              />
+            )}
+            {editingTemplate && (
+              <TemplateEditorModal
+                formation={editingTemplate}
+                onClose={() => setEditingTemplate(null)}
+                onSaved={(updated) => {
+                  setFormations((list) => list.map((f) => (f.id === updated.id ? updated : f)));
+                  setEditingTemplate(null);
+                }}
               />
             )}
           </div>
@@ -972,9 +1015,13 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             <button onClick={() => setShowTemplatePicker(true)} className="coach-add-btn" style={{ width: "100%", justifyContent: "center", marginBottom: 6 }}>
               🖼️ Pick a template
             </button>
-            <div style={{ display: "flex", gap: 4 }}>
+            <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
               <button onClick={() => saveCurrentFrameAsFormation("offense")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save offense</button>
               <button onClick={() => saveCurrentFrameAsFormation("defense")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save defense</button>
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              <button onClick={() => saveCurrentFrameAsFormation("blob")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save blob</button>
+              <button onClick={() => saveCurrentFrameAsFormation("slob")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save slob</button>
             </div>
           </div>
         )}
@@ -1007,7 +1054,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
           <div style={{ display: "flex", gap: 12, marginTop: 16, fontSize: 12, flexWrap: "wrap" }}>
             {currentUserRole === "player" && <button onClick={() => setShowShare((v) => !v)} style={{ padding: "6px 10px" }}>Share with coach</button>}
-            {onClose && <button onClick={onClose} style={{ padding: "6px 10px" }}>Close</button>}
+            {onClose && <button onClick={handleClose} style={{ padding: "6px 10px" }}>Close</button>}
             {existingPlay && <button onClick={handleDelete} style={{ padding: "6px 10px", color: "#ff7b7b" }}>🗑 Delete play</button>}
           </div>
           {showShare && (
@@ -1167,7 +1214,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           {currentUserRole === "player" && (
             <button onClick={() => setShowShare((v) => !v)} style={{ padding: "8px 14px" }}>Share with coach</button>
           )}
-          {onClose && <button onClick={onClose} style={{ padding: "8px 14px" }}>Close</button>}
+          {onClose && <button onClick={handleClose} style={{ padding: "8px 14px" }}>Close</button>}
           {existingPlay && <button onClick={handleDelete} style={{ padding: "8px 14px", color: "#ff7b7b" }}>🗑 Delete play</button>}
         </div>
 
@@ -1187,7 +1234,18 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             canDelete={currentUserRole === "admin"}
             onPick={applyFormation}
             onDelete={handleDeleteFormation}
+            onEdit={(f) => { setEditingTemplate(f); setShowTemplatePicker(false); }}
             onClose={() => setShowTemplatePicker(false)}
+          />
+        )}
+        {editingTemplate && (
+          <TemplateEditorModal
+            formation={editingTemplate}
+            onClose={() => setEditingTemplate(null)}
+            onSaved={(updated) => {
+              setFormations((list) => list.map((f) => (f.id === updated.id ? updated : f)));
+              setEditingTemplate(null);
+            }}
           />
         )}
       </div>
@@ -1199,9 +1257,13 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             <button onClick={() => setShowTemplatePicker(true)} className="coach-add-btn" style={{ width: "100%", justifyContent: "center", marginBottom: 6 }}>
               🖼️ Pick a template
             </button>
-            <div style={{ display: "flex", gap: 4 }}>
+            <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
               <button onClick={() => saveCurrentFrameAsFormation("offense")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save offense</button>
               <button onClick={() => saveCurrentFrameAsFormation("defense")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save defense</button>
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              <button onClick={() => saveCurrentFrameAsFormation("blob")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save blob</button>
+              <button onClick={() => saveCurrentFrameAsFormation("slob")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save slob</button>
             </div>
           </div>
         )}
