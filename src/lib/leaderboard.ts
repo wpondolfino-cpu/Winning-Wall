@@ -73,9 +73,16 @@ export async function getCurrentPeriodStandings(): Promise<LeaderboardEntry[]> {
   return entries.sort((a, b) => b.total_points - a.total_points);
 }
 
-export async function crownBiweeklyWinners(leaderboard: LeaderboardEntry[]): Promise<void> {
-  const periodStart  = currentPeriodStart().toISOString();
-  const periodEnd    = currentPeriodEnd().toISOString();
+export async function crownBiweeklyWinners(leaderboard: LeaderboardEntry[]): Promise<Set<string>> {
+  // Same fix as getCurrentPeriodStandings — always the period that just
+  // concluded, not whatever period "now" happens to be in. This function
+  // previously computed its own separate (unfixed) dates independent of
+  // ChampionsPanel/getCurrentPeriodStandings, which is exactly how this
+  // bug slipped through the first fix.
+  const periodEndDate   = currentPeriodStart();
+  const periodStartDate = new Date(periodEndDate.getTime() - 14 * 24 * 60 * 60 * 1000);
+  const periodStart  = periodStartDate.toISOString();
+  const periodEnd    = periodEndDate.toISOString();
   const periodNumber = getPeriodNumber();
   const season       = await getCurrentSeason();
 
@@ -131,4 +138,10 @@ export async function crownBiweeklyWinners(leaderboard: LeaderboardEntry[]): Pro
       avatar_url:     prof?.avatar_url ?? null,
     });
   }
+
+  // Report back exactly who was picked, so callers (e.g. the History
+  // snapshot) can reflect the real, freshly-selected winners — instead of
+  // relying on each entry's is_period_champion flag, which is stale
+  // (captured before this function ran the actual update).
+  return new Set(Object.values(winners).map(w => w.id));
 }
