@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { Play, RosterPlayer, PlayFrame, PlayAction, resolvePassEndpoint, playerActionSequence, localActionProgress } from "../../lib/plays";
+import { Play, RosterPlayer, PlayFrame, PlayAction, resolvePassEndpoint, playerActionSequence, localActionProgress, ballChainSequence } from "../../lib/plays";
 import { courtLines, hoopPositions } from "./courtGeometry";
 
 interface Props {
@@ -492,23 +492,39 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           // which meant the player was always back on the ground by the
           // time the ball actually got there, no matter where the peak
           // was shifted to. Landing now happens during the same smoothed
-          // fall phase as the ball (see below), not before it.
+          // fall phase as the ball (see below), not before it. Timed
+          // against the lob's own chain-aware progress (not raw t) so a
+          // lob that's the second hop of a chain jumps during its own
+          // slice of the beat, not the whole thing.
+          const lobJumpT = lobCatch ? localActionProgress(t, lobCatch, animFromFrame!) : t;
           const jumpAmplitude = 1.3;
-          playerGroups[i].position.y = lobCatch ? Math.sin((Math.PI / 2) * Math.pow(t, 1.5)) * jumpAmplitude : 0;
+          playerGroups[i].position.y = lobCatch ? Math.sin((Math.PI / 2) * Math.pow(lobJumpT, 1.5)) * jumpAmplitude : 0;
         });
         if (ballMesh) {
           const fromBall = getBallWorldPos(animFromFrame);
           const toBall = getBallWorldPos(animToFrame);
           if (fromBall && toBall) {
-            const passAction = [...animFromFrame.actions].reverse().find((a) => a.type === "pass" && a.targetPlayerId && a.curve);
+            // The ball's actual path through a multi-hop chain (e.g. corner
+            // to wing, then wing to top of key) isn't one player's own
+            // sequence -- it's found via ballChainSequence, which walks
+            // receiver->passer links across whichever different players
+            // each hop belongs to. Picking which hop is "active" right now
+            // mirrors how a player's own multi-action sequence already
+            // picks its active slot, just against this chain instead.
+            const lastPassLike = [...animFromFrame.actions].reverse().find((a) => (a.type === "pass" || a.type === "lob") && a.curve);
+            const chain = lastPassLike ? ballChainSequence(animFromFrame, lastPassLike) : [];
+            const activeChainIdx = chain.length > 0 ? Math.min(chain.length - 1, Math.floor(t * chain.length)) : -1;
+            const activeBallAction = activeChainIdx >= 0 ? chain[activeChainIdx] : undefined;
+            const ballLocalT = activeBallAction ? localActionProgress(t, activeBallAction, animFromFrame!) : t;
+            const passAction = activeBallAction?.type === "pass" ? activeBallAction : undefined;
             const shotAction = [...animFromFrame.actions].reverse().find((a) => a.type === "shot" && a.curve);
-            const lobAction = [...animFromFrame.actions].reverse().find((a) => a.type === "lob" && a.curve);
+            const lobAction = activeBallAction?.type === "lob" ? activeBallAction : undefined;
             if (passAction?.curve) {
-              const mt = 1 - t;
+              const mt = 1 - ballLocalT;
               const target = resolvePassEndpoint(animFromFrame, passAction);
               const w1 = toWorld(passAction.x1, passAction.y1), wc = toWorld(passAction.curve.x, passAction.curve.y), w2 = toWorld(target.x, target.y);
-              ballMesh.position.x = mt * mt * w1.x + 2 * mt * t * wc.x + t * t * w2.x;
-              ballMesh.position.z = mt * mt * w1.z + 2 * mt * t * wc.z + t * t * w2.z;
+              ballMesh.position.x = mt * mt * w1.x + 2 * mt * ballLocalT * wc.x + ballLocalT * ballLocalT * w2.x;
+              ballMesh.position.z = mt * mt * w1.z + 2 * mt * ballLocalT * wc.z + ballLocalT * ballLocalT * w2.z;
               ballMesh.position.y = 0.5;
             } else if (shotAction?.curve) {
               const mt = 1 - t;
@@ -525,17 +541,17 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
               const startH = 1.4, rimH = 2.0, peakBump = 2.0;
               ballMesh.position.y = startH + (rimH - startH) * t + Math.sin(t * Math.PI) * peakBump;
             } else if (lobAction?.curve) {
-              const mt = 1 - t;
+              const mt = 1 - ballLocalT;
               const w1 = toWorld(lobAction.x1, lobAction.y1), wc = toWorld(lobAction.curve.x, lobAction.curve.y), w2 = toWorld(lobAction.x2, lobAction.y2);
-              ballMesh.position.x = mt * mt * w1.x + 2 * mt * t * wc.x + t * t * w2.x;
-              ballMesh.position.z = mt * mt * w1.z + 2 * mt * t * wc.z + t * t * w2.z;
+              ballMesh.position.x = mt * mt * w1.x + 2 * mt * ballLocalT * wc.x + ballLocalT * ballLocalT * w2.x;
+              ballMesh.position.z = mt * mt * w1.z + 2 * mt * ballLocalT * wc.z + ballLocalT * ballLocalT * w2.z;
               // Higher, floatier arc than a shot — a lob needs to clear
               // defenders and give the receiver room to jump up and meet
               // it before it continues into the hoop. Same later-peak
               // timing as the catcher's jump (see below), so the ball's
               // own high point lines up with when it's actually near them.
               const startH = 1.5, rimH = 2.0, peakBump = 0.8;
-              ballMesh.position.y = startH + (rimH - startH) * t + Math.sin(t * Math.PI) * peakBump;
+              ballMesh.position.y = startH + (rimH - startH) * ballLocalT + Math.sin(ballLocalT * Math.PI) * peakBump;
             } else {
               ballMesh.position.x = fromBall.x + (toBall.x - fromBall.x) * t;
               ballMesh.position.z = fromBall.z + (toBall.z - fromBall.z) * t;
