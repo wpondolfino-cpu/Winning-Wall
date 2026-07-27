@@ -55,6 +55,41 @@ export function playerActionSequence(frame: PlayFrame, playerId: string): PlayAc
 }
 
 /**
+ * All pass/lob actions in a frame that form one continuous ball-possession
+ * chain with the given action — found by following receiver->passer links
+ * (this pass's receiver is the next pass's passer), not by array order or
+ * any single player's own sequenceIndex, since each hop in a chain belongs
+ * to a DIFFERENT player. A pass with no chain partner returns a length-1
+ * array (itself only) -- this is what corner->wing->top-of-key needs to
+ * animate as two sequential hops instead of two simultaneous ones.
+ */
+export function ballChainSequence(frame: PlayFrame, action: PlayAction): PlayAction[] {
+  const passLikes = frame.actions.filter((a) => a.type === "pass" || a.type === "lob");
+  const predecessorOf = (a: PlayAction) => passLikes.find((o) => o !== a && o.targetPlayerId && o.targetPlayerId === a.sourcePlayerId);
+  const successorOf = (a: PlayAction) => passLikes.find((o) => o !== a && a.targetPlayerId && o.sourcePlayerId === a.targetPlayerId);
+
+  let start = action;
+  const seenBack = new Set<PlayAction>();
+  while (true) {
+    const pred = predecessorOf(start);
+    if (!pred || seenBack.has(pred)) break;
+    seenBack.add(pred);
+    start = pred;
+  }
+  const chain: PlayAction[] = [start];
+  let cur = start;
+  const seenFwd = new Set<PlayAction>([start]);
+  while (true) {
+    const next = successorOf(cur);
+    if (!next || seenFwd.has(next)) break;
+    chain.push(next);
+    seenFwd.add(next);
+    cur = next;
+  }
+  return chain;
+}
+
+/**
  * Given the whole beat's overall progress (0-1), returns this action's own
  * local progress (0-1) within its slice of that timeline — e.g. a screen
  * (index 0 of 2) plays across the first part of the beat, a roll (index 1
@@ -65,8 +100,28 @@ export function playerActionSequence(frame: PlayFrame, playerId: string): PlayAc
  * sequence begins, rather than the whole sequence blending into one
  * continuous motion (a screener should visibly set the pick and hold,
  * not blur straight into rolling).
+ *
+ * Passes and lobs are the one case that isn't about a single player's own
+ * sequence -- a pass chain hops across DIFFERENT players (whoever receives
+ * one pass is whoever throws the next), so those are timed against
+ * ballChainSequence instead, which finds that chain regardless of which
+ * player owns which hop.
  */
 export function localActionProgress(globalT: number, action: PlayAction, frame: PlayFrame): number {
+  if (action.type === "pass" || action.type === "lob") {
+    const chain = ballChainSequence(frame, action);
+    if (chain.length > 1) {
+      const idx = chain.indexOf(action);
+      const total = chain.length;
+      const sliceSize = 1 / total;
+      const sliceStart = idx * sliceSize;
+      const MOVE_FRACTION = 0.7;
+      const moveSize = sliceSize * MOVE_FRACTION;
+      if (globalT < sliceStart) return 0;
+      if (globalT > sliceStart + moveSize) return 1;
+      return (globalT - sliceStart) / moveSize;
+    }
+  }
   if (!action.sourcePlayerId) return globalT;
   const seq = playerActionSequence(frame, action.sourcePlayerId);
   const total = seq.length;
