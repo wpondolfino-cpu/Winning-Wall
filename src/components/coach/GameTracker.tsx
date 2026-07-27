@@ -409,6 +409,17 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
     }
   }
 
+  /** Renaming is separate from creating one -- lets a play named on the
+      fly mid-game (e.g. "Blob 3") get a real name later without losing
+      its history, since every past possession already links to this
+      same id. */
+  async function renamePlayCall(pc: PlayCall) {
+    const next = window.prompt("Rename this play:", pc.name);
+    if (!next || !next.trim() || next.trim() === pc.name) return;
+    const { error } = await supabase.from("play_calls").update({ name: next.trim() }).eq("id", pc.id);
+    if (!error) setPlayCalls((list) => list.map((p) => (p.id === pc.id ? { ...p, name: next.trim() } : p)));
+  }
+
   async function pickDrawnPlay(dp: DrawnPlay, category: PlayCallCategory, nextStep: Step) {
     const pc = await ensurePlayCallForPlay(dp, category, userId);
     if (!pc) return;
@@ -586,6 +597,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
             selectedId={playCallId}
             onPick={(id) => { pushHistory(); setPlayCallId(id); setStep("flags"); }}
             onPickDrawn={(dp) => pickDrawnPlay(dp, halfCourtType, "flags")}
+            onRename={renamePlayCall}
             adding={addingPlayFor === halfCourtType}
             onStartAdd={() => setAddingPlayFor(halfCourtType)}
             newName={newPlayName}
@@ -605,6 +617,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
                 selectedId={playCallId}
                 onPick={(id) => { pushHistory(); setPlayCallId(id); }}
                 onPickDrawn={(dp) => pickDrawnPlay(dp, possessionType, "oob_result")}
+                onRename={renamePlayCall}
                 adding={addingPlayFor === possessionType}
                 onStartAdd={() => setAddingPlayFor(possessionType)}
                 newName={newPlayName}
@@ -932,6 +945,7 @@ function PlayCallPicker({
   selectedId,
   onPick,
   onPickDrawn,
+  onRename,
   adding,
   onStartAdd,
   newName,
@@ -943,6 +957,7 @@ function PlayCallPicker({
   selectedId?: string | null;
   onPick: (id: string) => void;
   onPickDrawn: (play: DrawnPlay) => void;
+  onRename?: (pc: PlayCall) => void;
   adding: boolean;
   onStartAdd: () => void;
   newName: string;
@@ -954,18 +969,27 @@ function PlayCallPicker({
       {plays.map((p) => {
         const active = p.id === selectedId;
         return (
-          <button
-            key={p.id}
-            onClick={() => onPick(p.id)}
-            style={{
-              padding: "10px 16px", fontSize: 14, borderRadius: 20, cursor: "pointer",
-              border: active ? "2px solid var(--gold)" : "1px solid var(--border)",
-              background: active ? "rgba(240,192,64,0.15)" : "var(--surface2)",
-              color: "var(--text)", fontWeight: active ? 700 : 400,
-            }}
-          >
-            {active ? "✓ " : ""}{p.name}
-          </button>
+          <div key={p.id} style={{ display: "inline-flex", alignItems: "center", borderRadius: 20, overflow: "hidden", border: active ? "2px solid var(--gold)" : "1px solid var(--border)" }}>
+            <button
+              onClick={() => onPick(p.id)}
+              style={{
+                padding: "10px 16px", fontSize: 14, border: "none", cursor: "pointer",
+                background: active ? "rgba(240,192,64,0.15)" : "var(--surface2)",
+                color: "var(--text)", fontWeight: active ? 700 : 400,
+              }}
+            >
+              {active ? "✓ " : ""}{p.name}
+            </button>
+            {onRename && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onRename(p); }}
+                title="Rename this play"
+                style={{ padding: "10px 10px", fontSize: 13, border: "none", borderLeft: "1px solid var(--border)", cursor: "pointer", background: active ? "rgba(240,192,64,0.15)" : "var(--surface2)", color: "var(--muted)" }}
+              >
+                ✎
+              </button>
+            )}
+          </div>
         );
       })}
       {drawn.map((dp) => (
