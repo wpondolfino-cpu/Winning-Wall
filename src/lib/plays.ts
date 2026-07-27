@@ -432,7 +432,8 @@ export interface Formation {
   id: string;
   created_by: string;
   name: string;
-  side: "offense" | "defense";
+  side: "offense" | "defense" | "blob" | "slob";
+  /** Positions only, same shape regardless of side -- offense/blob/slob store players, defense stores defenders. */
   data: { players?: PlayPlayer[]; defenders?: PlayDefender[] };
   created_at: string;
 }
@@ -443,7 +444,7 @@ export async function getFormations(): Promise<Formation[]> {
   return data ?? [];
 }
 
-export async function createFormation(name: string, side: "offense" | "defense", data: Formation["data"]): Promise<Formation> {
+export async function createFormation(name: string, side: Formation["side"], data: Formation["data"]): Promise<Formation> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
   const { data: row, error } = await supabase
@@ -453,6 +454,12 @@ export async function createFormation(name: string, side: "offense" | "defense",
     .single();
   if (error) throw error;
   return row as Formation;
+}
+
+/** Rename and/or reposition an existing template in place -- keeps the same id, so anything already referencing it is untouched. */
+export async function updateFormation(id: string, patch: Partial<Pick<Formation, "name" | "data">>) {
+  const { error } = await supabase.from("formations").update(patch).eq("id", id);
+  if (error) throw error;
 }
 
 export async function deleteFormation(id: string) {
