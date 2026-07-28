@@ -90,6 +90,44 @@ export function ballChainSequence(frame: PlayFrame, action: PlayAction): PlayAct
 }
 
 /**
+ * Splits a sequence of chained actions (either one player's own moves, or
+ * a cross-player ball chain) into time slices proportional to how far
+ * each action actually travels, not an equal share per action. Two cuts
+ * chained together where one covers twice the distance of the other get
+ * a slice twice as wide, so both appear to move at roughly the same
+ * speed instead of the longer one looking sped up to fit the same slot
+ * a short one gets. Each slice reserves its last 30% as a hold (see
+ * localActionProgress) — that split stays a fixed fraction of whatever
+ * width the slice actually ends up with.
+ */
+function actionSliceBounds(seq: PlayAction[]): { moveStart: number; moveEnd: number }[] {
+  const MOVE_FRACTION = 0.7;
+  const distances = seq.map((a) => Math.hypot(a.x2 - a.x1, a.y2 - a.y1) || 0.001); // never truly 0, so a no-op action still gets a sliver of time rather than breaking the split
+  const total = distances.reduce((s, d) => s + d, 0);
+  let cursor = 0;
+  return distances.map((d) => {
+    const sliceSize = d / total;
+    const sliceStart = cursor;
+    cursor += sliceSize;
+    return { moveStart: sliceStart, moveEnd: sliceStart + sliceSize * MOVE_FRACTION };
+  });
+}
+
+/** Which action in a chain is "active" at a given moment, using the same
+ * distance-proportional boundaries as localActionProgress — needed by the
+ * 3D viewer to pick a single position for a player mesh, since (unlike 2D,
+ * which renders every action independently) there's only one mesh to move.
+ */
+export function activeSequenceIndex(t: number, seq: PlayAction[]): number {
+  if (seq.length === 0) return -1;
+  const bounds = actionSliceBounds(seq);
+  for (let i = seq.length - 1; i >= 0; i--) {
+    if (t >= bounds[i].moveStart) return i;
+  }
+  return 0;
+}
+
+/**
  * Given the whole beat's overall progress (0-1), returns this action's own
  * local progress (0-1) within its slice of that timeline — e.g. a screen
  * (index 0 of 2) plays across the first part of the beat, a roll (index 1
@@ -99,7 +137,10 @@ export function ballChainSequence(frame: PlayFrame, action: PlayAction): PlayAct
  * each action and holds there for a moment before the next one in their
  * sequence begins, rather than the whole sequence blending into one
  * continuous motion (a screener should visibly set the pick and hold,
- * not blur straight into rolling).
+ * not blur straight into rolling). Slice widths are proportional to each
+ * action's own travel distance (see actionSliceBounds), not an equal split
+ * by count, so a short hop and a long hop chained together both move at
+ * roughly the same speed instead of the longer one looking sped up.
  *
  * Passes and lobs are the one case that isn't about a single player's own
  * sequence -- a pass chain hops across DIFFERENT players (whoever receives
@@ -112,31 +153,21 @@ export function localActionProgress(globalT: number, action: PlayAction, frame: 
     const chain = ballChainSequence(frame, action);
     if (chain.length > 1) {
       const idx = chain.indexOf(action);
-      const total = chain.length;
-      const sliceSize = 1 / total;
-      const sliceStart = idx * sliceSize;
-      const MOVE_FRACTION = 0.7;
-      const moveSize = sliceSize * MOVE_FRACTION;
-      if (globalT < sliceStart) return 0;
-      if (globalT > sliceStart + moveSize) return 1;
-      return (globalT - sliceStart) / moveSize;
+      const { moveStart, moveEnd } = actionSliceBounds(chain)[idx];
+      if (globalT < moveStart) return 0;
+      if (globalT > moveEnd) return 1;
+      return (globalT - moveStart) / (moveEnd - moveStart);
     }
   }
   if (!action.sourcePlayerId) return globalT;
   const seq = playerActionSequence(frame, action.sourcePlayerId);
   const total = seq.length;
   if (total <= 1) return globalT;
-  const idx = action.sequenceIndex ?? 0;
-  const sliceSize = 1 / total;
-  const sliceStart = idx * sliceSize;
-  // Only the first 70% of each action's slice is actual movement — the
-  // remaining 30% is the hold, where the player has already arrived and
-  // stays put until the next action's slice starts moving them again.
-  const MOVE_FRACTION = 0.7;
-  const moveSize = sliceSize * MOVE_FRACTION;
-  if (globalT < sliceStart) return 0;
-  if (globalT > sliceStart + moveSize) return 1;
-  return (globalT - sliceStart) / moveSize;
+  const idx = seq.indexOf(action);
+  const { moveStart, moveEnd } = actionSliceBounds(seq)[idx];
+  if (globalT < moveStart) return 0;
+  if (globalT > moveEnd) return 1;
+  return (globalT - moveStart) / (moveEnd - moveStart);
 }
 
 /** Generates a stable id for a newly-placed player. Not cryptographically meaningful — just needs to be unique within a play. */
