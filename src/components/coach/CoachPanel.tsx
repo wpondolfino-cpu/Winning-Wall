@@ -1,11 +1,10 @@
 // src/components/coach/CoachPanel.tsx
 // Thin wrapper — layout + workout list. Logic lives in sub-components.
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase, Workout, getEmbedUrl, getVideoId } from "../../lib/supabase";
 import GroupManager from "./GroupManager";
-import AnnouncementPanel from "./AnnouncementPanel";
-import ChampionsPanel from "./ChampionsPanel";
 import WorkoutBuilder from "./WorkoutBuilder";
+import FindDrillModal from "./FindDrillModal";
 
 interface Props {
   workouts: Workout[];
@@ -13,6 +12,8 @@ interface Props {
   coachId: string;
   coachName: string;
   isAdmin: boolean;
+  openWorkoutId?: string | null;
+  onDeepLinkHandled?: () => void;
 }
 
 const TAG_COLORS: Record<string, string> = {
@@ -20,13 +21,24 @@ const TAG_COLORS: Record<string, string> = {
   Shooting: "tag-blue", Competing: "tag-green", Strength: "tag-blue",
 };
 
-export default function CoachPanel({ workouts, onPublished, coachId, coachName, isAdmin }: Props) {
+export default function CoachPanel({ workouts, onPublished, coachId, coachName, isAdmin, openWorkoutId, onDeepLinkHandled }: Props) {
   const [showBuilder, setShowBuilder]     = useState(false);
   const [editWorkout, setEditWorkout]     = useState<Workout | null>(null);
   const [previewWorkout, setPreviewWorkout] = useState<Workout | null>(null);
   const [deleting, setDeleting]           = useState<string | null>(null);
   const [deactivatingGroup, setDeactivatingGroup] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState("all");
+  const [showFindDrill, setShowFindDrill] = useState(false);
+
+  // Deep-link support (e.g. clicking a drill from Hall of Fame) — open
+  // that specific drill's read-only preview, even if it's not part of
+  // the currently active/published group.
+  useEffect(() => {
+    if (!openWorkoutId) return;
+    const match = workouts.find(w => w.id === openWorkoutId);
+    if (match) setPreviewWorkout(match);
+    onDeepLinkHandled?.();
+  }, [openWorkoutId, workouts]);
 
   const groupFilters = ["all", ...Array.from(new Set(workouts.map(w => w.group_name).filter(Boolean))) as string[]];
   const filteredWorkouts = selectedGroup === "all" ? workouts : workouts.filter(w => w.group_name === selectedGroup);
@@ -81,9 +93,7 @@ export default function CoachPanel({ workouts, onPublished, coachId, coachName, 
   return (
     <div className="panel active">
 
-      <AnnouncementPanel isAdmin={isAdmin} coachId={coachId} coachName={coachName} />
       <GroupManager workouts={workouts} onChanged={onPublished} />
-      <ChampionsPanel />
 
       {/* Header + builder */}
       <div className="flex-between">
@@ -91,7 +101,15 @@ export default function CoachPanel({ workouts, onPublished, coachId, coachName, 
           <div className="section-title">Manage Workouts</div>
           <div className="section-sub">Post and manage drills for players</div>
         </div>
-        {!showBuilder && <button className="coach-add-btn" onClick={openNew}>+ New Workout</button>}
+        {!showBuilder && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="coach-add-btn" onClick={openNew}>+ New Workout</button>
+            <button className="coach-add-btn" onClick={() => setShowFindDrill(true)} style={{ background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }}>🔍 Find Drill</button>
+          </div>
+        )}
+        {showFindDrill && (
+          <FindDrillModal onClose={() => setShowFindDrill(false)} onAttached={onPublished} />
+        )}
       </div>
 
       {showBuilder && (
@@ -127,20 +145,17 @@ export default function CoachPanel({ workouts, onPublished, coachId, coachName, 
                     {allDeactivated ? "Players can still log — won't count toward leaderboard points" : "Scores count toward leaderboard rankings"}
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                  {someDeactivated && (
-                    <button onClick={() => reactivateGroupOnLeaderboard(selectedGroup)} disabled={deactivatingGroup}
-                      style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
-                      {deactivatingGroup ? "Updating…" : "✓ Include All"}
-                    </button>
-                  )}
-                  {!allDeactivated && (
-                    <button onClick={() => deactivateGroupFromLeaderboard(selectedGroup)} disabled={deactivatingGroup}
-                      style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
-                      {deactivatingGroup ? "Updating…" : "🔴 Remove from Leaderboard"}
-                    </button>
-                  )}
-                </div>
+                {allDeactivated ? (
+                  <button onClick={() => reactivateGroupOnLeaderboard(selectedGroup)} disabled={deactivatingGroup}
+                    style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
+                    {deactivatingGroup ? "Updating…" : "✓ Re-activate"}
+                  </button>
+                ) : (
+                  <button onClick={() => deactivateGroupFromLeaderboard(selectedGroup)} disabled={deactivatingGroup}
+                    style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
+                    {deactivatingGroup ? "Updating…" : "🔴 Remove from Leaderboard"}
+                  </button>
+                )}
               </div>
             );
           })()}
