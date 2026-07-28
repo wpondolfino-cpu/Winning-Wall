@@ -766,23 +766,36 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     latestRef.current = { frames, title, tagsInput, courtTemplate, videoUrl, category, existingPlay, currentUserRole };
   }); // no dependency array -- refreshes after every render, so whichever values were on screen right before the component unmounts are what the cleanup below actually sees.
 
+  /** Autosaves whatever's currently drawn when the editor goes away for any
+      reason -- for a brand-new play, that means creating it (title falls
+      back to "Untitled draft ..." if you hadn't typed one); for a play you
+      already opened to edit, it means updating it in place, the same
+      fields the Save button would send. Either way this is just doing
+      automatically what an explicit Save already does, not doing anything
+      new or riskier. */
   async function maybeAutosaveDraft() {
     if (autosavedRef.current) return;
     autosavedRef.current = true;
     const vals = latestRef.current;
     const hasContent = vals.frames.length > 1 || vals.frames.some((f) => f.players.length > 0 || f.actions.length > 0);
-    if (vals.existingPlay || !hasContent) return;
+    if (!hasContent) return;
     const tags = vals.tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
-    const categoryValue = vals.currentUserRole === "player" ? null : (vals.category || null);
+    const video_url = vals.videoUrl.trim() || null;
     try {
-      await createPlay({
-        title: vals.title.trim() || `Untitled draft ${new Date().toLocaleDateString()}`,
-        tags,
-        court_template: vals.courtTemplate,
-        data: { frames: vals.frames },
-        video_url: vals.videoUrl.trim() || null,
-        category: categoryValue,
-      });
+      if (vals.existingPlay) {
+        const categoryValue = vals.currentUserRole === "player" ? (vals.existingPlay.category ?? null) : (vals.category || null);
+        await updatePlay(vals.existingPlay.id, { title: vals.title.trim() || vals.existingPlay.title, tags, court_template: vals.courtTemplate, data: { frames: vals.frames }, video_url, category: categoryValue });
+      } else {
+        const categoryValue = vals.currentUserRole === "player" ? null : (vals.category || null);
+        await createPlay({
+          title: vals.title.trim() || `Untitled draft ${new Date().toLocaleDateString()}`,
+          tags,
+          court_template: vals.courtTemplate,
+          data: { frames: vals.frames },
+          video_url,
+          category: categoryValue,
+        });
+      }
     } catch {
       // Best-effort — leaving shouldn't get blocked just because the autosave failed.
     }
