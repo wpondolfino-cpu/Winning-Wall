@@ -3,7 +3,7 @@
 // players drawing up their own plays — same component, access is governed
 // by RLS on the plays table, not by role checks here).
 
-import { useState, useEffect, useCallback, lazy, Suspense, type ComponentType } from "react";
+import { useState, useEffect, useCallback, useRef, lazy, Suspense, type ComponentType } from "react";
 import PlayCanvas, { CANVAS_W, CANVAS_H } from "./PlayCanvas";
 import { hoopPositions } from "./courtGeometry";
 import {
@@ -736,41 +736,65 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       if (existingPlay) {
         await updatePlay(existingPlay.id, { title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
         showToast("Saved");
+        autosavedRef.current = true;
         onSaved?.({ ...existingPlay, title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
       } else {
         const created = await createPlay({ title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
         showToast("Play saved");
+        autosavedRef.current = true;
         onSaved?.(created);
       }
     } catch (e: any) { showToast("Error: " + e.message); }
     finally { setSaving(false); }
   }
 
-  /** If you close a brand-new play (never saved) that actually has
+  /** If you leave a brand-new play (never saved) that actually has
       something drawn on it, silently save it as a real play instead of
       losing it — same fields handleSave would use, just an auto title
       if none was typed. Only for never-saved plays; editing an existing
-      one and closing without hitting Save still just discards the
+      one and leaving without hitting Save still just discards the
       in-progress edit, since silently overwriting an already-shared
-      play without an explicit Save click would be a bad surprise. */
-  async function handleClose() {
-    const hasContent = frame.players.length > 0 || frame.actions.length > 0 || frames.length > 1;
-    if (!existingPlay && hasContent) {
-      const tags = tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
-      const categoryValue = currentUserRole === "player" ? null : (category || null);
-      try {
-        await createPlay({
-          title: title.trim() || `Untitled draft ${new Date().toLocaleDateString()}`,
-          tags,
-          court_template: courtTemplate,
-          data: { frames },
-          video_url: videoUrl.trim() || null,
-          category: categoryValue,
-        });
-      } catch {
-        // Best-effort — closing shouldn't get blocked just because the autosave failed.
-      }
+      play without an explicit Save click would be a bad surprise.
+      "Leaving" covers both the Close button AND switching to a
+      different top-level tab, since both just make this component stop
+      being rendered -- see the unmount effect below for why this reads
+      from a ref instead of the state variables directly, and the
+      one-shot guard so a real Save can't also trigger a duplicate. */
+  const autosavedRef = useRef(false);
+  const latestRef = useRef({ frames, title, tagsInput, courtTemplate, videoUrl, category, existingPlay, currentUserRole });
+  useEffect(() => {
+    latestRef.current = { frames, title, tagsInput, courtTemplate, videoUrl, category, existingPlay, currentUserRole };
+  }); // no dependency array -- refreshes after every render, so whichever values were on screen right before the component unmounts are what the cleanup below actually sees.
+
+  async function maybeAutosaveDraft() {
+    if (autosavedRef.current) return;
+    autosavedRef.current = true;
+    const vals = latestRef.current;
+    const hasContent = vals.frames.length > 1 || vals.frames.some((f) => f.players.length > 0 || f.actions.length > 0);
+    if (vals.existingPlay || !hasContent) return;
+    const tags = vals.tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
+    const categoryValue = vals.currentUserRole === "player" ? null : (vals.category || null);
+    try {
+      await createPlay({
+        title: vals.title.trim() || `Untitled draft ${new Date().toLocaleDateString()}`,
+        tags,
+        court_template: vals.courtTemplate,
+        data: { frames: vals.frames },
+        video_url: vals.videoUrl.trim() || null,
+        category: categoryValue,
+      });
+    } catch {
+      // Best-effort — leaving shouldn't get blocked just because the autosave failed.
     }
+  }
+
+  useEffect(() => {
+    return () => { void maybeAutosaveDraft(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Set up once at mount -- this is what makes it fire on ANY unmount reason, not just an explicit Close click.
+
+  async function handleClose() {
+    await maybeAutosaveDraft();
     onClose?.();
   }
 
