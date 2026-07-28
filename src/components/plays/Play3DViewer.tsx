@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { Play, RosterPlayer, PlayFrame, PlayAction, resolvePassEndpoint, playerActionSequence, localActionProgress, ballChainSequence } from "../../lib/plays";
+import { Play, RosterPlayer, PlayFrame, PlayAction, resolvePassEndpoint, playerActionSequence, localActionProgress, ballChainSequence, activeSequenceIndex } from "../../lib/plays";
 import { courtLines, hoopPositions } from "./courtGeometry";
 
 interface Props {
@@ -441,8 +441,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
             // now, then walk backward from there to find their most recent
             // movement (a non-movement action like a pass in between just
             // means they're standing still to make it, not gliding).
-            const total = fullSeq.length;
-            const activeIdx = Math.min(total - 1, Math.floor(t * total));
+            const activeIdx = activeSequenceIndex(t, fullSeq);
             let moveAction: PlayAction | undefined;
             let moveActionIdx = -1;
             for (let k = activeIdx; k >= 0; k--) {
