@@ -394,9 +394,25 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
 
   async function addPlayCall(category: PlayCallCategory) {
     if (!newPlayName.trim()) return;
+    const trimmedName = newPlayName.trim();
+    // Without this check, typing a name that already exists in this
+    // category (e.g. "Push" already exists, coach adds it again without
+    // noticing) creates a second, separate play call with the same name —
+    // every future possession only gets tagged to whichever one gets
+    // picked, silently splitting what should be one play's count across
+    // two rows. Reuse the existing one instead of creating a duplicate.
+    const existing = playCalls.find((p) => p.category === category && p.name.trim().toLowerCase() === trimmedName.toLowerCase());
+    if (existing) {
+      pushHistory();
+      setPlayCallId(existing.id);
+      setNewPlayName("");
+      setAddingPlayFor(null);
+      setStep(possessionType === "half_court" ? "flags" : "oob_result");
+      return;
+    }
     const { data, error } = await supabase
       .from("play_calls")
-      .insert({ category, name: newPlayName.trim(), created_by: userId })
+      .insert({ category, name: trimmedName, created_by: userId })
       .select()
       .single();
     if (!error && data) {
