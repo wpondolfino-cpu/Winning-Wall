@@ -291,6 +291,15 @@ export async function getMyPlays(): Promise<Play[]> {
   return data ?? [];
 }
 
+/** Every distinct tag across whatever plays the current user can see (their own plus anything shared with them, same as everywhere else — this just relies on the existing RLS, no special scoping of its own). Used to power tag-autocomplete suggestions in the editor. */
+export async function getAllTags(): Promise<string[]> {
+  const { data, error } = await supabase.from("plays").select("tags");
+  if (error) { console.error("Failed to load tags:", error); return []; }
+  const set = new Set<string>();
+  (data ?? []).forEach((row: { tags: string[] | null }) => (row.tags ?? []).forEach((t) => t && set.add(t)));
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
 /** Plays someone else has shared with the current user (active shares only). */
 export async function getPlaysSharedWithMe(): Promise<(Play & { share_id: string; shared_by: string })[]> {
   const { data: { user } } = await supabase.auth.getUser();
