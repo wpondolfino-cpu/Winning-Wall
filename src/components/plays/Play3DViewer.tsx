@@ -510,32 +510,52 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
             // each hop belongs to. Picking which hop is "active" right now
             // mirrors how a player's own multi-action sequence already
             // picks its active slot, just against this chain instead.
-            const lastPassLike = [...animFromFrame.actions].reverse().find((a) => (a.type === "pass" || a.type === "lob") && a.curve);
+            //
+            // Important: this has to match on type alone, NOT "and has a
+            // curve" -- a curve is optional (only present if someone
+            // dragged the line's midpoint handle), so a play built from
+            // plain straight passes was never even entering this logic at
+            // all before, and silently fell all the way through to the
+            // generic frame-to-frame fallback at the bottom, which always
+            // skips every hop in between no matter how many passes there
+            // are. The player-movement code right above this already
+            // handles curved vs. straight correctly; the ball's own code
+            // just hadn't been given the same treatment until now.
+            const lastPassLike = [...animFromFrame.actions].reverse().find((a) => a.type === "pass" || a.type === "lob");
             const chain = lastPassLike ? ballChainSequence(animFromFrame, lastPassLike) : [];
-            // Must use the same distance-proportional selection as a
-            // player's own sequence (activeSequenceIndex) rather than a
-            // naive equal division by count -- otherwise this disagrees
-            // with what localActionProgress computes for the hold/move
-            // split below, and the ball jumps to the next hop before the
-            // current one has actually finished playing out.
             const activeChainIdx = chain.length > 0 ? activeSequenceIndex(t, chain) : -1;
             const activeBallAction = activeChainIdx >= 0 ? chain[activeChainIdx] : undefined;
             const ballLocalT = activeBallAction ? localActionProgress(t, activeBallAction, animFromFrame!) : t;
             const passAction = activeBallAction?.type === "pass" ? activeBallAction : undefined;
-            const shotAction = [...animFromFrame.actions].reverse().find((a) => a.type === "shot" && a.curve);
+            const shotAction = [...animFromFrame.actions].reverse().find((a) => a.type === "shot");
             const lobAction = activeBallAction?.type === "lob" ? activeBallAction : undefined;
-            if (passAction?.curve) {
+            if (passAction) {
               const mt = 1 - ballLocalT;
               const target = resolvePassEndpoint(animFromFrame, passAction);
-              const w1 = toWorld(passAction.x1, passAction.y1), wc = toWorld(passAction.curve.x, passAction.curve.y), w2 = toWorld(target.x, target.y);
-              ballMesh.position.x = mt * mt * w1.x + 2 * mt * ballLocalT * wc.x + ballLocalT * ballLocalT * w2.x;
-              ballMesh.position.z = mt * mt * w1.z + 2 * mt * ballLocalT * wc.z + ballLocalT * ballLocalT * w2.z;
+              const w1 = toWorld(passAction.x1, passAction.y1), w2 = toWorld(target.x, target.y);
+              if (passAction.curve) {
+                const wc = toWorld(passAction.curve.x, passAction.curve.y);
+                ballMesh.position.x = mt * mt * w1.x + 2 * mt * ballLocalT * wc.x + ballLocalT * ballLocalT * w2.x;
+                ballMesh.position.z = mt * mt * w1.z + 2 * mt * ballLocalT * wc.z + ballLocalT * ballLocalT * w2.z;
+              } else {
+                ballMesh.position.x = w1.x + (w2.x - w1.x) * ballLocalT;
+                ballMesh.position.z = w1.z + (w2.z - w1.z) * ballLocalT;
+              }
               ballMesh.position.y = 0.5;
-            } else if (shotAction?.curve) {
-              const mt = 1 - t;
-              const w1 = toWorld(shotAction.x1, shotAction.y1), wc = toWorld(shotAction.curve.x, shotAction.curve.y), w2 = toWorld(shotAction.x2, shotAction.y2);
-              ballMesh.position.x = mt * mt * w1.x + 2 * mt * t * wc.x + t * t * w2.x;
-              ballMesh.position.z = mt * mt * w1.z + 2 * mt * t * wc.z + t * t * w2.z;
+            } else if (shotAction) {
+              const w1 = toWorld(shotAction.x1, shotAction.y1), w2 = toWorld(shotAction.x2, shotAction.y2);
+              let px: number, pz: number;
+              if (shotAction.curve) {
+                const mt = 1 - t;
+                const wc = toWorld(shotAction.curve.x, shotAction.curve.y);
+                px = mt * mt * w1.x + 2 * mt * t * wc.x + t * t * w2.x;
+                pz = mt * mt * w1.z + 2 * mt * t * wc.z + t * t * w2.z;
+              } else {
+                px = w1.x + (w2.x - w1.x) * t;
+                pz = w1.z + (w2.z - w1.z) * t;
+              }
+              ballMesh.position.x = px;
+              ballMesh.position.z = pz;
               // A real shot goes up and comes back down into the rim,
               // rather than sliding flat across the floor like a pass.
               // Rises from roughly hand height, peaks well above the rim,
@@ -545,11 +565,20 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
               // it fell short instead of going through the rim.
               const startH = 1.4, rimH = 2.0, peakBump = 2.0;
               ballMesh.position.y = startH + (rimH - startH) * t + Math.sin(t * Math.PI) * peakBump;
-            } else if (lobAction?.curve) {
-              const mt = 1 - ballLocalT;
-              const w1 = toWorld(lobAction.x1, lobAction.y1), wc = toWorld(lobAction.curve.x, lobAction.curve.y), w2 = toWorld(lobAction.x2, lobAction.y2);
-              ballMesh.position.x = mt * mt * w1.x + 2 * mt * ballLocalT * wc.x + ballLocalT * ballLocalT * w2.x;
-              ballMesh.position.z = mt * mt * w1.z + 2 * mt * ballLocalT * wc.z + ballLocalT * ballLocalT * w2.z;
+            } else if (lobAction) {
+              const w1 = toWorld(lobAction.x1, lobAction.y1), w2 = toWorld(lobAction.x2, lobAction.y2);
+              let px: number, pz: number;
+              if (lobAction.curve) {
+                const mt = 1 - ballLocalT;
+                const wc = toWorld(lobAction.curve.x, lobAction.curve.y);
+                px = mt * mt * w1.x + 2 * mt * ballLocalT * wc.x + ballLocalT * ballLocalT * w2.x;
+                pz = mt * mt * w1.z + 2 * mt * ballLocalT * wc.z + ballLocalT * ballLocalT * w2.z;
+              } else {
+                px = w1.x + (w2.x - w1.x) * ballLocalT;
+                pz = w1.z + (w2.z - w1.z) * ballLocalT;
+              }
+              ballMesh.position.x = px;
+              ballMesh.position.z = pz;
               // Higher, floatier arc than a shot — a lob needs to clear
               // defenders and give the receiver room to jump up and meet
               // it before it continues into the hoop. Same later-peak
