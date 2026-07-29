@@ -9,7 +9,7 @@
 import { useRef, useState, useEffect, type MouseEvent as ReactMouseEvent } from "react";
 import type { CourtTemplate, PlayFrame, PlayPlayer, PlayAction, ActionType, PlayText, PlayZone, PlayPoint } from "../../lib/plays";
 import type { RosterPlayer } from "../../lib/plays";
-import { resolvePassEndpoint, localActionProgress, playerActionSequence } from "../../lib/plays";
+import { resolvePassEndpoint, localActionProgress, playerActionSequence, ballChainSequence } from "../../lib/plays";
 import { genPlayerId } from "../../lib/plays";
 
 export const CANVAS_W = 600;
@@ -526,7 +526,18 @@ export default function PlayCanvas({
   // Play the current frame's actions once whenever playSignal changes.
   useEffect(() => {
     if (playSignal === undefined || playSignal === 0) return;
-    const dur = 1400 / speed;
+    // Same reasoning as the 3D viewer: 1400ms is calibrated for a single
+    // action, so a chained sequence (a player's own multi-action chain,
+    // or a multi-hop pass chain across different players) needs
+    // proportionally more real time, not just a slice of the same fixed
+    // total, or it plays back looking sped up once it's correctly
+    // sequenced instead of overlapping.
+    const maxChainLen = Math.max(
+      1,
+      ...frame.players.map((p) => (p.id ? playerActionSequence(frame, p.id).length : 1)),
+      ...frame.actions.filter((a) => a.type === "pass" || a.type === "lob").map((a) => ballChainSequence(frame, a).length)
+    );
+    const dur = (1400 * maxChainLen) / speed;
     const start = performance.now();
     let raf = 0;
     function step(now: number) {
