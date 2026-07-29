@@ -430,7 +430,19 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
         }
       } else if (animFromFrame && animToFrame) {
         if (isPlayingRef.current) elapsed += dt;
-        const t = Math.min(1, elapsed / (1500 / stateRef.current.speed));
+        // The base 1500ms is calibrated for a single action. A chained
+        // sequence (either one player's own multi-action chain, or a
+        // multi-hop pass chain across different players) needs
+        // proportionally more real time too, not just a proportional
+        // SLICE of the same fixed total -- otherwise 2 hops sharing what
+        // used to be one hop's time budget plays back looking sped up,
+        // even though each hop is now correctly sequenced and paused.
+        const maxChainLen = Math.max(
+          1,
+          ...animFromFrame.players.map((p) => (p.id ? playerActionSequence(animFromFrame!, p.id).length : 1)),
+          ...animFromFrame.actions.filter((a) => a.type === "pass" || a.type === "lob").map((a) => ballChainSequence(animFromFrame!, a).length)
+        );
+        const t = Math.min(1, elapsed / ((1500 * maxChainLen) / stateRef.current.speed));
         animFromFrame.players.forEach((fp, i) => {
           const tp = animToFrame!.players[i];
           if (!tp || !playerGroups[i]) return;
