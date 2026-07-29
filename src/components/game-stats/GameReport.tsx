@@ -166,6 +166,8 @@ export function ReportBody({
   const slob = computeOobEffectiveness(possessions, "slob");
   const setPlays = computePlayCallEffectiveness(possessions, playCalls.filter((p) => p.category === "set"));
   const motionPlays = computePlayCallEffectiveness(possessions, playCalls.filter((p) => p.category === "motion"));
+  const blobPlays = computePlayCallEffectiveness(possessions, playCalls.filter((p) => p.category === "blob"));
+  const slobPlays = computePlayCallEffectiveness(possessions, playCalls.filter((p) => p.category === "slob"));
 
   return (
     <div className="card gs-report-printable" style={{ width: "100%", maxWidth: 1400 }}>
@@ -244,6 +246,10 @@ export function ReportBody({
                   </div>
                 </div>
               </div>
+              <div style={{ height: 8 }} />
+              <PlayCallTable rows={blobPlays} />
+              <div style={{ height: 8 }} />
+              <PlayCallTable rows={slobPlays} />
             </div>
           );
         }
