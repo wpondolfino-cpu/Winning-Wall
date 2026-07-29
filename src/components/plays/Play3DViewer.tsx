@@ -512,7 +512,13 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
             // picks its active slot, just against this chain instead.
             const lastPassLike = [...animFromFrame.actions].reverse().find((a) => (a.type === "pass" || a.type === "lob") && a.curve);
             const chain = lastPassLike ? ballChainSequence(animFromFrame, lastPassLike) : [];
-            const activeChainIdx = chain.length > 0 ? Math.min(chain.length - 1, Math.floor(t * chain.length)) : -1;
+            // Must use the same distance-proportional selection as a
+            // player's own sequence (activeSequenceIndex) rather than a
+            // naive equal division by count -- otherwise this disagrees
+            // with what localActionProgress computes for the hold/move
+            // split below, and the ball jumps to the next hop before the
+            // current one has actually finished playing out.
+            const activeChainIdx = chain.length > 0 ? activeSequenceIndex(t, chain) : -1;
             const activeBallAction = activeChainIdx >= 0 ? chain[activeChainIdx] : undefined;
             const ballLocalT = activeBallAction ? localActionProgress(t, activeBallAction, animFromFrame!) : t;
             const passAction = activeBallAction?.type === "pass" ? activeBallAction : undefined;
