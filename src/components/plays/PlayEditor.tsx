@@ -13,7 +13,7 @@ import {
   emptyPlayData, createPlay, updatePlay, deletePlay, genPlayerId, playerActionSequence,
   getSavedActions, createSavedAction, deleteSavedAction,
   getFormations, createFormation, deleteFormation,
-  getRoster, getStaff, sharePlay,
+  getRoster, getStaff, sharePlay, getAllTags,
 } from "../../lib/plays";
 import { getPlayCategories, PlayCategory } from "../../lib/playCategories";
 import TemplatePickerModal from "./TemplatePickerModal";
@@ -69,6 +69,7 @@ function cloneFrames(frames: PlayFrame[]): PlayFrame[] { return JSON.parse(JSON.
 export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onClose }: Props) {
   const [title, setTitle] = useState(existingPlay?.title ?? "");
   const [tagsInput, setTagsInput] = useState((existingPlay?.tags ?? []).join(", "));
+  const [allTags, setAllTags] = useState<string[]>([]);
   const [videoUrl, setVideoUrl] = useState(existingPlay?.video_url ?? "");
   const [category, setCategory] = useState(existingPlay?.category ?? "");
   const [playCategories, setPlayCategories] = useState<PlayCategory[]>([]);
@@ -110,6 +111,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   useEffect(() => {
     getRoster().then(setRoster).catch(console.error);
     getSavedActions().then(setSavedActions).catch(console.error);
+    getAllTags().then(setAllTags).catch(console.error);
     if (currentUserRole === "player") getStaff().then(setStaff).catch(console.error);
     else {
       getPlayCategories().then(setPlayCategories).catch(console.error);
@@ -854,6 +856,24 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     );
   }
 
+  // Tag autocomplete: suggests from every tag already used across plays
+  // this person can see, matching whatever's typed after the last comma
+  // (the tag currently being typed) — e.g. typing "end" surfaces "End of
+  // game" if that's already been used before. Clicking a suggestion fills
+  // in that segment and leaves a trailing ", " so the next tag can be
+  // typed right away, without disturbing tags already finished earlier
+  // in the same input.
+  const typedSegments = tagsInput.split(",");
+  const inProgressTag = (typedSegments[typedSegments.length - 1] ?? "").trim().toLowerCase();
+  const alreadyTyped = new Set(typedSegments.slice(0, -1).map((t) => t.trim().toLowerCase()));
+  const tagSuggestions = inProgressTag
+    ? allTags.filter((t) => t.toLowerCase().includes(inProgressTag) && !alreadyTyped.has(t.toLowerCase()) && t.toLowerCase() !== inProgressTag).slice(0, 6)
+    : [];
+  function applyTagSuggestion(tag: string) {
+    const finished = typedSegments.slice(0, -1).map((t) => t.trim()).filter(Boolean);
+    setTagsInput([...finished, tag].join(", ") + ", ");
+  }
+
   // --- Mobile layout: reorganized toolbar, court moved up front, and a
   // combined preview -> confirm -> name/tags -> save flow instead of an
   // always-visible title field. Desktop below is untouched. ---
@@ -881,7 +901,16 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Play title (required)"
               style={{ width: "100%", marginBottom: 8, background: "var(--surface)", border: title.trim() ? "1px solid var(--border)" : "2px solid var(--gold)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
             <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder="Tags (optional)"
-              style={{ width: "100%", marginBottom: 8, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+              style={{ width: "100%", marginBottom: tagSuggestions.length ? 4 : 8, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            {tagSuggestions.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+                {tagSuggestions.map((t) => (
+                  <button key={t} onClick={() => applyTagSuggestion(t)} style={{ padding: "4px 9px", fontSize: 11, borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", cursor: "pointer" }}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+            )}
             <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film URL (optional, YouTube)"
               style={{ width: "100%", marginBottom: currentUserRole !== "player" ? 8 : 14, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
             {currentUserRole !== "player" && (
@@ -1119,7 +1148,16 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           </select>
         </div>
         <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder="Tags (comma separated: inbounds, press break, BLOB...)"
-          style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+          style={{ width: "100%", marginBottom: tagSuggestions.length ? 4 : 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+        {tagSuggestions.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
+            {tagSuggestions.map((t) => (
+              <button key={t} onClick={() => applyTagSuggestion(t)} style={{ padding: "4px 9px", fontSize: 11, borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", cursor: "pointer" }}>
+                {t}
+              </button>
+            ))}
+          </div>
+        )}
         <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film URL (optional, YouTube — e.g. footage of the team running this play)"
           style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
         {currentUserRole !== "player" && (
