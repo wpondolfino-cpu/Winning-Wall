@@ -8,6 +8,7 @@ import { useState, useEffect } from "react";
 import { supabase, Workout, getWorkouts } from "../lib/supabase";
 import { getCategories } from "../lib/categories";
 import { getYouTubeId } from "../lib/youtube";
+import { renderRichText } from "../lib/richtext";
 import WorkoutBuilder from "./coach/WorkoutBuilder";
 import RandomDrillModal from "./RandomDrillModal";
 import CategoryManagerModal from "./CategoryManagerModal";
@@ -23,9 +24,11 @@ interface Props {
   // player picks "Change filters" after logging a score from a previous
   // random-drill round, to bring them back here).
   openRandomDrillSignal?: number;
+  canChallenge?: boolean; // player has the Challenges Unlocked perk
+  onChallenge?: (workoutId: string) => void;
 }
 
-export default function DrillLibrary({ canManage, onPractice, onChanged, openRandomDrillSignal }: Props) {
+export default function DrillLibrary({ canManage, onPractice, onChanged, openRandomDrillSignal, canChallenge, onChallenge }: Props) {
   const [drills, setDrills] = useState<Workout[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -255,6 +258,12 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
                         </div>
                       </div>
                       {vid && <span style={{ fontSize: 11, color: "var(--gold)" }}>📹</span>}
+                      {!canManage && canChallenge && (d.scoring_type === "competitive" || d.scoring_type === "multi_spot") && (
+                        <button onClick={(e) => { e.stopPropagation(); onChallenge?.(d.id); }}
+                          style={{ background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", color: "var(--gold)", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
+                          ⚔️ Challenge
+                        </button>
+                      )}
                       {canManage && (
                         <>
                           <button onClick={(e) => { e.stopPropagation(); setEditDrill(d); }}
@@ -349,9 +358,8 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
             )}
 
             {viewDrill.description && (
-              <div style={{ padding: "12px 14px", background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 13, color: "var(--silver-light)", lineHeight: 1.7, marginBottom: 16, whiteSpace: "pre-wrap" }}>
-                {viewDrill.description}
-              </div>
+              <div style={{ padding: "12px 14px", background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 13, color: "var(--silver-light)", lineHeight: 1.7, marginBottom: 16 }}
+                dangerouslySetInnerHTML={{ __html: renderRichText(viewDrill.description) }} />
             )}
 
             <div style={{ display: "flex", gap: 8 }}>
@@ -381,6 +389,8 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
           canManage={canManage}
           onClose={() => setShowRandomModal(false)}
           onLogScore={(id, filters) => onPractice?.(id, filters)}
+          canChallenge={canChallenge}
+          onChallenge={onChallenge}
         />
       )}
     </div>
