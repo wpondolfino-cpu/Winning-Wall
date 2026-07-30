@@ -465,7 +465,12 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
               // The active slot IS a movement — animate along it, following
               // its curve if it has one (see note above on curved routes).
               const localT = localActionProgress(t, moveAction, animFromFrame!);
-              if (moveAction.curve) {
+              if (moveAction.curve2 && moveAction.curve) {
+                const mt = 1 - localT;
+                const w1 = toWorld(moveAction.x1, moveAction.y1), wc1 = toWorld(moveAction.curve.x, moveAction.curve.y), wc2 = toWorld(moveAction.curve2.x, moveAction.curve2.y), w2 = toWorld(moveAction.x2, moveAction.y2);
+                x = mt * mt * mt * w1.x + 3 * mt * mt * localT * wc1.x + 3 * mt * localT * localT * wc2.x + localT * localT * localT * w2.x;
+                z = mt * mt * mt * w1.z + 3 * mt * mt * localT * wc1.z + 3 * mt * localT * localT * wc2.z + localT * localT * localT * w2.z;
+              } else if (moveAction.curve) {
                 const mt = 1 - localT;
                 const w1 = toWorld(moveAction.x1, moveAction.y1), wc = toWorld(moveAction.curve.x, moveAction.curve.y), w2 = toWorld(moveAction.x2, moveAction.y2);
                 x = mt * mt * w1.x + 2 * mt * localT * wc.x + localT * localT * w2.x;
@@ -545,7 +550,11 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
               const mt = 1 - ballLocalT;
               const target = resolvePassEndpoint(animFromFrame, passAction);
               const w1 = toWorld(passAction.x1, passAction.y1), w2 = toWorld(target.x, target.y);
-              if (passAction.curve) {
+              if (passAction.curve2 && passAction.curve) {
+                const wc1 = toWorld(passAction.curve.x, passAction.curve.y), wc2 = toWorld(passAction.curve2.x, passAction.curve2.y);
+                ballMesh.position.x = mt * mt * mt * w1.x + 3 * mt * mt * ballLocalT * wc1.x + 3 * mt * ballLocalT * ballLocalT * wc2.x + ballLocalT * ballLocalT * ballLocalT * w2.x;
+                ballMesh.position.z = mt * mt * mt * w1.z + 3 * mt * mt * ballLocalT * wc1.z + 3 * mt * ballLocalT * ballLocalT * wc2.z + ballLocalT * ballLocalT * ballLocalT * w2.z;
+              } else if (passAction.curve) {
                 const wc = toWorld(passAction.curve.x, passAction.curve.y);
                 ballMesh.position.x = mt * mt * w1.x + 2 * mt * ballLocalT * wc.x + ballLocalT * ballLocalT * w2.x;
                 ballMesh.position.z = mt * mt * w1.z + 2 * mt * ballLocalT * wc.z + ballLocalT * ballLocalT * w2.z;
@@ -557,7 +566,12 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
             } else if (shotAction) {
               const w1 = toWorld(shotAction.x1, shotAction.y1), w2 = toWorld(shotAction.x2, shotAction.y2);
               let px: number, pz: number;
-              if (shotAction.curve) {
+              if (shotAction.curve2 && shotAction.curve) {
+                const mt = 1 - t;
+                const wc1 = toWorld(shotAction.curve.x, shotAction.curve.y), wc2 = toWorld(shotAction.curve2.x, shotAction.curve2.y);
+                px = mt * mt * mt * w1.x + 3 * mt * mt * t * wc1.x + 3 * mt * t * t * wc2.x + t * t * t * w2.x;
+                pz = mt * mt * mt * w1.z + 3 * mt * mt * t * wc1.z + 3 * mt * t * t * wc2.z + t * t * t * w2.z;
+              } else if (shotAction.curve) {
                 const mt = 1 - t;
                 const wc = toWorld(shotAction.curve.x, shotAction.curve.y);
                 px = mt * mt * w1.x + 2 * mt * t * wc.x + t * t * w2.x;
@@ -580,7 +594,12 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
             } else if (lobAction) {
               const w1 = toWorld(lobAction.x1, lobAction.y1), w2 = toWorld(lobAction.x2, lobAction.y2);
               let px: number, pz: number;
-              if (lobAction.curve) {
+              if (lobAction.curve2 && lobAction.curve) {
+                const mt = 1 - ballLocalT;
+                const wc1 = toWorld(lobAction.curve.x, lobAction.curve.y), wc2 = toWorld(lobAction.curve2.x, lobAction.curve2.y);
+                px = mt * mt * mt * w1.x + 3 * mt * mt * ballLocalT * wc1.x + 3 * mt * ballLocalT * ballLocalT * wc2.x + ballLocalT * ballLocalT * ballLocalT * w2.x;
+                pz = mt * mt * mt * w1.z + 3 * mt * mt * ballLocalT * wc1.z + 3 * mt * ballLocalT * ballLocalT * wc2.z + ballLocalT * ballLocalT * ballLocalT * w2.z;
+              } else if (lobAction.curve) {
                 const mt = 1 - ballLocalT;
                 const wc = toWorld(lobAction.curve.x, lobAction.curve.y);
                 px = mt * mt * w1.x + 2 * mt * ballLocalT * wc.x + ballLocalT * ballLocalT * w2.x;
