@@ -1,9 +1,10 @@
 // src/components/coach/WorkoutBuilder.tsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase, Workout, createWorkout, getEmbedUrl, ScoringType } from "../../lib/supabase";
 import { getCategories } from "../../lib/categories";
 import { loadGroupsForBuilder } from "./GroupManager";
 import LibraryDrillPicker from "./LibraryDrillPicker";
+import { renderRichText, insertBullet, insertNumbered, insertIndent } from "../../lib/richtext";
 
 const EMOJIS = ["🏀","🎯","⚡","💪","🏆","🔥","🎽","⏱️"];
 
@@ -55,6 +56,8 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
   const [thirdPts, setThirdPts]         = useState("1");
   const [flatPoints, setFlatPoints]     = useState("50");
   const [timerDuration, setTimerDuration] = useState<number | null>(null);
+  const [allowNegative, setAllowNegative] = useState(false);
+  const [tiebreakMode, setTiebreakMode]   = useState<"free_throw" | "fastest_time" | null>(null);
   const [publishDate, setPublishDate]   = useState("");
   const [groupName, setGroupName]       = useState("");
   const [groupId, setGroupId]           = useState<string | null>(null);
@@ -64,6 +67,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
   const [saving, setSaving]             = useState(false);
   const [error, setError]               = useState("");
   const [groups, setGroups]             = useState<any[]>([]);
+  const descRef = useRef<HTMLTextAreaElement>(null);
   const embedPreview = getEmbedUrl(videoUrl);
 
   useEffect(() => {
@@ -88,6 +92,8 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
       setThirdPts(editWorkout.third_place_pts?.toString() ?? "1");
       setFlatPoints(editWorkout.flat_points?.toString() ?? "50");
       setTimerDuration((editWorkout as any).timer_duration ?? null);
+      setAllowNegative((editWorkout as any).allow_negative ?? false);
+      setTiebreakMode((editWorkout as any).tiebreak_mode ?? null);
       setPublishDate((editWorkout as any).publish_date ?? "");
       setGroupName(editWorkout.group_name ?? "");
       setGroupId((editWorkout as any).group_id ?? null);
@@ -96,6 +102,48 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
       setSpotNames((editWorkout as any).spot_config ?? ["Spot 1","Spot 2","Spot 3","Spot 4","Spot 5"]);
     }
   }, [editWorkout]);
+
+  function descLineBounds() {
+    const el = descRef.current;
+    if (!el) return null;
+    const val = el.value;
+    const pos = el.selectionStart;
+    let start = val.lastIndexOf("\n", pos - 1) + 1;
+    let end = val.indexOf("\n", pos);
+    if (end === -1) end = val.length;
+    return { el, val, start, end };
+  }
+  function descPrependLine(fn: (line: string) => string) {
+    const b = descLineBounds();
+    if (!b) return;
+    const line = b.val.slice(b.start, b.end);
+    const newVal = b.val.slice(0, b.start) + fn(line) + b.val.slice(b.end);
+    setDesc(newVal);
+    requestAnimationFrame(() => b.el.focus());
+  }
+  function descInsertAtCursor(text: string) {
+    const el = descRef.current;
+    if (!el) { setDesc(d => d + text); return; }
+    const pos = el.selectionStart;
+    const newVal = desc.slice(0, pos) + text + desc.slice(pos);
+    setDesc(newVal);
+    requestAnimationFrame(() => { el.focus(); el.selectionStart = el.selectionEnd = pos + text.length; });
+  }
+  function descWrapBold() {
+    const el = descRef.current;
+    if (!el) { descInsertAtCursor("**bold**"); return; }
+    const start = el.selectionStart, end = el.selectionEnd;
+    if (start === end) { descInsertAtCursor("**bold**"); return; }
+    const sel = desc.slice(start, end);
+    setDesc(desc.slice(0, start) + "**" + sel + "**" + desc.slice(end));
+    requestAnimationFrame(() => el.focus());
+  }
+  function descInsertDivider() {
+    const el = descRef.current;
+    const pos = el ? el.selectionStart : desc.length;
+    const prefix = pos > 0 && desc[pos - 1] !== "\n" ? "\n" : "";
+    descInsertAtCursor(prefix + "---\n");
+  }
 
   function addSpot() { if (spotNames.length < 10) setSpotNames(p => [...p, `Spot ${p.length + 1}`]); }
   function removeSpot(i: number) { setSpotNames(p => p.filter((_, idx) => idx !== i)); }
@@ -143,6 +191,8 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
         group_id: groupId ?? undefined,
         is_active: isActive,
         deadline: deadline ? new Date(deadline + "T23:59:59").toISOString() : undefined,
+        allow_negative: (scoringType === "competitive" || scoringType === "multi_spot") ? allowNegative : false,
+        tiebreak_mode: (scoringType === "competitive" || scoringType === "multi_spot") ? tiebreakMode : null,
         ...(scoringType === "multi_spot" ? { spot_config: spotNames.filter(s => s.trim()) } : {}),
         ...(resourceUrl.trim() ? { resource_url: resourceUrl.trim() } : {}),
       } as any;
@@ -164,6 +214,8 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
           resource_url: resourceUrl.trim() || null,
           timer_duration: timerDuration,
           publish_date: publishDate || null,
+          allow_negative: (scoringType === "competitive" || scoringType === "multi_spot") ? allowNegative : false,
+          tiebreak_mode: (scoringType === "competitive" || scoringType === "multi_spot") ? tiebreakMode : null,
         }).eq("id", editWorkout.id);
         if (err) throw err;
       } else {
@@ -280,7 +332,21 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
 
         <div>
           <label>Description / Instructions</label>
-          <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Describe the drill and what players should do…" />
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+            <button type="button" onClick={() => descPrependLine(insertBullet)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "6px 10px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>• Bullets</button>
+            <button type="button" onClick={() => descPrependLine(insertNumbered)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "6px 10px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>1. Numbered</button>
+            <button type="button" onClick={() => descInsertAtCursor(" → ")} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "6px 10px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>→ Arrow</button>
+            <button type="button" onClick={descWrapBold} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "6px 10px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>B Bold</button>
+            <button type="button" onClick={() => descPrependLine(insertIndent)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "6px 10px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>⇥ Indent</button>
+            <button type="button" onClick={descInsertDivider} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "6px 10px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>— Divider</button>
+          </div>
+          <textarea ref={descRef} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Describe the drill and what players should do…" />
+          <div style={{ marginTop: 10, fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Phone-width preview</div>
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <div style={{ width: 240, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 16, padding: 14 }}>
+              <div style={{ fontSize: 12, color: "var(--silver-light)", lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: renderRichText(desc) }} />
+            </div>
+          </div>
         </div>
 
         <div>
@@ -424,6 +490,38 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
             </div>
           )}
         </div>
+
+        {(scoringType === "competitive" || scoringType === "multi_spot") && (
+          <div>
+            <label>Allow Negative Scores <span style={{ fontWeight: 400, color: "var(--muted)" }}>(optional)</span></label>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Turn on for drills where a miss counts against the score (e.g. -2)</div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input type="checkbox" checked={allowNegative} onChange={e => setAllowNegative(e.target.checked)} style={{ width: 18, height: 18 }} />
+              <span style={{ fontSize: 13, color: allowNegative ? "#5de098" : "var(--muted)", fontWeight: 600 }}>{allowNegative ? "Negative scores allowed" : "Negative scores off"}</span>
+            </label>
+          </div>
+        )}
+
+        {(scoringType === "competitive" || scoringType === "multi_spot") && (
+          <div>
+            <label>Tiebreaker <span style={{ fontWeight: 400, color: "var(--muted)" }}>(optional)</span></label>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>If players tie on score, break the tie with a second metric. Still tied after this = a true tie. A player with no tiebreaker on file always loses the tiebreak to a player who has one.</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+              {([
+                { mode: null,             label: "None" },
+                { mode: "free_throw",     label: "🎯 Free Throw Score" },
+                { mode: "fastest_time",   label: "⏱ Fastest Time" },
+              ] as const).map(opt => (
+                <div key={opt.label} onClick={() => setTiebreakMode(opt.mode)} style={{ padding: 10, borderRadius: 8, cursor: "pointer", textAlign: "center", border: `2px solid ${tiebreakMode === opt.mode ? "var(--royal-light)" : "var(--border)"}`, background: tiebreakMode === opt.mode ? "rgba(26,63,168,0.15)" : "var(--surface2)", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
+                  {opt.label}
+                </div>
+              ))}
+            </div>
+            {tiebreakMode === "fastest_time" && (
+              <div style={{ marginTop: 8, fontSize: 12, color: "#93b4ff" }}>Players will see the stopwatch (screen-lock friendly) when logging their score.</div>
+            )}
+          </div>
+        )}
 
         {error && <div className="error-msg">{error}</div>}
 
