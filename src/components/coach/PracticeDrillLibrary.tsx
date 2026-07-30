@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { getYouTubeId } from "../../lib/youtube";
+import { renderRichText } from "../../lib/richtext";
 import {
   PracticeDrillCategory, PracticeDrillLibraryDrill, getPracticeDrillCategories,
   createPracticeDrillCategory, getPracticeDrillTags, getPracticeDrillLibrary,
@@ -216,7 +217,7 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
                   style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
               </div>
             )}
-            {viewDrill.description && <div style={{ fontSize: 13, color: "var(--text)", marginBottom: 10 }}>{viewDrill.description}</div>}
+            {viewDrill.description && <div style={{ fontSize: 13, color: "var(--text)", marginBottom: 10 }} dangerouslySetInnerHTML={{ __html: renderRichText(viewDrill.description) }} />}
             <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10 }}>
               {[viewDrill.category_name, viewDrill.default_duration_minutes ? `Default ${viewDrill.default_duration_minutes} min` : null,
                 viewDrill.default_group_size && viewDrill.default_num_groups ? `${viewDrill.default_group_size}v${Array(viewDrill.default_num_groups).fill(viewDrill.default_group_size).join("v")}` : null]
