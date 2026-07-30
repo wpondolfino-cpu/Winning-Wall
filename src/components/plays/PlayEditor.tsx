@@ -179,7 +179,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   }
 
   const addPlayer = useCallback((p: PlayPlayer) => { pushHistory(); updateFrame((f) => ({ ...f, players: [...f.players, p] })); }, [frames, frameIdx]);
-  const addDefender = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, defenders: [...f.defenders, { x, y }] })); }, [frames, frameIdx]);
+  const addDefender = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, defenders: [...f.defenders, { x, y, id: genPlayerId() }] })); }, [frames, frameIdx]);
   const setBall = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, ball: { x, y }, ballHolderId: null })); }, [frames, frameIdx]);
   const addAction = useCallback((a: PlayAction) => {
     pushHistory();
@@ -447,9 +447,19 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       if (holder) ball = { x: holder.x, y: holder.y };
     }
 
+    // A defender only ever gets Cut or Loop (both stored as "move" —
+    // there's no separate action type for it), so carrying their
+    // position forward is the same idea as a player's, just without any
+    // of the ball/handoff bookkeeping that never applies to them.
+    const defenders = last.defenders.map((d) => {
+      const seq = d.id ? playerActionSequence(last, d.id).filter((a) => a.type === "move") : [];
+      const sourced = seq[seq.length - 1];
+      return sourced ? { ...d, x: sourced.x2, y: sourced.y2 } : { ...d };
+    });
+
     const copy: PlayFrame = {
       players,
-      defenders: JSON.parse(JSON.stringify(last.defenders)),
+      defenders,
       ball,
       ballHolderId,
       actions: [],
