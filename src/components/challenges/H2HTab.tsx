@@ -10,6 +10,8 @@ interface Props {
   myScores: Score[];
   onScoreLogged?: () => void;
   onPendingCount: (n: number) => void;
+  prefillWorkoutId?: string | null;
+  onPrefillHandled?: () => void;
 }
 
 interface Challenge {
@@ -28,7 +30,7 @@ interface Challenge {
   created_at: string;
 }
 
-export default function H2HTab({ currentUserId, currentUserName, workouts, myScores, onScoreLogged, onPendingCount }: Props) {
+export default function H2HTab({ currentUserId, currentUserName, workouts, myScores, onScoreLogged, onPendingCount, prefillWorkoutId, onPrefillHandled }: Props) {
   const [challenges, setChallenges]           = useState<Challenge[]>([]);
   const [showNew, setShowNew]                 = useState(false);
   const [selectedOpponent, setSelectedOpponent] = useState("");
@@ -45,7 +47,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
   const [xpPerks, setXpPerks]                 = useState<any[]>([]);
   const { leaderboard } = useLeaderboard();
 
-  const activeWorkouts = workouts.filter(w => w.is_active !== false && w.scoring_type === "competitive");
+  const activeWorkouts = workouts.filter(w => w.is_active !== false && (w.scoring_type === "competitive" || w.scoring_type === "multi_spot"));
   const challengesThreshold = xpPerks.length > 0
     ? (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) : 150;
   const opponents = leaderboard.filter((e: any) => e.id !== currentUserId && (e.total_xp ?? 0) >= challengesThreshold);
@@ -82,6 +84,14 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
     expireChallenges().then(() => loadChallenges());
     getXpPerks().then(setXpPerks).catch(console.error);
   }, [loadChallenges, expireChallenges]);
+
+  useEffect(() => {
+    if (prefillWorkoutId) {
+      setSelectedWorkout(prefillWorkoutId);
+      setShowNew(true);
+      onPrefillHandled?.();
+    }
+  }, [prefillWorkoutId, onPrefillHandled]);
 
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(""), 3000); }
 
