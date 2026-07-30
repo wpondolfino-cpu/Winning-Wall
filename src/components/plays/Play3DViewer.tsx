@@ -516,6 +516,39 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           const jumpAmplitude = 1.3;
           playerGroups[i].position.y = lobCatch ? Math.sin((Math.PI / 2) * Math.pow(lobJumpT, 1.5)) * jumpAmplitude : 0;
         });
+        // Whoever's holding the ball right now — if their own currently
+        // active action is specifically a dribble (not just carrying it
+        // through a cut or standing still holding it), the ball should
+        // visibly bounce instead of gliding flat at a fixed height, which
+        // is all it ever did before regardless of action type. Bounce
+        // count scales with how far the dribble actually travels (using
+        // the same distance measure the timing fix already relies on),
+        // so a long dribble bounces at roughly the same rate as a short
+        // one instead of a fixed few bounces stretched thin over more
+        // ground. Reusing the holder's own actual active-action lookup
+        // here also fixes a small pre-existing sync gap: the ball used to
+        // glide on the raw beat timer while the player's body moved on
+        // its own (possibly chained/delayed) local progress — now both
+        // move together.
+        let dribbleBounce = 0;
+        let holderLocalT: number | null = null;
+        const holderId = animFromFrame.ballHolderId;
+        if (holderId) {
+          const holder = animFromFrame.players.find((p) => p.id === holderId);
+          if (holder?.id) {
+            const holderSeq = playerActionSequence(animFromFrame, holder.id);
+            const activeHolderIdx = holderSeq.length > 0 ? activeSequenceIndex(t, holderSeq) : -1;
+            const activeHolderAction = activeHolderIdx >= 0 ? holderSeq[activeHolderIdx] : undefined;
+            if (activeHolderAction) {
+              holderLocalT = localActionProgress(t, activeHolderAction, animFromFrame);
+              if (activeHolderAction.type === "dribble") {
+                const dist = Math.hypot(activeHolderAction.x2 - activeHolderAction.x1, activeHolderAction.y2 - activeHolderAction.y1);
+                const bounces = Math.max(2, Math.round(dist / 30));
+                dribbleBounce = Math.abs(Math.sin(holderLocalT * bounces * Math.PI));
+              }
+            }
+          }
+        }
         if (ballMesh) {
           const fromBall = getBallWorldPos(animFromFrame);
           const toBall = getBallWorldPos(animToFrame);
@@ -618,9 +651,11 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
               const startH = 1.5, rimH = 2.0, peakBump = 0.8;
               ballMesh.position.y = startH + (rimH - startH) * ballLocalT + Math.sin(ballLocalT * Math.PI) * peakBump;
             } else {
-              ballMesh.position.x = fromBall.x + (toBall.x - fromBall.x) * t;
-              ballMesh.position.z = fromBall.z + (toBall.z - fromBall.z) * t;
-              ballMesh.position.y = 0.5;
+              const glideT = holderLocalT ?? t;
+              ballMesh.position.x = fromBall.x + (toBall.x - fromBall.x) * glideT;
+              ballMesh.position.z = fromBall.z + (toBall.z - fromBall.z) * glideT;
+              const BOUNCE_HEIGHT = 0.35;
+              ballMesh.position.y = 0.5 + dribbleBounce * BOUNCE_HEIGHT;
             }
           }
         }
