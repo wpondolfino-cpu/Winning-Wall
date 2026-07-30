@@ -320,11 +320,21 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
         playerGroups[i] = g;
       });
       frame.defenders.forEach((d, i) => {
+        // Player-shaped instead of an X, so a defender reads as an actual
+        // person on the court rather than a marker -- same body/head
+        // geometry a player uses, minus jersey numbers (defenders don't
+        // have one). One solid color for every defender, deliberately
+        // outside the FACE_COLORS rotation offense uses, so it's never
+        // confusable with an offensive player regardless of which of the
+        // 5 accent colors that player happens to be.
+        const DEFENSE_COLOR = 0xa32d2d;
         const g = new THREE.Group();
-        const bar1 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.7, 0.06), new THREE.MeshStandardMaterial({ color: 0x993c1d }));
-        bar1.rotation.z = Math.PI / 4; bar1.position.y = 0.4;
-        const bar2 = bar1.clone(); bar2.rotation.z = -Math.PI / 4;
-        g.add(bar1, bar2);
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.9, 12), new THREE.MeshStandardMaterial({ color: DEFENSE_COLOR }));
+        body.position.y = 0.55;
+        g.add(body);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 12), new THREE.MeshStandardMaterial({ color: DEFENSE_COLOR }));
+        head.position.y = 1.15;
+        g.add(head);
         const w = toWorld(d.x, d.y);
         g.position.set(w.x, 0, w.z);
         scene.add(g);
@@ -457,6 +467,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
         const maxChainLen = Math.max(
           1,
           ...animFromFrame.players.map((p) => (p.id ? playerActionSequence(animFromFrame!, p.id).length : 1)),
+          ...animFromFrame.defenders.map((d) => (d.id ? playerActionSequence(animFromFrame!, d.id).length : 1)),
           ...animFromFrame.actions.filter((a) => a.type === "pass" || a.type === "lob").map((a) => ballChainSequence(animFromFrame!, a).length)
         );
         const t = Math.min(1, elapsed / ((1500 * maxChainLen) / stateRef.current.speed));
@@ -532,6 +543,55 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           const lobJumpT = lobCatch ? localActionProgress(t, lobCatch, animFromFrame!) : t;
           const jumpAmplitude = 1.3;
           playerGroups[i].position.y = lobCatch ? Math.sin((Math.PI / 2) * Math.pow(lobJumpT, 1.5)) * jumpAmplitude : 0;
+        });
+        // A defender only ever gets Cut or Loop (both stored as "move"),
+        // so this mirrors the player loop above but simpler — no ball,
+        // no lob-catch jump, no dribble/screen types to check for, since
+        // none of that ever applies to a defender. Same curve-following
+        // and chain-aware timing either way, just reused directly.
+        animFromFrame.defenders.forEach((fd, i) => {
+          const td = animToFrame!.defenders[i];
+          if (!td || !defenderGroups[i]) return;
+          const fullSeq = fd.id ? playerActionSequence(animFromFrame!, fd.id) : [];
+          let x: number, z: number;
+          if (fullSeq.length > 0) {
+            const activeIdx = activeSequenceIndex(t, fullSeq);
+            let moveAction: PlayAction | undefined;
+            let moveActionIdx = -1;
+            for (let k = activeIdx; k >= 0; k--) {
+              if (fullSeq[k].type === "move") { moveAction = fullSeq[k]; moveActionIdx = k; break; }
+            }
+            if (moveAction && moveActionIdx === activeIdx) {
+              const localT = localActionProgress(t, moveAction, animFromFrame!);
+              if (moveAction.curve2 && moveAction.curve) {
+                const mt = 1 - localT;
+                const w1 = toWorld(moveAction.x1, moveAction.y1), wc1 = toWorld(moveAction.curve.x, moveAction.curve.y), wc2 = toWorld(moveAction.curve2.x, moveAction.curve2.y), w2 = toWorld(moveAction.x2, moveAction.y2);
+                x = mt * mt * mt * w1.x + 3 * mt * mt * localT * wc1.x + 3 * mt * localT * localT * wc2.x + localT * localT * localT * w2.x;
+                z = mt * mt * mt * w1.z + 3 * mt * mt * localT * wc1.z + 3 * mt * localT * localT * wc2.z + localT * localT * localT * w2.z;
+              } else if (moveAction.curve) {
+                const mt = 1 - localT;
+                const w1 = toWorld(moveAction.x1, moveAction.y1), wc = toWorld(moveAction.curve.x, moveAction.curve.y), w2 = toWorld(moveAction.x2, moveAction.y2);
+                x = mt * mt * w1.x + 2 * mt * localT * wc.x + localT * localT * w2.x;
+                z = mt * mt * w1.z + 2 * mt * localT * wc.z + localT * localT * w2.z;
+              } else {
+                const from = toWorld(moveAction.x1, moveAction.y1), to = toWorld(moveAction.x2, moveAction.y2);
+                x = from.x + (to.x - from.x) * localT;
+                z = from.z + (to.z - from.z) * localT;
+              }
+            } else if (moveAction) {
+              const w = toWorld(moveAction.x2, moveAction.y2);
+              x = w.x; z = w.z;
+            } else {
+              const w = toWorld(fd.x, fd.y);
+              x = w.x; z = w.z;
+            }
+          } else {
+            const from = toWorld(fd.x, fd.y), to = toWorld(td.x, td.y);
+            x = from.x + (to.x - from.x) * t;
+            z = from.z + (to.z - from.z) * t;
+          }
+          defenderGroups[i].position.x = x;
+          defenderGroups[i].position.z = z;
         });
         // Whoever's holding the ball right now — if their own currently
         // active action is specifically a dribble (not just carrying it
