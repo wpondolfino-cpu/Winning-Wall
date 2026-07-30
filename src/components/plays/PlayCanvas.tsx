@@ -22,7 +22,7 @@ interface Props {
   roster?: Record<string, RosterPlayer>;
   /** When true, clicks/drags on the court edit the frame via the callbacks below. */
   edit?: boolean;
-  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | null;
+  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | null;
   onAddPlayer?: (p: PlayPlayer) => void;
   onAddDefender?: (x: number, y: number) => void;
   onSetBall?: (x: number, y: number) => void;
@@ -38,6 +38,8 @@ interface Props {
   onMoveActionWhole?: (index: number, x1: number, y1: number, x2: number, y2: number, curve?: { x: number; y: number }) => void;
   /** "select" tool — drag a cut/pass line's midpoint handle to bow it into a curl. */
   onSetActionCurve?: (index: number, x: number, y: number) => void;
+  /** Loop tool's second bend point — only present/used on actions that have curve2 set. */
+  onSetActionCurve2?: (index: number, x: number, y: number) => void;
   /** "draw" tool — called once, with the full point list, when a freehand stroke is released. */
   onAddDrawing?: (points: { x: number; y: number }[]) => void;
   /** "text" tool — click the court to place a label (the editor prompts for the content). */
@@ -196,6 +198,7 @@ function dribblePath(a: PlayAction) {
 }
 
 function linePath(a: PlayAction) {
+  if (a.curve2 && a.curve) return `M ${a.x1} ${a.y1} C ${a.curve.x} ${a.curve.y} ${a.curve2.x} ${a.curve2.y} ${a.x2} ${a.y2}`;
   if (a.curve) return `M ${a.x1} ${a.y1} Q ${a.curve.x} ${a.curve.y} ${a.x2} ${a.y2}`;
   return `M ${a.x1} ${a.y1} L ${a.x2} ${a.y2}`;
 }
@@ -205,8 +208,14 @@ function curveHandlePos(a: PlayAction) {
   return a.curve ?? { x: (a.x1 + a.x2) / 2, y: (a.y1 + a.y2) / 2 };
 }
 
+/** The Loop tool's second bend point — only meaningful when curve2 is set. */
+function curveHandle2Pos(a: PlayAction) {
+  return a.curve2 ?? { x: (a.x1 + a.x2) / 2, y: (a.y1 + a.y2) / 2 };
+}
+
 /** Direction the line is heading at its endpoint — the curve's tangent there if curved, otherwise the straight direction. Used to keep the screen's end-tick perpendicular to what's actually drawn. */
 function endDirection(a: PlayAction) {
+  if (a.curve2 && a.curve) return { dx: 3 * (a.x2 - a.curve2.x), dy: 3 * (a.y2 - a.curve2.y) };
   if (a.curve) return { dx: 2 * (a.x2 - a.curve.x), dy: 2 * (a.y2 - a.curve.y) };
   return { dx: a.x2 - a.x1, dy: a.y2 - a.y1 };
 }
@@ -326,7 +335,7 @@ function PlayerIcon({ p, avatarUrl }: { p: PlayPlayer; avatarUrl?: string | null
 export default function PlayCanvas({
   frame, courtTemplate, roster = {}, edit = false, tool = null,
   onAddPlayer, onAddDefender, onSetBall, onAddAction, onErase,
-  onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff, onSetActionCurve,
+  onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff, onSetActionCurve, onSetActionCurve2,
   onAddText, onMoveText, onEditText, onAddZone, onMoveZone, onAddCone, onMoveCone, onAddCoach, onMoveCoach, onAddShot, stampPreview,
   playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect, selfOverride = null, speed = 1,
 }: Props) {
@@ -344,6 +353,7 @@ export default function PlayCanvas({
     | { kind: "ball" }
     | { kind: "actionStart" | "actionEnd"; index: number }
     | { kind: "actionCurve"; index: number }
+    | { kind: "actionCurve2"; index: number }
     | { kind: "actionWhole"; index: number; startX: number; startY: number; origA: PlayAction };
   const [moveDrag, setMoveDrag] = useState<MoveDrag | null>(null);
   const [movePos, setMovePos] = useState<{ x: number; y: number } | null>(null);
@@ -404,6 +414,12 @@ export default function PlayCanvas({
       }
       for (let i = 0; i < frame.actions.length; i++) {
         const a = frame.actions[i];
+        if (a.curve2 && within(curveHandle2Pos(a), 11)) {
+          setMoveDrag({ kind: "actionCurve2", index: i }); setMovePos(p); return;
+        }
+      }
+      for (let i = 0; i < frame.actions.length; i++) {
+        const a = frame.actions[i];
         if (within({ x: a.x1, y: a.y1 }, 11)) { setMoveDrag({ kind: "actionStart", index: i }); setMovePos(p); return; }
         if (within({ x: a.x2, y: a.y2 }, 11)) { setMoveDrag({ kind: "actionEnd", index: i }); setMovePos(p); return; }
       }
@@ -459,6 +475,7 @@ export default function PlayCanvas({
       else if (moveDrag.kind === "actionStart") { onMoveActionPoint?.(moveDrag.index, "start", p.x, p.y); onSelect?.({ kind: "action", index: moveDrag.index }); }
       else if (moveDrag.kind === "actionEnd") { onMoveActionPoint?.(moveDrag.index, "end", p.x, p.y); onSelect?.({ kind: "action", index: moveDrag.index }); }
       else if (moveDrag.kind === "actionCurve") { onSetActionCurve?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "action", index: moveDrag.index }); }
+      else if (moveDrag.kind === "actionCurve2") { onSetActionCurve2?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "action", index: moveDrag.index }); }
       else if (moveDrag.kind === "actionWhole") {
         const dx = p.x - moveDrag.startX, dy = p.y - moveDrag.startY;
         const a = moveDrag.origA;
@@ -474,7 +491,7 @@ export default function PlayCanvas({
       return;
     }
     if (!edit || !dragStart || !tool) return;
-    if (["move", "pass", "dribble", "screen", "lob"].includes(tool)) {
+    if (["move", "pass", "dribble", "screen", "lob", "loop"].includes(tool)) {
       const p = pointFromEvent(e);
       if (Math.hypot(p.x - dragStart.x, p.y - dragStart.y) > 8) {
         const nearestPlayer = (x: number, y: number) => {
@@ -503,9 +520,24 @@ export default function PlayCanvas({
         const startX = priorAction ? priorAction.x2 : selectedPlayer ? selectedPlayer.x : dragStart.x;
         const startY = priorAction ? priorAction.y2 : selectedPlayer ? selectedPlayer.y : dragStart.y;
         const sequenceIndex = selectedPlayer ? existingSeq.length : undefined;
+        // The Loop tool is really just a Cut ("move") with two bend points
+        // instead of one, seeded right away so there's something to see
+        // and drag immediately — perpendicular to the drawn line, on the
+        // same side, roughly a third of the way along from each end. The
+        // coach can then drag either handle anywhere to reshape it.
+        let curve: { x: number; y: number } | undefined;
+        let curve2: { x: number; y: number } | undefined;
+        if (tool === "loop") {
+          const dx = p.x - startX, dy = p.y - startY;
+          const len = Math.hypot(dx, dy) || 1;
+          const nx = -dy / len, ny = dx / len;
+          const offset = Math.max(30, len * 0.4);
+          curve = { x: startX + dx * 0.33 + nx * offset, y: startY + dy * 0.33 + ny * offset };
+          curve2 = { x: startX + dx * 0.66 + nx * offset, y: startY + dy * 0.66 + ny * offset };
+        }
         onAddAction?.({
-          type: tool as ActionType, x1: startX, y1: startY, x2: p.x, y2: p.y,
-          sourcePlayerId: source?.id, targetPlayerId: target?.id, sequenceIndex,
+          type: (tool === "loop" ? "move" : tool) as ActionType, x1: startX, y1: startY, x2: p.x, y2: p.y,
+          sourcePlayerId: source?.id, targetPlayerId: target?.id, sequenceIndex, curve, curve2,
         });
         const linked = [source?.id, target?.id].filter(Boolean) as string[];
         if (linked.length) {
@@ -568,6 +600,8 @@ export default function PlayCanvas({
       displayFrame = { ...frame, actions: frame.actions.map((a, i) => i === moveDrag.index ? { ...a, x2: movePos.x, y2: movePos.y } : a) };
     } else if (moveDrag.kind === "actionCurve") {
       displayFrame = { ...frame, actions: frame.actions.map((a, i) => i === moveDrag.index ? { ...a, curve: { x: movePos.x, y: movePos.y } } : a) };
+    } else if (moveDrag.kind === "actionCurve2") {
+      displayFrame = { ...frame, actions: frame.actions.map((a, i) => i === moveDrag.index ? { ...a, curve2: { x: movePos.x, y: movePos.y } } : a) };
     } else if (moveDrag.kind === "actionWhole") {
       const dx = movePos.x - moveDrag.startX, dy = movePos.y - moveDrag.startY;
       const orig = moveDrag.origA;
@@ -732,11 +766,13 @@ export default function PlayCanvas({
 
       {edit && tool === "select" && displayFrame.actions.map((a, i) => {
         const chp = (a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen" || a.type === "lob") ? curveHandlePos(a) : null;
+        const chp2 = a.curve2 ? curveHandle2Pos(a) : null;
         return (
           <g key={i}>
             <circle cx={a.x1} cy={a.y1} r={6} fill="var(--gold)" opacity={0.85} />
             <circle cx={a.x2} cy={a.y2} r={6} fill="var(--gold)" opacity={0.85} />
             {chp && <circle cx={chp.x} cy={chp.y} r={6} fill="none" stroke="var(--gold)" strokeWidth={2} opacity={0.85} />}
+            {chp2 && <circle cx={chp2.x} cy={chp2.y} r={6} fill="none" stroke="var(--gold)" strokeWidth={2} opacity={0.85} />}
           </g>
         );
       })}
@@ -746,7 +782,11 @@ export default function PlayCanvas({
         const endpoint = a.type === "pass" ? resolvePassEndpoint(frame, a) : { x: a.x2, y: a.y2 };
         const localT = localActionProgress(animT, a, frame);
         let x: number, y: number;
-        if (a.curve) {
+        if (a.curve2 && a.curve) {
+          const t = localT, mt = 1 - t;
+          x = mt * mt * mt * a.x1 + 3 * mt * mt * t * a.curve.x + 3 * mt * t * t * a.curve2.x + t * t * t * endpoint.x;
+          y = mt * mt * mt * a.y1 + 3 * mt * mt * t * a.curve.y + 3 * mt * t * t * a.curve2.y + t * t * t * endpoint.y;
+        } else if (a.curve) {
           const t = localT, mt = 1 - t;
           x = mt * mt * a.x1 + 2 * mt * t * a.curve.x + t * t * endpoint.x;
           y = mt * mt * a.y1 + 2 * mt * t * a.curve.y + t * t * endpoint.y;
