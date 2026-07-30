@@ -35,7 +35,7 @@ export interface PlayAction {
   curve?: { x: number; y: number };
   /** A second bend point, only ever set by the Loop tool — turns the single bow into a cubic curve (two independently draggable handles) for a looser, easier-to-draw loop shape. Absent for every normal action; presence of this field (not a separate action type) is what triggers cubic-curve rendering/animation instead of the standard single-point bow. */
   curve2?: { x: number; y: number };
-  /** The player performing this action — auto-detected by proximity to (x1,y1) when drawn. Drives "add step" carry-forward for cuts/dribbles. */
+  /** Who's performing this action — auto-detected by proximity to (x1,y1) when drawn. Almost always a player, but a Cut or Loop can also attach to a defender's id (defenders only ever get these two action types, never anything ball-related). Drives "add step" carry-forward. */
   sourcePlayerId?: string;
   /** For passes — the player this action ends at, auto-detected by proximity to (x2,y2). Drives ball-possession carry-forward. */
   targetPlayerId?: string;
@@ -49,7 +49,7 @@ export interface PlayAction {
   sequenceIndex?: number;
 }
 
-/** All of a given player's actions in a frame, in sequence order (lowest sequenceIndex first). */
+/** All of a given entity's actions in a frame, in sequence order (lowest sequenceIndex first). Works for a player OR a defender's id — sourcePlayerId just holds whichever one is actually moving, this doesn't care which. */
 export function playerActionSequence(frame: PlayFrame, playerId: string): PlayAction[] {
   return frame.actions
     .filter((a) => a.sourcePlayerId === playerId)
@@ -208,6 +208,8 @@ export interface PlayPlayer {
 
 export interface PlayDefender {
   x: number; y: number;
+  /** Stable identity across steps, same purpose as a player's id — lets a Cut or Loop action attach to this specific defender and carry their position forward. Optional for backward compatibility with defenders placed before this existed (those just keep copying their position forward as-is, same as always). */
+  id?: string;
 }
 
 /** A short text annotation placed on the court, e.g. "wait for screen". */
