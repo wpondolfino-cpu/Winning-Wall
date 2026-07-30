@@ -177,9 +177,26 @@ export default function Play3DViewer({ play, roster, onBack, selfOverride = null
     // it (by id) rather than relying only on its own stored x/y, which can
     // go stale if the holder was moved without the stored ball position
     // being touched.
+    //
+    // ballHolderId only ever gets computed when ADVANCING into a new
+    // frame, based on what happened in the previous one — drawing a
+    // dribble action doesn't retroactively set it on that same frame. So
+    // the very first step of a play (place the ball, draw a dribble for
+    // that player, all in one step before ever clicking "Add step") has
+    // ballHolderId still null the whole time, and this fell back to the
+    // ball's own static drawn position — completely untethered from the
+    // dribble, which is why nothing about the dribble fix changed
+    // anything for that case. Falling back to a dribble action's own
+    // source player closes that gap.
+    function resolveEffectiveHolderId(f: PlayFrame): string | null {
+      if (f.ballHolderId) return f.ballHolderId;
+      const dribble = f.actions.find((a) => a.type === "dribble" && a.sourcePlayerId);
+      return dribble?.sourcePlayerId ?? null;
+    }
     function getBallWorldPos(f: PlayFrame) {
-      if (f.ballHolderId) {
-        const holder = f.players.find((p) => p.id === f.ballHolderId);
+      const holderId = resolveEffectiveHolderId(f);
+      if (holderId) {
+        const holder = f.players.find((p) => p.id === holderId);
         if (holder) {
           const w = toWorld(holder.x, holder.y);
           // Offset to the side, like the ball is in the player's hand —
@@ -532,7 +549,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
         // move together.
         let dribbleBounce = 0;
         let holderLocalT: number | null = null;
-        const holderId = animFromFrame.ballHolderId;
+        const holderId = resolveEffectiveHolderId(animFromFrame);
         if (holderId) {
           const holder = animFromFrame.players.find((p) => p.id === holderId);
           if (holder?.id) {
