@@ -504,24 +504,52 @@ export default function PlayCanvas({
           });
           return best >= 0 ? frame.players[best] : null;
         };
-        // An explicit player selection always wins over proximity guessing
-        // for who this action belongs to — draw it anywhere on the court
-        // and it's still assigned to the selected player, not whoever the
-        // line happens to start near.
-        const selectedPlayer = selected?.kind === "player" ? frame.players[selected.index] : null;
-        const source = selectedPlayer ?? nearestPlayer(dragStart.x, dragStart.y);
+        // Cut and Loop are the only tools a defender can ever be the
+        // source of — nothing ball-related (pass/dribble/screen/lob)
+        // ever considers a defender, so those stay exactly as
+        // player-only as they've always been. This is what keeps
+        // defender movement scoped to just these two tools rather than
+        // opening every action type up to them.
+        const nearestDefender = (x: number, y: number) => {
+          let best = -1, bestDist = 22;
+          frame.defenders.forEach((d, i) => {
+            const dd = Math.hypot(d.x - x, d.y - y);
+            if (dd < bestDist) { best = i; bestDist = dd; }
+          });
+          return best >= 0 ? frame.defenders[best] : null;
+        };
+        const canTargetDefender = tool === "move" || tool === "loop";
+        const nearestEntity = (x: number, y: number) => {
+          const pl = nearestPlayer(x, y);
+          if (!canTargetDefender) return pl;
+          const df = nearestDefender(x, y);
+          if (pl && df) {
+            const dPl = Math.hypot(pl.x - x, pl.y - y), dDf = Math.hypot(df.x - x, df.y - y);
+            return dPl <= dDf ? pl : df;
+          }
+          return pl ?? df;
+        };
+        // An explicit selection always wins over proximity guessing for
+        // who this action belongs to — draw it anywhere on the court and
+        // it's still assigned to whoever's selected, not whoever the
+        // line happens to start near. A selected defender only counts
+        // for Cut/Loop, same restriction as proximity detection above.
+        const selectedEntity = selected?.kind === "player"
+          ? frame.players[selected.index]
+          : (selected?.kind === "defender" && canTargetDefender ? frame.defenders[selected.index] : null);
+        const source = selectedEntity ?? nearestEntity(dragStart.x, dragStart.y);
         const target = (tool === "pass" || tool === "lob") ? nearestPlayer(p.x, p.y) : null;
-        // If the selected player already has an action in this step (e.g.
+        // If the selected entity already has an action in this step (e.g.
         // a screen), a new one chains onto the end of it — starting where
         // the previous one left off, one slot further in their sequence —
         // instead of restarting from their original position.
-        const existingSeq = selectedPlayer?.id
-          ? frame.actions.filter((a) => a.sourcePlayerId === selectedPlayer.id).sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0))
+        const existingSeq = selectedEntity?.id
+          ? frame.actions.filter((a) => a.sourcePlayerId === selectedEntity.id).sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0))
           : [];
         const priorAction = existingSeq[existingSeq.length - 1];
-        const startX = priorAction ? priorAction.x2 : selectedPlayer ? selectedPlayer.x : dragStart.x;
-        const startY = priorAction ? priorAction.y2 : selectedPlayer ? selectedPlayer.y : dragStart.y;
-        const sequenceIndex = selectedPlayer ? existingSeq.length : undefined;
+        const startX = priorAction ? priorAction.x2 : selectedEntity ? selectedEntity.x : dragStart.x;
+        const startY = priorAction ? priorAction.y2 : selectedEntity ? selectedEntity.y : dragStart.y;
+        const sequenceIndex = selectedEntity ? existingSeq.length : undefined;
         // The Loop tool is really just a Cut ("move") with two bend points
         // instead of one, seeded right away so there's something to see
         // and drag immediately — perpendicular to the drawn line, on the
@@ -569,6 +597,7 @@ export default function PlayCanvas({
     const maxChainLen = Math.max(
       1,
       ...frame.players.map((p) => (p.id ? playerActionSequence(frame, p.id).length : 1)),
+      ...frame.defenders.map((d) => (d.id ? playerActionSequence(frame, d.id).length : 1)),
       ...frame.actions.filter((a) => a.type === "pass" || a.type === "lob").map((a) => ballChainSequence(frame, a).length)
     );
     const dur = (1400 * maxChainLen) / speed;
@@ -699,6 +728,13 @@ export default function PlayCanvas({
 
       {displayFrame.players.map((p, i) => p.id && justLinked.includes(p.id) && (
         <circle key={"link-" + i} cx={p.x} cy={p.y} r={22} fill="none" stroke="var(--gold)" strokeWidth={2.5} opacity={0.8}>
+          <animate attributeName="r" values="16;24;16" dur="0.7s" repeatCount="1" />
+          <animate attributeName="opacity" values="0.9;0.2;0.9" dur="0.7s" repeatCount="1" />
+        </circle>
+      ))}
+
+      {displayFrame.defenders.map((d, i) => d.id && justLinked.includes(d.id) && (
+        <circle key={"dlink-" + i} cx={d.x} cy={d.y} r={22} fill="none" stroke="var(--gold)" strokeWidth={2.5} opacity={0.8}>
           <animate attributeName="r" values="16;24;16" dur="0.7s" repeatCount="1" />
           <animate attributeName="opacity" values="0.9;0.2;0.9" dur="0.7s" repeatCount="1" />
         </circle>
