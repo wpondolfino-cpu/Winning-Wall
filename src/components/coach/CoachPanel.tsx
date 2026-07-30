@@ -2,6 +2,7 @@
 // Thin wrapper — layout + workout list. Logic lives in sub-components.
 import { useState, useEffect } from "react";
 import { supabase, Workout, getEmbedUrl, getVideoId } from "../../lib/supabase";
+import { renderRichText } from "../../lib/richtext";
 import GroupManager from "./GroupManager";
 import WorkoutBuilder from "./WorkoutBuilder";
 import FindDrillModal from "./FindDrillModal";
