@@ -148,10 +148,12 @@ function courtBackground(template: CourtTemplate) {
   }
 }
 
-/** The ball's effective position — follows its holder (by id) when one is set, otherwise its own stored x/y. Shared by rendering and hit-testing so a click always lands where the ball is actually drawn. */
+/** The ball's effective position — follows its holder (by id) when one is set, otherwise its own stored x/y. Shared by rendering and hit-testing so a click always lands where the ball is actually drawn.
+ * ballHolderId only ever gets computed when advancing into a NEW frame based on the previous one's actions — drawing a dribble doesn't retroactively set it on that same frame, so falls back to a dribble action's own source player when ballHolderId isn't set yet (e.g. the very first step of a play, before ever clicking "Add step"). */
 function getBallPos(f: PlayFrame): { x: number; y: number } | null {
-  if (f.ballHolderId) {
-    const holder = f.players.find((p) => p.id === f.ballHolderId);
+  const holderId = f.ballHolderId ?? f.actions.find((a) => a.type === "dribble" && a.sourcePlayerId)?.sourcePlayerId ?? null;
+  if (holderId) {
+    const holder = f.players.find((p) => p.id === holderId);
     if (holder) return { x: holder.x, y: holder.y };
   }
   return f.ball;
