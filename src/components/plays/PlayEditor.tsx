@@ -38,7 +38,7 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | null;
+type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | null;
 
 const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "select", label: "Move", icon: "✥" },
@@ -51,6 +51,7 @@ const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "handoff", label: "Handoff", icon: "✱" },
   { tool: "shot", label: "Shot", icon: "🏀" },
   { tool: "lob", label: "Lob", icon: "🙌" },
+  { tool: "loop", label: "Loop", icon: "↻" },
   { tool: "text", label: "Text", icon: "T" },
   { tool: "cone", label: "Cone", icon: "▲" },
   { tool: "coach", label: "Coach", icon: "C" },
@@ -250,6 +251,11 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const setActionCurve = useCallback((idx: number, x: number, y: number) => {
     pushHistory();
     updateFrame((f) => ({ ...f, actions: f.actions.map((a, i) => i === idx ? { ...a, curve: { x, y } } : a) }));
+  }, [frames, frameIdx]);
+
+  const setActionCurve2 = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, actions: f.actions.map((a, i) => i === idx ? { ...a, curve2: { x, y } } : a) }));
   }, [frames, frameIdx]);
 
   function addText(x: number, y: number) {
@@ -995,6 +1001,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "cone" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>▲ Cone</button>
             <button onClick={() => { setTool("coach"); setStampAction(null); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "coach" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>Ⓒ Coach</button>
+            <button onClick={() => { setTool("loop"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "loop" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↻ Loop</button>
             <button onClick={() => { setTool("defender"); setStampAction(null); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "defender" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>✕ Defender</button>
             <button onClick={() => { setTool("draw"); setStampAction(null); setShowMoreTools(false); }}
@@ -1049,7 +1057,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onAddPlayer={addPlayer} onAddDefender={addDefender} onSetBall={setBall} onAddAction={addAction}
             onErase={eraseNear} onToggleHandoff={toggleHandoff}
             onMovePlayer={movePlayer} onMoveDefender={moveDefender} onMoveBall={moveBall}
-            onMoveActionPoint={moveActionPoint} onMoveActionWhole={moveActionWhole} onSetActionCurve={setActionCurve}
+            onMoveActionPoint={moveActionPoint} onMoveActionWhole={moveActionWhole} onSetActionCurve={setActionCurve} onSetActionCurve2={setActionCurve2}
             onAddText={addText} onMoveText={moveText} onEditText={editText} onAddZone={addZone} onMoveZone={moveZone}
             onAddCone={addCone} onMoveCone={moveCone} onAddCoach={addCoach} onMoveCoach={moveCoach} onAddShot={addShot}
             selected={selected} onSelect={setSelected} onAddDrawing={addDrawing}
@@ -1250,6 +1258,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onMoveActionPoint={moveActionPoint}
             onMoveActionWhole={moveActionWhole}
             onSetActionCurve={setActionCurve}
+            onSetActionCurve2={setActionCurve2}
             onAddText={addText}
             onMoveText={moveText}
             onEditText={editText}
