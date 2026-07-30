@@ -227,7 +227,7 @@ export default function CoachPanel({ workouts, onPublished, coachId, coachName, 
             <div className="video-container">
               <iframe src={`${getEmbedUrl(previewWorkout.video_url)}&rel=0`} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
             </div>
-            <div className="video-modal-body"><p className="video-desc">{previewWorkout.description}</p></div>
+            <div className="video-modal-body"><div className="video-desc" dangerouslySetInnerHTML={{ __html: renderRichText(previewWorkout.description ?? "") }} /></div>
           </div>
         </div>
       )}
