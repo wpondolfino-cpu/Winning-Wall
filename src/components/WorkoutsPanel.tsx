@@ -4,7 +4,14 @@ import { supabase, Workout, Score, submitScore as _submitScore, submitLibraryPra
 import DrillTimer, { Stopwatch } from "./DrillTimer";
 import DurationInput from "./DurationInput";
 import { formatDuration } from "../lib/time";
+import { renderRichText } from "../lib/richtext";
 import { randomDrillPool, pickRandomDrill } from "../lib/randomDrill";
+
+function toggleSign(v: string): string {
+  const trimmed = (v ?? "").trim();
+  if (trimmed.startsWith("-")) return trimmed.slice(1);
+  return "-" + trimmed;
+}
 
 interface Props {
   workouts: Workout[];
@@ -18,6 +25,8 @@ interface Props {
   randomDrillSession?: { category: string; tags: string[] } | null;
   onRandomDrillSessionChange?: (session: { category: string; tags: string[] } | null) => void;
   onRandomDrillChangeFilters?: () => void; // sends the player back to the Library's Random Drill modal
+  canChallengeFromLibrary?: boolean; // true once the player has the Challenges Unlocked perk
+  onChallengeDrill?: (workoutId: string) => void; // opens H2H "new challenge" prefilled with this drill
 }
 
 // ── Spot Personal Bests Display ───────────────────────────────
@@ -49,7 +58,7 @@ function SpotPBDisplay({ playerId, workoutId, spotConfig, totalBest, isTime = fa
   );
 }
 
-export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLogged, openWorkoutId, onDeepLinkHandled, randomDrillSession, onRandomDrillSessionChange, onRandomDrillChangeFilters }: Props) {
+export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLogged, openWorkoutId, onDeepLinkHandled, randomDrillSession, onRandomDrillSessionChange, onRandomDrillChangeFilters, canChallengeFromLibrary, onChallengeDrill }: Props) {
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
   const [keepPracticing, setKeepPracticing] = useState(false);
 
@@ -109,6 +118,8 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
   const [selfPoints, setSelfPoints] = useState("");
   const [spotScores, setSpotScores] = useState<Record<number, string>>({});
   const [activeStopwatchSpot, setActiveStopwatchSpot] = useState<number | null>(null);
+  const [tiebreakValue, setTiebreakValue] = useState("");
+  const [showTiebreakStopwatch, setShowTiebreakStopwatch] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
 
@@ -123,6 +134,8 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
     setSelfPoints(existing?.self_points?.toString() ?? "");
     setSpotScores({});
     setActiveStopwatchSpot(null);
+    setTiebreakValue((existing as any)?.tiebreak_value?.toString() ?? "");
+    setShowTiebreakStopwatch(false);
   }
 
   function rerollSameFilters() {
@@ -199,7 +212,8 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
         return;
       }
 
-      const result = await _submitScore({ player_id: playerId, workout_id: activeWorkout.id, made: finalMade, attempts: 0, sprint_secs: finalSprints, reps: finalReps, self_points: finalSelfPoints, local_date: localDate } as any);
+      const finalTiebreakValue = ((activeWorkout as any).tiebreak_mode && tiebreakValue.trim() !== "") ? parseFloat(tiebreakValue) : null;
+      const result = await _submitScore({ player_id: playerId, workout_id: activeWorkout.id, made: finalMade, attempts: 0, sprint_secs: finalSprints, reps: finalReps, self_points: finalSelfPoints, tiebreak_value: finalTiebreakValue, local_date: localDate } as any);
 
       // Save per-spot personal bests for multi-spot workouts
       if (activeWorkout.scoring_type === "multi_spot") {
@@ -250,6 +264,32 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
 
   const TAG_COLORS: Record<string, string> = { Shooting: "tag-blue", Conditioning: "tag-red", Strength: "tag-green", Skills: "tag-gold" };
 
+  function renderTiebreakField(w: Workout) {
+    const mode = (w as any).tiebreak_mode as "free_throw" | "fastest_time";
+    return (
+      <div style={{ marginTop: 14, padding: "12px 14px", background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", borderRadius: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+          {mode === "free_throw" ? "🎯 Tiebreaker — Free Throws Made" : "⏱ Tiebreaker — Fastest Time"}
+        </div>
+        {mode === "free_throw" ? (
+          <input type="number" inputMode="numeric" value={tiebreakValue} onChange={e => setTiebreakValue(e.target.value)} placeholder="e.g. 8" min="0"
+            style={{ width: "100%", fontSize: 18, textAlign: "center", fontWeight: 600 }} />
+        ) : (
+          <>
+            <button type="button" onClick={() => setShowTiebreakStopwatch(v => !v)}
+              style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 8, padding: "9px 10px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", marginBottom: showTiebreakStopwatch ? 8 : 0 }}>
+              {tiebreakValue ? `⏱ Time recorded: ${formatDuration(parseFloat(tiebreakValue))} (tap to redo)` : "⏱ Use Stopwatch"}
+            </button>
+            {showTiebreakStopwatch && (
+              <Stopwatch onUseTime={secs => { setTiebreakValue(secs.toString()); setShowTiebreakStopwatch(false); }} />
+            )}
+          </>
+        )}
+        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, lineHeight: 1.5 }}>Only used to break a tie on the main score. Optional if you're not tied.</div>
+      </div>
+    );
+  }
+
   function getLogFields(w: Workout) {
     if (w.scoring_type === "flat") {
       return (
@@ -299,8 +339,16 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
                       <DurationInput valueSeconds={spotScores[i] ?? ""} onChange={v => setSpotScores(prev => ({ ...prev, [i]: v }))} />
                     </>
                   ) : (
-                    <input type="number" inputMode="numeric" value={spotScores[i] ?? ""} onChange={e => setSpotScores(prev => ({ ...prev, [i]: e.target.value }))} placeholder="0" min="0"
-                      style={{ width: 80, textAlign: "center", fontSize: 18, fontWeight: 600, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 8px", color: "var(--text)", fontFamily: "inherit", outline: "none" }} />
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      {(w as any).allow_negative && (
+                        <button type="button" onClick={() => setSpotScores(prev => ({ ...prev, [i]: toggleSign(prev[i] ?? "") }))}
+                          style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: (spotScores[i] ?? "").trim().startsWith("-") ? "#ff7b7b" : "var(--muted)", borderRadius: 8, padding: "9px 10px", fontSize: 15, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                          {(spotScores[i] ?? "").trim().startsWith("-") ? "−" : "+"}
+                        </button>
+                      )}
+                      <input type="number" inputMode="numeric" value={spotScores[i] ?? ""} onChange={e => setSpotScores(prev => ({ ...prev, [i]: e.target.value }))} placeholder="0" min={(w as any).allow_negative ? undefined : "0"}
+                        style={{ width: 80, textAlign: "center", fontSize: 18, fontWeight: 600, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 8px", color: "var(--text)", fontFamily: "inherit", outline: "none" }} />
+                    </div>
                   )}
                 </div>
                 {isTime && activeStopwatchSpot === i && (
@@ -315,6 +363,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
             <div style={{ fontSize: 14, fontWeight: 600, color: "var(--muted)" }}>Total {isTime ? "time" : "score"}</div>
             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: "var(--gold)", lineHeight: 1 }}>{isTime ? formatDuration(total) : total}</div>
           </div>
+          {(w as any).tiebreak_mode && renderTiebreakField(w)}
         </>
       );
     }
@@ -350,10 +399,19 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
           ) : (
             <div className="score-input-wrap">
               <label>{inputLabel}</label>
-              <input type="number" inputMode="numeric" value={inputValue} onChange={e => inputSetter(e.target.value)} placeholder={inputPlaceholder} min="0" style={{ fontSize: 20, textAlign: "center", fontWeight: 600 }} />
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {(w as any).allow_negative && (
+                  <button type="button" onClick={() => inputSetter(toggleSign(inputValue))}
+                    style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: inputValue.trim().startsWith("-") ? "#ff7b7b" : "var(--muted)", borderRadius: 8, padding: "10px 14px", fontSize: 18, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                    {inputValue.trim().startsWith("-") ? "−" : "+"}
+                  </button>
+                )}
+                <input type="number" inputMode="numeric" value={inputValue} onChange={e => inputSetter(e.target.value)} placeholder={inputPlaceholder} min={(w as any).allow_negative ? undefined : "0"} style={{ fontSize: 20, textAlign: "center", fontWeight: 600, flex: 1 }} />
+              </div>
             </div>
           )}
         </div>
+        {(w.scoring_type === "competitive" || w.scoring_type === "multi_spot") && (w as any).tiebreak_mode && renderTiebreakField(w)}
       </>
     );
   }
@@ -533,9 +591,16 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
             )}
 
             {activeWorkout.description && (
-              <div style={{ padding: "12px 14px", background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 13, color: "var(--silver-light)", lineHeight: 1.7, marginBottom: 16, whiteSpace: "pre-wrap" }}>
-                {activeWorkout.description}
-              </div>
+              <div style={{ padding: "12px 14px", background: "rgba(255,255,255,0.04)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 13, color: "var(--silver-light)", lineHeight: 1.7, marginBottom: 16 }}
+                dangerouslySetInnerHTML={{ __html: renderRichText(activeWorkout.description) }} />
+            )}
+
+            {canChallengeFromLibrary && (activeWorkout.is_active === false || !!randomDrillSession) &&
+              (activeWorkout.scoring_type === "competitive" || activeWorkout.scoring_type === "multi_spot") && (
+              <button type="button" onClick={() => onChallengeDrill?.(activeWorkout.id)}
+                style={{ width: "100%", background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", color: "var(--gold)", borderRadius: 10, padding: "12px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", marginBottom: 16 }}>
+                ⚔️ Challenge Someone in This Drill
+              </button>
             )}
 
             <div style={{ borderTop: "1px solid var(--border)", margin: "4px 0 16px", opacity: 0.5 }} />
