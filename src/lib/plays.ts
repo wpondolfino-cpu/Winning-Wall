@@ -33,6 +33,8 @@ export interface PlayAction {
   x2: number; y2: number;
   /** Optional curve control point — drag the line's midpoint handle (Move tool) to bow it into a curl. Straight when absent. */
   curve?: { x: number; y: number };
+  /** A second bend point, only ever set by the Loop tool — turns the single bow into a cubic curve (two independently draggable handles) for a looser, easier-to-draw loop shape. Absent for every normal action; presence of this field (not a separate action type) is what triggers cubic-curve rendering/animation instead of the standard single-point bow. */
+  curve2?: { x: number; y: number };
   /** The player performing this action — auto-detected by proximity to (x1,y1) when drawn. Drives "add step" carry-forward for cuts/dribbles. */
   sourcePlayerId?: string;
   /** For passes — the player this action ends at, auto-detected by proximity to (x2,y2). Drives ball-possession carry-forward. */
@@ -100,9 +102,20 @@ export function ballChainSequence(frame: PlayFrame, action: PlayAction): PlayAct
  * localActionProgress) — that split stays a fixed fraction of whatever
  * width the slice actually ends up with.
  */
+/** How far an action actually travels, for time-slice proportioning. A plain action's straight-line distance works fine, but a Loop (curve2 set) often starts and ends at nearly the same spot -- its real straight-line distance is close to zero, which would starve it of time in a chained sequence even though it's a big loop. Approximating the path through both bend points instead gives it a fair share. */
+function actionTravelDistance(a: PlayAction): number {
+  if (a.curve2 && a.curve) {
+    const d1 = Math.hypot(a.curve.x - a.x1, a.curve.y - a.y1);
+    const d2 = Math.hypot(a.curve2.x - a.curve.x, a.curve2.y - a.curve.y);
+    const d3 = Math.hypot(a.x2 - a.curve2.x, a.y2 - a.curve2.y);
+    return d1 + d2 + d3 || 0.001;
+  }
+  return Math.hypot(a.x2 - a.x1, a.y2 - a.y1) || 0.001;
+}
+
 function actionSliceBounds(seq: PlayAction[]): { moveStart: number; moveEnd: number }[] {
   const MOVE_FRACTION = 0.7;
-  const distances = seq.map((a) => Math.hypot(a.x2 - a.x1, a.y2 - a.y1) || 0.001); // never truly 0, so a no-op action still gets a sliver of time rather than breaking the split
+  const distances = seq.map(actionTravelDistance); // never truly 0, so a no-op action still gets a sliver of time rather than breaking the split
   const total = distances.reduce((s, d) => s + d, 0);
   let cursor = 0;
   return distances.map((d) => {
