@@ -529,15 +529,29 @@ export default function PlayCanvas({
           }
           return pl ?? df;
         };
-        // An explicit selection always wins over proximity guessing for
-        // who this action belongs to — draw it anywhere on the court and
-        // it's still assigned to whoever's selected, not whoever the
-        // line happens to start near. A selected defender only counts
-        // for Cut/Loop, same restriction as proximity detection above.
-        const selectedEntity = selected?.kind === "player"
+        // Selection is meant to persist across multiple actions on
+        // purpose (screen then roll for the same player, without
+        // re-selecting each time) — but that only makes sense while
+        // you're still actually dragging from near that selected entity.
+        // Trusting it unconditionally meant a player selected earlier in
+        // the step for something unrelated could silently hijack a Cut
+        // clearly being dragged from a completely different defender
+        // elsewhere on the court. So: a stale selection only wins if the
+        // drag genuinely starts near it (or nothing else is closer);
+        // otherwise whichever real entity the drag actually starts on
+        // takes over, same as if nothing were selected at all.
+        const selectedRaw = selected?.kind === "player"
           ? frame.players[selected.index]
           : (selected?.kind === "defender" && canTargetDefender ? frame.defenders[selected.index] : null);
-        const source = selectedEntity ?? nearestEntity(dragStart.x, dragStart.y);
+        const proximityGuess = nearestEntity(dragStart.x, dragStart.y);
+        let source: { id?: string; x: number; y: number } | null;
+        if (selectedRaw && proximityGuess && proximityGuess !== selectedRaw) {
+          const distToSelected = Math.hypot(selectedRaw.x - dragStart.x, selectedRaw.y - dragStart.y);
+          source = distToSelected <= 22 ? selectedRaw : proximityGuess;
+        } else {
+          source = selectedRaw ?? proximityGuess;
+        }
+        const selectedEntity = source === selectedRaw ? selectedRaw : null;
         const target = (tool === "pass" || tool === "lob") ? nearestPlayer(p.x, p.y) : null;
         // If the selected entity already has an action in this step (e.g.
         // a screen), a new one chains onto the end of it — starting where
