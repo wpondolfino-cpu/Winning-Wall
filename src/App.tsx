@@ -127,6 +127,7 @@ export default function App() {
   const [navExpanded, setNavExpanded] = useState<{ inseason: boolean; offseason: boolean }>({ inseason: true, offseason: true });
   const [showReorderModal, setShowReorderModal] = useState(false);
   const [deepLinkWorkoutId, setDeepLinkWorkoutId] = useState<string | null>(null);
+  const [challengePrefillWorkoutId, setChallengePrefillWorkoutId] = useState<string | null>(null);
   const [pendingChallenges, setPendingChallenges] = useState(0);
   const [pendingApprovals, setPendingApprovals]   = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -405,14 +406,14 @@ export default function App() {
 
 
           {/* Player panels */}
-          {isPlayer && playerTab === "workouts" && <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
+          {isPlayer && playerTab === "workouts" && <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} canChallengeFromLibrary={xpEnabled && xpPerks.length > 0 && playerXp >= (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150)} onChallengeDrill={(id) => { setChallengePrefillWorkoutId(id); setPlayerTab("h2h"); }} />}
           {isPlayer && playerTab === "leaderboard" && <Leaderboard currentUserId={user.id} />}
           {isPlayer && playerTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} />}
           {isPlayer && playerTab === "progress" && <ProgressPanel profile={displayProfile} myScores={myScores} workouts={workouts} />}
           {isPlayer && playerTab === "hof" && <HallOfFame onViewWorkout={(id) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} />}
           {isPlayer && playerTab === "plays" && <PlaysHub currentUserRole="player" />}
           {isPlayer && playerTab === "gamestats" && <GameStatsHub currentUserRole="player" userId={user.id} />}
-          {isPlayer && playerTab === "library" && <DrillLibrary canManage={false} onPractice={(id) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} />}
+          {isPlayer && playerTab === "library" && <DrillLibrary canManage={false} onPractice={(id) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} canChallenge={xpEnabled && xpPerks.length > 0 && playerXp >= (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150)} onChallenge={(id) => { setChallengePrefillWorkoutId(id); setPlayerTab("h2h"); }} />}
           {isPlayer && playerTab === "profile" && <ProfilePage profile={displayProfile} onUpdated={handleProfileUpdated} myScores={allScores.filter((s: any) => s.player_id === user?.id)} workouts={workouts} xpEnabled={xpEnabled} />}
           {isPlayer && playerTab === "h2h" && xpEnabled && xpPerks.length > 0 && playerXp < (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) ? (
             <div className="panel active" style={{ textAlign: "center", padding: "60px 20px" }}>
@@ -430,6 +431,8 @@ export default function App() {
               myScores={myScores}
               onScoreLogged={loadMyScores}
               canManage={false}
+              prefillWorkoutId={challengePrefillWorkoutId}
+              onPrefillHandled={() => setChallengePrefillWorkoutId(null)}
             />
           )}
           {isPlayer && playerTab === "more" && (
