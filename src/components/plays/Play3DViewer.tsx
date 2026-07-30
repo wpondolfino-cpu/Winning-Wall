@@ -549,18 +549,19 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
         // move together.
         let dribbleBounce = 0;
         let holderLocalT: number | null = null;
+        let activeHolderAction: PlayAction | undefined;
         const holderId = resolveEffectiveHolderId(animFromFrame);
         if (holderId) {
           const holder = animFromFrame.players.find((p) => p.id === holderId);
           if (holder?.id) {
             const holderSeq = playerActionSequence(animFromFrame, holder.id);
             const activeHolderIdx = holderSeq.length > 0 ? activeSequenceIndex(t, holderSeq) : -1;
-            const activeHolderAction = activeHolderIdx >= 0 ? holderSeq[activeHolderIdx] : undefined;
+            activeHolderAction = activeHolderIdx >= 0 ? holderSeq[activeHolderIdx] : undefined;
             if (activeHolderAction) {
               holderLocalT = localActionProgress(t, activeHolderAction, animFromFrame);
               if (activeHolderAction.type === "dribble") {
                 const dist = Math.hypot(activeHolderAction.x2 - activeHolderAction.x1, activeHolderAction.y2 - activeHolderAction.y1);
-                const bounces = Math.max(2, Math.round(dist / 30));
+                const bounces = Math.max(2, Math.round(dist / 42));
                 dribbleBounce = Math.abs(Math.sin(holderLocalT * bounces * Math.PI));
               }
             }
@@ -669,8 +670,33 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
               ballMesh.position.y = startH + (rimH - startH) * ballLocalT + Math.sin(ballLocalT * Math.PI) * peakBump;
             } else {
               const glideT = holderLocalT ?? t;
-              ballMesh.position.x = fromBall.x + (toBall.x - fromBall.x) * glideT;
-              ballMesh.position.z = fromBall.z + (toBall.z - fromBall.z) * glideT;
+              // The ball's position at the start/end of the whole step
+              // (fromBall/toBall) only ever describes two fixed points —
+              // interpolating straight between them ignores any bend in
+              // the holder's own path entirely, so a curved dribble drew
+              // as a straight line no matter how the player actually
+              // moved. Following the holder's own action curve directly
+              // (same bezier math their body uses) keeps the ball glued
+              // to the actual path instead of cutting the corner.
+              if (activeHolderAction?.curve) {
+                const mt = 1 - glideT;
+                const w1 = toWorld(activeHolderAction.x1, activeHolderAction.y1), w2 = toWorld(activeHolderAction.x2, activeHolderAction.y2);
+                let hx: number, hz: number;
+                if (activeHolderAction.curve2) {
+                  const wc1 = toWorld(activeHolderAction.curve.x, activeHolderAction.curve.y), wc2 = toWorld(activeHolderAction.curve2.x, activeHolderAction.curve2.y);
+                  hx = mt * mt * mt * w1.x + 3 * mt * mt * glideT * wc1.x + 3 * mt * glideT * glideT * wc2.x + glideT * glideT * glideT * w2.x;
+                  hz = mt * mt * mt * w1.z + 3 * mt * mt * glideT * wc1.z + 3 * mt * glideT * glideT * wc2.z + glideT * glideT * glideT * w2.z;
+                } else {
+                  const wc = toWorld(activeHolderAction.curve.x, activeHolderAction.curve.y);
+                  hx = mt * mt * w1.x + 2 * mt * glideT * wc.x + glideT * glideT * w2.x;
+                  hz = mt * mt * w1.z + 2 * mt * glideT * wc.z + glideT * glideT * w2.z;
+                }
+                ballMesh.position.x = hx + 0.38; // same "held at the side" offset getBallWorldPos uses
+                ballMesh.position.z = hz;
+              } else {
+                ballMesh.position.x = fromBall.x + (toBall.x - fromBall.x) * glideT;
+                ballMesh.position.z = fromBall.z + (toBall.z - fromBall.z) * glideT;
+              }
               const BOUNCE_HEIGHT = 0.35;
               ballMesh.position.y = 0.5 + dribbleBounce * BOUNCE_HEIGHT;
             }
