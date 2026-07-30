@@ -20,6 +20,7 @@ import { updateStreak } from "./streaks";
 // Single function used everywhere — never inline this logic
 export function computeRawScore(s: {
   made: number; reps: number; sprint_secs: number; self_points: number;
+  tiebreak_value?: number | null;
 }): number {
   if (s.self_points > 0) return s.self_points;
   if (s.sprint_secs > 0 && s.made === 0 && s.reps === 0) return -s.sprint_secs;
@@ -141,7 +142,7 @@ export async function submitScore(
       // Upsert new best — points start at 0 until rerank assigns them
       const { data, error } = await supabase.from("scores")
         .upsert(
-          { ...cleanScore, points: 0, last_logged_date: today },
+          { ...cleanScore, tiebreak_value: cleanScore.tiebreak_value ?? null, points: 0, last_logged_date: today },
           { onConflict: "player_id,workout_id" }
         )
         .select().single();
@@ -195,6 +196,7 @@ export async function submitScore(
     reps:             cleanScore.reps ?? 0,
     sprint_secs:      cleanScore.sprint_secs ?? 0,
     self_points:      cleanScore.self_points ?? 0,
+    tiebreak_value:   cleanScore.tiebreak_value ?? null,
     raw_score:        newRaw,
     is_personal_best: isPersonalBest,
     attempted_at:     new Date().toISOString(),
