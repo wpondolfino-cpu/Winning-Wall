@@ -43,13 +43,13 @@ type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "
 const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "select", label: "Move", icon: "✥" },
   { tool: "player", label: "Player", icon: "⬤" },
-  { tool: "ball", label: "Ball", icon: "●" },
+  { tool: "ball", label: "Ball", icon: "🏀" },
   { tool: "move", label: "Cut", icon: "→" },
   { tool: "pass", label: "Pass", icon: "┄" },
   { tool: "dribble", label: "Dribble", icon: "〜" },
   { tool: "screen", label: "Screen", icon: "⊥" },
   { tool: "handoff", label: "Handoff", icon: "✱" },
-  { tool: "shot", label: "Shot", icon: "🏀" },
+  { tool: "shot", label: "Shot", icon: "🥅" },
   { tool: "lob", label: "Lob", icon: "🙌" },
   { tool: "loop", label: "Loop", icon: "↻" },
   { tool: "text", label: "Text", icon: "T" },
@@ -970,7 +970,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           {[
             { tool: "select" as Tool, label: "Move", icon: "✥" },
             { tool: "player" as Tool, label: "Player", icon: "⬤" },
-            { tool: "ball" as Tool, label: "Ball", icon: "●" },
+            { tool: "ball" as Tool, label: "Ball", icon: "🏀" },
             { tool: "move" as Tool, label: "Cut", icon: "→" },
             { tool: "pass" as Tool, label: "Pass", icon: "┄" },
             { tool: "dribble" as Tool, label: "Dribble", icon: "〜" },
@@ -1016,7 +1016,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             <button onClick={() => { redo(); setShowMoreTools(false); }} disabled={!future.length}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↪ Redo</button>
             <button onClick={() => { setTool("shot"); setStampAction(null); setShowMoreTools(false); }}
-              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "shot" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>🏀 Shot</button>
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "shot" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}><img src="/shot-icon.png" alt="" style={{ width: 13, height: 13, verticalAlign: -2, marginRight: 4 }} /> Shot</button>
             <button onClick={() => { setTool("lob"); setStampAction(null); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "lob" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>🙌 Lob</button>
             <button onClick={() => { setTool("zone"); setStampAction(null); setShowMoreTools(false); }}
@@ -1180,7 +1180,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           {PRIMARY_TOOLS.map(({ tool: t, label, icon }) => (
             <button key={label} onClick={() => { setTool(t); setStampAction(null); }}
               style={{ padding: "6px 10px", fontSize: 13, border: tool === t ? "2px solid var(--gold)" : "1px solid var(--border)", borderRadius: "8px", background: tool === t ? "rgba(240,192,64,0.12)" : "transparent" }}>
-              {icon} {label}
+              {t === "shot" ? <img src="/shot-icon.png" alt="" style={{ width: 14, height: 14, verticalAlign: -2, marginRight: 4 }} /> : icon + " "}
+              {label}
             </button>
           ))}
           <span style={{ width: 1, alignSelf: "stretch", background: "var(--border)", margin: "0 2px" }} />
