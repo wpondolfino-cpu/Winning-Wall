@@ -16,11 +16,13 @@ interface Props {
   myScores: Score[];
   onScoreLogged?: () => void;
   canManage?: boolean;
+  prefillWorkoutId?: string | null;
+  onPrefillHandled?: () => void;
 }
 
 const isMobile = () => window.innerWidth < 640;
 
-export default function ChallengesPanel({ currentUserId, currentUserName, workouts, myScores, onScoreLogged, canManage = false }: Props) {
+export default function ChallengesPanel({ currentUserId, currentUserName, workouts, myScores, onScoreLogged, canManage = false, prefillWorkoutId, onPrefillHandled }: Props) {
   const [activeTab, setActiveTab] = useState<"h2h" | "clash" | "teams" | "stats">("h2h");
   const [mobile, setMobile] = useState(isMobile());
   const [pendingCount, setPendingCount] = useState(0);
@@ -30,6 +32,10 @@ export default function ChallengesPanel({ currentUserId, currentUserName, workou
     window.addEventListener("resize", h);
     return () => window.removeEventListener("resize", h);
   }, []);
+
+  useEffect(() => {
+    if (prefillWorkoutId) setActiveTab("h2h");
+  }, [prefillWorkoutId]);
 
   const tabs = [
     { key: "h2h",   label: mobile ? "⚔️ H2H" : "⚔️ Head to Head", badge: pendingCount > 0 ? pendingCount : null },
@@ -69,6 +75,8 @@ export default function ChallengesPanel({ currentUserId, currentUserName, workou
             myScores={myScores}
             onScoreLogged={onScoreLogged}
             onPendingCount={setPendingCount}
+            prefillWorkoutId={prefillWorkoutId}
+            onPrefillHandled={onPrefillHandled}
           />
         )
       )}
