@@ -17,10 +17,12 @@ interface Props {
   canManage: boolean;
   onClose: () => void;
   onLogScore?: (workoutId: string, filters: { category: string; tags: string[] }) => void;
+  canChallenge?: boolean;
+  onChallenge?: (workoutId: string) => void;
 }
 
 
-export default function RandomDrillModal({ drills, canManage, onClose, onLogScore }: Props) {
+export default function RandomDrillModal({ drills, canManage, onClose, onLogScore, canChallenge, onChallenge }: Props) {
   const [categories, setCategories] = useState<string[]>([]);
   const [category, setCategory] = useState<string>("All");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -134,6 +136,12 @@ export default function RandomDrillModal({ drills, canManage, onClose, onLogScor
                 </button>
               )}
             </div>
+            {!canManage && canChallenge && result && (result.scoring_type === "competitive" || result.scoring_type === "multi_spot") && (
+              <button onClick={() => { onChallenge?.(result.id); onClose(); }}
+                style={{ width: "100%", background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", color: "var(--gold)", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", marginBottom: 8 }}>
+                ⚔️ Challenge Someone in This Drill
+              </button>
+            )}
             <button onClick={() => setStep("filter")} style={{ width: "100%", background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "9px", color: "var(--muted)", fontFamily: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer", marginBottom: 8 }}>
               ← Change Filters
             </button>
