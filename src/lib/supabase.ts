@@ -77,6 +77,8 @@ export interface Workout {
   scoring_type: ScoringType;
   scoring_metric?: string;
   lower_is_better?: boolean;
+  allow_negative?: boolean;
+  tiebreak_mode?: "free_throw" | "fastest_time" | null;
   flat_points?: number;
   first_place_pts?: number;
   second_place_pts?: number;
@@ -99,6 +101,7 @@ export interface Score {
   sprint_secs: number;
   reps: number;
   self_points: number;
+  tiebreak_value?: number | null;
   points: number;
   logged_at: string;
 }
@@ -111,6 +114,7 @@ export interface ScoreAttempt {
   reps: number;
   sprint_secs: number;
   self_points: number;
+  tiebreak_value?: number | null;
   raw_score: number;
   is_personal_best: boolean;
   attempted_at: string;
