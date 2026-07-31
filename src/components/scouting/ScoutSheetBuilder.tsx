@@ -190,7 +190,7 @@ export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: 
 
   return (
     <div className="modal-overlay open" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 720, width: "95%" }}>
+      <div className="log-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 720, width: "95%" }}>
         <button className="modal-close" onClick={onClose}>✕</button>
 
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, borderBottom: "1px solid var(--border)", paddingBottom: 10 }}>
@@ -368,7 +368,7 @@ export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: 
 
         {detailPlayer && (
           <div className="modal-overlay open" onClick={() => setDetailPlayerId(null)}>
-            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 480, width: "92%" }}>
+            <div className="log-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480, width: "92%" }}>
               <button className="modal-close" onClick={() => setDetailPlayerId(null)}>✕</button>
               <h3 style={{ marginTop: 0 }}>{detailPlayer.name}</h3>
 
