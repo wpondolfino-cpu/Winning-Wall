@@ -17,7 +17,7 @@ export default function RichTextEditor({ value, onChange, placeholder, minHeight
     const el = ref.current;
     if (!el) return null;
     const val = el.value;
-    const pos = el.selectionStart;
+    const pos = el.selectionStart ?? val.length;
     let start = val.lastIndexOf("\n", pos - 1) + 1;
     let end = val.indexOf("\n", pos);
     if (end === -1) end = val.length;
@@ -33,22 +33,23 @@ export default function RichTextEditor({ value, onChange, placeholder, minHeight
   function insertAtCursor(text: string) {
     const el = ref.current;
     if (!el) { onChange(value + text); return; }
-    const pos = el.selectionStart;
+    const pos = el.selectionStart ?? value.length;
     onChange(value.slice(0, pos) + text + value.slice(pos));
     requestAnimationFrame(() => { el.focus(); el.selectionStart = el.selectionEnd = pos + text.length; });
   }
   function wrapBold() {
     const el = ref.current;
     if (!el) { insertAtCursor("**bold**"); return; }
-    const start = el.selectionStart, end = el.selectionEnd;
-    if (start === end) { insertAtCursor("**bold**"); return; }
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    if (start == null || end == null || start === end) { insertAtCursor("**bold**"); return; }
     const sel = value.slice(start, end);
     onChange(value.slice(0, start) + "**" + sel + "**" + value.slice(end));
     requestAnimationFrame(() => el.focus());
   }
   function insertDivider() {
     const el = ref.current;
-    const pos = el ? el.selectionStart : value.length;
+    const pos = el ? (el.selectionStart ?? value.length) : value.length;
     const prefix = pos > 0 && value[pos - 1] !== "\n" ? "\n" : "";
     insertAtCursor(prefix + "---\n");
   }
