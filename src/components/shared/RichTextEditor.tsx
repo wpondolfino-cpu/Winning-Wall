@@ -1,6 +1,7 @@
 // src/components/shared/RichTextEditor.tsx
 import { useRef } from "react";
 import { insertBullet, insertNumbered, insertIndent } from "../../lib/richtext";
+import { inputStyle } from "../../lib/inputStyle";
 
 interface Props {
   value: string;
@@ -69,7 +70,7 @@ export default function RichTextEditor({ value, onChange, placeholder, minHeight
         </div>
       )}
       <textarea ref={ref} value={value} disabled={disabled} onChange={e => onChange(e.target.value)}
-        placeholder={placeholder} style={{ width: "100%", minHeight, fontSize: 13 }} />
+        placeholder={placeholder} style={{ ...inputStyle, width: "100%", minHeight, resize: "vertical" }} />
     </div>
   );
 }
