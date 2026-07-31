@@ -101,7 +101,7 @@ export default function ScoutSheetsHub({ canManage }: Props) {
   if (activeOpponent) {
     const mostRecentSheet = allSheets[0];
     return (
-      <div style={{ maxWidth: 560, margin: "0 auto" }}>
+      <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto" }}>
         <button type="button" onClick={() => setActiveOpponent(null)} style={{ marginBottom: 16, background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 13 }}>← All opponents</button>
         {error && <div className="error-msg">{error}</div>}
 
@@ -161,7 +161,7 @@ export default function ScoutSheetsHub({ canManage }: Props) {
   }
 
   return (
-    <div style={{ maxWidth: 560, margin: "0 auto" }}>
+    <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto" }}>
       {error && <div className="error-msg">{error}</div>}
       {canManage && (
         <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
