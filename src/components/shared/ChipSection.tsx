@@ -1,5 +1,6 @@
 // src/components/shared/ChipSection.tsx
 import { useState } from "react";
+import { inputStyle } from "../../lib/inputStyle";
 
 interface Props {
   label: string;
@@ -38,7 +39,7 @@ export default function ChipSection({ label, options, selected, onToggle, onAddC
           <span style={{ display: "flex", gap: 4 }}>
             <input autoFocus value={custom} onChange={e => setCustom(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && custom.trim()) { onAddCustom(custom.trim()); setCustom(""); setAdding(false); } if (e.key === "Escape") { setAdding(false); setCustom(""); } }}
-              placeholder="New tag…" style={{ fontSize: 12, padding: "4px 8px", width: 100 }} />
+              placeholder="New tag…" style={{ ...inputStyle, fontSize: 12, padding: "4px 8px", width: 100 }} />
             <button type="button" onClick={() => { if (custom.trim()) { onAddCustom(custom.trim()); setCustom(""); setAdding(false); } }}
               style={{ fontSize: 12, padding: "4px 8px" }}>Add</button>
           </span>
