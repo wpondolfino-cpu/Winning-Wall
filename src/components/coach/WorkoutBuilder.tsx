@@ -107,7 +107,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
     const el = descRef.current;
     if (!el) return null;
     const val = el.value;
-    const pos = el.selectionStart;
+    const pos = el.selectionStart ?? val.length;
     let start = val.lastIndexOf("\n", pos - 1) + 1;
     let end = val.indexOf("\n", pos);
     if (end === -1) end = val.length;
@@ -124,7 +124,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
   function descInsertAtCursor(text: string) {
     const el = descRef.current;
     if (!el) { setDesc(d => d + text); return; }
-    const pos = el.selectionStart;
+    const pos = el.selectionStart ?? desc.length;
     const newVal = desc.slice(0, pos) + text + desc.slice(pos);
     setDesc(newVal);
     requestAnimationFrame(() => { el.focus(); el.selectionStart = el.selectionEnd = pos + text.length; });
@@ -132,15 +132,16 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
   function descWrapBold() {
     const el = descRef.current;
     if (!el) { descInsertAtCursor("**bold**"); return; }
-    const start = el.selectionStart, end = el.selectionEnd;
-    if (start === end) { descInsertAtCursor("**bold**"); return; }
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    if (start == null || end == null || start === end) { descInsertAtCursor("**bold**"); return; }
     const sel = desc.slice(start, end);
     setDesc(desc.slice(0, start) + "**" + sel + "**" + desc.slice(end));
     requestAnimationFrame(() => el.focus());
   }
   function descInsertDivider() {
     const el = descRef.current;
-    const pos = el ? el.selectionStart : desc.length;
+    const pos = el ? (el.selectionStart ?? desc.length) : desc.length;
     const prefix = pos > 0 && desc[pos - 1] !== "\n" ? "\n" : "";
     descInsertAtCursor(prefix + "---\n");
   }
