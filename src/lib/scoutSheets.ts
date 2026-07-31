@@ -40,15 +40,15 @@ export async function updateOpponentLogo(id: string, logo_url: string | null) {
   if (error) throw error;
 }
 
-// Uploads a team logo the same way player avatars already upload —
-// same "avatars" bucket, just a different path prefix, so there's no
-// new storage bucket/policy to set up.
+// Uploads a team logo to its own bucket — opponent logos are a shared
+// team asset any coach/admin can set or replace, unlike player avatars
+// which are scoped to each player's own account.
 export async function uploadOpponentLogo(opponentId: string, file: File): Promise<string> {
   const ext = file.name.split(".").pop() ?? "png";
-  const path = `opponent-logos/${opponentId}.${ext}`;
-  const { error: upErr } = await supabase.storage.from("avatars").upload(path, file, { upsert: true, contentType: file.type });
+  const path = `${opponentId}.${ext}`;
+  const { error: upErr } = await supabase.storage.from("opponent-logos").upload(path, file, { upsert: true, contentType: file.type });
   if (upErr) throw upErr;
-  const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+  const { data } = supabase.storage.from("opponent-logos").getPublicUrl(path);
   await updateOpponentLogo(opponentId, data.publicUrl);
   return data.publicUrl;
 }
