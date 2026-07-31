@@ -11,6 +11,7 @@ import {
   getScoutSheetPrintContext,
 } from "../../lib/scoutSheets";
 import { getRoster, RosterPlayer, getMyPlays, Play } from "../../lib/plays";
+import { inputStyle } from "../../lib/inputStyle";
 import ChipSection from "../shared/ChipSection";
 import DefenseSection, { DefenseSectionData, emptyDefenseData } from "./DefenseSection";
 import CallEntryCard from "./CallEntryCard";
@@ -207,7 +208,7 @@ export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: 
             {canManage && (
               <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
                 <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Player name"
-                  onKeyDown={e => { if (e.key === "Enter") addPlayer(); }} style={{ flex: 1 }} />
+                  onKeyDown={e => { if (e.key === "Enter") addPlayer(); }} style={{ ...inputStyle, flex: 1 }} />
                 <button type="button" onClick={addPlayer} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "0 16px", fontWeight: 600, cursor: "pointer" }}>Add</button>
               </div>
             )}
@@ -218,16 +219,16 @@ export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: 
                   padding: "8px 10px", background: "var(--surface2)", borderRadius: 8, fontSize: 12 }}>
                   <span onClick={() => setDetailPlayerId(p.id)} style={{ cursor: "pointer", fontWeight: 600, color: "var(--text)" }}>{p.name}</span>
                   {canManage ? (
-                    <input value={p.number ?? ""} onChange={e => patchPlayer(p.id, { number: e.target.value })} placeholder="#" style={{ width: "100%", fontSize: 12, padding: "4px 6px" }} />
+                    <input value={p.number ?? ""} onChange={e => patchPlayer(p.id, { number: e.target.value })} placeholder="#" style={{ ...inputStyle, width: "100%", fontSize: 12, padding: "4px 6px" }} />
                   ) : <span>{p.number ?? "—"}</span>}
                   {canManage ? (
-                    <input value={p.position ?? ""} onChange={e => patchPlayer(p.id, { position: e.target.value })} placeholder="Pos" style={{ width: "100%", fontSize: 12, padding: "4px 6px" }} />
+                    <input value={p.position ?? ""} onChange={e => patchPlayer(p.id, { position: e.target.value })} placeholder="Pos" style={{ ...inputStyle, width: "100%", fontSize: 12, padding: "4px 6px" }} />
                   ) : <span>{p.position ?? "—"}</span>}
                   {canManage ? (
-                    <input value={p.height ?? ""} onChange={e => patchPlayer(p.id, { height: e.target.value })} placeholder="Ht" style={{ width: "100%", fontSize: 12, padding: "4px 6px" }} />
+                    <input value={p.height ?? ""} onChange={e => patchPlayer(p.id, { height: e.target.value })} placeholder="Ht" style={{ ...inputStyle, width: "100%", fontSize: 12, padding: "4px 6px" }} />
                   ) : <span>{p.height ?? "—"}</span>}
                   {canManage ? (
-                    <input value={p.grade ?? ""} onChange={e => patchPlayer(p.id, { grade: e.target.value })} placeholder="Gr" style={{ width: "100%", fontSize: 12, padding: "4px 6px" }} />
+                    <input value={p.grade ?? ""} onChange={e => patchPlayer(p.id, { grade: e.target.value })} placeholder="Gr" style={{ ...inputStyle, width: "100%", fontSize: 12, padding: "4px 6px" }} />
                   ) : <span>{p.grade ?? "—"}</span>}
                   <div style={{ display: "flex", gap: 3 }}>
                     {(["R", "L"] as const).map(h => (
@@ -237,7 +238,7 @@ export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: 
                     ))}
                   </div>
                   {canManage ? (
-                    <select value={p.assigned_to_profile_id ?? ""} onChange={e => patchPlayer(p.id, { assigned_to_profile_id: e.target.value || null })} style={{ fontSize: 11, width: "100%" }}>
+                    <select value={p.assigned_to_profile_id ?? ""} onChange={e => patchPlayer(p.id, { assigned_to_profile_id: e.target.value || null })} style={{ ...inputStyle, fontSize: 11, width: "100%", padding: "4px 6px" }}>
                       <option value="">— Assign —</option>
                       {roster.map(r => <option key={r.id} value={r.id}>{r.jersey ? `#${r.jersey} ` : ""}{r.name}</option>)}
                     </select>
@@ -333,7 +334,7 @@ export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: 
                         <div key={idx} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8 }}>
                           <span style={{ fontSize: 12, color: "var(--muted)", width: 16 }}>{idx + 1}.</span>
                           <input ref={el => { keyInputRefs.current[idx] = el; }} value={k} disabled={!canManage}
-                            onChange={e => updateKey(idx, e.target.value)} placeholder="Key point…" style={{ flex: 1, fontSize: 13 }} />
+                            onChange={e => updateKey(idx, e.target.value)} placeholder="Key point…" style={{ ...inputStyle, flex: 1, fontSize: 13 }} />
                           {canManage && <button type="button" onClick={() => wrapKeyBold(idx)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "4px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>B</button>}
                           {canManage && <button type="button" onClick={() => removeKey(idx)} style={{ background: "none", border: "none", color: "#ff7b7b", cursor: "pointer", fontSize: 14 }}>×</button>}
                         </div>
@@ -386,7 +387,7 @@ export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: 
 
               <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Notes</div>
               <textarea value={detailPlayer.notes ?? ""} disabled={!canManage} onChange={e => patchPlayer(detailPlayer.id, { notes: e.target.value })}
-                placeholder="Anything else worth flagging…" style={{ width: "100%", minHeight: 60 }} />
+                placeholder="Anything else worth flagging…" style={{ ...inputStyle, width: "100%", minHeight: 60, resize: "vertical" }} />
 
               {canManage && (
                 <button type="button" onClick={async () => { await deleteScoutPlayer(detailPlayer.id); setDetailPlayerId(null); load(); }}
