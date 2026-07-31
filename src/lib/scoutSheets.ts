@@ -28,7 +28,9 @@ export async function getOpponent(id: string): Promise<Opponent | null> {
 }
 
 export async function createOpponent(name: string): Promise<Opponent> {
-  const { data, error } = await supabase.from("opponents").insert({ name: name.trim() }).select().single();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not signed in");
+  const { data, error } = await supabase.from("opponents").insert({ name: name.trim(), created_by: user.id }).select().single();
   if (error) throw error;
   return data;
 }
@@ -114,9 +116,11 @@ export async function getScoutSheet(id: string): Promise<ScoutSheet | null> {
 }
 
 export async function createScoutSheet(gameId: string, opponentId: string): Promise<ScoutSheet> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not signed in");
   const { data, error } = await supabase
     .from("scout_sheets")
-    .insert({ game_id: gameId, opponent_id: opponentId })
+    .insert({ game_id: gameId, opponent_id: opponentId, created_by: user.id })
     .select().single();
   if (error) throw error;
   return data;
@@ -129,6 +133,8 @@ export async function createScoutSheet(gameId: string, opponentId: string): Prom
 export async function duplicateScoutSheet(sourceSheetId: string, newGameId: string): Promise<ScoutSheet> {
   const source = await getScoutSheet(sourceSheetId);
   if (!source) throw new Error("Source scout sheet not found");
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not signed in");
 
   const { data: created, error: createErr } = await supabase
     .from("scout_sheets")
@@ -138,6 +144,7 @@ export async function duplicateScoutSheet(sourceSheetId: string, newGameId: stri
       team_record: source.team_record,
       tempo: source.tempo,
       team_offensive_strengths: source.team_offensive_strengths,
+      created_by: user.id,
     })
     .select().single();
   if (createErr) throw createErr;
