@@ -7,6 +7,7 @@ import {
   createScoutSheet, duplicateScoutSheet,
 } from "../../lib/scoutSheets";
 import ScoutSheetBuilder from "./ScoutSheetBuilder";
+import { inputStyle } from "../../lib/inputStyle";
 
 interface Props {
   canManage: boolean; // coach/admin = true, player = false (read-only, published only)
@@ -16,6 +17,7 @@ export default function ScoutSheetsHub({ canManage }: Props) {
   const [opponents, setOpponents] = useState<Opponent[]>([]);
   const [newOpponentName, setNewOpponentName] = useState("");
   const [activeOpponent, setActiveOpponent] = useState<Opponent | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [lastGames, setLastGames] = useState<any[]>([]);
   const [allSheets, setAllSheets] = useState<any[]>([]);
   const [showAllSheets, setShowAllSheets] = useState(false);
@@ -39,17 +41,26 @@ export default function ScoutSheetsHub({ canManage }: Props) {
 
   async function addOpponent() {
     if (!newOpponentName.trim()) return;
-    const o = await createOpponent(newOpponentName.trim());
-    setNewOpponentName("");
-    loadOpponents();
-    openOpponent(o);
+    setError(null);
+    try {
+      const o = await createOpponent(newOpponentName.trim());
+      setNewOpponentName("");
+      loadOpponents();
+      openOpponent(o);
+    } catch (e: any) {
+      setError(e?.message ?? "Couldn't add opponent — try again.");
+    }
   }
 
   async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     if (!activeOpponent || !e.target.files?.[0]) return;
-    const url = await uploadOpponentLogo(activeOpponent.id, e.target.files[0]);
-    setActiveOpponent({ ...activeOpponent, logo_url: url });
-    loadOpponents();
+    try {
+      const url = await uploadOpponentLogo(activeOpponent.id, e.target.files[0]);
+      setActiveOpponent({ ...activeOpponent, logo_url: url });
+      loadOpponents();
+    } catch (e: any) {
+      setError(e?.message ?? "Couldn't upload logo — try again.");
+    }
   }
 
   // Creates a bare-bones game record tied to this opponent, then the
@@ -57,23 +68,30 @@ export default function ScoutSheetsHub({ canManage }: Props) {
   // requiring a full trip through the Game Stats game-creation flow.
   async function startNewScoutSheet(duplicateFromSheetId?: string) {
     if (!activeOpponent || !newGameDate) return;
-    const { data: game, error } = await supabase.from("games").insert({
+    setError(null);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setError("Not signed in."); return; }
+    const { data: game, error: gameErr } = await supabase.from("games").insert({
       opponent: activeOpponent.name,
       opponent_id: activeOpponent.id,
       game_date: newGameDate,
       season: new Date(newGameDate).getFullYear().toString(),
       home_away: "home",
       status: "draft",
+      created_by: user.id,
     }).select().single();
-    if (error) { console.error(error); return; }
+    if (gameErr) { setError(gameErr.message); return; }
 
-    const sheet = duplicateFromSheetId
-      ? await duplicateScoutSheet(duplicateFromSheetId, game.id)
-      : await createScoutSheet(game.id, activeOpponent.id);
-
-    setNewGameDate("");
-    openOpponent(activeOpponent);
-    setOpenSheetId(sheet.id);
+    try {
+      const sheet = duplicateFromSheetId
+        ? await duplicateScoutSheet(duplicateFromSheetId, game.id)
+        : await createScoutSheet(game.id, activeOpponent.id);
+      setNewGameDate("");
+      openOpponent(activeOpponent);
+      setOpenSheetId(sheet.id);
+    } catch (e: any) {
+      setError(e?.message ?? "Couldn't create the scout sheet — try again.");
+    }
   }
 
   if (openSheetId) {
@@ -85,6 +103,7 @@ export default function ScoutSheetsHub({ canManage }: Props) {
     return (
       <div style={{ maxWidth: 560, margin: "0 auto" }}>
         <button type="button" onClick={() => setActiveOpponent(null)} style={{ marginBottom: 16, background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 13 }}>← All opponents</button>
+        {error && <div className="error-msg">{error}</div>}
 
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
           <div onClick={() => canManage && fileRef.current?.click()} style={{ width: 56, height: 56, borderRadius: 12, background: "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center", cursor: canManage ? "pointer" : "default", overflow: "hidden" }}>
@@ -99,7 +118,7 @@ export default function ScoutSheetsHub({ canManage }: Props) {
 
         {canManage && (
           <div style={{ display: "flex", gap: 8, marginBottom: 20, alignItems: "center" }}>
-            <input type="date" value={newGameDate} onChange={e => setNewGameDate(e.target.value)} style={{ flex: 1 }} />
+            <input type="date" value={newGameDate} onChange={e => setNewGameDate(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
             <button type="button" disabled={!newGameDate} onClick={() => startNewScoutSheet()} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "0 14px", fontWeight: 600, cursor: "pointer" }}>New sheet</button>
             {mostRecentSheet && (
               <button type="button" disabled={!newGameDate} onClick={() => startNewScoutSheet(mostRecentSheet.id)} style={{ background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, padding: "0 14px", fontWeight: 600, cursor: "pointer" }}>Duplicate last</button>
@@ -143,10 +162,11 @@ export default function ScoutSheetsHub({ canManage }: Props) {
 
   return (
     <div style={{ maxWidth: 560, margin: "0 auto" }}>
+      {error && <div className="error-msg">{error}</div>}
       {canManage && (
         <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
           <input value={newOpponentName} onChange={e => setNewOpponentName(e.target.value)} placeholder="New opponent name"
-            onKeyDown={e => { if (e.key === "Enter") addOpponent(); }} style={{ flex: 1 }} />
+            onKeyDown={e => { if (e.key === "Enter") addOpponent(); }} style={{ ...inputStyle, flex: 1 }} />
           <button type="button" onClick={addOpponent} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "0 16px", fontWeight: 600, cursor: "pointer" }}>Add</button>
         </div>
       )}
