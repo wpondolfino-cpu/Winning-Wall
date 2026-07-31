@@ -168,8 +168,9 @@ export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: 
     if (!sheet) return;
     const el = keyInputRefs.current[i];
     const val = sheet.keys_to_game[i] ?? "";
-    if (!el || el.selectionStart == null || el.selectionStart === el.selectionEnd) { updateKey(i, val + " **word**"); return; }
-    const { selectionStart: start, selectionEnd: end } = el;
+    const start = el?.selectionStart;
+    const end = el?.selectionEnd;
+    if (start == null || end == null || start === end) { updateKey(i, val + " **word**"); return; }
     updateKey(i, val.slice(0, start) + "**" + val.slice(start, end) + "**" + val.slice(end));
   }
 
