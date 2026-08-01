@@ -258,7 +258,7 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
                         </div>
                       </div>
                       {vid && <span style={{ fontSize: 11, color: "var(--gold)" }}>📹</span>}
-                      {!canManage && canChallenge && (d.scoring_type === "competitive" || d.scoring_type === "multi_spot") && (
+                      {(canManage || canChallenge) && (d.scoring_type === "competitive" || d.scoring_type === "multi_spot") && (
                         <button onClick={(e) => { e.stopPropagation(); onChallenge?.(d.id); }}
                           style={{ background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", color: "var(--gold)", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
                           ⚔️ Challenge
