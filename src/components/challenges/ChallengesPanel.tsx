@@ -2,7 +2,7 @@
 // Thin wrapper — tabs + routing only. Logic lives in sub-components.
 import { useState, useEffect } from "react";
 import { Score, Workout } from "../../lib/supabase";
-import H2HTab from "./H2HTab";
+import H2HTab, { getH2HEligibleWorkouts } from "./H2HTab";
 import H2HOversight from "./H2HOversight";
 import TeamsTab from "./TeamsTab";
 import StatsTab from "./StatsTab";
@@ -66,7 +66,10 @@ export default function ChallengesPanel({ currentUserId, currentUserName, workou
 
       {activeTab === "h2h" && (
         canManage ? (
-          <H2HOversight />
+          <div>
+            <EligibleDrillsPanel workouts={workouts} />
+            <H2HOversight />
+          </div>
         ) : (
           <H2HTab
             currentUserId={currentUserId}
@@ -88,6 +91,38 @@ export default function ChallengesPanel({ currentUserId, currentUserName, workou
       )}
       {activeTab === "stats" && (
         canManage ? <TeamStatsPanel /> : <StatsTab currentUserId={currentUserId} />
+      )}
+    </div>
+  );
+}
+
+// Read-only mirror of the exact drill list players see in H2H's "choose
+// drill" dropdown — lets a coach/admin confirm at a glance which drills
+// are currently eligible, without needing a fake "new challenge" flow.
+function EligibleDrillsPanel({ workouts }: { workouts: Workout[] }) {
+  const [open, setOpen] = useState(true);
+  const eligible = getH2HEligibleWorkouts(workouts);
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <button onClick={() => setOpen(v => !v)}
+        style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+        <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform 0.15s ease", display: "inline-block" }}>▸</span>
+        🎯 Eligible Drills for Head-to-Head ({eligible.length})
+      </button>
+      {open && (
+        <div style={{ marginTop: 8, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: eligible.length ? "8px 12px" : "12px 14px" }}>
+          {eligible.length === 0 ? (
+            <div style={{ color: "var(--muted)", fontSize: 12 }}>No drills currently qualify — a drill needs to be active and scored as Competitive or Multi-Spot to show up in H2H.</div>
+          ) : (
+            eligible.map(w => (
+              <div key={w.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--border)", fontSize: 12 }}>
+                <span>{w.emoji}</span>
+                <span style={{ flex: 1, color: "var(--text)" }}>{w.title}</span>
+                <span style={{ color: "var(--muted)", fontSize: 11, textTransform: "capitalize" }}>{w.scoring_type === "multi_spot" ? "Multi-Spot" : "Competitive"}</span>
+              </div>
+            ))
+          )}
+        </div>
       )}
     </div>
   );
