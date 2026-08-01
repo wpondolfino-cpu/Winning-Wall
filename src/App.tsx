@@ -31,10 +31,11 @@ import PlaysHub from "./components/plays/PlaysHub";
 import PlaybookManager from "./components/coach/PlaybookManager";
 import GameStatsHub from "./components/game-stats/GameStatsHub";
 import ScoutSheetsHub from "./components/scouting/ScoutSheetsHub";
+import GameDaySheetsList from "./components/gameday/GameDaySheetsList";
 
 type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "scoutsheets" | "more";
-type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "practices" | "practicelibrary" | "settings" | "profile";
-type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "practices" | "practicelibrary" | "profile";
+type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "gameday" | "practices" | "practicelibrary" | "settings" | "profile";
+type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "gameday" | "practices" | "practicelibrary" | "profile";
 
 const COACH_NAV_CONFIG: NavItemConfig[] = [
   { key: "workouts",      icon: "➕", label: "Manage Workouts",   section: "offseason" },
@@ -49,6 +50,7 @@ const COACH_NAV_CONFIG: NavItemConfig[] = [
   { key: "practicelibrary", icon: "📒", label: "Practice Drills", section: "inseason" },
   { key: "gamestats",     icon: "📊", label: "Analytics",         section: "inseason" },
   { key: "scoutsheets",   icon: "🔎", label: "Scout Sheets",      section: "inseason" },
+  { key: "gameday",       icon: "📋", label: "Game Day",          section: "inseason" },
   { key: "players",       icon: "👥", label: "Players & Coaches", section: "always" },
   { key: "announcements", icon: "📢", label: "Announcements",     section: "always" },
   { key: "settings",      icon: "⚙️", label: "Settings",          section: "always" },
@@ -70,6 +72,7 @@ const ADMIN_NAV_CONFIG: NavItemConfig[] = [
   { key: "practicelibrary", icon: "📒", label: "Practice Drills", section: "inseason" },
   { key: "gamestats",     icon: "📊", label: "Analytics",         section: "inseason" },
   { key: "scoutsheets",   icon: "🔎", label: "Scout Sheets",      section: "inseason" },
+  { key: "gameday",       icon: "📋", label: "Game Day",          section: "inseason" },
   { key: "players",       icon: "👥", label: "Players & Coaches", section: "always" },
   { key: "announcements", icon: "📢", label: "Announcements",     section: "always" },
   { key: "settings",      icon: "⚙️", label: "Settings",          section: "always" },
@@ -482,6 +485,7 @@ export default function App() {
           {isCoach && coachTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
           {isCoach && coachTab === "gamestats" && <GameStatsHub currentUserRole="coach" userId={user.id} />}
           {isCoach && coachTab === "scoutsheets" && <ScoutSheetsHub canManage={true} />}
+          {isCoach && coachTab === "gameday" && <GameDaySheetsList />}
           {isCoach && coachTab === "leaderboard" && <Leaderboard canManage={true} />}
           {isCoach && coachTab === "announcements" && (<><AnnouncementPanel isAdmin={false} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
           {isCoach && coachTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isCoach={true} />}
@@ -513,6 +517,7 @@ export default function App() {
           {isAdmin && adminTab === "plays" && <PlaysHub currentUserRole="admin" />}
           {isAdmin && adminTab === "gamestats" && <GameStatsHub currentUserRole="admin" userId={user.id} />}
           {isAdmin && adminTab === "scoutsheets" && <ScoutSheetsHub canManage={true} />}
+          {isAdmin && adminTab === "gameday" && <GameDaySheetsList />}
           {isAdmin && adminTab === "playbooks" && <PlaybookManager />}
           {isAdmin && adminTab === "practices" && <PracticeWeeksList />}
           {isAdmin && adminTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
