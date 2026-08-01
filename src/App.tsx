@@ -475,7 +475,7 @@ export default function App() {
 
           {/* Coach panels */}
           {isCoach && coachTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={false} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
-          {isCoach && coachTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} />}
+          {isCoach && coachTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} onChallenge={() => setCoachTab("challenges")} />}
           {isCoach && coachTab === "plays" && <PlaysHub currentUserRole="coach" />}
           {isCoach && coachTab === "playbooks" && <PlaybookManager />}
           {isCoach && coachTab === "practices" && <PracticeWeeksList />}
@@ -509,7 +509,7 @@ export default function App() {
 
           {/* Admin panels */}
           {isAdmin && adminTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={true} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
-          {isAdmin && adminTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} />}
+          {isAdmin && adminTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} onChallenge={() => setAdminTab("challenges")} />}
           {isAdmin && adminTab === "plays" && <PlaysHub currentUserRole="admin" />}
           {isAdmin && adminTab === "gamestats" && <GameStatsHub currentUserRole="admin" userId={user.id} />}
           {isAdmin && adminTab === "scoutsheets" && <ScoutSheetsHub canManage={true} />}
