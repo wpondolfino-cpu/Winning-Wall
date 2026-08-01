@@ -7,6 +7,7 @@ import {
 } from "../../lib/gameDaySheets";
 import { getMyPlays, Play } from "../../lib/plays";
 import { inputStyle } from "../../lib/inputStyle";
+import GameDaySheetPrintView from "./GameDaySheetPrintView";
 
 interface Props {
   sheetId: string;
@@ -33,6 +34,7 @@ export default function GameDaySheetEditor({ sheetId, onClose }: Props) {
   const [selectedPlayIds, setSelectedPlayIds] = useState<string[]>([]);
   const undoStack = useRef<UndoAction[]>([]);
   const [canUndo, setCanUndo] = useState(false);
+  const [showPrint, setShowPrint] = useState(false);
 
   const load = useCallback(async () => {
     const [s, c, p] = await Promise.all([getGameDaySheet(sheetId), getGameDayCalls(sheetId), getMyPlays()]);
@@ -255,7 +257,16 @@ export default function GameDaySheetEditor({ sheetId, onClose }: Props) {
 
   if (!sheet) return <div style={{ padding: 24 }}>Loading…</div>;
 
-  const bySection = (key: GameDaySection) => GAMEDAY_SECTIONS.find(s => s.key === key)!;
+  if (showPrint) {
+    return (
+      <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto" }}>
+        <div className="no-print" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <button type="button" onClick={() => setShowPrint(false)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 13 }}>← Back to editor</button>
+        </div>
+        <GameDaySheetPrintView sheet={sheet} calls={calls} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto" }}>
@@ -265,6 +276,7 @@ export default function GameDaySheetEditor({ sheetId, onClose }: Props) {
           {canUndo && (
             <button type="button" onClick={handleUndo} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>↶ Undo</button>
           )}
+          <button type="button" onClick={() => setShowPrint(true)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>🖨️ Print view</button>
           <strong style={{ fontSize: 16 }}>{sheet.name}</strong>
         </div>
       </div>
