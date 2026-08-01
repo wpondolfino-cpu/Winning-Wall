@@ -136,7 +136,7 @@ export default function RandomDrillModal({ drills, canManage, onClose, onLogScor
                 </button>
               )}
             </div>
-            {!canManage && canChallenge && result && (result.scoring_type === "competitive" || result.scoring_type === "multi_spot") && (
+            {(canManage || canChallenge) && result && (result.scoring_type === "competitive" || result.scoring_type === "multi_spot") && (
               <button onClick={() => { onChallenge?.(result.id); onClose(); }}
                 style={{ width: "100%", background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", color: "var(--gold)", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", marginBottom: 8 }}>
                 ⚔️ Challenge Someone in This Drill
