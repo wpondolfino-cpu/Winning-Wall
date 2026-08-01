@@ -14,6 +14,13 @@ interface Props {
   onPrefillHandled?: () => void;
 }
 
+// Exported so the coach/admin Oversight view can show the exact same
+// eligible-drill list players see in their own "choose drill" dropdown
+// — one source of truth instead of a second copy that could drift.
+export function getH2HEligibleWorkouts(workouts: Workout[]): Workout[] {
+  return workouts.filter(w => w.is_active !== false && (w.scoring_type === "competitive" || w.scoring_type === "multi_spot"));
+}
+
 interface Challenge {
   id: string;
   challenger_id: string;
@@ -47,7 +54,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
   const [xpPerks, setXpPerks]                 = useState<any[]>([]);
   const { leaderboard } = useLeaderboard();
 
-  const activeWorkouts = workouts.filter(w => w.is_active !== false && (w.scoring_type === "competitive" || w.scoring_type === "multi_spot"));
+  const activeWorkouts = getH2HEligibleWorkouts(workouts);
   const challengesThreshold = xpPerks.length > 0
     ? (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) : 150;
   const opponents = leaderboard.filter((e: any) => e.id !== currentUserId && (e.total_xp ?? 0) >= challengesThreshold);
