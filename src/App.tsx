@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from "react";
+import type { ReactNode } from "react";
 import { useAuth } from "./hooks/useAuth";
 import { useWorkouts } from "./hooks/useWorkouts";
 import { getMyScores, getAllScores, signOut, Score, Profile, getPlayerXp, getXpPerks, checkUnseenPerks, loadPeriodAnchor, supabase } from "./lib/supabase";
+import { loadSeasonMode, effectiveModeFor, SeasonMode } from "./lib/seasonMode";
 import ProfileEditor from "./components/ProfileEditor";
 import AvatarOnboardingPrompt from "./components/AvatarOnboardingPrompt";
 import ProfilePage from "./components/ProfilePage";
@@ -143,6 +145,8 @@ export default function App() {
   const [localProfile, setLocalProfile] = useState<Profile | null>(null);
 
   useEffect(() => { loadPeriodAnchor().catch(console.error); }, []);
+  const [seasonMode, setSeasonMode] = useState<SeasonMode>("offseason");
+  useEffect(() => { loadSeasonMode().then(setSeasonMode).catch(console.error); }, []);
 
   // Reset XP/perks state the instant the logged-in user changes, so a newly
   // created account can never briefly inherit stale XP/perk data left over
@@ -347,6 +351,27 @@ export default function App() {
   const isAdmin  = profile.role === "admin";
   const roleLabel      = isAdmin ? "👑 Admin" : isCoach ? "🏀 Coach" : "⚡ Player";
   const displayProfile = localProfile ?? profile;
+  const effectiveMode = effectiveModeFor(displayProfile);
+
+  // Bottom nav always stays 4 feature tabs + More in both modes — just
+  // swapping which 4 playerTab values populate those slots.
+  type BottomTabConfig = { key: PlayerTab; label: string; icon: ReactNode };
+  const OFFSEASON_TABS: BottomTabConfig[] = [
+    { key: "workouts", label: "Workouts", icon: <><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93c4.25 4.25 4.25 9.9 0 14.14"/><path d="M19.07 4.93c-4.25 4.25-4.25 9.9 0 14.14"/><line x1="2" y1="12" x2="22" y2="12"/></> },
+    { key: "leaderboard", label: "Leaderboard", icon: <><path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M10 22v-4"/><path d="M14 22v-4"/><path d="M6 4h12v9a6 6 0 01-12 0V4z"/></> },
+    { key: "h2h", label: "Challenges", icon: <><path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z"/><path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/><path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z"/><path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z"/><path d="M14 14.5V19a2 2 0 01-2 2H6a2 2 0 01-2-2v-5"/><path d="M10 9.5V5a2 2 0 012-2h6a2 2 0 012 2v5"/></> },
+    { key: "lifting", label: "Lifting", icon: <><path d="M6.5 6.5h11"/><path d="M6.5 17.5h11"/><path d="M3 9.5v5"/><path d="M21 9.5v5"/><path d="M2 11h2"/><path d="M20 11h2"/><rect x="5" y="8" width="14" height="8" rx="1"/></> },
+  ];
+  const INSEASON_TABS: BottomTabConfig[] = [
+    { key: "leaderboard", label: "Leaderboard", icon: <><path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M10 22v-4"/><path d="M14 22v-4"/><path d="M6 4h12v9a6 6 0 01-12 0V4z"/></> },
+    { key: "plays", label: "Plays", icon: <><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="12" cy="11" r="2.5"/><path d="M3 8h18"/></> },
+    { key: "gamestats", label: "Analytics", icon: <><line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="12" width="3" height="8"/><rect x="14" y="8" width="3" height="12"/><rect x="10" y="15" width="3" height="5"/></> },
+    { key: "scoutsheets", label: "Scout", icon: <><circle cx="10" cy="10" r="6.5"/><line x1="15" y1="15" x2="20.5" y2="20.5"/></> },
+  ];
+  const bottomTabs = effectiveMode === "inseason" ? INSEASON_TABS : OFFSEASON_TABS;
+  const bottomTabKeys = bottomTabs.map(t => t.key);
+  const moreGroupTabs: PlayerTab[] = (["hof", "profile", "progress", "more"] as PlayerTab[])
+    .concat((["workouts", "leaderboard", "h2h", "lifting", "plays", "gamestats", "scoutsheets"] as PlayerTab[]).filter(k => !bottomTabKeys.includes(k)));
 
   return (
     <div id="app-screen" className={`screen active${isPlayer ? " has-bottom-tabs" : ""}`}>
@@ -553,32 +578,18 @@ export default function App() {
       {/* Bottom Tab Bar */}
       {isPlayer && (
         <nav className="bottom-tab-bar" aria-label="Main navigation">
-          <button className={`bottom-tab${playerTab === "workouts" ? " active" : ""}`} onClick={() => setPlayerTab("workouts")}>
-            <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10"/><path d="M4.93 4.93c4.25 4.25 4.25 9.9 0 14.14"/><path d="M19.07 4.93c-4.25 4.25-4.25 9.9 0 14.14"/><line x1="2" y1="12" x2="22" y2="12"/>
-            </svg>
-            <span>Workouts</span>
-          </button>
-          <button className={`bottom-tab${playerTab === "leaderboard" ? " active" : ""}`} onClick={() => setPlayerTab("leaderboard")}>
-            <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M10 22v-4"/><path d="M14 22v-4"/><path d="M6 4h12v9a6 6 0 01-12 0V4z"/>
-            </svg>
-            <span>Leaderboard</span>
-          </button>
-          <button className={`bottom-tab${playerTab === "h2h" ? " active" : ""}`} onClick={() => { setPlayerTab("h2h"); setPendingChallenges(0); }} style={{ position: "relative" }}>
-            <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z"/><path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/><path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z"/><path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z"/><path d="M14 14.5V19a2 2 0 01-2 2H6a2 2 0 01-2-2v-5"/><path d="M10 9.5V5a2 2 0 012-2h6a2 2 0 012 2v5"/>
-            </svg>
-            <span>Challenges</span>
-            {pendingChallenges > 0 && <span className="tab-badge">{pendingChallenges}</span>}
-          </button>
-          <button className={`bottom-tab${playerTab === "lifting" ? " active" : ""}`} onClick={() => setPlayerTab("lifting")}>
-            <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M6.5 6.5h11"/><path d="M6.5 17.5h11"/><path d="M3 9.5v5"/><path d="M21 9.5v5"/><path d="M2 11h2"/><path d="M20 11h2"/><rect x="5" y="8" width="14" height="8" rx="1"/>
-            </svg>
-            <span>Lifting</span>
-          </button>
-          <button className={`bottom-tab${["hof","profile","progress","plays","more"].includes(playerTab) ? " active" : ""}`} onClick={() => { setPlayerTab("more"); setNewPerkCount(0); }} style={{ position: "relative" }}>
+          {bottomTabs.map(tab => (
+            <button key={tab.key} className={`bottom-tab${playerTab === tab.key ? " active" : ""}`}
+              onClick={() => { setPlayerTab(tab.key); if (tab.key === "h2h") setPendingChallenges(0); }}
+              style={tab.key === "h2h" ? { position: "relative" } : undefined}>
+              <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                {tab.icon}
+              </svg>
+              <span>{tab.label}</span>
+              {tab.key === "h2h" && pendingChallenges > 0 && <span className="tab-badge">{pendingChallenges}</span>}
+            </button>
+          ))}
+          <button className={`bottom-tab${moreGroupTabs.includes(playerTab) ? " active" : ""}`} onClick={() => { setPlayerTab("more"); setNewPerkCount(0); }} style={{ position: "relative" }}>
             <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
             </svg>
