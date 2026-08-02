@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Leaderboard from "./Leaderboard";
 import InSeasonLeaderboard from "./InSeasonLeaderboard";
+import ArchivedSeasons from "./ArchivedSeasons";
 import { effectiveModeFor } from "../lib/seasonMode";
 import { Profile } from "../lib/supabase";
 
@@ -35,13 +36,9 @@ export default function LeaderboardHub({ currentUserId, canManage = false, profi
         ))}
       </div>
 
-      {topTab === "offseason" && <Leaderboard currentUserId={currentUserId} canManage={canManage} hiddenTabs={["history"]} />}
+      {topTab === "offseason" && <Leaderboard currentUserId={currentUserId} canManage={canManage} />}
       {topTab === "inseason" && <InSeasonLeaderboard />}
-      {topTab === "history" && (
-        mode === "inseason"
-          ? <div style={{ textAlign: "center", color: "var(--muted)", padding: "24px 0", fontSize: 13 }}>In-season history — coming with the archive viewer.</div>
-          : <Leaderboard currentUserId={currentUserId} canManage={canManage} hiddenTabs={["current", "overall"]} initialTab="history" />
-      )}
+      {topTab === "history" && <ArchivedSeasons />}
     </div>
   );
 }
