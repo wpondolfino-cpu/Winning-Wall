@@ -13,6 +13,7 @@ import LoginPage from "./pages/LoginPage";
 import WorkoutsPanel from "./components/WorkoutsPanel";
 import CoachPanel from "./components/coach/CoachPanel";
 import Leaderboard from "./components/Leaderboard";
+import LeaderboardHub from "./components/LeaderboardHub";
 import HallOfFame from "./components/HallOfFame";
 import ProgressPanel from "./components/ProgressPanel";
 import PlayersPanel from "./components/PlayersPanel";
@@ -439,7 +440,7 @@ export default function App() {
 
           {/* Player panels */}
           {isPlayer && playerTab === "workouts" && <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} canChallengeFromLibrary={xpEnabled && xpPerks.length > 0 && playerXp >= (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150)} onChallengeDrill={(id) => { setChallengePrefillWorkoutId(id); setPlayerTab("h2h"); }} />}
-          {isPlayer && playerTab === "leaderboard" && <Leaderboard currentUserId={user.id} />}
+          {isPlayer && playerTab === "leaderboard" && <LeaderboardHub currentUserId={user.id} profile={displayProfile} />}
           {isPlayer && playerTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} />}
           {isPlayer && playerTab === "progress" && <ProgressPanel profile={displayProfile} myScores={myScores} workouts={workouts} />}
           {isPlayer && playerTab === "hof" && <HallOfFame onViewWorkout={(id) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} />}
@@ -511,7 +512,7 @@ export default function App() {
           {isCoach && coachTab === "gamestats" && <GameStatsHub currentUserRole="coach" userId={user.id} />}
           {isCoach && coachTab === "scoutsheets" && <ScoutSheetsHub canManage={true} />}
           {isCoach && coachTab === "gameday" && <GameDaySheetsList />}
-          {isCoach && coachTab === "leaderboard" && <Leaderboard canManage={true} />}
+          {isCoach && coachTab === "leaderboard" && <LeaderboardHub canManage={true} profile={displayProfile} />}
           {isCoach && coachTab === "announcements" && (<><AnnouncementPanel isAdmin={false} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
           {isCoach && coachTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isCoach={true} />}
           {isCoach && coachTab === "hof" && <HallOfFame canDelete={true} onViewWorkout={(id) => { setCoachTab("workouts"); setDeepLinkWorkoutId(id); }} />}
@@ -546,7 +547,7 @@ export default function App() {
           {isAdmin && adminTab === "playbooks" && <PlaybookManager />}
           {isAdmin && adminTab === "practices" && <PracticeWeeksList />}
           {isAdmin && adminTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
-          {isAdmin && adminTab === "leaderboard" && <Leaderboard canManage={true} />}
+          {isAdmin && adminTab === "leaderboard" && <LeaderboardHub canManage={true} profile={displayProfile} />}
           {isAdmin && adminTab === "announcements" && (<><AnnouncementPanel isAdmin={true} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
           {isAdmin && adminTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isAdmin={true} />}
           {isAdmin && adminTab === "hof" && <HallOfFame canDelete={true} onViewWorkout={(id) => { setAdminTab("workouts"); setDeepLinkWorkoutId(id); }} />}
