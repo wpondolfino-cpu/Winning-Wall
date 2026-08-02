@@ -15,6 +15,7 @@ import {
 import PracticeBuilder from "./PracticeBuilder";
 import PracticePrintView from "./PracticePrintView";
 import PracticeDayAttendance from "./PracticeDayAttendance";
+import PracticeWinsTool from "./PracticeWinsTool";
 
 interface WeekRowState {
   week: PracticeWeek;
@@ -33,6 +34,7 @@ export default function PracticeWeeksList() {
   const [editingWeekId, setEditingWeekId] = useState<string | null>(null);
   const [editingWeekName, setEditingWeekName] = useState("");
   const [attendanceForId, setAttendanceForId] = useState<string | null>(null);
+  const [winsForId, setWinsForId] = useState<string | null>(null);
   const [activeRosters, setActiveRosters] = useState<RosterWithCount[]>([]);
   const [archivedRosters, setArchivedRosters] = useState<RosterWithCount[]>([]);
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
@@ -134,6 +136,10 @@ export default function PracticeWeeksList() {
         onSaved={() => load()}
       />
     );
+  }
+
+  if (winsForId) {
+    return <PracticeWinsTool practiceId={winsForId} onClose={() => setWinsForId(null)} />;
   }
 
   if (openPracticeId || creatingNew) {
@@ -293,6 +299,19 @@ export default function PracticeWeeksList() {
                               {p.attendance_taken_at
                                 ? `✔ ${new Date(p.attendance_taken_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`
                                 : "Attendance"}
+                            </button>
+                            <button
+                              onClick={e => { e.stopPropagation(); if (p.status === "published") setWinsForId(p.id); }}
+                              disabled={p.status !== "published"}
+                              title={p.status !== "published" ? "Publish this practice to log wins" : "Log practice wins"}
+                              style={{
+                                fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 6, border: "1px solid var(--border)", fontFamily: "inherit",
+                                cursor: p.status === "published" ? "pointer" : "not-allowed",
+                                opacity: p.status === "published" ? 1 : 0.35,
+                                background: "var(--surface2)",
+                                color: "var(--text)",
+                              }}>
+                              🏆 Wins
                             </button>
                             <span style={{
                               fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5,
