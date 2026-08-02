@@ -10,7 +10,7 @@ import type { XpPerk } from "../lib/supabase";
 import ChampionsPanel from "./coach/ChampionsPanel";
 import { formatDuration } from "../lib/time";
 
-interface Props { currentUserId?: string; canManage?: boolean; }
+interface Props { currentUserId?: string; canManage?: boolean; hiddenTabs?: MainTab[]; initialTab?: MainTab; }
 
 const ALL = "All Players";
 type GradeTab = typeof ALL | GradeCategory;
@@ -34,9 +34,9 @@ interface Snapshot {
   period_end: string; snapshot: any[]; created_at: string;
 }
 
-export default function Leaderboard({ currentUserId, canManage = false }: Props) {
+export default function Leaderboard({ currentUserId, canManage = false, hiddenTabs = [], initialTab }: Props) {
   const { leaderboard, loading, lastUpdated } = useLeaderboard();
-  const [mainTab, setMainTab]           = useState<MainTab>("current");
+  const [mainTab, setMainTab]           = useState<MainTab>(initialTab ?? "current");
   const [gradeTab, setGradeTab]         = useState<GradeTab>(ALL);
   const [drillView, setDrillView]       = useState<string>("overall");
   const [workouts, setWorkouts]         = useState<Workout[]>([]);
@@ -272,7 +272,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
           { key: "current", label: "📅 Current" },
           { key: "overall", label: "📊 Overall" },
           { key: "history", label: "📋 History" },
-        ] as const).map(t => (
+        ] as const).filter(t => !hiddenTabs.includes(t.key)).map(t => (
           <button key={t.key} onClick={() => setMainTab(t.key)} style={{
             flex: 1, padding: "10px 4px", borderRadius: 9, border: "none", cursor: "pointer",
             fontFamily: "inherit", fontSize: 12, fontWeight: 600,
