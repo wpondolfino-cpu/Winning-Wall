@@ -64,6 +64,7 @@ export interface Profile {
   created_at: string;
   avatar_prompt_seen?: boolean;
   avatar_config?: any;
+  home_roster_id?: string | null;
 }
 
 export interface Workout {
