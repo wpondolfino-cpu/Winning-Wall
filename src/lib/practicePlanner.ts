@@ -401,6 +401,21 @@ export async function getPractice(id: string): Promise<Practice | null> {
   return data;
 }
 
+// Player-facing: the single most recent published practice for their
+// roster. Read-only, no history -- once a newer practice publishes,
+// this naturally returns that one instead (nothing "deleted", the
+// old one just stops being the most recent published match).
+export async function getCurrentPublishedPracticeForRoster(rosterId: string): Promise<Practice | null> {
+  const { data, error } = await supabase.from("practices").select("*")
+    .eq("status", "published")
+    .contains("roster_ids", [rosterId])
+    .order("practice_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) { console.error("Failed to load current practice:", error); return null; }
+  return data;
+}
+
 export async function getPracticesInWeek(weekId: string): Promise<Practice[]> {
   const { data, error } = await supabase.from("practices").select("*").eq("week_id", weekId).order("practice_date", { ascending: true });
   if (error) { console.error("Failed to load practices:", error); return []; }
