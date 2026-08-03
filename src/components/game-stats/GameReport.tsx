@@ -34,6 +34,8 @@ import {
   type StatRow,
   type StatDef,
 } from "../../lib/gameStats";
+import { computePracticeSuggestions, PracticeSuggestions } from "../../lib/practiceSuggestions";
+import PracticeSuggestionsPanel from "./PracticeSuggestionsPanel";
 
 export type ReportScope =
   | { kind: "quarter"; gameId: string; quarter: number }
@@ -47,9 +49,10 @@ interface Props {
   scope: ReportScope;
   title: string;
   variant?: ReportVariant;
+  canManage?: boolean;
 }
 
-export default function GameReport({ scope, title, variant = "full" }: Props) {
+export default function GameReport({ scope, title, variant = "full", canManage = false }: Props) {
   const [possessions, setPossessions] = useState<Possession[]>([]);
   const [playCalls, setPlayCalls] = useState<PlayCall[]>([]);
   const [goals, setGoals] = useState<StatGoal[]>([]);
@@ -107,7 +110,7 @@ export default function GameReport({ scope, title, variant = "full" }: Props) {
 
   if (loading) return <div className="card">Loading report…</div>;
 
-  return <ReportBody possessions={possessions} playCalls={playCalls} goals={goals} title={title} statOrder={statOrder} variant={variant} opponentName={opponentName} />;
+  return <ReportBody possessions={possessions} playCalls={playCalls} goals={goals} title={title} statOrder={statOrder} variant={variant} opponentName={opponentName} canManage={canManage} />;
 }
 
 /** The actual report card -- shared between GameReport (scope-based) and ReportBuilder (custom multi-game/category filters), so both stay visually identical. */
@@ -119,6 +122,7 @@ export function ReportBody({
   statOrder,
   variant = "full",
   opponentName,
+  canManage = false,
 }: {
   possessions: Possession[];
   playCalls: PlayCall[];
@@ -127,6 +131,7 @@ export function ReportBody({
   statOrder: StatDef[];
   variant?: ReportVariant;
   opponentName?: string;
+  canManage?: boolean;
 }) {
   const visible = statOrder.filter((s) => variant === "full" || s.inGame);
   const numberStats = visible.filter((s) => s.kind === "number");
@@ -136,6 +141,15 @@ export function ReportBody({
   const oppStatsAll = computeTeamStats(possessions, "opponent", goals);
   const usByKey = new Map(usStatsAll.map((r) => [r.key, r]));
   const oppByKey = new Map(oppStatsAll.map((r) => [r.key, r]));
+
+  // Practice Focus: only meaningful for full reports with enough data
+  // behind them to rank -- not the quick in-game quarter/half view.
+  const [suggestions, setSuggestions] = useState<PracticeSuggestions | null>(null);
+  useEffect(() => {
+    if (variant !== "full" || !possessions.length) { setSuggestions(null); return; }
+    computePracticeSuggestions(usStatsAll, oppStatsAll, goals).then(setSuggestions).catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [possessions, goals, variant]);
 
   // Extra Possessions is a two-team calculation (needs both sides' OREB/TOV
   // at once), so it's computed separately and colored by its own sign
@@ -290,6 +304,8 @@ export function ReportBody({
         }
         return null;
       })}
+
+      {suggestions && <PracticeSuggestionsPanel suggestions={suggestions} canManage={canManage} />}
     </div>
   );
 }
