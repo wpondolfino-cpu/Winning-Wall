@@ -34,9 +34,10 @@ import PlaysHub from "./components/plays/PlaysHub";
 import PlaybookManager from "./components/coach/PlaybookManager";
 import GameStatsHub from "./components/game-stats/GameStatsHub";
 import ScoutSheetsHub from "./components/scouting/ScoutSheetsHub";
+import PracticeSchedulePlayerView from "./components/PracticeSchedulePlayerView";
 import GameDaySheetsList from "./components/gameday/GameDaySheetsList";
 
-type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "scoutsheets" | "more";
+type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "scoutsheets" | "practiceschedule" | "more";
 type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "gameday" | "practices" | "practicelibrary" | "settings" | "profile";
 type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "gameday" | "practices" | "practicelibrary" | "profile";
 
@@ -371,7 +372,7 @@ export default function App() {
   ];
   const bottomTabs = effectiveMode === "inseason" ? INSEASON_TABS : OFFSEASON_TABS;
   const bottomTabKeys = bottomTabs.map(t => t.key);
-  const moreGroupTabs: PlayerTab[] = (["hof", "profile", "progress", "more"] as PlayerTab[])
+  const moreGroupTabs: PlayerTab[] = (["hof", "profile", "progress", "practiceschedule", "more"] as PlayerTab[])
     .concat((["workouts", "leaderboard", "h2h", "lifting", "plays", "gamestats", "scoutsheets"] as PlayerTab[]).filter(k => !bottomTabKeys.includes(k)));
 
   return (
@@ -398,6 +399,7 @@ export default function App() {
               <div className={`nav-item ${playerTab==="plays"?"active":""}`} onClick={()=>{setPlayerTab("plays");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏀</span> Plays</div>
               <div className={`nav-item ${playerTab==="gamestats"?"active":""}`} onClick={()=>{setPlayerTab("gamestats");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">📊</span> Analytics</div>
               <div className={`nav-item ${playerTab==="scoutsheets"?"active":""}`} onClick={()=>{setPlayerTab("scoutsheets");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🔎</span> Scout Sheets</div>
+              <div className={`nav-item ${playerTab==="practiceschedule"?"active":""}`} onClick={()=>{setPlayerTab("practiceschedule");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">📋</span> Practice</div>
               <div className={`nav-item ${playerTab==="profile"?"active":""}`} onClick={()=>{ setPlayerTab("profile"); setNewPerkCount(0); if(window.innerWidth<768)setSidebarOpen(false); }}><span className="nav-icon">👤</span> My Profile</div>
               <div className={`nav-item ${playerTab==="h2h"?"active":""}`} onClick={()=>{ setPlayerTab("h2h"); setPendingChallenges(0); if(window.innerWidth<768)setSidebarOpen(false); }} style={{ position: "relative" }}>
                 <span className="nav-icon">⚔️</span> Challenges
@@ -447,6 +449,7 @@ export default function App() {
           {isPlayer && playerTab === "plays" && <PlaysHub currentUserRole="player" />}
           {isPlayer && playerTab === "gamestats" && <GameStatsHub currentUserRole="player" userId={user.id} />}
           {isPlayer && playerTab === "scoutsheets" && <ScoutSheetsHub canManage={false} />}
+          {isPlayer && playerTab === "practiceschedule" && <PracticeSchedulePlayerView homeRosterId={displayProfile.home_roster_id} />}
           {isPlayer && playerTab === "library" && <DrillLibrary canManage={false} onPractice={(id) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} canChallenge={xpEnabled && xpPerks.length > 0 && playerXp >= (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150)} onChallenge={(id) => { setChallengePrefillWorkoutId(id); setPlayerTab("h2h"); }} />}
           {isPlayer && playerTab === "profile" && <ProfilePage profile={displayProfile} onUpdated={handleProfileUpdated} myScores={allScores.filter((s: any) => s.player_id === user?.id)} workouts={workouts} xpEnabled={xpEnabled} />}
           {isPlayer && playerTab === "h2h" && xpEnabled && xpPerks.length > 0 && playerXp < (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) ? (
