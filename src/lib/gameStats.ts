@@ -94,15 +94,20 @@ export interface StatGoal {
   team: Team;
   target_value: number;
   direction: "higher_better" | "lower_better";
+  min_sample_size?: number | null;
+  note?: string | null;
 }
 
 export async function listStatGoals() {
   return supabase.from("stat_goals").select("*");
 }
 
-export async function upsertStatGoal(statKey: string, team: Team, targetValue: number, direction: "higher_better" | "lower_better", userId: string) {
+export async function upsertStatGoal(
+  statKey: string, team: Team, targetValue: number, direction: "higher_better" | "lower_better", userId: string,
+  minSampleSize?: number | null, note?: string | null
+) {
   return supabase.from("stat_goals").upsert(
-    { stat_key: statKey, team, target_value: targetValue, direction, updated_by: userId },
+    { stat_key: statKey, team, target_value: targetValue, direction, min_sample_size: minSampleSize ?? null, note: note ?? null, updated_by: userId },
     { onConflict: "stat_key,team" }
   );
 }
