@@ -35,6 +35,7 @@ import PlaybookManager from "./components/coach/PlaybookManager";
 import GameStatsHub from "./components/game-stats/GameStatsHub";
 import ScoutSheetsHub from "./components/scouting/ScoutSheetsHub";
 import PracticeSchedulePlayerView from "./components/PracticeSchedulePlayerView";
+import NavModeChangePopup from "./components/NavModeChangePopup";
 import GameDaySheetsList from "./components/gameday/GameDaySheetsList";
 
 type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "scoutsheets" | "practiceschedule" | "more";
@@ -602,6 +603,8 @@ export default function App() {
           </button>
         </nav>
       )}
+
+      {isPlayer && <NavModeChangePopup playerId={user.id} effectiveMode={effectiveMode} />}
 
       {isPlayer && perkToast && (
         <div className="toast show" style={{ background: "rgba(26,63,168,0.95)", border: "1px solid rgba(147,180,255,0.4)", color: "#93b4ff", fontWeight: 600 }}>
