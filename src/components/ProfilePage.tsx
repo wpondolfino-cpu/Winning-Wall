@@ -1,7 +1,7 @@
 // src/components/ProfilePage.tsx
 import { useState, useEffect } from "react";
 import { supabase, Profile, getXpPerks, getPlayerXp, getPlayerTier, XpPerk,
-         hasPerkUsedThisPeriod, usePerk, currentPeriodStart } from "../lib/supabase";
+         hasPerkUsedThisPeriod, usePerk, currentPeriodStart, signOut } from "../lib/supabase";
 import { getActiveBadges, checkBadge, Badge, PlayerStats } from "../lib/badges";
 import ProfileEditor from "./ProfileEditor";
 
@@ -20,6 +20,10 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
   const [perks, setPerks]       = useState<XpPerk[]>([]);
   const [allBadges, setAllBadges] = useState<Badge[]>([]);
   const [champCount, setChampCount] = useState(0);
+  const [showDeactivate, setShowDeactivate] = useState(false);
+  const [deactivateConfirmed, setDeactivateConfirmed] = useState(false);
+  const [deactivating, setDeactivating] = useState(false);
+  const [deactivateError, setDeactivateError] = useState<string | null>(null);
   const [challengesWon, setChallengesWon] = useState(0);
   const [streakShieldUsed, setStreakShieldUsed] = useState(false);
   const [scoreBoostUsed, setScoreBoostUsed]   = useState(false);
@@ -521,6 +525,54 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
           </div>
         </div>
       )}
+
+      <div style={{ marginTop: 24, padding: 16, background: "rgba(255,107,107,0.06)", border: "1px solid rgba(255,107,107,0.2)", borderRadius: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "#ff7b7b", marginBottom: 6 }}>Deactivate My Account</div>
+        {!showDeactivate ? (
+          <>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10, lineHeight: 1.5 }}>
+              Not playing anymore? You can deactivate your own account — your stats and history stay saved, but you'll disappear from leaderboards and rosters. This is reversible; ask a coach to reactivate you if you come back.
+            </div>
+            <button type="button" onClick={() => { setShowDeactivate(true); setDeactivateConfirmed(false); setDeactivateError(null); }}
+              style={{ background: "none", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              Deactivate my account
+            </button>
+          </>
+        ) : (
+          <>
+            {deactivateError && <div className="error-msg">{deactivateError}</div>}
+            <div style={{ fontSize: 12, color: "#ff7b7b", marginBottom: 8, lineHeight: 1.5 }}>
+              This will sign you out and hide your account from the app. Your data isn't deleted, and a coach can turn this back on later.
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 10, cursor: "pointer" }}>
+              <input type="checkbox" checked={deactivateConfirmed} onChange={e => setDeactivateConfirmed(e.target.checked)} />
+              I understand and want to deactivate my account.
+            </label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" disabled={!deactivateConfirmed || deactivating}
+                onClick={async () => {
+                  setDeactivating(true);
+                  setDeactivateError(null);
+                  try {
+                    const { error } = await supabase.from("profiles").update({ role: "inactive" as any }).eq("id", profile.id);
+                    if (error) throw error;
+                    await signOut();
+                  } catch (e: any) {
+                    setDeactivateError(e?.message ?? "Couldn't deactivate — try again.");
+                    setDeactivating(false);
+                  }
+                }}
+                style={{ background: "rgba(255,107,107,0.15)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: deactivateConfirmed ? "pointer" : "default", opacity: deactivateConfirmed ? 1 : 0.5 }}>
+                {deactivating ? "Deactivating…" : "Confirm deactivation"}
+              </button>
+              <button type="button" disabled={deactivating} onClick={() => setShowDeactivate(false)}
+                style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: "pointer" }}>
+                Cancel
+              </button>
+            </div>
+          </>
+        )}
+      </div>
 
     </div>
   );
