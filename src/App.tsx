@@ -12,7 +12,6 @@ import { ensurePushTag } from "./lib/onesignal";
 import LoginPage from "./pages/LoginPage";
 import WorkoutsPanel from "./components/WorkoutsPanel";
 import CoachPanel from "./components/coach/CoachPanel";
-import Leaderboard from "./components/Leaderboard";
 import LeaderboardHub from "./components/LeaderboardHub";
 import HallOfFame from "./components/HallOfFame";
 import ProgressPanel from "./components/ProgressPanel";
