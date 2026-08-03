@@ -21,7 +21,11 @@ export async function archiveAndResetOffseason(seasonLabel: string): Promise<voi
 
   const ptMap: Record<string, number> = {};
   allScores.forEach((s: any) => { ptMap[s.player_id] = (ptMap[s.player_id] || 0) + (s.points || 0); });
-  const sorted = Object.entries(ptMap).sort((a, b) => b[1] - a[1]);
+  // Rank only among currently-active players -- a deactivated account's
+  // old leftover scores must never occupy a rank slot and skew everyone
+  // else's computed rank down by one.
+  const activeIds = new Set(profiles.map((p: any) => p.id));
+  const sorted = Object.entries(ptMap).filter(([id]) => activeIds.has(id)).sort((a, b) => b[1] - a[1]);
 
   const drillWinMap: Record<string, number> = {};
   const workoutIds = [...new Set((drillBests ?? []).map((s: any) => s.workout_id))];
