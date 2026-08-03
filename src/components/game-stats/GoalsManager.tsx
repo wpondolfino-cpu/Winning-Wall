@@ -28,7 +28,7 @@ interface Props {
   userId: string;
 }
 
-type Draft = { value: string; direction: "higher_better" | "lower_better" };
+type Draft = { value: string; direction: "higher_better" | "lower_better"; minSampleSize: string; note: string };
 
 export default function GoalsManager({ userId }: Props) {
   const [goals, setGoals] = useState<Record<string, StatGoal>>({}); // keyed "team:statKey"
@@ -53,7 +53,12 @@ export default function GoalsManager({ userId }: Props) {
     (["us", "opponent"] as Team[]).forEach((team) => {
       GOAL_STATS.forEach((s) => {
         const existing = byKey[`${team}:${s.key}`];
-        initDrafts[`${team}:${s.key}`] = { value: existing ? String(existing.target_value) : "", direction: existing?.direction ?? s.defaultDirection };
+        initDrafts[`${team}:${s.key}`] = {
+          value: existing ? String(existing.target_value) : "",
+          direction: existing?.direction ?? s.defaultDirection,
+          minSampleSize: existing?.min_sample_size != null ? String(existing.min_sample_size) : "",
+          note: existing?.note ?? "",
+        };
       });
     });
     setDrafts(initDrafts);
@@ -66,9 +71,10 @@ export default function GoalsManager({ userId }: Props) {
     const draft = drafts[draftKey];
     const num = Number(draft.value);
     if (draft.value.trim() === "" || Number.isNaN(num)) return;
-    const { error } = await upsertStatGoal(key, team, num, draft.direction, userId);
+    const minSample = draft.minSampleSize.trim() === "" ? null : Number(draft.minSampleSize);
+    const { error } = await upsertStatGoal(key, team, num, draft.direction, userId, minSample, draft.note.trim() || null);
     if (!error) {
-      setGoals((g) => ({ ...g, [draftKey]: { stat_key: key, team, target_value: num, direction: draft.direction } }));
+      setGoals((g) => ({ ...g, [draftKey]: { stat_key: key, team, target_value: num, direction: draft.direction, min_sample_size: minSample, note: draft.note.trim() || null } }));
       setSavedKey(draftKey);
       setTimeout(() => setSavedKey((k) => (k === draftKey ? null : k)), 1500);
     }
@@ -130,7 +136,7 @@ export default function GoalsManager({ userId }: Props) {
 
         {order.filter((s) => s.kind === "number" && !s.selfColored).map((s) => {
           const draftKey = `${goalTeam}:${s.key}`;
-          const draft = drafts[draftKey] ?? { value: "", direction: s.defaultDirection ?? "higher_better" };
+          const draft = drafts[draftKey] ?? { value: "", direction: s.defaultDirection ?? "higher_better", minSampleSize: "", note: "" };
           const existing = goals[draftKey];
           const usGoal = goals[`us:${s.key}`];
           return (
@@ -144,6 +150,17 @@ export default function GoalsManager({ userId }: Props) {
                 onChange={(e) => setDrafts((d) => ({ ...d, [draftKey]: { ...d[draftKey], value: e.target.value } }))}
                 placeholder={goalTeam === "opponent" && !draft.value ? "falls back to Us" : "target"}
                 style={{ width: 110, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
+              />
+
+              <input
+                type="number"
+                step="1"
+                min="0"
+                value={draft.minSampleSize}
+                onChange={(e) => setDrafts((d) => ({ ...d, [draftKey]: { ...d[draftKey], minSampleSize: e.target.value } }))}
+                placeholder="min sample"
+                title="Minimum attempts/possessions before this stat is eligible for practice suggestions"
+                style={{ width: 100, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
               />
 
               <div className="role-tabs" style={{ margin: 0, width: "auto" }}>
@@ -174,6 +191,15 @@ export default function GoalsManager({ userId }: Props) {
                   not set — using inverse of Us ({usGoal.target_value}, {usGoal.direction === "higher_better" ? "lower better for them" : "higher better for them"})
                 </span>
               ) : null}
+
+              <div style={{ width: "100%" }}>
+                <textarea
+                  value={draft.note}
+                  onChange={(e) => setDrafts((d) => ({ ...d, [draftKey]: { ...d[draftKey], note: e.target.value } }))}
+                  placeholder="Practice suggestion shown to coaches when this stat is flagged as a weakness (e.g. 'Review crash rules')"
+                  style={{ width: "100%", minHeight: 44, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontFamily: "inherit", fontSize: 12, boxSizing: "border-box" }}
+                />
+              </div>
             </div>
           );
         })}
