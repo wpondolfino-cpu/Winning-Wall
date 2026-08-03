@@ -361,7 +361,7 @@ function GamesTab({
         <button onClick={() => setReportSel({ kind: "half", half: 2 })} style={pillBtn(reportSel.kind === "half" && reportSel.half === 2)}>2nd half</button>
         <button onClick={() => setReportSel({ kind: "game" })} style={pillBtn(reportSel.kind === "game")}>Full game</button>
       </div>
-      <GameReport scope={scope} title={title} variant={reportSel.kind === "game" ? "full" : "in_game"} />
+      <GameReport scope={scope} title={title} variant={reportSel.kind === "game" ? "full" : "in_game"} canManage={true} />
     </div>
   );
 }
