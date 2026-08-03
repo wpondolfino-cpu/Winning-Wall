@@ -1,20 +1,14 @@
 // src/components/AdminSettings.tsx
 import { useState, useEffect } from "react";
-import { supabase, currentPeriodStart, currentPeriodEnd, resetPlayerScores, savePeriodAnchor, getPeriodAnchor } from "../lib/supabase";
+import { supabase, currentPeriodStart, currentPeriodEnd, savePeriodAnchor, getPeriodAnchor } from "../lib/supabase";
 import SeasonModeToggle from "./SeasonModeToggle";
 
 export default function AdminSettings() {
   const [exporting, setExporting]   = useState(false);
-  const [resetting, setResetting]   = useState(false);
-  const [resetStep, setResetStep]   = useState(0);
-  const [seasonLabel, setSeasonLabel] = useState(() => {
-    const y = new Date().getFullYear(); return `${y-1}-${String(y).slice(2)} Season`;
-  });
   const [anchorDate, setAnchorDate] = useState(() => {
     const d = getPeriodAnchor(); return d.toISOString().split("T")[0];
   });
   const [anchorSaved, setAnchorSaved] = useState(false);
-  const [toast, setToast]             = useState("");
 
   const periodStart = currentPeriodStart();
   const periodEnd   = currentPeriodEnd();
@@ -53,84 +47,6 @@ export default function AdminSettings() {
       a.click();
       URL.revokeObjectURL(url);
     } finally { setExporting(false); }
-  }
-
-  async function handleSeasonReset() {
-    if (resetStep === 0) { setResetStep(1); return; }
-    if (resetStep === 1) { setResetStep(2); return; }
-    setResetting(true);
-    try {
-      // ── Snapshot season stats before reset ──
-      const { data: profiles } = await supabase.from("profiles").select("id,grade_category").eq("role","player");
-      const { data: allScores } = await supabase.from("scores").select("player_id,points");
-      const { data: chalWins } = await supabase.from("challenges").select("winner_id").eq("status","completed").not("winner_id","is",null);
-      const { data: drillBests } = await supabase.from("scores").select("player_id,workout_id,points");
-
-      if (profiles && allScores) {
-        const ptMap: Record<string,number> = {};
-        allScores.forEach((s:any) => { ptMap[s.player_id] = (ptMap[s.player_id]||0) + (s.points||0); });
-        const sorted = Object.entries(ptMap).sort((a,b) => b[1]-a[1]);
-        const drillWinMap: Record<string,number> = {};
-        const workoutIds = [...new Set((drillBests??[]).map((s:any) => s.workout_id))];
-        workoutIds.forEach(wid => {
-          const top = (drillBests??[]).filter((s:any) => s.workout_id === wid).sort((a:any,b:any) => b.points-a.points)[0];
-          if (top) drillWinMap[top.player_id] = (drillWinMap[top.player_id]||0) + 1;
-        });
-        const h2hMap: Record<string,number> = {};
-        (chalWins??[]).forEach((c:any) => { h2hMap[c.winner_id] = (h2hMap[c.winner_id]||0) + 1; });
-        const gradeGroups: Record<string,string[]> = {};
-        profiles.forEach((p:any) => {
-          if (!gradeGroups[p.grade_category]) gradeGroups[p.grade_category] = [];
-          gradeGroups[p.grade_category].push(p.id);
-        });
-        const gradeRankMap: Record<string,number> = {};
-        Object.entries(gradeGroups).forEach(([grade, ids]) => {
-          const sortedGrade = ids.sort((a,b) => (ptMap[b]||0) - (ptMap[a]||0));
-          sortedGrade.forEach((id,i) => { gradeRankMap[id] = i+1; });
-        });
-        const snapshots = profiles.map((p:any) => ({
-          player_id: p.id,
-          season_label: seasonLabel,
-          overall_rank: sorted.findIndex(([id]) => id === p.id) + 1 || null,
-          group_rank: gradeRankMap[p.id] || null,
-          grade_category: p.grade_category,
-          total_points: ptMap[p.id] || 0,
-          drill_wins: drillWinMap[p.id] || 0,
-          h2h_wins: h2hMap[p.id] || 0,
-          team_wins: 0,
-        }));
-        await supabase.from("season_history").insert(snapshots);
-
-        // Award period champion badge to top scorer
-        const topPlayer = sorted[0];
-        if (topPlayer) {
-          const now = new Date().toISOString();
-          await supabase.from("biweekly_champions").insert({
-            player_id: topPlayer[0],
-            period_start: periodStart.toISOString(),
-            period_end: periodEnd.toISOString(),
-            points: topPlayer[1],
-          });
-          await supabase.from("profiles")
-            .update({ is_period_champion: true, champion_since: now })
-            .eq("id", topPlayer[0]);
-        }
-      }
-
-      // ── Unified reset — same logic as bulk reset in PlayersPanel ──
-      await resetPlayerScores(null, { resetChampions: true });
-
-      setResetStep(0);
-      showToast("✅ Season reset complete!");
-    } catch (e: any) {
-      showToast("Error: " + e.message);
-      setResetStep(0);
-    } finally { setResetting(false); }
-  }
-
-  function showToast(msg: string) {
-    setToast(msg);
-    setTimeout(() => setToast(""), 2500);
   }
 
   const inputStyle = {
@@ -190,70 +106,6 @@ export default function AdminSettings() {
           background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10,
           padding: "10px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
         }}>{exporting ? "Exporting…" : "⬇️ Download CSV"}</button>
-      </div>
-
-      {/* ── Season Reset ── */}
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 6 }}>Season Label (for history)</label>
-        <input value={seasonLabel} onChange={e => setSeasonLabel(e.target.value)}
-          placeholder="e.g. 2024-25 Season"
-          style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, boxSizing: "border-box" as const }} />
-      </div>
-      <div style={{ marginTop: 32, background: "rgba(255,60,60,0.05)", border: "2px solid rgba(255,60,60,0.2)", borderRadius: 14, padding: "20px 24px" }}>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "#ff7b7b", letterSpacing: 1, marginBottom: 8 }}>
-          🔄 Season / All-Time Reset
-        </div>
-        <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.7, marginBottom: 16 }}>
-          Use this at the end of an offseason to start fresh. This will:
-          <ul style={{ marginTop: 8, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 4 }}>
-            <li>Reset leaderboard points to zero (personal bests are preserved)</li>
-            <li>Clear score history and attempt logs</li>
-            <li>Reset all streaks to zero</li>
-            <li>Clear biweekly champion status</li>
-            <li>Keep all player accounts, workouts, badges and Hall of Fame intact</li>
-          </ul>
-        </div>
-
-        {resetStep === 0 && (
-          <button onClick={handleSeasonReset} style={{ background: "rgba(255,60,60,0.15)", color: "#ff7b7b", border: "1px solid rgba(255,60,60,0.4)", borderRadius: 8, padding: "10px 20px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
-            🔄 Start Season Reset
-          </button>
-        )}
-
-        {resetStep === 1 && (
-          <div style={{ padding: "14px 16px", background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", borderRadius: 10 }}>
-            <div style={{ fontWeight: 700, color: "#ff7b7b", marginBottom: 8 }}>⚠️ Are you sure? This will erase ALL scores.</div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={handleSeasonReset} style={{ background: "#ff3c3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
-                Yes, continue
-              </button>
-              <button onClick={() => setResetStep(0)} style={{ background: "var(--surface2)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        {resetStep === 2 && (
-          <div style={{ padding: "14px 16px", background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", borderRadius: 10 }}>
-            <div style={{ fontWeight: 700, color: "#ff7b7b", marginBottom: 8 }}>🚨 FINAL CONFIRMATION — This cannot be undone!</div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>This will permanently reset all scores for all players.</div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={handleSeasonReset} disabled={resetting} style={{ background: "#ff3c3c", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
-                {resetting ? "Resetting…" : "🔄 RESET SEASON NOW"}
-              </button>
-              <button onClick={() => setResetStep(0)} style={{ background: "var(--surface2)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        {toast && (
-          <div style={{ marginTop: 12, padding: "8px 14px", background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", borderRadius: 8, fontSize: 13, color: "#5de098", fontWeight: 600 }}>
-            {toast}
-          </div>
-        )}
       </div>
     </div>
   );
