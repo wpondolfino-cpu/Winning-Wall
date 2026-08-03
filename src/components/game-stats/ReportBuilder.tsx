@@ -144,6 +144,7 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
           statOrder={statOrder}
           variant="full"
           title={`${gameLabel} · ${CATEGORY_LABEL[category]}`}
+          canManage={true}
         />
       )}
     </div>
