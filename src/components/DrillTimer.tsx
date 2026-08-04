@@ -11,12 +11,62 @@ interface Props {
 // Persistent audio context — must be created and resumed on a user gesture
 let sharedAudioCtx: AudioContext | null = null;
 let alarmBuffer: AudioBuffer | null = null;
+let silentLoopEl: HTMLAudioElement | null = null;
 
 function getAudioCtx(): AudioContext {
   if (!sharedAudioCtx) {
     sharedAudioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
   }
   return sharedAudioCtx;
+}
+
+// Builds a short silent WAV file in-memory (no external asset needed)
+// and returns a blob URL for it.
+function buildSilentWavUrl(durationSec = 1, sampleRate = 8000): string {
+  const numSamples = Math.floor(durationSec * sampleRate);
+  const dataSize = numSamples * 2; // 16-bit mono
+  const buf = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buf);
+  const writeStr = (offset: number, s: string) => { for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i)); };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true); // byte rate
+  view.setUint16(32, 2, true); // block align
+  view.setUint16(34, 16, true); // bits per sample
+  writeStr(36, "data");
+  view.setUint32(40, dataSize, true);
+  // remaining bytes are already zero (silence)
+  return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+}
+
+// The proven iOS fix: a plain HTML5 <audio> tag is allowed to play
+// through the hardware mute switch even though Web Audio (AudioContext)
+// alone is not. Looping a silent <audio> element continuously routes
+// the whole page's audio session onto the "media" channel instead of
+// the "ringer" channel, so the Web Audio alarm plays through it too.
+// Layered with the newer navigator.audioSession API where supported,
+// as a cleaner belt-and-suspenders addition (Safari-only, experimental,
+// so never relied on alone).
+function ensureSilentLoopPlaying() {
+  try {
+    if (!silentLoopEl) {
+      silentLoopEl = new Audio(buildSilentWavUrl());
+      silentLoopEl.loop = true;
+      silentLoopEl.volume = 0.001; // effectively silent, but not literally 0 on some engines
+      (silentLoopEl as any).playsInline = true;
+    }
+    silentLoopEl.play().catch(() => {});
+  } catch (e) {}
+  try {
+    const session = (navigator as any).audioSession;
+    if (session) session.type = "playback";
+  } catch (e) {}
 }
 
 // Generate a beep buffer programmatically and cache it
@@ -29,13 +79,17 @@ function getAlarmBuffer(ctx: AudioContext): AudioBuffer {
   const totalLen = Math.floor(sampleRate * (duration * numBeeps + gap * (numBeeps - 1)));
   const buf = ctx.createBuffer(1, totalLen, sampleRate);
   const data = buf.getChannelData(0);
+  // Two layered tones (a fifth apart) read as louder/more attention-
+  // grabbing than a single pure sine at the same peak level — each
+  // scaled so the combined peak stays just under 1.0, avoiding clipping.
   for (let b = 0; b < numBeeps; b++) {
     const start = Math.floor(b * (duration + gap) * sampleRate);
     const end = Math.floor(start + duration * sampleRate);
     for (let i = start; i < end; i++) {
       const t = (i - start) / sampleRate;
       const envelope = Math.min(1, (end - i) / (sampleRate * 0.05)); // fade out
-      data[i] = Math.sin(2 * Math.PI * 880 * t) * 0.8 * envelope;
+      const tone = Math.sin(2 * Math.PI * 880 * t) * 0.6 + Math.sin(2 * Math.PI * 1320 * t) * 0.35;
+      data[i] = tone * envelope;
     }
   }
   alarmBuffer = buf;
@@ -55,29 +109,45 @@ function unlockAudio() {
     src.buffer = silent;
     src.connect(ctx.destination);
     src.start(0);
+    // Start the silent media-channel loop on this same gesture — this
+    // is what lets the alarm below actually play through iOS's mute switch.
+    ensureSilentLoopPlaying();
   } catch (e) {}
+}
+
+const ALARM_REPEATS = 3; // how many times the full 3-beep pattern fires
+const ALARM_REPEAT_GAP = 0.6; // seconds of silence between repetitions
+
+function alarmBufferDuration(ctx: AudioContext): number {
+  return getAlarmBuffer(ctx).duration;
+}
+
+function playAlarmOnce(ctx: AudioContext) {
+  const src = ctx.createBufferSource();
+  src.buffer = getAlarmBuffer(ctx);
+  src.connect(ctx.destination);
+  src.start(0);
 }
 
 function playAlarm() {
   try {
     const ctx = getAudioCtx();
+    ensureSilentLoopPlaying(); // re-assert in case it paused (e.g. app was backgrounded)
+    const fireAll = () => {
+      const step = alarmBufferDuration(ctx) + ALARM_REPEAT_GAP;
+      for (let i = 0; i < ALARM_REPEATS; i++) {
+        setTimeout(() => { try { playAlarmOnce(ctx); } catch (e) {} }, i * step * 1000);
+      }
+    };
     // Resume if suspended — on iOS this may silently fail without prior user gesture
     // but unlockAudio() called on Start tap should have already unlocked it
     if (ctx.state === "suspended") {
-      ctx.resume().then(() => {
-        const src = ctx.createBufferSource();
-        src.buffer = getAlarmBuffer(ctx);
-        src.connect(ctx.destination);
-        src.start(0);
-      });
+      ctx.resume().then(fireAll);
     } else {
-      const src = ctx.createBufferSource();
-      src.buffer = getAlarmBuffer(ctx);
-      src.connect(ctx.destination);
-      src.start(0);
+      fireAll();
     }
-    // Vibrate regardless of audio
-    if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300]);
+    // Vibrate a few times too, roughly matching the repeated beeps
+    if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300, 400, 300, 100, 300, 100, 300, 400, 300, 100, 300, 100, 300]);
   } catch (e) { console.warn("Audio not available:", e); }
 }
 
