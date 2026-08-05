@@ -5,13 +5,15 @@
 // with a live "needs attention" badge and a click-through into
 // PracticeBuilder.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   PracticeWeek, Practice, RosterWithCount, Season, getPracticeWeeks, getPracticesInWeek,
   getPracticeAttentionCount, suggestNextWeekName, renamePracticeWeek,
   deletePracticeWeek, deletePractice, getRosters, getSeasons, getCurrentSeason,
   startNewSeason, suggestNextSeasonName,
+  practiceToExportPayload, importPracticeFromExportPayload, PRACTICE_EXPORT_SCHEMA_VERSION,
 } from "../../lib/practicePlanner";
+import { embedJsonInPdf, extractJsonFromPdf, drawTextDocument } from "../../lib/pdfDataExport";
 import PracticeBuilder from "./PracticeBuilder";
 import PracticePrintView from "./PracticePrintView";
 import PracticeDayAttendance from "./PracticeDayAttendance";
@@ -42,6 +44,8 @@ export default function PracticeWeeksList() {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
   const [startingSeason, setStartingSeason] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,6 +72,46 @@ export default function PracticeWeeksList() {
   }, [openWeekId, activeTeamId, selectedSeasonId]);
 
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleExportPractice(practiceId: string) {
+    setError(null);
+    try {
+      const payload = await practiceToExportPayload(practiceId);
+      const sections = payload.blocks.map((b, i) => ({
+        heading: `Block ${i + 1} (${b.duration_minutes} min)`,
+        lines: b.segments.flatMap(s => [
+          s.rosterName ? `— ${s.rosterName} —` : "— Combined —",
+          ...s.drills.map(d => `${d.title}${d.label ? ` — ${d.label}` : ""} · ${d.duration_minutes} min${d.goal_text ? ` — ${d.goal_text}` : ""}`),
+        ]),
+      }));
+      const dateLabel = new Date(payload.practice_date + "T00:00:00").toLocaleDateString();
+      const doc = await drawTextDocument(`Practice — ${dateLabel}`, "Winning Wall — re-importable practice plan export", sections);
+      const withData = await embedJsonInPdf(doc, { dataType: "practice_plan", schemaVersion: PRACTICE_EXPORT_SCHEMA_VERSION, data: payload });
+      const blob = new Blob([withData as BlobPart], { type: "application/pdf" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `practice-${payload.practice_date}.pdf`;
+      a.click();
+    } catch (e: any) {
+      setError("Export failed: " + e.message);
+    }
+  }
+
+  async function handleImportFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError(null);
+    try {
+      const payload = await extractJsonFromPdf(file);
+      if (!payload) { setError("This PDF doesn't contain practice plan data."); return; }
+      if (payload.dataType !== "practice_plan") { setError(`This file contains a ${payload.dataType.replace("_", " ")}, not a practice plan.`); return; }
+      await importPracticeFromExportPayload(payload.data);
+      await load();
+    } catch (e: any) {
+      setError("Import failed: " + e.message);
+    }
+  }
 
   function formatDate(d: string) {
     return new Date(d + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -177,6 +221,10 @@ export default function PracticeWeeksList() {
           <button onClick={() => setCreatingNew(true)} style={primaryBtn}>+ New practice</button>
         </div>
       </div>
+
+      {error && <div className="error-msg">{error}</div>}
+      <input ref={importFileRef} type="file" accept="application/pdf" style={{ display: "none" }} onChange={handleImportFileChosen} />
+      <button onClick={() => importFileRef.current?.click()} style={{ ...secondaryBtn, marginBottom: 14 }}>📥 Import practice from PDF</button>
 
       {activeRosters.length > 0 && (
         <div style={{ display: "flex", gap: 4, alignItems: "center", background: "var(--surface2)", borderRadius: 10, padding: 4, marginBottom: 10, border: "1px solid var(--border)" }}>
@@ -312,6 +360,12 @@ export default function PracticeWeeksList() {
                                 color: "var(--text)",
                               }}>
                               🏆 Wins
+                            </button>
+                            <button
+                              onClick={e => { e.stopPropagation(); handleExportPractice(p.id); }}
+                              title="Export (re-importable)"
+                              style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 6, border: "1px solid var(--border)", fontFamily: "inherit", cursor: "pointer", background: "var(--surface2)", color: "var(--text)" }}>
+                              💾
                             </button>
                             <span style={{
                               fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5,
