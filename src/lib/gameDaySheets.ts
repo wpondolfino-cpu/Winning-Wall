@@ -140,3 +140,30 @@ export async function deleteGameDayCalls(ids: string[]) {
 export async function reorderGameDayCalls(orderedIds: string[]) {
   await Promise.all(orderedIds.map((id, i) => supabase.from("gameday_calls").update({ sort_order: i }).eq("id", id)));
 }
+
+// ── Re-importable export (hidden data embedded in a PDF) ────────
+// Already fully self-contained -- call names are plain text, and the
+// only reference (an optional linked Play) degrades gracefully to
+// "unlinked" on import if that specific play no longer exists.
+export const GAMEDAY_SHEET_EXPORT_SCHEMA_VERSION = 1;
+
+export async function gameDaySheetToExportPayload(sheetId: string) {
+  const sheet = await getGameDaySheet(sheetId);
+  if (!sheet) throw new Error("Game day sheet not found");
+  const calls = await getGameDayCalls(sheetId);
+  return {
+    name: sheet.name,
+    calls: calls.map(({ id, sheet_id, created_at, ...rest }) => rest),
+  };
+}
+
+export async function importGameDaySheetFromExportPayload(payload: Awaited<ReturnType<typeof gameDaySheetToExportPayload>>): Promise<GameDaySheet> {
+  const sheet = await createGameDaySheet(`${payload.name} (imported)`);
+  if (payload.calls.length) {
+    const { error } = await supabase.from("gameday_calls").insert(
+      payload.calls.map((c: any) => ({ ...c, sheet_id: sheet.id, play_id: null }))
+    );
+    if (error) throw error;
+  }
+  return sheet;
+}
