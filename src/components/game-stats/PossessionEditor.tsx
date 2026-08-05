@@ -53,7 +53,8 @@ const HALF_COURT_TYPES: HalfCourtType[] = ["set", "motion"];
 const OOB_RESULTS: OobResult[] = ["direct_shot", "flowed_half_court", "turnover"];
 const OUTCOMES: Outcome[] = ["fg_made", "fg_missed", "turnover", "ft_trip"];
 const QUALITIES: ShotQuality[] = ["great", "good", "live", "tough"];
-const TURNOVER_TYPES: TurnoverType[] = ["live", "dead"];
+const TURNOVER_TYPES: TurnoverType[] = ["live", "dead", "charge"];
+const TURNOVER_TYPE_LABELS: Record<TurnoverType, string> = { live: "live", dead: "dead", charge: "charge / offensive foul" };
 
 export default function PossessionEditor({ gameId, opponent }: Props) {
   const [possessions, setPossessions] = useState<Possession[]>([]);
@@ -273,7 +274,7 @@ export default function PossessionEditor({ gameId, opponent }: Props) {
                 <Field label="Turnover type">
                   <select value={p.turnover_type ?? ""} onChange={(e) => save(p, { turnover_type: (e.target.value || null) as TurnoverType | null })} style={selectStyle}>
                     <option value="">—</option>
-                    {TURNOVER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                    {TURNOVER_TYPES.map((t) => <option key={t} value={t}>{TURNOVER_TYPE_LABELS[t]}</option>)}
                   </select>
                 </Field>
               )}
