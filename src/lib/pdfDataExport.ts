@@ -12,7 +12,7 @@
 // whole feature that genuinely needs a real round-trip test — export a
 // play, then import that exact file — before trusting it further.
 
-import { PDFDocument, PDFName, PDFDict, PDFArray, PDFRawStream } from "pdf-lib";
+import { PDFDocument, PDFName, PDFDict, PDFArray } from "pdf-lib";
 
 export interface EmbeddedPayload {
   dataType: "play" | "playbook" | "scout_sheet" | "gameday_sheet" | "practice_plan";
@@ -88,8 +88,12 @@ export async function extractJsonFromPdf(file: File): Promise<EmbeddedPayload | 
       if (!efDict) continue;
       const fRef = efDict.get(PDFName.of("F"));
       if (!fRef) continue;
-      const stream = doc.context.lookup(fRef as any, PDFRawStream);
-      if (!stream) continue;
+      // The dict/array lookups above type-check fine with PDFContext.lookup's
+      // overloads, but streams aren't part of that overload set the way I'd
+      // assumed — looking up untyped and reading .contents at runtime instead
+      // of guessing at the exact stream-lookup overload signature again.
+      const stream: any = doc.context.lookup(fRef as any);
+      if (!stream || !stream.contents) continue;
       try {
         const text = new TextDecoder().decode(stream.contents);
         const parsed = JSON.parse(text);
