@@ -110,6 +110,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
   const [toast, setToast] = useState("");
 
   const [printPlays, setPrintPlays] = useState<{ plays: Play[]; playbookName?: string } | null>(null);
+  const [exportingPlay, setExportingPlay] = useState<Play | null>(null);
   const [search, setSearch] = useState("");
 
   // Coach/admin only — a category-and-tag browse layout on top of "My
@@ -155,7 +156,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
     } catch (e: any) { showToast("Error: " + e.message); }
   }
 
-  async function handleExportReimportable(p: Play, pngBytes?: Uint8Array) {
+  async function handleExportReimportable(p: Play, stepPngs?: Uint8Array[]) {
     try {
       const cover = await drawSimpleCoverPage(
         p.title,
@@ -165,7 +166,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
           `Category: ${p.category ?? "none"}`,
           "Import this exact file from the Plays screen to restore it as a real, editable play.",
         ],
-        pngBytes
+        stepPngs
       );
       const withData = await embedJsonInPdf(cover, {
         dataType: "play",
@@ -181,6 +182,13 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
     } catch (e: any) {
       showToast("Export failed: " + e.message);
     }
+  }
+
+  // Mounts the hidden per-frame renderer; once it reports back with a
+  // PNG for every step, finishes the export and unmounts itself.
+  function triggerExport(p: Play) {
+    showToast("Preparing export…");
+    setExportingPlay(p);
   }
 
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -243,7 +251,9 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
 
   if (openPlay) {
     return (
-      <PlayDetail
+      <>
+        {exportingPlay && <HiddenFramesSnapshotter play={exportingPlay} onCaptured={(pngs) => { handleExportReimportable(exportingPlay, pngs); setExportingPlay(null); }} />}
+        <PlayDetail
         play={openPlay}
         shareId={openShareId}
         rosterMap={rosterMap}
@@ -253,7 +263,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
         onEdit={onEdit}
         onFork={handleFork}
         onPrint={() => setPrintPlays({ plays: [openPlay] })}
-        onExport={(pngBytes) => handleExportReimportable(openPlay, pngBytes)}
+        onExport={() => triggerExport(openPlay)}
         onDeleted={async () => {
           try {
             await deletePlay(openPlay.id);
@@ -263,6 +273,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
           } catch (e: any) { showToast("Error: " + e.message); }
         }}
       />
+      </>
     );
   }
 
@@ -299,6 +310,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
 
   return (
     <div>
+      {exportingPlay && <HiddenFramesSnapshotter play={exportingPlay} onCaptured={(pngs) => { handleExportReimportable(exportingPlay, pngs); setExportingPlay(null); }} />}
       <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 12, padding: 5, marginBottom: 20, border: "1px solid var(--border)" }}>
         <button onClick={() => setTab("mine")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "mine" ? "var(--royal)" : "transparent", color: tab === "mine" ? "#fff" : "var(--muted)", transition: "all .2s" }}>My plays</button>
         <button onClick={() => setTab("shared")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "shared" ? "var(--royal)" : "transparent", color: tab === "shared" ? "#fff" : "var(--muted)", transition: "all .2s" }}>Shared with me</button>
@@ -369,6 +381,8 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
               </button>
               <button title="Watch live" onClick={() => { setOpenPlay(p); setOpenIn3D(true); }} style={{ padding: "8px 10px", fontSize: 15, marginRight: 2 }}>🧊</button>
               <button title="Share" onClick={() => setSharePopupPlay(p)} style={{ padding: "8px 10px", fontSize: 15, marginRight: 2, display: "inline-flex", alignItems: "center" }}><ShareIcon /></button>
+              <button title="Print / export" onClick={() => setPrintPlays({ plays: [p] })} style={{ padding: "8px 10px", fontSize: 15, marginRight: 2 }}>🖨️</button>
+              <button title="Export (re-importable)" onClick={() => triggerExport(p)} style={{ padding: "8px 10px", fontSize: 15, marginRight: 2 }}>💾</button>
               <span style={{ width: 1, alignSelf: "stretch", background: "var(--border)", margin: "4px 4px" }} />
               {onEdit && <button title="Edit" onClick={() => onEdit(p)} style={{ padding: "8px 10px", fontSize: 15, marginRight: 2 }}>✏️</button>}
               <button title="Delete" onClick={() => handleDeleteFromList(p)} style={{ padding: "8px 10px", fontSize: 15, marginRight: 6 }}>🗑</button>
@@ -417,9 +431,54 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
   );
 }
 
+// Renders every frame of a play off-screen (one <PlayCanvas> per step,
+// same print-friendly color overrides PlayPrintView already uses), then
+// snapshots each one in order once painted. This reuses the exact
+// rendering PlayPrintView already proves works correctly, rather than
+// only capturing whatever single frame happens to be on screen.
+function HiddenFramesSnapshotter({ play, onCaptured }: { play: Play; onCaptured: (pngs: Uint8Array[]) => void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Two animation frames gives the browser a real paint cycle before
+    // we start reading the SVGs back out.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(async () => {
+        if (cancelled || !containerRef.current) return;
+        const svgs = Array.from(containerRef.current.querySelectorAll("svg"));
+        console.log("[export] hidden frame renderer painted, svg count:", svgs.length);
+        const pngs: Uint8Array[] = [];
+        for (const svg of svgs) {
+          try {
+            pngs.push(await svgElementToPngBytes(svg as SVGSVGElement, CANVAS_W, CANVAS_H));
+          } catch (err) {
+            console.error("[export] a step's snapshot failed:", err);
+          }
+        }
+        if (!cancelled) onCaptured(pngs);
+      });
+    });
+    return () => { cancelled = true; };
+  }, [play]);
+
+  return (
+    <div ref={containerRef} style={{ position: "fixed", top: 0, left: -99999, width: 900, pointerEvents: "none" }} aria-hidden="true">
+      {play.data.frames.map((frame, i) => (
+        <div key={i} style={{
+          ["--text" as any]: "#111", ["--muted" as any]: "#555", ["--silver" as any]: "#555",
+          ["--border" as any]: "rgba(0,0,0,0.15)", ["--surface" as any]: "#fff", ["--surface2" as any]: "#fff",
+        }}>
+          <PlayCanvas frame={frame} courtTemplate={play.court_template} edit={false} courtBg="#f3e4c8" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit, onFork, onPrint, onExport, onDeleted, startIn3D }: {
   play: Play; shareId: string | null; rosterMap: Record<string, RosterPlayer>; canManageShares: boolean;
-  onBack: () => void; onEdit?: (p: Play) => void; onFork: (p: Play) => void; onPrint: () => void; onExport: (pngBytes?: Uint8Array) => void; onDeleted: () => void;
+  onBack: () => void; onEdit?: (p: Play) => void; onFork: (p: Play) => void; onPrint: () => void; onExport: () => void; onDeleted: () => void;
   startIn3D?: boolean;
 }) {
   const [frameIdx, setFrameIdx] = useState(0);
@@ -427,21 +486,9 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
   const [speed, setSpeed] = useState(1);
   const [show3D, setShow3D] = useState(!!startIn3D);
   const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
-  const courtContainerRef = useRef<HTMLDivElement>(null);
   const [selfPlayerId, setSelfPlayerId] = useState<string | null>(() => {
     try { return localStorage.getItem(`ww_self_${play.id}`); } catch { return null; }
   });
-
-  async function handleExportClick() {
-    const svg = courtContainerRef.current?.querySelector("svg");
-    if (!svg) { onExport(); return; } // fall back to text-only if the diagram isn't rendered for some reason
-    try {
-      const pngBytes = await svgElementToPngBytes(svg, CANVAS_W, CANVAS_H);
-      onExport(pngBytes);
-    } catch {
-      onExport(); // snapshot failed — still export with the data, just without the picture
-    }
-  }
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -499,6 +546,7 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
         <button onClick={onBack} style={{ padding: "8px 10px", fontSize: 13, flexShrink: 0 }}>← Back</button>
         <button onClick={() => { setFrameIdx(0); playAll(); }} className="coach-add-btn" style={{ flex: 1, justifyContent: "center", padding: "8px 6px", fontSize: 13 }}>▶ Watch play</button>
+        <button onClick={() => setShow3D(true)} className="coach-add-btn" style={{ flex: 1, justifyContent: "center", padding: "8px 6px", fontSize: 13 }}>🧊 Watch live</button>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
@@ -515,7 +563,7 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
         </select>
       </div>
 
-      <div ref={courtContainerRef} style={{ background: "var(--surface2)", borderRadius: 12, padding: 12, marginBottom: 10 }}>
+      <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 12, marginBottom: 10 }}>
         <PlayCanvas
           frame={frame}
           courtTemplate={play.court_template}
@@ -553,10 +601,9 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
       )}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button onClick={() => setShow3D(true)} style={{ padding: "8px 12px" }}>🧊 Watch live</button>
         <button onClick={() => onFork(play)} style={{ padding: "8px 12px" }}>Duplicate as my own</button>
         <button onClick={onPrint} style={{ padding: "8px 12px" }}>🖨️ Print / export</button>
-        <button onClick={handleExportClick} style={{ padding: "8px 12px" }}>💾 Export (re-importable)</button>
+        <button onClick={onExport} style={{ padding: "8px 12px" }}>💾 Export (re-importable)</button>
         {onEdit && canManageShares && <button onClick={() => onEdit(play)} style={{ padding: "8px 12px" }}>Edit</button>}
         {canManageShares && <button onClick={() => setShowSharePopup(true)} style={{ padding: "8px 12px", display: "inline-flex", alignItems: "center", gap: 6 }}><ShareIcon /> Manage sharing</button>}
         {canManageShares && (
