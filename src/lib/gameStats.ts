@@ -23,7 +23,7 @@ export type HalfCourtType = "set" | "motion";
 export type OobResult = "direct_shot" | "flowed_half_court" | "turnover";
 export type Outcome = "fg_made" | "fg_missed" | "turnover" | "ft_trip";
 export type ShotQuality = "great" | "good" | "live" | "tough";
-export type TurnoverType = "live" | "dead";
+export type TurnoverType = "live" | "dead" | "charge";
 export type PlayCallCategory = "set" | "motion" | "blob" | "slob";
 
 export interface Possession {
@@ -428,6 +428,7 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   const turnovers = trips.filter((p) => p.outcome === "turnover").length;
   const liveTov = trips.filter((p) => p.outcome === "turnover" && p.turnover_type === "live").length;
   const deadTov = trips.filter((p) => p.outcome === "turnover" && p.turnover_type === "dead").length;
+  const chargeTov = trips.filter((p) => p.outcome === "turnover" && p.turnover_type === "charge").length;
   const oreb = trips.reduce((s, p) => s + p.oreb_count, 0);
   // A trip can absorb multiple missed shots before it finally ends (each
   // one rebounded and continued) -- missed_fg_count tallies the ones that
@@ -474,7 +475,7 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
     { key: "ft_pct", label: "FT%", value: round1(ftPct), raw: `${ftMade}/${ftAttempted}` },
     { key: "transition_pct", label: "Transition %", value: round1(transitionPct), raw: `${transitionTripsArr.length}/${trips.length}` },
     { key: "oreb_pct", label: "OREB%", value: round1(orebPct), raw: `${oreb}` },
-    { key: "tov_pct", label: "TOV%", value: round1(tovPct), raw: `${liveTov}+${deadTov}=${turnovers}` },
+    { key: "tov_pct", label: "TOV%", value: round1(tovPct), raw: `${liveTov}+${deadTov}+${chargeTov}=${turnovers}` },
     { key: "ft_rate", label: "FT rate %", value: round1(ftRate * 100) },
     { key: "paint_touch_single", label: "Paint touch %", value: round1(paintTouchSinglePct), raw: `${paintTouchSingle}/${halfCourtTripsArr.length}` },
     { key: "paint_touch_both", label: "Both sides %", value: round1(paintTouchBothPct), raw: `${paintTouchBoth}/${halfCourtTripsArr.length}` },
