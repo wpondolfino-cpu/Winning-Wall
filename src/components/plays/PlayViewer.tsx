@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef, lazy, Suspense, Component, type ComponentType, type ReactNode } from "react";
 import { supabase } from "../../lib/supabase";
 import { getProfile } from "../../lib/auth";
-import PlayCanvas from "./PlayCanvas";
+import PlayCanvas, { CANVAS_W, CANVAS_H } from "./PlayCanvas";
 import PlayPrintView from "./PlayPrintView";
 import PlayCategoryManagerModal from "./PlayCategoryManagerModal";
 import { PlayCategory, getPlayCategories } from "../../lib/playCategories";
@@ -17,7 +17,7 @@ import {
   forkPlay, getRoster, Playbook, deletePlay, getStaff, sharePlay, PlayShareTarget,
   playToExportPayload, importPlayFromExportPayload, PLAY_EXPORT_SCHEMA_VERSION,
 } from "../../lib/plays";
-import { embedJsonInPdf, extractJsonFromPdf, drawSimpleCoverPage } from "../../lib/pdfDataExport";
+import { embedJsonInPdf, extractJsonFromPdf, drawSimpleCoverPage, svgElementToPngBytes } from "../../lib/pdfDataExport";
 
 // Lazy-loaded: three.js is a large dependency, and most people watching a
 // play never open the 3D view — this keeps it out of everyone's initial
@@ -155,7 +155,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
     } catch (e: any) { showToast("Error: " + e.message); }
   }
 
-  async function handleExportReimportable(p: Play) {
+  async function handleExportReimportable(p: Play, pngBytes?: Uint8Array) {
     try {
       const cover = await drawSimpleCoverPage(
         p.title,
@@ -164,7 +164,8 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
           `Tags: ${p.tags.join(", ") || "none"}`,
           `Category: ${p.category ?? "none"}`,
           "Import this exact file from the Plays screen to restore it as a real, editable play.",
-        ]
+        ],
+        pngBytes
       );
       const withData = await embedJsonInPdf(cover, {
         dataType: "play",
@@ -252,7 +253,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
         onEdit={onEdit}
         onFork={handleFork}
         onPrint={() => setPrintPlays({ plays: [openPlay] })}
-        onExport={() => handleExportReimportable(openPlay)}
+        onExport={(pngBytes) => handleExportReimportable(openPlay, pngBytes)}
         onDeleted={async () => {
           try {
             await deletePlay(openPlay.id);
@@ -418,7 +419,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
 
 function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit, onFork, onPrint, onExport, onDeleted, startIn3D }: {
   play: Play; shareId: string | null; rosterMap: Record<string, RosterPlayer>; canManageShares: boolean;
-  onBack: () => void; onEdit?: (p: Play) => void; onFork: (p: Play) => void; onPrint: () => void; onExport: () => void; onDeleted: () => void;
+  onBack: () => void; onEdit?: (p: Play) => void; onFork: (p: Play) => void; onPrint: () => void; onExport: (pngBytes?: Uint8Array) => void; onDeleted: () => void;
   startIn3D?: boolean;
 }) {
   const [frameIdx, setFrameIdx] = useState(0);
@@ -426,9 +427,21 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
   const [speed, setSpeed] = useState(1);
   const [show3D, setShow3D] = useState(!!startIn3D);
   const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
+  const courtContainerRef = useRef<HTMLDivElement>(null);
   const [selfPlayerId, setSelfPlayerId] = useState<string | null>(() => {
     try { return localStorage.getItem(`ww_self_${play.id}`); } catch { return null; }
   });
+
+  async function handleExportClick() {
+    const svg = courtContainerRef.current?.querySelector("svg");
+    if (!svg) { onExport(); return; } // fall back to text-only if the diagram isn't rendered for some reason
+    try {
+      const pngBytes = await svgElementToPngBytes(svg, CANVAS_W, CANVAS_H);
+      onExport(pngBytes);
+    } catch {
+      onExport(); // snapshot failed — still export with the data, just without the picture
+    }
+  }
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -486,7 +499,6 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
         <button onClick={onBack} style={{ padding: "8px 10px", fontSize: 13, flexShrink: 0 }}>← Back</button>
         <button onClick={() => { setFrameIdx(0); playAll(); }} className="coach-add-btn" style={{ flex: 1, justifyContent: "center", padding: "8px 6px", fontSize: 13 }}>▶ Watch play</button>
-        <button onClick={() => setShow3D(true)} className="coach-add-btn" style={{ flex: 1, justifyContent: "center", padding: "8px 6px", fontSize: 13 }}>🧊 Watch live</button>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
@@ -503,7 +515,7 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
         </select>
       </div>
 
-      <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 12, marginBottom: 10 }}>
+      <div ref={courtContainerRef} style={{ background: "var(--surface2)", borderRadius: 12, padding: 12, marginBottom: 10 }}>
         <PlayCanvas
           frame={frame}
           courtTemplate={play.court_template}
@@ -541,9 +553,10 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
       )}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button onClick={() => setShow3D(true)} style={{ padding: "8px 12px" }}>🧊 Watch live</button>
         <button onClick={() => onFork(play)} style={{ padding: "8px 12px" }}>Duplicate as my own</button>
         <button onClick={onPrint} style={{ padding: "8px 12px" }}>🖨️ Print / export</button>
-        <button onClick={onExport} style={{ padding: "8px 12px" }}>💾 Export (re-importable)</button>
+        <button onClick={handleExportClick} style={{ padding: "8px 12px" }}>💾 Export (re-importable)</button>
         {onEdit && canManageShares && <button onClick={() => onEdit(play)} style={{ padding: "8px 12px" }}>Edit</button>}
         {canManageShares && <button onClick={() => setShowSharePopup(true)} style={{ padding: "8px 12px", display: "inline-flex", alignItems: "center", gap: 6 }}><ShareIcon /> Manage sharing</button>}
         {canManageShares && (
