@@ -14,11 +14,45 @@
 
 import { PDFDocument, PDFName, PDFDict, PDFArray } from "pdf-lib";
 
+// The court/action styling in PlayCanvas leans on CSS custom properties
+// (var(--...)) defined at :root. A serialized SVG loaded as a standalone
+// image has no connection to the page's stylesheet, so anything styled
+// via a CSS variable would otherwise render as nothing. This reads every
+// custom property actually declared at :root and returns their resolved
+// values as CSS text, to be inlined into a <style> element prepended to
+// the SVG, making the isolated copy self-sufficient.
+function buildRootCssVarDeclarations(): string {
+  const computed = getComputedStyle(document.documentElement);
+  const names = new Set<string>();
+  for (const sheet of Array.from(document.styleSheets)) {
+    let rules: CSSRuleList;
+    try { rules = sheet.cssRules; } catch { continue; } // cross-origin stylesheet, skip
+    for (const rule of Array.from(rules)) {
+      if (!(rule instanceof CSSStyleRule) || rule.selectorText !== ":root") continue;
+      for (let i = 0; i < rule.style.length; i++) {
+        const prop = rule.style[i];
+        if (prop.startsWith("--")) names.add(prop);
+      }
+    }
+  }
+  return Array.from(names).map(name => `${name}: ${computed.getPropertyValue(name)};`).join(" ");
+}
+
 // Snapshots a rendered <svg> element (e.g. a play diagram) into PNG
 // bytes, using only native browser APIs — no new dependency needed.
 // `scale` controls resolution (2 = retina-ish sharpness for print).
 export async function svgElementToPngBytes(svgEl: SVGSVGElement, widthPx: number, heightPx: number, scale = 2): Promise<Uint8Array> {
-  const svgString = new XMLSerializer().serializeToString(svgEl);
+  const clone = svgEl.cloneNode(true) as SVGSVGElement;
+  const cssVars = buildRootCssVarDeclarations();
+  console.log("[pdfDataExport] inlining CSS vars into snapshot, declaration count:", cssVars.split(";").length - 1);
+  // Built explicitly in the SVG namespace rather than via
+  // insertAdjacentHTML, which parses its argument as HTML and can
+  // create the <style> element in the wrong namespace inside an SVG
+  // document, causing it to be silently ignored.
+  const styleEl = document.createElementNS("http://www.w3.org/2000/svg", "style");
+  styleEl.textContent = `:root { ${cssVars} }`;
+  clone.insertBefore(styleEl, clone.firstChild);
+  const svgString = new XMLSerializer().serializeToString(clone);
   const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
   const svgUrl = URL.createObjectURL(svgBlob);
   try {
@@ -28,6 +62,7 @@ export async function svgElementToPngBytes(svgEl: SVGSVGElement, widthPx: number
       img.onload = () => resolve();
       img.onerror = () => reject(new Error("Couldn't rasterize the diagram"));
     });
+    console.log("[pdfDataExport] snapshot image loaded, natural size:", img.naturalWidth, "x", img.naturalHeight);
     const canvas = document.createElement("canvas");
     canvas.width = widthPx * scale;
     canvas.height = heightPx * scale;
@@ -37,6 +72,7 @@ export async function svgElementToPngBytes(svgEl: SVGSVGElement, widthPx: number
     const blob: Blob = await new Promise((resolve, reject) => {
       canvas.toBlob(b => b ? resolve(b) : reject(new Error("PNG export failed")), "image/png");
     });
+    console.log("[pdfDataExport] snapshot PNG size:", blob.size, "bytes");
     return new Uint8Array(await blob.arrayBuffer());
   } finally {
     URL.revokeObjectURL(svgUrl);
@@ -70,36 +106,52 @@ export async function embedJsonInPdf(pdfBytes: Uint8Array, payload: EmbeddedPayl
 // embedded data. Deliberately not a recreation of the full visual
 // diagram/report — that's what the existing print/export views are
 // for. This page's only job is to be a legible, honest container.
-export async function drawSimpleCoverPage(title: string, subtitle: string, noticeLines: string[], diagramPngBytes?: Uint8Array): Promise<Uint8Array> {
+export async function drawSimpleCoverPage(title: string, subtitle: string, noticeLines: string[], stepImages?: Uint8Array[]): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
-  const page = doc.addPage([612, 792]); // US Letter
   const font = await doc.embedFont("Helvetica-Bold");
   const bodyFont = await doc.embedFont("Helvetica");
 
-  page.drawText(title, { x: 50, y: 720, size: 22, font });
-  page.drawText(subtitle, { x: 50, y: 695, size: 12, font: bodyFont, color: undefined });
+  const coverPage = doc.addPage([612, 792]); // US Letter
+  coverPage.drawText(title, { x: 50, y: 720, size: 22, font });
+  coverPage.drawText(subtitle, { x: 50, y: 695, size: 12, font: bodyFont, color: undefined });
 
   let y = 650;
   for (const line of noticeLines) {
-    page.drawText(line, { x: 50, y, size: 10, font: bodyFont });
+    coverPage.drawText(line, { x: 50, y, size: 10, font: bodyFont });
     y -= 16;
   }
 
-  if (diagramPngBytes) {
-    const png = await doc.embedPng(diagramPngBytes);
-    // Fit the diagram into the space below the notice lines, preserving
-    // its aspect ratio, centered horizontally on the page.
+  // First step's diagram fits on the cover page itself if there's room;
+  // every step gets its own page either way, so nothing is ever squeezed.
+  if (stepImages && stepImages.length > 0) {
+    const png = await doc.embedPng(stepImages[0]);
     const maxWidth = 512;
-    const maxHeight = y - 100; // leave room for the footer line below
+    const maxHeight = y - 100;
     const scale = Math.min(maxWidth / png.width, maxHeight / png.height, 1);
     const w = png.width * scale;
     const h = png.height * scale;
-    page.drawImage(png, { x: (612 - w) / 2, y: y - h - 20, width: w, height: h });
+    coverPage.drawText(stepImages.length > 1 ? "Step 1" : "Diagram", { x: 50, y: y - 14, size: 11, font });
+    coverPage.drawImage(png, { x: (612 - w) / 2, y: y - h - 30, width: w, height: h });
   }
 
-  page.drawText("Contains embedded Winning Wall data — reopen this exact file's Import option to restore it.", {
+  coverPage.drawText("Contains embedded Winning Wall data — reopen this exact file's Import option to restore it.", {
     x: 50, y: 60, size: 9, font: bodyFont,
   });
+
+  // Remaining steps (2nd onward) each get their own full page.
+  if (stepImages && stepImages.length > 1) {
+    for (let i = 1; i < stepImages.length; i++) {
+      const page = doc.addPage([612, 792]);
+      const png = await doc.embedPng(stepImages[i]);
+      page.drawText(`Step ${i + 1}`, { x: 50, y: 740, size: 16, font });
+      const maxWidth = 512;
+      const maxHeight = 620;
+      const scale = Math.min(maxWidth / png.width, maxHeight / png.height, 1);
+      const w = png.width * scale;
+      const h = png.height * scale;
+      page.drawImage(png, { x: (612 - w) / 2, y: 700 - h, width: w, height: h });
+    }
+  }
 
   return doc.save();
 }
