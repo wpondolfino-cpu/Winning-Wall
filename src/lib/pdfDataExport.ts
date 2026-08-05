@@ -229,3 +229,62 @@ export async function extractJsonFromPdf(file: File): Promise<EmbeddedPayload | 
     return null;
   }
 }
+
+// General-purpose text document layout — auto-paginates across as many
+// pages as needed, since full scout sheet / game day / practice content
+// can run long. Used by the three text-only exports (no diagram to
+// snapshot, unlike Plays).
+export async function drawTextDocument(title: string, subtitle: string, sections: { heading: string; lines: string[] }[]): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont("Helvetica-Bold");
+  const bodyFont = await doc.embedFont("Helvetica");
+  const marginLeft = 50, marginTop = 742, marginBottom = 60, pageWidth = 612, pageHeight = 792;
+
+  let page = doc.addPage([pageWidth, pageHeight]);
+  let y = marginTop;
+
+  function newPage() {
+    page = doc.addPage([pageWidth, pageHeight]);
+    y = marginTop;
+  }
+  function ensureRoom(needed: number) {
+    if (y - needed < marginBottom) newPage();
+  }
+
+  page.drawText(title, { x: marginLeft, y, size: 20, font });
+  y -= 22;
+  page.drawText(subtitle, { x: marginLeft, y, size: 11, font: bodyFont });
+  y -= 26;
+
+  for (const section of sections) {
+    ensureRoom(40);
+    y -= 6;
+    page.drawText(section.heading, { x: marginLeft, y, size: 13, font });
+    y -= 18;
+    for (const line of section.lines) {
+      const maxCharsPerLine = 92;
+      const wrapped: string[] = [];
+      let remaining = line;
+      while (remaining.length > maxCharsPerLine) {
+        let cut = remaining.lastIndexOf(" ", maxCharsPerLine);
+        if (cut <= 0) cut = maxCharsPerLine;
+        wrapped.push(remaining.slice(0, cut));
+        remaining = remaining.slice(cut).trim();
+      }
+      wrapped.push(remaining);
+      for (const wrappedLine of wrapped) {
+        ensureRoom(16);
+        page.drawText(wrappedLine, { x: marginLeft, y, size: 10, font: bodyFont });
+        y -= 14;
+      }
+    }
+    y -= 8;
+  }
+
+  const lastPage = doc.getPage(doc.getPageCount() - 1);
+  lastPage.drawText("Contains embedded Winning Wall data — reopen this exact file's Import option to restore it.", {
+    x: marginLeft, y: 30, size: 8, font: bodyFont,
+  });
+
+  return doc.save();
+}
