@@ -183,12 +183,16 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
   }
 
   const importInputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
   async function handleImportFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-selecting the same file later
     if (!file) return;
+    setImporting(true);
+    console.log("[import] reading file:", file.name, file.size, "bytes");
     try {
       const payload = await extractJsonFromPdf(file);
+      console.log("[import] extractJsonFromPdf returned:", payload);
       if (!payload) {
         showToast("This PDF doesn't contain play data — it may be from before this feature existed, or isn't from Winning Wall.");
         return;
@@ -198,10 +202,14 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
         return;
       }
       const created = await importPlayFromExportPayload(payload.data);
+      console.log("[import] created play:", created.id, created.title);
       showToast(`Imported "${created.title}"`);
       await load();
-    } catch (e: any) {
-      showToast("Import failed: " + e.message);
+    } catch (err: any) {
+      console.error("[import] failed:", err);
+      showToast("Import failed: " + (err?.message ?? String(err)));
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -337,7 +345,9 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
         <>
           {onCreateNew && <button onClick={onCreateNew} className="coach-add-btn" style={{ width: "100%", justifyContent: "center", marginBottom: 10 }}>+ Draw a new play</button>}
           <input ref={importInputRef} type="file" accept="application/pdf" style={{ display: "none" }} onChange={handleImportFileChosen} />
-          <button onClick={() => importInputRef.current?.click()} style={{ width: "100%", justifyContent: "center", marginBottom: 10, padding: "10px 12px" }}>📥 Import play from PDF</button>
+          <button onClick={() => importInputRef.current?.click()} disabled={importing} style={{ width: "100%", justifyContent: "center", marginBottom: 10, padding: "10px 12px", opacity: importing ? 0.6 : 1 }}>
+            {importing ? "Reading PDF…" : "📥 Import play from PDF"}
+          </button>
           {mineFiltered.map((p) => (
             <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6, border: "1px solid var(--border)", borderRadius: 8 }}>
               <button onClick={() => setOpenPlay(p)} style={{ flex: 1, textAlign: "left", padding: "10px 12px", background: "none", border: "none", color: "var(--text)", cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>
@@ -390,7 +400,11 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
         </>
       )}
 
-      {toast && <p style={{ fontSize: 13, color: "var(--gold)", marginTop: 8 }}>{toast}</p>}
+      {toast && (
+        <div style={{ position: "fixed", bottom: 20, left: 16, right: 16, zIndex: 500, background: "var(--surface)", border: "1px solid var(--gold)", borderRadius: 10, padding: "12px 16px", fontSize: 14, fontWeight: 600, color: "var(--gold)", boxShadow: "0 4px 16px rgba(0,0,0,0.4)" }}>
+          {toast}
+        </div>
+      )}
       {sharePopupPlay && <SharePopup play={sharePopupPlay} onClose={() => setSharePopupPlay(null)} />}
       {showCategoryManager && (
         <PlayCategoryManagerModal
