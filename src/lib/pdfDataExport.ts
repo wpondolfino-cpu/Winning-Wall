@@ -102,13 +102,33 @@ export async function extractJsonFromPdf(file: File): Promise<EmbeddedPayload | 
       const stream: any = doc.context.lookup(fRef as any);
       console.log(`[pdfDataExport] entry ${i}: stream resolved:`, !!stream, "has contents:", !!stream?.contents);
       if (!stream || !stream.contents) continue;
+
+      // Try decoding the bytes as plain text first. If that doesn't yield
+      // valid JSON, the bytes are very likely still compressed (PDF
+      // streams almost always are, by default) — decompress with the
+      // browser's built-in support before trying again.
+      const tryParse = (bytes: Uint8Array): EmbeddedPayload | null => {
+        try {
+          const parsed = JSON.parse(new TextDecoder().decode(bytes));
+          if (parsed && typeof parsed === "object" && parsed.dataType && parsed.schemaVersion != null) return parsed as EmbeddedPayload;
+        } catch { /* not valid JSON at this stage */ }
+        return null;
+      };
+
+      const direct = tryParse(stream.contents);
+      console.log(`[pdfDataExport] entry ${i}: direct text decode produced valid JSON:`, !!direct);
+      if (direct) return direct;
+
       try {
-        const text = new TextDecoder().decode(stream.contents);
-        const parsed = JSON.parse(text);
-        if (parsed && typeof parsed === "object" && parsed.dataType && parsed.schemaVersion != null) {
-          return parsed as EmbeddedPayload;
-        }
-      } catch { /* not our JSON, keep looking */ }
+        const ds = new DecompressionStream("deflate");
+        const decompressedStream = new Blob([stream.contents]).stream().pipeThrough(ds);
+        const decompressedBytes = new Uint8Array(await new Response(decompressedStream).arrayBuffer());
+        const viaDecompression = tryParse(decompressedBytes);
+        console.log(`[pdfDataExport] entry ${i}: deflate-decompressed decode produced valid JSON:`, !!viaDecompression);
+        if (viaDecompression) return viaDecompression;
+      } catch (decompErr) {
+        console.log(`[pdfDataExport] entry ${i}: deflate decompression attempt failed:`, decompErr);
+      }
     }
     return null;
   } catch (e) {
