@@ -70,29 +70,37 @@ export async function extractJsonFromPdf(file: File): Promise<EmbeddedPayload | 
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    console.log("[pdfDataExport] PDF loaded, page count:", doc.getPageCount());
 
     // Walk the PDF spec's embedded-file name tree directly:
     // Catalog -> /Names -> /EmbeddedFiles -> /Names [name, fileSpecRef, name, fileSpecRef, ...]
     const namesDict = doc.catalog.lookup(PDFName.of("Names"), PDFDict);
+    console.log("[pdfDataExport] catalog /Names dict found:", !!namesDict);
     if (!namesDict) return null;
     const embeddedFilesDict = namesDict.lookup(PDFName.of("EmbeddedFiles"), PDFDict);
+    console.log("[pdfDataExport] /EmbeddedFiles dict found:", !!embeddedFilesDict);
     if (!embeddedFilesDict) return null;
     const namesArray = embeddedFilesDict.lookup(PDFName.of("Names"), PDFArray);
+    console.log("[pdfDataExport] /EmbeddedFiles /Names array found:", !!namesArray, "size:", namesArray?.size());
     if (!namesArray) return null;
 
     for (let i = 0; i < namesArray.size(); i += 2) {
       const fileSpecRef = namesArray.get(i + 1);
       const fileSpec = doc.context.lookup(fileSpecRef as any, PDFDict);
+      console.log(`[pdfDataExport] entry ${i}: fileSpec found:`, !!fileSpec);
       if (!fileSpec) continue;
       const efDict = fileSpec.lookup(PDFName.of("EF"), PDFDict);
+      console.log(`[pdfDataExport] entry ${i}: /EF dict found:`, !!efDict);
       if (!efDict) continue;
       const fRef = efDict.get(PDFName.of("F"));
+      console.log(`[pdfDataExport] entry ${i}: /F ref found:`, !!fRef);
       if (!fRef) continue;
       // The dict/array lookups above type-check fine with PDFContext.lookup's
       // overloads, but streams aren't part of that overload set the way I'd
       // assumed — looking up untyped and reading .contents at runtime instead
       // of guessing at the exact stream-lookup overload signature again.
       const stream: any = doc.context.lookup(fRef as any);
+      console.log(`[pdfDataExport] entry ${i}: stream resolved:`, !!stream, "has contents:", !!stream?.contents);
       if (!stream || !stream.contents) continue;
       try {
         const text = new TextDecoder().decode(stream.contents);
