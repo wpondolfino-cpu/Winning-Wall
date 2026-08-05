@@ -3,7 +3,7 @@
 // "Shared with me", and "My playbooks", then plays back a single play
 // frame-by-frame. No drawing tools live here — see PlayEditor for that.
 
-import { useState, useEffect, lazy, Suspense, Component, type ComponentType, type ReactNode } from "react";
+import { useState, useEffect, useRef, lazy, Suspense, Component, type ComponentType, type ReactNode } from "react";
 import { supabase } from "../../lib/supabase";
 import { getProfile } from "../../lib/auth";
 import PlayCanvas from "./PlayCanvas";
@@ -15,7 +15,9 @@ import {
   Play, RosterPlayer, getMyPlays, getPlaysSharedWithMe, getMyAssignedPlaybooks,
   getPlaybookPlays, getPlayShares, revokePlayShare, markPlayViewed, markPlaybookViewed,
   forkPlay, getRoster, Playbook, deletePlay, getStaff, sharePlay, PlayShareTarget,
+  playToExportPayload, importPlayFromExportPayload, PLAY_EXPORT_SCHEMA_VERSION,
 } from "../../lib/plays";
+import { embedJsonInPdf, extractJsonFromPdf, drawSimpleCoverPage } from "../../lib/pdfDataExport";
 
 // Lazy-loaded: three.js is a large dependency, and most people watching a
 // play never open the 3D view — this keeps it out of everyone's initial
@@ -153,6 +155,56 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
     } catch (e: any) { showToast("Error: " + e.message); }
   }
 
+  async function handleExportReimportable(p: Play) {
+    try {
+      const cover = await drawSimpleCoverPage(
+        p.title,
+        "Winning Wall — re-importable play export",
+        [
+          `Tags: ${p.tags.join(", ") || "none"}`,
+          `Category: ${p.category ?? "none"}`,
+          "Import this exact file from the Plays screen to restore it as a real, editable play.",
+        ]
+      );
+      const withData = await embedJsonInPdf(cover, {
+        dataType: "play",
+        schemaVersion: PLAY_EXPORT_SCHEMA_VERSION,
+        data: playToExportPayload(p),
+      });
+      const blob = new Blob([withData], { type: "application/pdf" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${p.title.replace(/[^a-z0-9]+/gi, "-")}.pdf`;
+      a.click();
+      showToast("Exported — this file can be imported back in later");
+    } catch (e: any) {
+      showToast("Export failed: " + e.message);
+    }
+  }
+
+  const importInputRef = useRef<HTMLInputElement>(null);
+  async function handleImportFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+    try {
+      const payload = await extractJsonFromPdf(file);
+      if (!payload) {
+        showToast("This PDF doesn't contain play data — it may be from before this feature existed, or isn't from Winning Wall.");
+        return;
+      }
+      if (payload.dataType !== "play") {
+        showToast(`This file contains a ${payload.dataType.replace("_", " ")}, not a play.`);
+        return;
+      }
+      const created = await importPlayFromExportPayload(payload.data);
+      showToast(`Imported "${created.title}"`);
+      await load();
+    } catch (e: any) {
+      showToast("Import failed: " + e.message);
+    }
+  }
+
   async function handleDeleteFromList(p: Play) {
     if (!window.confirm(`Delete "${p.title}"? This can't be undone.`)) return;
     try {
@@ -192,6 +244,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
         onEdit={onEdit}
         onFork={handleFork}
         onPrint={() => setPrintPlays({ plays: [openPlay] })}
+        onExport={() => handleExportReimportable(openPlay)}
         onDeleted={async () => {
           try {
             await deletePlay(openPlay.id);
@@ -283,6 +336,8 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
       {tab === "mine" && (
         <>
           {onCreateNew && <button onClick={onCreateNew} className="coach-add-btn" style={{ width: "100%", justifyContent: "center", marginBottom: 10 }}>+ Draw a new play</button>}
+          <input ref={importInputRef} type="file" accept="application/pdf" style={{ display: "none" }} onChange={handleImportFileChosen} />
+          <button onClick={() => importInputRef.current?.click()} style={{ width: "100%", justifyContent: "center", marginBottom: 10, padding: "10px 12px" }}>📥 Import play from PDF</button>
           {mineFiltered.map((p) => (
             <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6, border: "1px solid var(--border)", borderRadius: 8 }}>
               <button onClick={() => setOpenPlay(p)} style={{ flex: 1, textAlign: "left", padding: "10px 12px", background: "none", border: "none", color: "var(--text)", cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>
@@ -347,9 +402,9 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
   );
 }
 
-function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit, onFork, onPrint, onDeleted, startIn3D }: {
+function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit, onFork, onPrint, onExport, onDeleted, startIn3D }: {
   play: Play; shareId: string | null; rosterMap: Record<string, RosterPlayer>; canManageShares: boolean;
-  onBack: () => void; onEdit?: (p: Play) => void; onFork: (p: Play) => void; onPrint: () => void; onDeleted: () => void;
+  onBack: () => void; onEdit?: (p: Play) => void; onFork: (p: Play) => void; onPrint: () => void; onExport: () => void; onDeleted: () => void;
   startIn3D?: boolean;
 }) {
   const [frameIdx, setFrameIdx] = useState(0);
@@ -474,6 +529,7 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button onClick={() => onFork(play)} style={{ padding: "8px 12px" }}>Duplicate as my own</button>
         <button onClick={onPrint} style={{ padding: "8px 12px" }}>🖨️ Print / export</button>
+        <button onClick={onExport} style={{ padding: "8px 12px" }}>💾 Export (re-importable)</button>
         {onEdit && canManageShares && <button onClick={() => onEdit(play)} style={{ padding: "8px 12px" }}>Edit</button>}
         {canManageShares && <button onClick={() => setShowSharePopup(true)} style={{ padding: "8px 12px", display: "inline-flex", alignItems: "center", gap: 6 }}><ShareIcon /> Manage sharing</button>}
         {canManageShares && (
