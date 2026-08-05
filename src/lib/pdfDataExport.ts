@@ -14,6 +14,35 @@
 
 import { PDFDocument, PDFName, PDFDict, PDFArray } from "pdf-lib";
 
+// Snapshots a rendered <svg> element (e.g. a play diagram) into PNG
+// bytes, using only native browser APIs — no new dependency needed.
+// `scale` controls resolution (2 = retina-ish sharpness for print).
+export async function svgElementToPngBytes(svgEl: SVGSVGElement, widthPx: number, heightPx: number, scale = 2): Promise<Uint8Array> {
+  const svgString = new XMLSerializer().serializeToString(svgEl);
+  const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+  const svgUrl = URL.createObjectURL(svgBlob);
+  try {
+    const img = new Image();
+    img.src = svgUrl;
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("Couldn't rasterize the diagram"));
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = widthPx * scale;
+    canvas.height = heightPx * scale;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas not available");
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const blob: Blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error("PNG export failed")), "image/png");
+    });
+    return new Uint8Array(await blob.arrayBuffer());
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+}
+
 export interface EmbeddedPayload {
   dataType: "play" | "playbook" | "scout_sheet" | "gameday_sheet" | "practice_plan";
   schemaVersion: number;
@@ -41,7 +70,7 @@ export async function embedJsonInPdf(pdfBytes: Uint8Array, payload: EmbeddedPayl
 // embedded data. Deliberately not a recreation of the full visual
 // diagram/report — that's what the existing print/export views are
 // for. This page's only job is to be a legible, honest container.
-export async function drawSimpleCoverPage(title: string, subtitle: string, noticeLines: string[]): Promise<Uint8Array> {
+export async function drawSimpleCoverPage(title: string, subtitle: string, noticeLines: string[], diagramPngBytes?: Uint8Array): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const page = doc.addPage([612, 792]); // US Letter
   const font = await doc.embedFont("Helvetica-Bold");
@@ -54,6 +83,18 @@ export async function drawSimpleCoverPage(title: string, subtitle: string, notic
   for (const line of noticeLines) {
     page.drawText(line, { x: 50, y, size: 10, font: bodyFont });
     y -= 16;
+  }
+
+  if (diagramPngBytes) {
+    const png = await doc.embedPng(diagramPngBytes);
+    // Fit the diagram into the space below the notice lines, preserving
+    // its aspect ratio, centered horizontally on the page.
+    const maxWidth = 512;
+    const maxHeight = y - 100; // leave room for the footer line below
+    const scale = Math.min(maxWidth / png.width, maxHeight / png.height, 1);
+    const w = png.width * scale;
+    const h = png.height * scale;
+    page.drawImage(png, { x: (612 - w) / 2, y: y - h - 20, width: w, height: h });
   }
 
   page.drawText("Contains embedded Winning Wall data — reopen this exact file's Import option to restore it.", {
