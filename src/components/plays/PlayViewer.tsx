@@ -171,7 +171,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
         schemaVersion: PLAY_EXPORT_SCHEMA_VERSION,
         data: playToExportPayload(p),
       });
-      const blob = new Blob([withData], { type: "application/pdf" });
+      const blob = new Blob([withData as BlobPart], { type: "application/pdf" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = `${p.title.replace(/[^a-z0-9]+/gi, "-")}.pdf`;
