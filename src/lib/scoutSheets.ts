@@ -360,3 +360,80 @@ export async function upsertDefenseSection(scoutSheetId: string, slot: DefenseSl
     );
   if (error) throw error;
 }
+
+// ── Re-importable export (hidden data embedded in a PDF) ────────
+export const SCOUT_SHEET_EXPORT_SCHEMA_VERSION = 1;
+
+export async function scoutSheetToExportPayload(sheetId: string) {
+  const sheet = await getScoutSheet(sheetId);
+  if (!sheet) throw new Error("Scout sheet not found");
+  const [opponent, players, offenseSets, specials, defenseSections, gameDateResult] = await Promise.all([
+    getOpponent(sheet.opponent_id),
+    getScoutPlayers(sheetId),
+    getOffenseSets(sheetId),
+    getSpecials(sheetId),
+    getDefenseSections(sheetId),
+    supabase.from("games").select("game_date").eq("id", sheet.game_id).maybeSingle(),
+  ]);
+  return {
+    opponentName: opponent?.name ?? "Opponent",
+    gameDate: gameDateResult.data?.game_date ?? null,
+    team_record: sheet.team_record,
+    tempo: sheet.tempo,
+    keys_to_game: sheet.keys_to_game,
+    team_offensive_strengths: sheet.team_offensive_strengths,
+    players: players.map(({ id, scout_sheet_id, created_at, ...rest }) => rest),
+    offenseSets: offenseSets.map(({ id, scout_sheet_id, created_at, play_id, ...rest }) => rest),
+    specials: specials.map(({ id, scout_sheet_id, created_at, play_id, ...rest }) => rest),
+    defenseSections: defenseSections.map(({ id, scout_sheet_id, created_at, updated_at, ...rest }) => rest),
+  };
+}
+
+export async function importScoutSheetFromExportPayload(payload: Awaited<ReturnType<typeof scoutSheetToExportPayload>>) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not signed in");
+
+  // Relink to an existing opponent by exact name; create fresh if none matches.
+  const existingOpponents = await getOpponents();
+  let opponentId = existingOpponents.find(o => o.name === payload.opponentName)?.id;
+  if (!opponentId) {
+    const created = await createOpponent(payload.opponentName);
+    opponentId = created.id;
+  }
+
+  // Games aren't a reusable entity the way opponents/rosters are — a
+  // fresh one is created every time, dated using the exported game date.
+  const { data: game, error: gameErr } = await supabase.from("games").insert({
+    opponent: payload.opponentName,
+    opponent_id: opponentId,
+    game_date: payload.gameDate ?? new Date().toISOString().split("T")[0],
+    season: new Date(payload.gameDate ?? Date.now()).getFullYear().toString(),
+    home_away: "home",
+    status: "draft",
+    created_by: user.id,
+  }).select().single();
+  if (gameErr) throw gameErr;
+
+  const sheet = await createScoutSheet(game.id, opponentId);
+  await updateScoutSheet(sheet.id, {
+    team_record: payload.team_record,
+    tempo: payload.tempo,
+    keys_to_game: payload.keys_to_game,
+    team_offensive_strengths: payload.team_offensive_strengths,
+  });
+
+  if (payload.players.length) {
+    await supabase.from("scout_players").insert(payload.players.map((p: any) => ({ ...p, scout_sheet_id: sheet.id, assigned_to_profile_id: null })));
+  }
+  if (payload.offenseSets.length) {
+    await supabase.from("scout_offense_sets").insert(payload.offenseSets.map((s: any) => ({ ...s, scout_sheet_id: sheet.id, play_id: null })));
+  }
+  if (payload.specials.length) {
+    await supabase.from("scout_specials").insert(payload.specials.map((s: any) => ({ ...s, scout_sheet_id: sheet.id, play_id: null })));
+  }
+  if (payload.defenseSections.length) {
+    await supabase.from("scout_defense").insert(payload.defenseSections.map((d: any) => ({ ...d, scout_sheet_id: sheet.id })));
+  }
+
+  return sheet;
+}
