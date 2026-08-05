@@ -1023,3 +1023,87 @@ export async function deletePracticeWeek(id: string): Promise<{ error: string | 
   const { error } = await supabase.from("practice_weeks").delete().eq("id", id);
   return { error: error?.message ?? null };
 }
+
+// ── Re-importable export (hidden data embedded in a PDF) ────────
+// Rosters are captured by name and relinked (or set to "combined"
+// scope if no match) on import, since a total data loss means the
+// original roster IDs won't exist anymore. Drill titles are always
+// preserved as plain labels rather than re-linked to a specific
+// library entry (a segment drill can exist with no drill_id at all).
+// Coach and player-group assignments are shown in the exported PDF
+// for reference but not reconstructed as live links on import --
+// relinking individual people reliably by name is a meaningfully
+// different, more error-prone problem than relinking a shared team
+// roster, and out of scope for this pass.
+export const PRACTICE_EXPORT_SCHEMA_VERSION = 1;
+
+export async function practiceToExportPayload(practiceId: string) {
+  const practice = await getPractice(practiceId);
+  if (!practice) throw new Error("Practice not found");
+  const printData = await getPracticePrintData(practiceId);
+  if (!printData) throw new Error("Couldn't load practice content");
+  const allRosters = await getRosters(true);
+  const rosterNames = practice.roster_ids.map(id => allRosters.find(r => r.id === id)?.name).filter(Boolean) as string[];
+
+  return {
+    practice_date: practice.practice_date,
+    start_time: practice.start_time,
+    rosterNames,
+    blocks: printData.blocks.map(b => ({
+      duration_minutes: b.duration_minutes,
+      segments: b.segments.map(s => ({
+        rosterName: s.rosterName,
+        drills: s.drills.map(d => ({
+          title: d.title, label: d.label, duration_minutes: d.duration_minutes, goal_text: d.goal_text,
+          coachNames: d.coachNames, groups: d.groups,
+        })),
+      })),
+    })),
+  };
+}
+
+export async function importPracticeFromExportPayload(payload: Awaited<ReturnType<typeof practiceToExportPayload>>): Promise<{ id: string }> {
+  const allRosters = await getRosters(true);
+  const relinkedRosterIds = payload.rosterNames
+    .map(name => allRosters.find(r => r.name === name)?.id)
+    .filter((id): id is string => !!id);
+
+  const { id: practiceId, error } = await createPractice({
+    practice_date: payload.practice_date,
+    start_time: payload.start_time,
+    roster_ids: relinkedRosterIds,
+  });
+  if (error || !practiceId) throw new Error(error ?? "Couldn't create practice");
+
+  for (let bi = 0; bi < payload.blocks.length; bi++) {
+    const block = payload.blocks[bi];
+    const { data: blockRow, error: blockErr } = await supabase.from("practice_blocks")
+      .insert({ practice_id: practiceId, order_index: bi, duration_minutes: block.duration_minutes })
+      .select("id").single();
+    if (blockErr) throw blockErr;
+
+    for (const segment of block.segments) {
+      const rosterId = segment.rosterName ? allRosters.find(r => r.name === segment.rosterName)?.id ?? null : null;
+      const { data: segRow, error: segErr } = await supabase.from("block_segments")
+        .insert({ block_id: blockRow.id, scope_type: rosterId ? "roster" : "combined", roster_id: rosterId })
+        .select("id").single();
+      if (segErr) throw segErr;
+
+      for (let di = 0; di < segment.drills.length; di++) {
+        const drill = segment.drills[di];
+        await supabase.from("segment_drills").insert({
+          segment_id: segRow.id,
+          drill_id: null, // not relinked to the library — see note above
+          order_index: di,
+          label: drill.label ?? drill.title,
+          duration_minutes: drill.duration_minutes,
+          goal_text: drill.goal_text,
+          coach_name: drill.coachNames.length ? drill.coachNames.join(", ") : null,
+          coach_ids: [],
+        });
+      }
+    }
+  }
+
+  return { id: practiceId };
+}
