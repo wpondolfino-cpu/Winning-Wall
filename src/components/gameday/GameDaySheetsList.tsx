@@ -1,6 +1,8 @@
 // src/components/gameday/GameDaySheetsList.tsx
-import { useState, useEffect, useCallback } from "react";
-import { GameDaySheet, getGameDaySheets, createGameDaySheet, renameGameDaySheet, deleteGameDaySheet, duplicateGameDaySheet } from "../../lib/gameDaySheets";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { GameDaySheet, getGameDaySheets, createGameDaySheet, renameGameDaySheet, deleteGameDaySheet, duplicateGameDaySheet, gameDaySheetToExportPayload, importGameDaySheetFromExportPayload, GAMEDAY_SHEET_EXPORT_SCHEMA_VERSION } from "../../lib/gameDaySheets";
+import { embedJsonInPdf, extractJsonFromPdf, drawTextDocument } from "../../lib/pdfDataExport";
+import { GAMEDAY_SECTIONS } from "../../lib/gameDaySheets";
 import { inputStyle } from "../../lib/inputStyle";
 import GameDaySheetEditor from "./GameDaySheetEditor";
 
@@ -14,9 +16,46 @@ export default function GameDaySheetsList() {
   const [duplicateName, setDuplicateName] = useState("");
   const [openSheetId, setOpenSheetId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => { setSheets(await getGameDaySheets()); }, []);
   useEffect(() => { load().catch(console.error); }, [load]);
+
+  async function handleExportSheet(sheetId: string) {
+    setError(null);
+    try {
+      const payload = await gameDaySheetToExportPayload(sheetId);
+      const sections = GAMEDAY_SECTIONS.map(s => ({
+        heading: s.label,
+        lines: payload.calls.filter((c: any) => c.section === s.key).map((c: any) => c.call_name),
+      })).filter(s => s.lines.length > 0);
+      const doc = await drawTextDocument(payload.name, "Winning Wall — re-importable game day sheet export", sections);
+      const withData = await embedJsonInPdf(doc, { dataType: "gameday_sheet", schemaVersion: GAMEDAY_SHEET_EXPORT_SCHEMA_VERSION, data: payload });
+      const blob = new Blob([withData as BlobPart], { type: "application/pdf" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${payload.name.replace(/[^a-z0-9]+/gi, "-")}.pdf`;
+      a.click();
+    } catch (e: any) {
+      setError("Export failed: " + e.message);
+    }
+  }
+
+  async function handleImportFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError(null);
+    try {
+      const payload = await extractJsonFromPdf(file);
+      if (!payload) { setError("This PDF doesn't contain game day sheet data."); return; }
+      if (payload.dataType !== "gameday_sheet") { setError(`This file contains a ${payload.dataType.replace("_", " ")}, not a game day sheet.`); return; }
+      await importGameDaySheetFromExportPayload(payload.data);
+      await load();
+    } catch (e: any) {
+      setError("Import failed: " + e.message);
+    }
+  }
 
   async function addSheet() {
     if (!newName.trim()) return;
@@ -72,6 +111,9 @@ export default function GameDaySheetsList() {
         <button type="button" onClick={addSheet} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "0 16px", fontWeight: 600, cursor: "pointer" }}>Create</button>
       </div>
 
+      <input ref={importFileRef} type="file" accept="application/pdf" style={{ display: "none" }} onChange={handleImportFileChosen} />
+      <button type="button" onClick={() => importFileRef.current?.click()} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", marginBottom: 16 }}>📥 Import game day sheet from PDF</button>
+
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {sheets.map(s => (
           <div key={s.id} style={{ background: "var(--surface2)", borderRadius: 10, padding: "10px 12px" }}>
@@ -100,6 +142,7 @@ export default function GameDaySheetsList() {
                 <span onClick={() => setOpenSheetId(s.id)} style={{ flex: 1, cursor: "pointer", fontWeight: 600, fontSize: 14 }}>{s.name}</span>
                 <button type="button" onClick={() => { setRenameValue(s.name); setRenamingId(s.id); }} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 7, padding: "5px 8px", fontSize: 11, cursor: "pointer" }}>✏️</button>
                 <button type="button" onClick={() => { setDuplicateName(`${s.name} (copy)`); setDuplicatingFromId(s.id); }} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 7, padding: "5px 8px", fontSize: 11, cursor: "pointer" }}>⎘ Duplicate</button>
+                <button type="button" onClick={() => handleExportSheet(s.id)} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 7, padding: "5px 8px", fontSize: 11, cursor: "pointer" }}>💾</button>
                 <button type="button" onClick={() => setConfirmDeleteId(s.id)} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 7, padding: "5px 8px", fontSize: 11, cursor: "pointer" }}>🗑</button>
               </div>
             )}
