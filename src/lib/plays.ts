@@ -329,6 +329,35 @@ export async function getPlaysSharedWithMe(): Promise<(Play & { share_id: string
   return (data ?? []).map((row: any) => ({ ...row.plays, share_id: row.id, shared_by: row.shared_by }));
 }
 
+// ── Re-importable export (hidden data embedded in a PDF) ────────
+// Schema version 1: title, tags, court_template, data, video_url,
+// category. Deliberately excludes id/created_by/created_at/updated_at/
+// forked_from — those are instance-specific and get assigned fresh
+// on import, same as creating any new play.
+export const PLAY_EXPORT_SCHEMA_VERSION = 1;
+
+export function playToExportPayload(play: Play) {
+  return {
+    title: play.title,
+    tags: play.tags,
+    court_template: play.court_template,
+    data: play.data,
+    video_url: play.video_url,
+    category: play.category,
+  };
+}
+
+export async function importPlayFromExportPayload(payload: ReturnType<typeof playToExportPayload>): Promise<Play> {
+  return createPlay({
+    title: `${payload.title} (imported)`,
+    tags: payload.tags,
+    court_template: payload.court_template,
+    data: payload.data,
+    video_url: payload.video_url,
+    category: payload.category,
+  });
+}
+
 export async function createPlay(play: {
   title: string;
   tags?: string[];
