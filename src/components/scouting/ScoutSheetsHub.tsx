@@ -5,7 +5,9 @@ import {
   Opponent, getOpponents, createOpponent, uploadOpponentLogo,
   getOpponentLastGames, getScoutSheetsForOpponent,
   createScoutSheet, duplicateScoutSheet,
+  scoutSheetToExportPayload, importScoutSheetFromExportPayload, SCOUT_SHEET_EXPORT_SCHEMA_VERSION,
 } from "../../lib/scoutSheets";
+import { embedJsonInPdf, extractJsonFromPdf, drawTextDocument } from "../../lib/pdfDataExport";
 import ScoutSheetBuilder from "./ScoutSheetBuilder";
 import { inputStyle } from "../../lib/inputStyle";
 
@@ -24,12 +26,54 @@ export default function ScoutSheetsHub({ canManage }: Props) {
   const [openSheetId, setOpenSheetId] = useState<string | null>(null);
   const [newGameDate, setNewGameDate] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   const loadOpponents = useCallback(async () => {
     setOpponents(await getOpponents());
   }, []);
 
   useEffect(() => { loadOpponents().catch(console.error); }, [loadOpponents]);
+
+  async function handleExportSheet(sheetId: string) {
+    setError(null);
+    try {
+      const payload = await scoutSheetToExportPayload(sheetId);
+      const sections = [
+        { heading: "Overview", lines: [`Opponent: ${payload.opponentName}`, `Record: ${payload.team_record ?? "—"} · Tempo: ${payload.tempo ?? "—"}`] },
+        { heading: "Keys to game", lines: payload.keys_to_game },
+        { heading: "Team offensive strengths", lines: payload.team_offensive_strengths },
+        { heading: "Roster", lines: payload.players.map((p: any) => `${p.name}${p.number ? ` #${p.number}` : ""}${p.position ? ` — ${p.position}` : ""}${p.notes ? ` (${p.notes})` : ""}`) },
+        { heading: "Offense sets", lines: payload.offenseSets.map((s: any) => `${s.call_name}${s.description ? ` — ${s.description}` : ""}`) },
+        { heading: "Specials", lines: payload.specials.map((s: any) => `${s.kind.toUpperCase()}: ${s.call_name}${s.description ? ` — ${s.description}` : ""}`) },
+      ];
+      const doc = await drawTextDocument(`Scout Sheet — ${payload.opponentName}`, "Winning Wall — re-importable scout sheet export", sections);
+      const withData = await embedJsonInPdf(doc, { dataType: "scout_sheet", schemaVersion: SCOUT_SHEET_EXPORT_SCHEMA_VERSION, data: payload });
+      const blob = new Blob([withData as BlobPart], { type: "application/pdf" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `scout-${payload.opponentName.replace(/[^a-z0-9]+/gi, "-")}.pdf`;
+      a.click();
+    } catch (e: any) {
+      setError("Export failed: " + e.message);
+    }
+  }
+
+  async function handleImportFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError(null);
+    try {
+      const payload = await extractJsonFromPdf(file);
+      if (!payload) { setError("This PDF doesn't contain scout sheet data."); return; }
+      if (payload.dataType !== "scout_sheet") { setError(`This file contains a ${payload.dataType.replace("_", " ")}, not a scout sheet.`); return; }
+      await importScoutSheetFromExportPayload(payload.data);
+      await loadOpponents();
+      setError(null);
+    } catch (e: any) {
+      setError("Import failed: " + e.message);
+    }
+  }
 
   async function openOpponent(o: Opponent) {
     setActiveOpponent(o);
@@ -149,9 +193,10 @@ export default function ScoutSheetsHub({ canManage }: Props) {
         {showAllSheets && (
           <div style={{ marginTop: 10 }}>
             {allSheets.map(s => (
-              <div key={s.id} onClick={() => setOpenSheetId(s.id)} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid var(--border)", cursor: "pointer", fontSize: 12 }}>
-                <span>{s.games?.game_date ? new Date(s.games.game_date).toLocaleDateString() : "—"}</span>
-                <span style={{ color: "var(--muted)" }}>{s.status}</span>
+              <div key={s.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid var(--border)", fontSize: 12 }}>
+                <span onClick={() => setOpenSheetId(s.id)} style={{ cursor: "pointer", flex: 1 }}>{s.games?.game_date ? new Date(s.games.game_date).toLocaleDateString() : "—"}</span>
+                <span style={{ color: "var(--muted)", marginRight: 8 }}>{s.status}</span>
+                <button type="button" title="Export (re-importable)" onClick={(e) => { e.stopPropagation(); handleExportSheet(s.id); }} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 7px", fontSize: 11, cursor: "pointer" }}>💾</button>
               </div>
             ))}
           </div>
@@ -168,6 +213,12 @@ export default function ScoutSheetsHub({ canManage }: Props) {
           <input value={newOpponentName} onChange={e => setNewOpponentName(e.target.value)} placeholder="New opponent name"
             onKeyDown={e => { if (e.key === "Enter") addOpponent(); }} style={{ ...inputStyle, flex: 1 }} />
           <button type="button" onClick={addOpponent} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "0 16px", fontWeight: 600, cursor: "pointer" }}>Add</button>
+        </div>
+      )}
+      {canManage && (
+        <div style={{ marginBottom: 16 }}>
+          <input ref={importFileRef} type="file" accept="application/pdf" style={{ display: "none" }} onChange={handleImportFileChosen} />
+          <button type="button" onClick={() => importFileRef.current?.click()} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>📥 Import scout sheet from PDF</button>
         </div>
       )}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
