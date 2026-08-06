@@ -775,6 +775,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
           <Grid cols={2}>
             <Btn onClick={() => commit("turnover", { turnover_type: "live" })}>Live ball</Btn>
             <Btn onClick={() => commit("turnover", { turnover_type: "dead" })}>Dead ball</Btn>
+            <Btn onClick={() => commit("turnover", { turnover_type: "charge" })}>Charge</Btn>
           </Grid>
         </Section>
       )}
