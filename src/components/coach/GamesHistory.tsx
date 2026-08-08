@@ -14,7 +14,7 @@
 // the tracker -- tracking is locked once a game is finished (see
 // GameStatsHub's "Reopen for tracking" for the escape hatch).
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { supabase } from "../../lib/supabase";
 import { finishGame, isGameFinal, computeFinalScore, syncQueue, listSeasons, GAME_STRUCTURES, buildGameFormat, GAME_TYPES, GAME_GROUPS, gameTypesForGroup, type Game, type GameType, type GameGroup, type PeriodFormat, type Possession } from "../../lib/gameStats";
 
@@ -34,7 +34,6 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
   const [structure, setStructure] = useState<PeriodFormat>("quarters");
   const [periods, setPeriods] = useState(4);
   const [minutes, setMinutes] = useState(8);
-  const [otMinutes, setOtMinutes] = useState(4);
   const [gameType, setGameType] = useState<GameType>("regular");
 
   // Picking a structure resets the count and minutes to that structure's
@@ -44,7 +43,6 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
     setStructure(next);
     setPeriods(preset.periods);
     setMinutes(preset.minutes);
-    setOtMinutes(preset.otMinutes);
   }
   const [finishingId, setFinishingId] = useState<string | null>(null);
   const [finalUs, setFinalUs] = useState("");
@@ -70,7 +68,10 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
   async function createGame() {
     if (!opponent.trim()) return;
     const season = seasonForDate(gameDate);
-    const fmt = buildGameFormat(structure, periods, minutes, otMinutes);
+    // ot_minutes is only the prefill for the "+ OT" prompt, so it takes the
+    // structure's default rather than being typed at creation.
+    const otDefault = GAME_STRUCTURES.find((g) => g.value === structure)?.otMinutes ?? 4;
+    const fmt = buildGameFormat(structure, periods, minutes, otDefault);
     const { data, error } = await supabase
       .from("games")
       .insert({
@@ -185,67 +186,48 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
       </div>
 
       {creating && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-          <input
-            autoFocus
-            value={opponent}
-            onChange={(e) => setOpponent(e.target.value)}
-            placeholder="Opponent"
-            style={{ flex: "1 1 160px", minWidth: 140, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
-          />
-          <input
-            type="date"
-            value={gameDate}
-            onChange={(e) => setGameDate(e.target.value)}
-            style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
-          />
-          <select
-            value={structure}
-            onChange={(e) => pickStructure(e.target.value as PeriodFormat)}
-            style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
-          >
-            {GAME_STRUCTURES.map((g) => (
-              <option key={g.value} value={g.value}>{g.label}</option>
-            ))}
-          </select>
-          <input
-            type="number"
-            min={1}
-            max={8}
-            value={periods}
-            onChange={(e) => setPeriods(Number(e.target.value))}
-            title="How many periods"
-            style={{ width: 60, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
-          />
-          <input
-            type="number"
-            min={1}
-            max={30}
-            value={minutes}
-            onChange={(e) => setMinutes(Number(e.target.value))}
-            title="Minutes per period"
-            style={{ width: 70, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
-          />
-          {(structure === "quarters" || structure === "halves") && (
+        // Every field carries a visible caption -- three bare number boxes
+        // with only title tooltips read as nothing on desktop and nothing
+        // at all on mobile, where there's no hover.
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <Field label="Opponent" grow>
             <input
-              type="number"
-              min={1}
-              max={30}
-              value={otMinutes}
-              onChange={(e) => setOtMinutes(Number(e.target.value))}
-              title="Overtime minutes"
-              style={{ width: 70, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
+              autoFocus
+              value={opponent}
+              onChange={(e) => setOpponent(e.target.value)}
+              placeholder="Opponent"
+              style={{ ...newGameField, width: "100%", minWidth: 140 }}
             />
-          )}
-          <select
-            value={gameType}
-            onChange={(e) => setGameType(e.target.value as GameType)}
-            style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
-          >
-            {GAME_TYPES.map((t) => (
-              <option key={t.value} value={t.value}>{t.label}</option>
-            ))}
-          </select>
+          </Field>
+
+          <Field label="Date">
+            <input type="date" value={gameDate} onChange={(e) => setGameDate(e.target.value)} style={newGameField} />
+          </Field>
+
+          <Field label="Structure">
+            <select value={structure} onChange={(e) => pickStructure(e.target.value as PeriodFormat)} style={newGameField}>
+              {GAME_STRUCTURES.map((g) => (
+                <option key={g.value} value={g.value}>{g.label}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label={structure === "sessions" ? "# sessions" : structure === "periods" ? "# periods" : structure === "halves" ? "# halves" : "# quarters"}>
+            <input type="number" min={1} max={8} value={periods} onChange={(e) => setPeriods(Number(e.target.value))} style={{ ...newGameField, width: 68 }} />
+          </Field>
+
+          <Field label="Min. each">
+            <input type="number" min={1} max={30} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} style={{ ...newGameField, width: 76 }} />
+          </Field>
+
+          <Field label="Type">
+            <select value={gameType} onChange={(e) => setGameType(e.target.value as GameType)} style={newGameField}>
+              {GAME_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </Field>
+
           <button className="btn-primary" style={{ width: "auto", padding: "8px 14px" }} onClick={createGame}>Start</button>
         </div>
       )}
@@ -355,4 +337,22 @@ function seasonForDate(dateStr: string): string {
   // "start year - start year+1", games Jan-Jul count as the prior split.
   const month = d.getMonth() + 1;
   return month >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+}
+
+const newGameField: CSSProperties = {
+  padding: "8px 10px",
+  borderRadius: 8,
+  border: "1px solid var(--border)",
+  background: "var(--surface2)",
+  color: "var(--text)",
+};
+
+/** A form control with a small caption above it. */
+function Field({ label, grow, children }: { label: string; grow?: boolean; children: ReactNode }) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: grow ? "1 1 160px" : "0 0 auto", minWidth: 0 }}>
+      <span style={{ fontSize: 11, color: "var(--muted)" }}>{label}</span>
+      {children}
+    </label>
+  );
 }
