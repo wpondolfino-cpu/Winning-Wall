@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { finishGame, isGameFinal, computeFinalScore, reopenGame, endQuarter, reopenQuarter, nextOpenQuarter, syncQueue, listSavedReports, deleteSavedReport, listSeasons, gameFormat, periodsInPlay, periodLabel, halfLabel, addGamePeriod, removeLastPeriod, suggestedPeriodMinutes, addPeriodLabel, periodCount, overtimeCount, lengthsEditable, emptyRegulationPeriods, DEFAULT_GAME_FORMAT, type GameFormat, type SavedReport, type Possession } from "../../lib/gameStats";
+import { finishGame, isGameFinal, computeFinalScore, reopenGame, endQuarter, reopenQuarter, nextOpenQuarter, syncQueue, listSavedReports, deleteSavedReport, listSeasons, gameFormat, periodsInPlay, periodLabel, halfLabel, addGamePeriod, removeLastPeriod, suggestedPeriodMinutes, addPeriodLabel, periodCount, overtimeCount, lengthsEditable, emptyRegulationPeriods, DEFAULT_GAME_FORMAT, type GameFormat, type GameType, type SavedReport, type Possession } from "../../lib/gameStats";
 import GamesHistory from "../coach/GamesHistory";
 import GameTracker from "../coach/GameTracker";
 import GameReport, { ReportScope } from "./GameReport";
@@ -41,6 +41,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   const [gameFinal, setGameFinal] = useState<boolean | null>(null);
   const [closedQuarters, setClosedQuarters] = useState<number[]>([]);
   const [format, setFormat] = useState<GameFormat>(DEFAULT_GAME_FORMAT);
+  const [gameType, setGameType] = useState<GameType>("regular");
   const [activeOpponent, setActiveOpponent] = useState<string>("");
   const [finishing, setFinishing] = useState(false);
   const [finalUs, setFinalUs] = useState("");
@@ -52,10 +53,10 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   const activeGameId = gamesView.mode === "track" || gamesView.mode === "report" || gamesView.mode === "edit" ? gamesView.gameId : null;
 
   useEffect(() => {
-    if (!activeGameId) { setGameFinal(null); setActiveOpponent(""); setClosedQuarters([]); setFormat(DEFAULT_GAME_FORMAT); return; }
+    if (!activeGameId) { setGameFinal(null); setActiveOpponent(""); setClosedQuarters([]); setFormat(DEFAULT_GAME_FORMAT); setGameType("regular"); return; }
     supabase
       .from("games")
-      .select("final_score_us, final_score_them, opponent, closed_quarters, period_format, regulation_periods, period_lengths, ot_minutes")
+      .select("final_score_us, final_score_them, opponent, closed_quarters, game_type, period_format, regulation_periods, period_lengths, ot_minutes")
       .eq("id", activeGameId)
       .single()
       .then(({ data }) => {
@@ -65,6 +66,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
         const fmt = gameFormat(data as any);
         setClosedQuarters(closed);
         setFormat(fmt);
+        setGameType((((data as any)?.game_type) as GameType) ?? "regular");
         setQuarter(nextOpenQuarter(closed, periodCount(fmt)));
       });
   }, [activeGameId]);
@@ -173,6 +175,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
           closedQuarters={closedQuarters}
           format={format}
           setFormat={setFormat}
+          gameType={gameType}
           onEndQuarter={handleEndQuarter}
           onReopenQuarter={handleReopenQuarter}
           onAddPeriod={handleAddPeriod}
@@ -214,6 +217,7 @@ function GamesTab({
   closedQuarters,
   format,
   setFormat,
+  gameType,
   onEndQuarter,
   onReopenQuarter,
   onAddPeriod,
@@ -243,6 +247,7 @@ function GamesTab({
   closedQuarters: number[];
   format: GameFormat;
   setFormat: (f: GameFormat) => void;
+  gameType: GameType;
   onEndQuarter: (gameId: string, q: number) => void;
   onReopenQuarter: (gameId: string, q: number) => void;
   onAddPeriod: (gameId: string) => void;
@@ -308,6 +313,7 @@ function GamesTab({
           <GameFormatEditor
             gameId={view.gameId}
             format={format}
+            gameType={gameType}
             onSaved={(f) => setFormat(f)}
           />
           <button
@@ -362,6 +368,7 @@ function GamesTab({
           <GameFormatEditor
             gameId={view.gameId}
             format={format}
+            gameType={gameType}
             onSaved={(f) => { setFormat(f); if (quarter > periodCount(f)) setQuarter(1); }}
           />
         </div>
