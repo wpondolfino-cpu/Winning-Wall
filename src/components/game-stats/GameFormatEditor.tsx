@@ -25,7 +25,6 @@ import {
   updateGameFormat,
   setPeriodLength,
   periodLabel,
-  periodCount,
   overtimeCount,
   lengthsEditable,
   gameLengthMinutes,
@@ -87,10 +86,13 @@ export default function GameFormatEditor({ gameId, format, onSaved }: Props) {
         if (format.period_lengths[i] != null) rebuilt.period_lengths[i] = format.period_lengths[i];
       }
     }
-    // Keep any periods already added past the new regulation count.
-    for (let i = rebuilt.period_lengths.length; i < periodCount(format); i++) {
-      rebuilt.period_lengths.push(format.period_lengths[i]);
-    }
+    // Carry over genuine overtimes only -- periods past the OLD regulation
+    // count. Indexing from the NEW count instead kept old regulation
+    // periods too, so switching a 4-quarter game to halves left Q3 and Q4
+    // hanging around relabelled as OT and 2OT. Old regulation periods the
+    // new structure doesn't have are dropped; updateGameFormat refuses the
+    // whole change if any of them still hold possessions.
+    rebuilt.period_lengths.push(...format.period_lengths.slice(format.regulation_periods));
 
     const { error: err } = await updateGameFormat(gameId, rebuilt);
     setSaving(false);
