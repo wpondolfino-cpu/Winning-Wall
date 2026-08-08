@@ -63,6 +63,7 @@ export default function GameReport({ scope, title, variant = "full", canManage =
   const [goals, setGoals] = useState<StatGoal[]>([]);
   const [statOrder, setStatOrder] = useState<StatDef[]>([]);
   const [opponentName, setOpponentName] = useState<string | undefined>(undefined);
+  const [isPractice, setIsPractice] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { load(); }, [JSON.stringify(scope)]);
@@ -86,13 +87,15 @@ export default function GameReport({ scope, title, variant = "full", canManage =
     if (scope.kind === "quarter" || scope.kind === "half" || scope.kind === "game") {
       const { data: game } = await supabase
         .from("games")
-        .select("opponent, period_format, regulation_periods, period_lengths, ot_minutes")
+        .select("opponent, game_type, period_format, regulation_periods, period_lengths, ot_minutes")
         .eq("id", scope.gameId)
         .maybeSingle();
       setOpponentName((game as any)?.opponent ?? undefined);
+      setIsPractice((game as any)?.game_type === "practice");
       fmt = gameFormat(game as any);
     } else {
       setOpponentName(undefined);
+      setIsPractice(false);
     }
 
     let query = supabase.from("possessions").select("*");
@@ -130,7 +133,7 @@ export default function GameReport({ scope, title, variant = "full", canManage =
 
   if (loading) return <div className="card">Loading report…</div>;
 
-  return <ReportBody possessions={possessions} playCalls={playCalls} goals={goals} title={title} statOrder={statOrder} variant={variant} opponentName={opponentName} canManage={canManage} />;
+  return <ReportBody possessions={possessions} playCalls={playCalls} goals={goals} title={title} statOrder={statOrder} variant={variant} opponentName={opponentName} isPractice={isPractice} canManage={canManage} />;
 }
 
 /** The actual report card -- shared between GameReport (scope-based) and ReportBuilder (custom multi-game/category filters), so both stay visually identical. */
@@ -142,6 +145,7 @@ export function ReportBody({
   statOrder,
   variant = "full",
   opponentName,
+  isPractice,
   canManage = false,
 }: {
   possessions: Possession[];
@@ -151,6 +155,7 @@ export function ReportBody({
   statOrder: StatDef[];
   variant?: ReportVariant;
   opponentName?: string;
+  isPractice?: boolean;
   canManage?: boolean;
 }) {
   const visible = statOrder.filter((s) => variant === "full" || s.inGame);
@@ -215,7 +220,7 @@ export function ReportBody({
       `}</style>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
         <div style={{ fontSize: 14, fontWeight: 500, color: "var(--muted)" }}>
-          {opponentName ? `${title} - Us vs. ${opponentName}` : title}
+          {opponentName ? (isPractice ? `${title} - ${opponentName}` : `${title} - Us vs. ${opponentName}`) : title}
         </div>
         <div className="gs-no-print" style={{ display: "flex", gap: 8 }}>
           <button
@@ -227,6 +232,7 @@ export function ReportBody({
           <CopyReportButton
             title={title}
             opponentName={opponentName}
+            isPractice={isPractice}
             usRows={usRows}
             oppRows={oppRows}
             shotQuality={shotQuality}
@@ -356,6 +362,7 @@ function DefenseSchemeRow({ row }: { row: ReturnType<typeof computeDefenseEffect
 function CopyReportButton({
   title,
   opponentName,
+  isPractice,
   usRows,
   oppRows,
   shotQuality,
@@ -363,6 +370,7 @@ function CopyReportButton({
 }: {
   title: string;
   opponentName?: string;
+  isPractice?: boolean;
   usRows: StatRow[];
   oppRows: StatRow[];
   shotQuality: ReturnType<typeof computeShotQuality>;
@@ -372,7 +380,7 @@ function CopyReportButton({
 
   function buildText(): string {
     const lines: string[] = [];
-    lines.push(opponentName ? `${title} - Us vs. ${opponentName}` : title);
+    lines.push(opponentName ? (isPractice ? `${title} - ${opponentName}` : `${title} - Us vs. ${opponentName}`) : title);
     lines.push("");
     lines.push(`Stat | Us | ${opponentName ?? "Opponent"}`);
     usRows.forEach((us, i) => {
