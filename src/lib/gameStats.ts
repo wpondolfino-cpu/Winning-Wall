@@ -367,6 +367,16 @@ export function periodLabel(fmt: GameFormat, period: number): string {
   return ot === 1 ? "OT" : `${ot}OT`;
 }
 
+/** The word for a period in this format -- "quarter", "half", "period", "session". For UI wording like "All halves". */
+export function periodNoun(fmt: GameFormat, plural = false): string {
+  const base =
+    fmt.period_format === "halves" ? "half" :
+    fmt.period_format === "periods" ? "period" :
+    fmt.period_format === "sessions" ? "session" : "quarter";
+  if (!plural) return base;
+  return base === "half" ? "halves" : base + "s";
+}
+
 /** Length of a period in seconds, straight from period_lengths. Used by the per-period minutes estimator. */
 export function periodLengthSeconds(fmt: GameFormat, period: number): number {
   return (fmt.period_lengths[period - 1] ?? fmt.ot_minutes) * 60;
