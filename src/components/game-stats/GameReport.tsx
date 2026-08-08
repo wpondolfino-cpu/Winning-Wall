@@ -28,6 +28,9 @@ import {
   scoreAgainstGoal,
   getReportLayout,
   resolveStatOrder,
+  gameFormat,
+  halfPeriods,
+  qualityShotStatus,
   type Possession,
   type PlayCall,
   type StatGoal,
@@ -75,17 +78,28 @@ export default function GameReport({ scope, title, variant = "full", canManage =
 
     // A season/win-loss report spans multiple games (multiple opponents),
     // so there's no single name to show -- only fetch one for scopes tied
-    // to exactly one game.
+    // to exactly one game. The same fetch supplies the period format,
+    // which the half scope needs below.
+    let fmt = gameFormat(null);
     if (scope.kind === "quarter" || scope.kind === "half" || scope.kind === "game") {
-      const { data: game } = await supabase.from("games").select("opponent").eq("id", scope.gameId).maybeSingle();
+      const { data: game } = await supabase
+        .from("games")
+        .select("opponent, period_format, regulation_periods, period_minutes, ot_minutes")
+        .eq("id", scope.gameId)
+        .maybeSingle();
       setOpponentName((game as any)?.opponent ?? undefined);
+      fmt = gameFormat(game as any);
     } else {
       setOpponentName(undefined);
     }
 
     let query = supabase.from("possessions").select("*");
     if (scope.kind === "quarter") query = query.eq("game_id", scope.gameId).eq("quarter", scope.quarter);
-    if (scope.kind === "half") query = query.eq("game_id", scope.gameId).in("quarter", scope.half === 1 ? [1, 2] : [3, 4]);
+    // Half periods come from the game's format now. For a 4-quarter game
+    // this resolves to [1,2] / [3,4] exactly as before; for a halves game
+    // it resolves to [1] / [2], which is what was broken -- a halves
+    // game's "Halftime" report used to match [1,2] and return everything.
+    if (scope.kind === "half") query = query.eq("game_id", scope.gameId).in("quarter", halfPeriods(fmt, scope.half));
     if (scope.kind === "game") query = query.eq("game_id", scope.gameId);
     if (scope.kind === "season") {
       const { data: games } = await supabase
@@ -219,14 +233,27 @@ export function ReportBody({
 
       {specialStats.map((s) => {
         if (s.kind === "shot_quality") {
+          const qualityGoal = scoreAgainstGoal(goals, "quality_shot_pct", "us", shotQuality.qualityPct ?? 0).goal;
+          const status = qualityShotStatus(shotQuality.qualityPct, qualityGoal);
+          const statusColor =
+            status?.role === "success" ? "#2f9e63" : status?.role === "warning" ? "#c48a1f" : status?.role === "danger" ? "#8a2f2f" : "var(--muted)";
           return (
             <div key={s.key}>
               <SectionDivider label="Shot quality" />
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
-                <span style={{ fontSize: 13, color: "var(--muted)" }}>Overall</span>
-                <span style={{ fontSize: 18, fontWeight: 500, textTransform: "capitalize" }}>{shotQuality.label ?? "—"}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 13, color: "var(--muted)" }}>Quality shots (Great + Good)</span>
+                <span style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <span style={{ fontSize: 18, fontWeight: 500 }}>
+                    {shotQuality.qualityPct != null ? `${shotQuality.qualityPct}%` : "—"}
+                  </span>
+                  {status && <span style={{ fontSize: 13, color: statusColor }}>{status.label}</span>}
+                  {qualityGoal != null && <span style={{ fontSize: 12, color: "var(--muted)" }}>goal {qualityGoal}%</span>}
+                </span>
               </div>
               <ShotQualityBar breakdown={shotQuality.breakdown} />
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, fontStyle: "italic" }}>
+                Half-court efficiency also counts BLOB/SLOB possessions that flowed into a set, so play-type shares overlap and won't total 100%.
+              </div>
             </div>
           );
         }
@@ -346,9 +373,9 @@ function CopyReportButton({
       const opp = oppRows[i];
       lines.push(`${us.label}: ${us.value}${us.raw ? ` (${us.raw})` : ""} | ${opp ? `${opp.value}${opp.raw ? ` (${opp.raw})` : ""}` : "—"}`);
     });
-    if (shotQuality.label) {
+    if (shotQuality.qualityPct != null) {
       lines.push("");
-      lines.push(`Shot quality: ${shotQuality.label} (Great ${shotQuality.breakdown.great}% / Good ${shotQuality.breakdown.good}% / Live ${shotQuality.breakdown.live}% / Tough ${shotQuality.breakdown.tough}%)`);
+      lines.push(`Quality shots (Great + Good): ${shotQuality.qualityPct}% (Great ${shotQuality.breakdown.great}% / Good ${shotQuality.breakdown.good}% / Live ${shotQuality.breakdown.live}% / Tough ${shotQuality.breakdown.tough}%)`);
     }
     lines.push("");
     lines.push(`Scoring runs (3+): ${streaks.scoringRuns.count}, best ${streaks.scoringRuns.best}`);
