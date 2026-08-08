@@ -153,9 +153,23 @@ export const DEFAULT_STAT_ORDER: StatDef[] = [
   { key: "defense_schemes", label: "Defense schemes (Man / Zone / Press)", kind: "defense_schemes", inGame: false },
 ];
 
-/** Goal-settable stats, for the Goals tab -- "number" kind, excluding self-colored ones like Extra Possessions that don't compare against a target. */
-export const GOAL_STATS = DEFAULT_STAT_ORDER.filter((s) => s.kind === "number" && !s.selfColored) as
-  { key: string; label: string; defaultDirection: "higher_better" | "lower_better" }[];
+/**
+ * Goal-settable stats, for the Goals tab -- "number" kind, excluding
+ * self-colored ones like Extra Possessions that don't compare against a
+ * target.
+ *
+ * quality_shot_pct is appended by hand rather than added to
+ * DEFAULT_STAT_ORDER: it isn't a paired us/opponent row of its own (shot
+ * quality is only graded on our own possessions), it's the headline of
+ * the existing Shot quality block. Keeping it out of DEFAULT_STAT_ORDER
+ * also keeps it out of the reorder list, where a row that never renders
+ * would be confusing.
+ */
+export const GOAL_STATS: { key: string; label: string; defaultDirection: "higher_better" | "lower_better" }[] = [
+  ...(DEFAULT_STAT_ORDER.filter((s) => s.kind === "number" && !s.selfColored) as
+    { key: string; label: string; defaultDirection: "higher_better" | "lower_better" }[]),
+  { key: "quality_shot_pct", label: "Quality shots % (Great + Good)", defaultDirection: "higher_better" },
+];
 
 /** Reads the coach's saved stat order (single most-recent row). Null if never customized. */
 export async function getReportLayout(): Promise<string[] | null> {
@@ -196,6 +210,117 @@ export interface Game {
   status: "draft" | "published";
   notes: string | null;
   closed_quarters: number[];
+  period_format: PeriodFormat;
+  regulation_periods: number;
+  period_minutes: number;
+  ot_minutes: number;
+  overtime_periods: number;
+  game_type: GameType;
+}
+
+// ── Game format (quarters vs halves, overtime, game type) ───────
+// Period structure lives on the game row (migration 100) so nothing
+// downstream hardcodes "4 quarters of 8 minutes" any more. A row created
+// before that migration -- or a partial select that doesn't ask for these
+// columns -- falls back to DEFAULT_GAME_FORMAT, which is exactly the old
+// hardcoded behaviour, so every existing code path keeps working.
+//
+// Note that `possessions.quarter` is really a period number: regulation
+// periods first, then overtimes. A halves game logs OT as period 3.
+export type PeriodFormat = "quarters" | "halves";
+export type GameType = "regular" | "scrimmage" | "summer" | "tournament" | "playoff";
+
+export interface GameFormat {
+  period_format: PeriodFormat;
+  regulation_periods: number;
+  period_minutes: number;
+  ot_minutes: number;
+}
+
+export const DEFAULT_GAME_FORMAT: GameFormat = {
+  period_format: "quarters",
+  regulation_periods: 4,
+  period_minutes: 8,
+  ot_minutes: 4,
+};
+
+export const GAME_FORMAT_PRESETS: { label: string; format: GameFormat }[] = [
+  { label: "4 x 8 min quarters (HS)", format: { period_format: "quarters", regulation_periods: 4, period_minutes: 8, ot_minutes: 4 } },
+  { label: "4 x 6 min quarters (youth)", format: { period_format: "quarters", regulation_periods: 4, period_minutes: 6, ot_minutes: 3 } },
+  { label: "2 x 16 min halves", format: { period_format: "halves", regulation_periods: 2, period_minutes: 16, ot_minutes: 4 } },
+  { label: "2 x 20 min halves", format: { period_format: "halves", regulation_periods: 2, period_minutes: 20, ot_minutes: 5 } },
+];
+
+export const GAME_TYPES: { value: GameType; label: string }[] = [
+  { value: "regular", label: "Regular season" },
+  { value: "scrimmage", label: "Scrimmage" },
+  { value: "summer", label: "Summer league" },
+  { value: "tournament", label: "Tournament" },
+  { value: "playoff", label: "Playoff" },
+];
+
+/** Normalises whatever a query actually returned into a complete GameFormat, falling back to the old hardcoded 4 x 8 quarters. */
+export function gameFormat(game: Partial<GameFormat> | null | undefined): GameFormat {
+  if (!game) return DEFAULT_GAME_FORMAT;
+  return {
+    period_format: game.period_format ?? DEFAULT_GAME_FORMAT.period_format,
+    regulation_periods: game.regulation_periods ?? DEFAULT_GAME_FORMAT.regulation_periods,
+    period_minutes: game.period_minutes ?? DEFAULT_GAME_FORMAT.period_minutes,
+    ot_minutes: game.ot_minutes ?? DEFAULT_GAME_FORMAT.ot_minutes,
+  };
+}
+
+/** Regulation period numbers -- [1,2,3,4] for quarters, [1,2] for halves. */
+export function regulationPeriods(fmt: GameFormat): number[] {
+  return Array.from({ length: fmt.regulation_periods }, (_, i) => i + 1);
+}
+
+/** Every period this game actually has tabs for: all of regulation, plus however many overtimes have been added. */
+export function periodsInPlay(fmt: GameFormat, overtimePeriods: number): number[] {
+  const total = fmt.regulation_periods + Math.max(0, overtimePeriods);
+  return Array.from({ length: total }, (_, i) => i + 1);
+}
+
+/** "Q3" / "H2" / "OT" / "2OT" -- anything past regulation is an overtime. */
+export function periodLabel(fmt: GameFormat, period: number): string {
+  if (period <= fmt.regulation_periods) {
+    return (fmt.period_format === "halves" ? "H" : "Q") + period;
+  }
+  const ot = period - fmt.regulation_periods;
+  return ot === 1 ? "OT" : `${ot}OT`;
+}
+
+/** Length of a period in seconds. Regulation uses period_minutes, overtimes use ot_minutes. Used by the per-period minutes estimator. */
+export function periodLengthSeconds(fmt: GameFormat, period: number): number {
+  return (period <= fmt.regulation_periods ? fmt.period_minutes : fmt.ot_minutes) * 60;
+}
+
+/**
+ * Which period numbers a half report covers.
+ *
+ * For a quarters game this is [1,2] and [3,4] -- identical to the old
+ * hardcoded behaviour. For a halves game each "half" is its own single
+ * period, which is what was broken before: a halves game's Halftime
+ * report matched [1,2] and so returned the entire game.
+ *
+ * Overtimes always attach to the second half. maxPeriod defaults past any
+ * realistic overtime count; listing periods that don't exist is harmless
+ * because this feeds an `.in()` filter.
+ */
+export function halfPeriods(fmt: GameFormat, half: 1 | 2, maxPeriod: number = 12): number[] {
+  const split = Math.ceil(fmt.regulation_periods / 2);
+  const regulation = regulationPeriods(fmt);
+  if (half === 1) return regulation.filter((p) => p <= split);
+  const out = regulation.filter((p) => p > split);
+  for (let p = fmt.regulation_periods + 1; p <= maxPeriod; p++) out.push(p);
+  return out;
+}
+
+/** Label for a half report, adjusted for format -- a halves game shouldn't say "Halftime (Q1-Q2)". */
+export function halfLabel(fmt: GameFormat, half: 1 | 2): string {
+  const periods = halfPeriods(fmt, half, fmt.regulation_periods);
+  const names = periods.map((p) => periodLabel(fmt, p)).join("-");
+  return half === 1 ? `Halftime (${names})` : `2nd half (${names})`;
 }
 
 export interface SavedReport {
@@ -551,21 +676,37 @@ export function computeSecondChancePoints(possessions: Possession[]): { us: numb
 /** Weighted shot-quality score mapped back onto the great/good/live/tough label scale. Only meaningful for "us" -- we don't track the opponent's shot quality. */
 export function computeShotQuality(possessions: Possession[], team: Team = "us") {
   const rated = possessions.filter((p) => p.team === team && p.shot_quality != null);
-  const weights: Record<ShotQuality, number> = { great: 4, good: 3, live: 2, tough: 1 };
   const counts: Record<ShotQuality, number> = { great: 0, good: 0, live: 0, tough: 0 };
   rated.forEach((p) => counts[p.shot_quality as ShotQuality]++);
   const total = rated.length;
   const pct = (k: ShotQuality) => (total ? round1((counts[k] / total) * 100) : 0);
 
-  const avg = total
-    ? rated.reduce((s, p) => s + weights[p.shot_quality as ShotQuality], 0) / total
-    : 0;
-  const label: ShotQuality = avg >= 3.5 ? "great" : avg >= 2.5 ? "good" : avg >= 1.5 ? "live" : "tough";
+  // This used to return a 4/3/2/1 weighted average bucketed into a
+  // great/good/live/tough label, but the band edges meant it read "good"
+  // for essentially every real shot diet -- a flat 25/25/25/25 split
+  // already averages 2.50, the bottom of the "good" band, and "great"
+  // needed a 3.5 average (roughly 60% great with no tough shots). A four
+  // value scale that only ever showed one value carried no information.
+  //
+  // The headline is now the share of great + good looks, compared against
+  // a coach-set goal (stat key "quality_shot_pct"). The per-category
+  // breakdown below is unchanged.
+  const qualityPct = total ? round1(((counts.great + counts.good) / total) * 100) : null;
 
   return {
-    label: total ? label : null,
+    total,
+    qualityPct,
     breakdown: { great: pct("great"), good: pct("good"), live: pct("live"), tough: pct("tough") },
   };
+}
+
+/** Four-band status for the quality-shot percentage against its goal. Null goal means "no target set" -- show the number alone. */
+export function qualityShotStatus(qualityPct: number | null, goal: number | null): { label: string; role: "success" | "warning" | "danger" } | null {
+  if (qualityPct == null || goal == null) return null;
+  if (qualityPct >= goal + 5) return { label: "exceeding", role: "success" };
+  if (qualityPct >= goal) return { label: "meeting", role: "success" };
+  if (qualityPct >= goal - 5) return { label: "just short", role: "warning" };
+  return { label: "below", role: "danger" };
 }
 
 /** Scoring runs (us) and stop runs (opponent held scoreless), 3+ consecutive trips, plus best run. */
@@ -714,10 +855,21 @@ export async function endQuarter(gameId: string, quarter: number, currentClosed:
   return { error: error?.message ?? null, closedQuarters: error ? currentClosed : next };
 }
 
-/** Lowest quarter (1-4) not yet closed -- used to default the quarter tab to wherever tracking should actually pick up, instead of always defaulting to Q1. */
-export function nextOpenQuarter(closedQuarters: number[]): number {
-  for (let q = 1; q <= 4; q++) if (!closedQuarters.includes(q)) return q;
-  return 4;
+/**
+ * Adds or removes an overtime period on a game. Overtimes are stored as a
+ * count rather than inferred from logged possessions so the tab can exist
+ * before anything has been tracked against it.
+ */
+export async function setOvertimePeriods(gameId: string, count: number): Promise<{ error: string | null }> {
+  const next = Math.max(0, Math.min(8, count));
+  const { error } = await supabase.from("games").update({ overtime_periods: next }).eq("id", gameId);
+  return { error: error?.message ?? null };
+}
+
+/** Lowest period not yet closed -- used to default the period tab to wherever tracking should actually pick up, instead of always defaulting to the first. highestPeriod defaults to 4 so pre-format callers behave exactly as before. */
+export function nextOpenQuarter(closedQuarters: number[], highestPeriod: number = 4): number {
+  for (let q = 1; q <= highestPeriod; q++) if (!closedQuarters.includes(q)) return q;
+  return highestPeriod;
 }
 
 /** A game is only editable/correctable once it's been explicitly finished (final score set) -- this keeps live entry and post-game correction from colliding. */
