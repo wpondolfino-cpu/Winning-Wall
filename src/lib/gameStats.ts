@@ -983,6 +983,23 @@ export async function addGamePeriod(gameId: string, fmt: GameFormat, minutes: nu
   return { error, format: error ? fmt : next };
 }
 
+/**
+ * Which regulation periods have no possessions logged against them. Used
+ * to warn before adding an overtime -- you can't reach OT without playing
+ * out regulation, so an empty Q3 means the button was probably a misclick.
+ * It's a warning rather than a block, since entering a game from film out
+ * of order is legitimate.
+ */
+export async function emptyRegulationPeriods(gameId: string, fmt: GameFormat): Promise<number[]> {
+  const { data } = await supabase
+    .from("possessions")
+    .select("quarter")
+    .eq("game_id", gameId)
+    .lte("quarter", fmt.regulation_periods);
+  const seen = new Set((data ?? []).map((r: any) => r.quarter as number));
+  return regulationPeriods(fmt).filter((p) => !seen.has(p));
+}
+
 /** What the "+ OT" / "+ Period" prompt should start with. */
 export function suggestedPeriodMinutes(fmt: GameFormat): number {
   if (usesOvertime(fmt)) return fmt.ot_minutes;
