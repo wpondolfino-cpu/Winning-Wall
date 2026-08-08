@@ -211,8 +211,8 @@ function GamesTab({
   setFormat,
   onEndQuarter,
   onReopenQuarter,
-  onAddOvertime,
-  onRemoveOvertime,
+  onAddPeriod,
+  onRemovePeriod,
   finishing,
   setFinishing,
   finalUs,
@@ -240,8 +240,8 @@ function GamesTab({
   setFormat: (f: GameFormat) => void;
   onEndQuarter: (gameId: string, q: number) => void;
   onReopenQuarter: (gameId: string, q: number) => void;
-  onAddOvertime: (gameId: string) => void;
-  onRemoveOvertime: (gameId: string) => void;
+  onAddPeriod: (gameId: string) => void;
+  onRemovePeriod: (gameId: string) => void;
   finishing: boolean;
   setFinishing: (b: boolean) => void;
   finalUs: string;
