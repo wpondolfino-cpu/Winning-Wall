@@ -16,7 +16,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { finishGame, isGameFinal, computeFinalScore, syncQueue, listSeasons, type Game, type Possession } from "../../lib/gameStats";
+import { finishGame, isGameFinal, computeFinalScore, syncQueue, listSeasons, GAME_FORMAT_PRESETS, GAME_TYPES, type Game, type GameType, type Possession } from "../../lib/gameStats";
 
 interface Props {
   userId: string;
@@ -31,6 +31,8 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
   const [creating, setCreating] = useState(false);
   const [opponent, setOpponent] = useState("");
   const [gameDate, setGameDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [formatIdx, setFormatIdx] = useState(0);
+  const [gameType, setGameType] = useState<GameType>("regular");
   const [finishingId, setFinishingId] = useState<string | null>(null);
   const [finalUs, setFinalUs] = useState("");
   const [finalThem, setFinalThem] = useState("");
@@ -52,9 +54,20 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
   async function createGame() {
     if (!opponent.trim()) return;
     const season = seasonForDate(gameDate);
+    const fmt = GAME_FORMAT_PRESETS[formatIdx].format;
     const { data, error } = await supabase
       .from("games")
-      .insert({ opponent: opponent.trim(), game_date: gameDate, season, created_by: userId })
+      .insert({
+        opponent: opponent.trim(),
+        game_date: gameDate,
+        season,
+        created_by: userId,
+        period_format: fmt.period_format,
+        regulation_periods: fmt.regulation_periods,
+        period_minutes: fmt.period_minutes,
+        ot_minutes: fmt.ot_minutes,
+        game_type: gameType,
+      })
       .select()
       .single();
     if (!error && data) {
@@ -145,13 +158,13 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
       </div>
 
       {creating && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           <input
             autoFocus
             value={opponent}
             onChange={(e) => setOpponent(e.target.value)}
             placeholder="Opponent"
-            style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
+            style={{ flex: "1 1 160px", minWidth: 140, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
           />
           <input
             type="date"
@@ -159,6 +172,24 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
             onChange={(e) => setGameDate(e.target.value)}
             style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
           />
+          <select
+            value={formatIdx}
+            onChange={(e) => setFormatIdx(Number(e.target.value))}
+            style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
+          >
+            {GAME_FORMAT_PRESETS.map((p, i) => (
+              <option key={p.label} value={i}>{p.label}</option>
+            ))}
+          </select>
+          <select
+            value={gameType}
+            onChange={(e) => setGameType(e.target.value as GameType)}
+            style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
+          >
+            {GAME_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
+          </select>
           <button className="btn-primary" style={{ width: "auto", padding: "8px 14px" }} onClick={createGame}>Start</button>
         </div>
       )}
@@ -176,6 +207,16 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
                   · {g.game_date}
                   {final ? ` · ${g.final_score_us! > g.final_score_them! ? "W" : "L"} ${g.final_score_us}-${g.final_score_them}` : ""}
                 </span>
+                {g.game_type && g.game_type !== "regular" && (
+                  <span style={{ fontSize: 11, marginLeft: 6, padding: "1px 7px", borderRadius: 7, background: "var(--surface2)", color: "var(--muted)" }}>
+                    {GAME_TYPES.find((t) => t.value === g.game_type)?.label ?? g.game_type}
+                  </span>
+                )}
+                {g.period_format === "halves" && (
+                  <span style={{ fontSize: 11, marginLeft: 6, padding: "1px 7px", borderRadius: 7, background: "var(--surface2)", color: "var(--muted)" }}>
+                    Halves
+                  </span>
+                )}
                 {g.notes && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, fontStyle: "italic" }}>{g.notes}</div>}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
