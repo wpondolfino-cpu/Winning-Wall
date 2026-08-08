@@ -128,6 +128,8 @@ export interface StatDef {
   inGame: boolean;
   defaultDirection?: "higher_better" | "lower_better";
   selfColored?: boolean; // true for stats colored by their own sign (+/-), not against a goal target
+  goalOnly?: boolean;    // settable as a goal, but not its own report row and not in the reorder list -- it's the headline of another block
+  usOnly?: boolean;      // no opponent-side equivalent (we don't grade their shot selection), so no Opponent goal input
 }
 
 export const DEFAULT_STAT_ORDER: StatDef[] = [
@@ -147,29 +149,19 @@ export const DEFAULT_STAT_ORDER: StatDef[] = [
   { key: "points_off_live_to", label: "Points off Live TO", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "second_chance_points", label: "Second Chance Points", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "shot_quality", label: "Shot quality", kind: "shot_quality", inGame: true },
+  // Not a paired us/opponent row of its own -- it is the headline of the
+  // Shot quality block above. goalOnly keeps it out of the report rows and
+  // out of the reorder list while still giving it a goal input.
+  { key: "quality_shot_pct", label: "Quality shots % (Great + Good)", kind: "number", inGame: true, defaultDirection: "higher_better", goalOnly: true, usOnly: true },
   { key: "set_plays", label: "Set plays (Set / Motion)", kind: "set_plays", inGame: false },
   { key: "oob_plays", label: "Set plays (BLOB / SLOB)", kind: "oob", inGame: false },
   { key: "streaks", label: "Streaks", kind: "streaks", inGame: true },
   { key: "defense_schemes", label: "Defense schemes (Man / Zone / Press)", kind: "defense_schemes", inGame: false },
 ];
 
-/**
- * Goal-settable stats, for the Goals tab -- "number" kind, excluding
- * self-colored ones like Extra Possessions that don't compare against a
- * target.
- *
- * quality_shot_pct is appended by hand rather than added to
- * DEFAULT_STAT_ORDER: it isn't a paired us/opponent row of its own (shot
- * quality is only graded on our own possessions), it's the headline of
- * the existing Shot quality block. Keeping it out of DEFAULT_STAT_ORDER
- * also keeps it out of the reorder list, where a row that never renders
- * would be confusing.
- */
-export const GOAL_STATS: { key: string; label: string; defaultDirection: "higher_better" | "lower_better" }[] = [
-  ...(DEFAULT_STAT_ORDER.filter((s) => s.kind === "number" && !s.selfColored) as
-    { key: string; label: string; defaultDirection: "higher_better" | "lower_better" }[]),
-  { key: "quality_shot_pct", label: "Quality shots % (Great + Good)", defaultDirection: "higher_better" },
-];
+/** Goal-settable stats, for the Goals tab -- "number" kind, excluding self-colored ones like Extra Possessions that don't compare against a target. Includes goalOnly stats, which get a target but no report row of their own. */
+export const GOAL_STATS = DEFAULT_STAT_ORDER.filter((s) => s.kind === "number" && !s.selfColored) as
+  { key: string; label: string; defaultDirection: "higher_better" | "lower_better" }[];
 
 /** Reads the coach's saved stat order (single most-recent row). Null if never customized. */
 export async function getReportLayout(): Promise<string[] | null> {
@@ -228,7 +220,7 @@ export interface Game {
 // Note that `possessions.quarter` is really a period number: regulation
 // periods first, then overtimes. A halves game logs OT as period 3.
 export type PeriodFormat = "quarters" | "halves";
-export type GameType = "regular" | "scrimmage" | "summer" | "tournament" | "playoff";
+export type GameType = "regular" | "scrimmage" | "summer" | "tournament" | "playoff" | "practice";
 
 export interface GameFormat {
   period_format: PeriodFormat;
@@ -246,14 +238,14 @@ export const DEFAULT_GAME_FORMAT: GameFormat = {
 
 export const GAME_FORMAT_PRESETS: { label: string; format: GameFormat }[] = [
   { label: "4 x 8 min quarters (HS)", format: { period_format: "quarters", regulation_periods: 4, period_minutes: 8, ot_minutes: 4 } },
-  { label: "4 x 6 min quarters (youth)", format: { period_format: "quarters", regulation_periods: 4, period_minutes: 6, ot_minutes: 3 } },
   { label: "2 x 16 min halves", format: { period_format: "halves", regulation_periods: 2, period_minutes: 16, ot_minutes: 4 } },
   { label: "2 x 20 min halves", format: { period_format: "halves", regulation_periods: 2, period_minutes: 20, ot_minutes: 5 } },
 ];
 
 export const GAME_TYPES: { value: GameType; label: string }[] = [
   { value: "regular", label: "Regular season" },
-  { value: "scrimmage", label: "Scrimmage" },
+  { value: "scrimmage", label: "Scrimmage (vs another school)" },
+  { value: "practice", label: "Practice / intrasquad" },
   { value: "summer", label: "Summer league" },
   { value: "tournament", label: "Tournament" },
   { value: "playoff", label: "Playoff" },
@@ -853,6 +845,40 @@ export async function endQuarter(gameId: string, quarter: number, currentClosed:
   const next = Array.from(new Set([...currentClosed, quarter])).sort((a, b) => a - b);
   const { error } = await supabase.from("games").update({ closed_quarters: next }).eq("id", gameId);
   return { error: error?.message ?? null, closedQuarters: error ? currentClosed : next };
+}
+
+/**
+ * Changes an existing game's period structure. Guarded against orphaning
+ * possessions: if the game already has possessions logged in a period
+ * higher than the new structure allows, the change is refused rather than
+ * leaving those rows unreachable from any tab.
+ */
+export async function updateGameFormat(
+  gameId: string,
+  fmt: GameFormat,
+  overtimePeriods: number,
+): Promise<{ error: string | null }> {
+  const highest = fmt.regulation_periods + Math.max(0, overtimePeriods);
+  const { data: stray } = await supabase
+    .from("possessions")
+    .select("quarter")
+    .eq("game_id", gameId)
+    .gt("quarter", highest)
+    .limit(1);
+  if (stray && stray.length) {
+    return { error: `This game has possessions logged in period ${(stray[0] as any).quarter}, which the new structure doesn't have. Move or delete those first.` };
+  }
+  const { error } = await supabase
+    .from("games")
+    .update({
+      period_format: fmt.period_format,
+      regulation_periods: fmt.regulation_periods,
+      period_minutes: fmt.period_minutes,
+      ot_minutes: fmt.ot_minutes,
+      overtime_periods: Math.max(0, overtimePeriods),
+    })
+    .eq("id", gameId);
+  return { error: error?.message ?? null };
 }
 
 /**
