@@ -16,6 +16,7 @@
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { supabase } from "../../lib/supabase";
+import NumberField from "../game-stats/NumberField";
 import { finishGame, isGameFinal, computeFinalScore, syncQueue, listSeasons, GAME_STRUCTURES, buildGameFormat, GAME_TYPES, GAME_GROUPS, gameTypesForGroup, type Game, type GameType, type GameGroup, type PeriodFormat, type Possession } from "../../lib/gameStats";
 
 interface Props {
@@ -66,7 +67,10 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
   }
 
   async function createGame() {
-    if (!opponent.trim()) return;
+    // A practice doesn't have an opponent to name, so let the field be
+    // blank there and fall back to a label built from the date.
+    const label = opponent.trim() || (gameType === "practice" ? `Practice ${gameDate}` : "");
+    if (!label) return;
     const season = seasonForDate(gameDate);
     // ot_minutes is only the prefill for the "+ OT" prompt, so it takes the
     // structure's default rather than being typed at creation.
@@ -75,7 +79,7 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
     const { data, error } = await supabase
       .from("games")
       .insert({
-        opponent: opponent.trim(),
+        opponent: label,
         game_date: gameDate,
         season,
         created_by: userId,
@@ -190,12 +194,12 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
         // with only title tooltips read as nothing on desktop and nothing
         // at all on mobile, where there's no hover.
         <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <Field label="Opponent" grow>
+          <Field label={gameType === "practice" ? "Session name" : "Opponent"} grow>
             <input
               autoFocus
               value={opponent}
               onChange={(e) => setOpponent(e.target.value)}
-              placeholder="Opponent"
+              placeholder={gameType === "practice" ? "e.g. Tues scrimmage" : "Opponent"}
               style={{ ...newGameField, width: "100%", minWidth: 140 }}
             />
           </Field>
@@ -213,11 +217,11 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
           </Field>
 
           <Field label={structure === "sessions" ? "# sessions" : structure === "periods" ? "# periods" : structure === "halves" ? "# halves" : "# quarters"}>
-            <input type="number" min={1} max={8} value={periods} onChange={(e) => setPeriods(Number(e.target.value))} style={{ ...newGameField, width: 68 }} />
+            <NumberField value={periods} min={1} max={8} onChange={setPeriods} style={{ ...newGameField, width: 68 }} />
           </Field>
 
           <Field label="Min. each">
-            <input type="number" min={1} max={30} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} style={{ ...newGameField, width: 76 }} />
+            <NumberField value={minutes} min={1} max={30} onChange={setMinutes} style={{ ...newGameField, width: 76 }} />
           </Field>
 
           <Field label="Type">
