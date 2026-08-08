@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { finishGame, isGameFinal, computeFinalScore, reopenGame, endQuarter, reopenQuarter, nextOpenQuarter, syncQueue, listSavedReports, deleteSavedReport, listSeasons, gameFormat, periodsInPlay, periodLabel, halfLabel, addGamePeriod, removeLastPeriod, usesOvertime, addPeriodLabel, periodCount, DEFAULT_GAME_FORMAT, type GameFormat, type SavedReport, type Possession } from "../../lib/gameStats";
+import { finishGame, isGameFinal, computeFinalScore, reopenGame, endQuarter, reopenQuarter, nextOpenQuarter, syncQueue, listSavedReports, deleteSavedReport, listSeasons, gameFormat, periodsInPlay, periodLabel, halfLabel, addGamePeriod, removeLastPeriod, suggestedPeriodMinutes, addPeriodLabel, periodCount, DEFAULT_GAME_FORMAT, type GameFormat, type SavedReport, type Possession } from "../../lib/gameStats";
 import GamesHistory from "../coach/GamesHistory";
 import GameTracker from "../coach/GameTracker";
 import GameReport, { ReportScope } from "./GameReport";
@@ -110,19 +110,14 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   // Overtime is stored as a count on the game rather than inferred from
   // logged possessions, so the tab can exist before anything is tracked
   // against it. Removing one is only offered while it's still empty.
-  // A game gets an overtime at ot_minutes with no prompt (it's pressed
-  // courtside). A scrimmage or practice is asked for the length, since
-  // those genuinely run uneven blocks.
+  // Every format asks for the length. Adding a period happens a handful of
+  // times a season, so a prefilled prompt costs less than a minutes field
+  // on the create form for every game.
   async function handleAddPeriod(gameId: string) {
-    let minutes: number | undefined;
-    if (!usesOvertime(format)) {
-      const last = format.period_lengths[format.period_lengths.length - 1] ?? 8;
-      const answer = window.prompt("Minutes for this period?", String(last));
-      if (answer === null) return;
-      const parsed = Number(answer);
-      if (!parsed || parsed < 1 || parsed > 30) { alert("Enter a number of minutes between 1 and 30."); return; }
-      minutes = parsed;
-    }
+    const answer = window.prompt("Minutes for this period?", String(suggestedPeriodMinutes(format)));
+    if (answer === null) return;
+    const minutes = Number(answer);
+    if (!minutes || minutes < 1 || minutes > 30) { alert("Enter a number of minutes between 1 and 30."); return; }
     const { error, format: next } = await addGamePeriod(gameId, format, minutes);
     if (error) { alert("Error: " + error); return; }
     setFormat(next);
