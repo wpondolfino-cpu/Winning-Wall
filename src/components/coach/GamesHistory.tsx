@@ -45,6 +45,19 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
     setPeriods(preset.periods);
     setMinutes(preset.minutes);
   }
+
+  // Structure depends on type -- a practice can't be in quarters and a
+  // scrimmage isn't playing halves -- so changing the type snaps the
+  // structure to that type's default whenever the current one no longer
+  // applies. Switching between Regular and Postseason leaves it alone,
+  // since both allow the same two.
+  function pickGameType(next: GameType) {
+    setGameType(next);
+    if (!structuresForGameType(next).includes(structure)) {
+      pickStructure(defaultStructureForGameType(next));
+    }
+  }
+
   const [finishingId, setFinishingId] = useState<string | null>(null);
   const [finalUs, setFinalUs] = useState("");
   const [finalThem, setFinalThem] = useState("");
