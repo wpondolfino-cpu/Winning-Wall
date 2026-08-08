@@ -27,13 +27,28 @@
 -- This file is idempotent -- every statement is add-if-not-exists or
 -- drop-constraint-if-exists -- so it's safe to re-run.
 
+-- period_lengths holds the minutes of EVERY period in order, regulation
+-- first then any overtime -- e.g. [8,8,8,8,4] for a game that went to OT.
+-- Its length is the period count, so there's no separate overtime_periods
+-- to keep in sync with it.
+--
+-- Games (quarters/halves) fill it with one typed value and don't allow
+-- per-period edits; scrimmages and practices do, because a practice
+-- genuinely runs uneven blocks (10, 10, 6, 12) while a basketball game
+-- does not. Same column either way -- only the UI differs.
+--
+-- ot_minutes is just the default length used when "+ OT" is pressed, so
+-- adding an overtime courtside is one tap with no prompt.
 alter table public.games
-  add column if not exists period_format     text not null default 'quarters',
-  add column if not exists regulation_periods int  not null default 4,
-  add column if not exists period_minutes     int  not null default 8,
-  add column if not exists ot_minutes         int  not null default 4,
-  add column if not exists overtime_periods   int  not null default 0,
-  add column if not exists game_type          text not null default 'regular';
+  add column if not exists period_format     text  not null default 'quarters',
+  add column if not exists regulation_periods int   not null default 4,
+  add column if not exists period_lengths     int[] not null default '{8,8,8,8}'::int[],
+  add column if not exists ot_minutes         int   not null default 4,
+  add column if not exists game_type          text  not null default 'regular';
+
+-- Superseded by period_lengths.
+alter table public.games drop column if exists period_minutes;
+alter table public.games drop column if exists overtime_periods;
 
 alter table public.games drop constraint if exists games_period_format_check;
 alter table public.games add constraint games_period_format_check
@@ -47,19 +62,18 @@ alter table public.games drop constraint if exists games_regulation_periods_chec
 alter table public.games add constraint games_regulation_periods_check
   check (regulation_periods between 1 and 8);
 
-alter table public.games drop constraint if exists games_period_minutes_check;
-alter table public.games add constraint games_period_minutes_check
-  check (period_minutes between 1 and 30);
-
 alter table public.games drop constraint if exists games_ot_minutes_check;
 alter table public.games add constraint games_ot_minutes_check
   check (ot_minutes between 1 and 15);
 
--- Capped at 8 so a 4-quarter game tops out at period 12, which matches
--- the possessions.quarter ceiling below.
-alter table public.games drop constraint if exists games_overtime_periods_check;
-alter table public.games add constraint games_overtime_periods_check
-  check (overtime_periods between 0 and 8);
+-- Total periods tops out at 12 to match the possessions.quarter ceiling
+-- below, and every period needs a sane length.
+alter table public.games drop constraint if exists games_period_lengths_check;
+alter table public.games add constraint games_period_lengths_check
+  check (
+    array_length(period_lengths, 1) between 1 and 12
+    and array_length(period_lengths, 1) >= regulation_periods
+  );
 
 alter table public.games drop constraint if exists games_game_type_check;
 alter table public.games add constraint games_game_type_check
