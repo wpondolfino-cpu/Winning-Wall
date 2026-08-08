@@ -11,8 +11,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { ReportBody } from "./GameReport";
-import { saveReport, getReportLayout, resolveStatOrder } from "../../lib/gameStats";
-import type { Possession, PlayCall, StatGoal, PossessionType, SavedReport, StatDef } from "../../lib/gameStats";
+import { saveReport, getReportLayout, resolveStatOrder, GAME_GROUPS, gameTypesForGroup } from "../../lib/gameStats";
+import type { Possession, PlayCall, StatGoal, PossessionType, SavedReport, StatDef, GameGroup } from "../../lib/gameStats";
 
 type GameCount = 3 | 5 | 10 | "season";
 type CategoryFilter = "all" | PossessionType;
@@ -36,6 +36,9 @@ interface Props {
 export default function ReportBuilder({ season, userId, initial, onSaved }: Props) {
   const [gameCount, setGameCount] = useState<GameCount>(initial ? (initial.game_count === "season" ? "season" : (Number(initial.game_count) as GameCount)) : 5);
   const [category, setCategory] = useState<CategoryFilter>(initial?.category ?? "all");
+  // Defaults to real games. Scrimmage and practice data is deliberately
+  // a separate report rather than a filter you have to remember to set.
+  const [gameGroup, setGameGroup] = useState<GameGroup>(initial?.game_group ?? "games");
   const [possessions, setPossessions] = useState<Possession[] | null>(null);
   const [playCalls, setPlayCalls] = useState<PlayCall[]>([]);
   const [goals, setGoals] = useState<StatGoal[]>([]);
@@ -45,7 +48,7 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
   const [savingLabel, setSavingLabel] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => { run(); setSaved(false); }, [gameCount, category]);
+  useEffect(() => { run(); setSaved(false); }, [gameCount, category, gameGroup]);
 
   async function run() {
     setLoading(true);
@@ -58,14 +61,20 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
     setPlayCalls((playRows as PlayCall[]) ?? []);
     setStatOrder(resolveStatOrder(savedOrder));
 
-    let gamesQuery = supabase.from("games").select("id, opponent, game_date").eq("season", season).order("game_date", { ascending: false });
+    let gamesQuery = supabase
+      .from("games")
+      .select("id, opponent, game_date")
+      .eq("season", season)
+      .in("game_type", gameTypesForGroup(gameGroup))
+      .order("game_date", { ascending: false });
     if (gameCount !== "season") gamesQuery = gamesQuery.limit(gameCount);
     const { data: games } = await gamesQuery;
     const ids = (games ?? []).map((g: any) => g.id);
+    const groupLabel = GAME_GROUPS.find((g) => g.value === gameGroup)?.label ?? "Games";
     setGameLabel(
       gameCount === "season"
-        ? `Season ${season}`
-        : `Last ${Math.min(gameCount, games?.length ?? 0)} games${games?.length ? ` (${games[games.length - 1].opponent} → ${games[0].opponent})` : ""}`
+        ? `${groupLabel} · Season ${season}`
+        : `${groupLabel} · Last ${Math.min(gameCount, games?.length ?? 0)}${games?.length ? ` (${games[games.length - 1].opponent} → ${games[0].opponent})` : ""}`
     );
 
     if (!ids.length) {
@@ -81,12 +90,14 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
   }
 
   async function confirmSave() {
-    const label = savingLabel?.trim() || `${gameCount === "season" ? "Full season" : `Last ${gameCount}`} · ${CATEGORY_LABEL[category]}`;
+    const groupLabel = GAME_GROUPS.find((g) => g.value === gameGroup)?.label ?? "Games";
+    const label = savingLabel?.trim() || `${groupLabel} · ${gameCount === "season" ? "Full season" : `Last ${gameCount}`} · ${CATEGORY_LABEL[category]}`;
     const { error } = await saveReport({
       label,
       season,
       game_count: String(gameCount) as SavedReport["game_count"],
       category,
+      game_group: gameGroup,
       created_by: userId,
     });
     if (!error) {
@@ -100,6 +111,13 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
     <div>
       <div className="card" style={{ width: "100%", maxWidth: 1400, marginBottom: 12 }}>
         <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 8 }}>Build a report</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+          {GAME_GROUPS.map((g) => (
+            <button key={g.value} onClick={() => setGameGroup(g.value)} style={pillStyle(gameGroup === g.value)}>
+              {g.label}
+            </button>
+          ))}
+        </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
           {([3, 5, 10, "season"] as GameCount[]).map((n) => (
             <button key={n} onClick={() => setGameCount(n)} style={pillStyle(gameCount === n)}>
