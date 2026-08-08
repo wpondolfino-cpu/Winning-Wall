@@ -219,7 +219,10 @@ export interface Game {
 //
 // Note that `possessions.quarter` is really a period number: regulation
 // periods first, then overtimes. A halves game logs OT as period 3.
-export type PeriodFormat = "quarters" | "halves";
+// "periods" (P1, P2...) is for scrimmages, which run more than four and
+// aren't overtime; "sessions" (S1, S2...) is for practices, which hold
+// several intrasquad blocks rather than anything resembling a quarter.
+export type PeriodFormat = "quarters" | "halves" | "periods" | "sessions";
 export type GameType = "regular" | "scrimmage" | "summer" | "tournament" | "playoff" | "practice";
 
 export interface GameFormat {
@@ -240,6 +243,10 @@ export const GAME_FORMAT_PRESETS: { label: string; format: GameFormat }[] = [
   { label: "4 x 8 min quarters (HS)", format: { period_format: "quarters", regulation_periods: 4, period_minutes: 8, ot_minutes: 4 } },
   { label: "2 x 16 min halves", format: { period_format: "halves", regulation_periods: 2, period_minutes: 16, ot_minutes: 4 } },
   { label: "2 x 20 min halves", format: { period_format: "halves", regulation_periods: 2, period_minutes: 20, ot_minutes: 5 } },
+  { label: "5 x 8 min periods (scrimmage)", format: { period_format: "periods", regulation_periods: 5, period_minutes: 8, ot_minutes: 4 } },
+  { label: "6 x 8 min periods (scrimmage)", format: { period_format: "periods", regulation_periods: 6, period_minutes: 8, ot_minutes: 4 } },
+  { label: "4 x 10 min sessions (practice)", format: { period_format: "sessions", regulation_periods: 4, period_minutes: 10, ot_minutes: 5 } },
+  { label: "6 x 10 min sessions (practice)", format: { period_format: "sessions", regulation_periods: 6, period_minutes: 10, ot_minutes: 5 } },
 ];
 
 export const GAME_TYPES: { value: GameType; label: string }[] = [
@@ -273,10 +280,14 @@ export function periodsInPlay(fmt: GameFormat, overtimePeriods: number): number[
   return Array.from({ length: total }, (_, i) => i + 1);
 }
 
-/** "Q3" / "H2" / "OT" / "2OT" -- anything past regulation is an overtime. */
+/** "Q3" / "H2" / "P5" / "S2" / "OT" / "2OT" -- anything past regulation is an overtime. */
 export function periodLabel(fmt: GameFormat, period: number): string {
   if (period <= fmt.regulation_periods) {
-    return (fmt.period_format === "halves" ? "H" : "Q") + period;
+    const prefix =
+      fmt.period_format === "halves" ? "H" :
+      fmt.period_format === "periods" ? "P" :
+      fmt.period_format === "sessions" ? "S" : "Q";
+    return prefix + period;
   }
   const ot = period - fmt.regulation_periods;
   return ot === 1 ? "OT" : `${ot}OT`;
