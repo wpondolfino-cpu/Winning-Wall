@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { finishGame, isGameFinal, computeFinalScore, reopenGame, endQuarter, reopenQuarter, nextOpenQuarter, syncQueue, listSavedReports, deleteSavedReport, listSeasons, gameFormat, periodsInPlay, periodLabel, halfLabel, setOvertimePeriods as saveOvertimePeriods, DEFAULT_GAME_FORMAT, type GameFormat, type SavedReport, type Possession } from "../../lib/gameStats";
+import { finishGame, isGameFinal, computeFinalScore, reopenGame, endQuarter, reopenQuarter, nextOpenQuarter, syncQueue, listSavedReports, deleteSavedReport, listSeasons, gameFormat, periodsInPlay, periodLabel, halfLabel, addGamePeriod, removeLastPeriod, usesOvertime, addPeriodLabel, periodCount, DEFAULT_GAME_FORMAT, type GameFormat, type SavedReport, type Possession } from "../../lib/gameStats";
 import GamesHistory from "../coach/GamesHistory";
 import GameTracker from "../coach/GameTracker";
 import GameReport, { ReportScope } from "./GameReport";
@@ -41,7 +41,6 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   const [gameFinal, setGameFinal] = useState<boolean | null>(null);
   const [closedQuarters, setClosedQuarters] = useState<number[]>([]);
   const [format, setFormat] = useState<GameFormat>(DEFAULT_GAME_FORMAT);
-  const [overtimePeriods, setOvertimePeriods] = useState(0);
   const [activeOpponent, setActiveOpponent] = useState<string>("");
   const [finishing, setFinishing] = useState(false);
   const [finalUs, setFinalUs] = useState("");
@@ -53,10 +52,10 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   const activeGameId = gamesView.mode === "track" || gamesView.mode === "report" || gamesView.mode === "edit" ? gamesView.gameId : null;
 
   useEffect(() => {
-    if (!activeGameId) { setGameFinal(null); setActiveOpponent(""); setClosedQuarters([]); setFormat(DEFAULT_GAME_FORMAT); setOvertimePeriods(0); return; }
+    if (!activeGameId) { setGameFinal(null); setActiveOpponent(""); setClosedQuarters([]); setFormat(DEFAULT_GAME_FORMAT); return; }
     supabase
       .from("games")
-      .select("final_score_us, final_score_them, opponent, closed_quarters, period_format, regulation_periods, period_minutes, ot_minutes, overtime_periods")
+      .select("final_score_us, final_score_them, opponent, closed_quarters, period_format, regulation_periods, period_lengths, ot_minutes")
       .eq("id", activeGameId)
       .single()
       .then(({ data }) => {
@@ -64,11 +63,9 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
         setActiveOpponent((data as any)?.opponent ?? "");
         const closed = ((data as any)?.closed_quarters as number[] | null) ?? [];
         const fmt = gameFormat(data as any);
-        const ot = ((data as any)?.overtime_periods as number | null) ?? 0;
         setClosedQuarters(closed);
         setFormat(fmt);
-        setOvertimePeriods(ot);
-        setQuarter(nextOpenQuarter(closed, fmt.regulation_periods + ot));
+        setQuarter(nextOpenQuarter(closed, periodCount(fmt)));
       });
   }, [activeGameId]);
 
@@ -107,37 +104,37 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
     const { error, closedQuarters: next } = await endQuarter(gameId, q, closedQuarters);
     if (error) { alert("Error: " + error); return; }
     setClosedQuarters(next);
-    setQuarter(nextOpenQuarter(next, format.regulation_periods + overtimePeriods));
+    setQuarter(nextOpenQuarter(next, periodCount(format)));
   }
 
   // Overtime is stored as a count on the game rather than inferred from
   // logged possessions, so the tab can exist before anything is tracked
   // against it. Removing one is only offered while it's still empty.
-  async function handleAddOvertime(gameId: string) {
-    const next = overtimePeriods + 1;
-    const { error } = await saveOvertimePeriods(gameId, next);
+  // A game gets an overtime at ot_minutes with no prompt (it's pressed
+  // courtside). A scrimmage or practice is asked for the length, since
+  // those genuinely run uneven blocks.
+  async function handleAddPeriod(gameId: string) {
+    let minutes: number | undefined;
+    if (!usesOvertime(format)) {
+      const last = format.period_lengths[format.period_lengths.length - 1] ?? 8;
+      const answer = window.prompt("Minutes for this period?", String(last));
+      if (answer === null) return;
+      const parsed = Number(answer);
+      if (!parsed || parsed < 1 || parsed > 30) { alert("Enter a number of minutes between 1 and 30."); return; }
+      minutes = parsed;
+    }
+    const { error, format: next } = await addGamePeriod(gameId, format, minutes);
     if (error) { alert("Error: " + error); return; }
-    setOvertimePeriods(next);
-    setQuarter(format.regulation_periods + next);
+    setFormat(next);
+    setQuarter(periodCount(next));
   }
 
-  async function handleRemoveOvertime(gameId: string) {
-    if (overtimePeriods < 1) return;
-    const removed = format.regulation_periods + overtimePeriods;
-    const { count } = await supabase
-      .from("possessions")
-      .select("id", { count: "exact", head: true })
-      .eq("game_id", gameId)
-      .eq("quarter", removed);
-    if ((count ?? 0) > 0) {
-      alert(`${periodLabel(format, removed)} already has possessions logged against it. Delete those first if it was added by mistake.`);
-      return;
-    }
-    const next = overtimePeriods - 1;
-    const { error } = await saveOvertimePeriods(gameId, next);
-    if (error) { alert("Error: " + error); return; }
-    setOvertimePeriods(next);
-    setQuarter(nextOpenQuarter(closedQuarters, format.regulation_periods + next));
+  async function handleRemovePeriod(gameId: string) {
+    if (periodCount(format) <= 1) return;
+    const { error, format: next } = await removeLastPeriod(gameId, format);
+    if (error) { alert(error); return; }
+    setFormat(next);
+    setQuarter(nextOpenQuarter(closedQuarters, periodCount(next)));
   }
 
   async function handleReopenQuarter(gameId: string, q: number) {
@@ -171,12 +168,10 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
           closedQuarters={closedQuarters}
           format={format}
           setFormat={setFormat}
-          overtimePeriods={overtimePeriods}
-          setOvertimePeriods={setOvertimePeriods}
           onEndQuarter={handleEndQuarter}
           onReopenQuarter={handleReopenQuarter}
-          onAddOvertime={handleAddOvertime}
-          onRemoveOvertime={handleRemoveOvertime}
+          onAddPeriod={handleAddPeriod}
+          onRemovePeriod={handleRemovePeriod}
           finishing={finishing}
           setFinishing={setFinishing}
           finalUs={finalUs}
@@ -214,8 +209,6 @@ function GamesTab({
   closedQuarters,
   format,
   setFormat,
-  overtimePeriods,
-  setOvertimePeriods,
   onEndQuarter,
   onReopenQuarter,
   onAddOvertime,
@@ -245,8 +238,6 @@ function GamesTab({
   closedQuarters: number[];
   format: GameFormat;
   setFormat: (f: GameFormat) => void;
-  overtimePeriods: number;
-  setOvertimePeriods: (n: number) => void;
   onEndQuarter: (gameId: string, q: number) => void;
   onReopenQuarter: (gameId: string, q: number) => void;
   onAddOvertime: (gameId: string) => void;
@@ -312,8 +303,7 @@ function GamesTab({
           <GameFormatEditor
             gameId={view.gameId}
             format={format}
-            overtimePeriods={overtimePeriods}
-            onSaved={(f, ot) => { setFormat(f); setOvertimePeriods(ot); }}
+            onSaved={(f) => setFormat(f)}
           />
           <button
             onClick={async () => {
@@ -339,16 +329,16 @@ function GamesTab({
         <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
           <button onClick={() => setView({ mode: "list" })} style={backBtn}>← Games</button>
           <div className="role-tabs" style={{ margin: 0 }}>
-            {periodsInPlay(format, overtimePeriods).map((q) => (
+            {periodsInPlay(format).map((q) => (
               <button key={q} className={`role-tab ${quarter === q ? "active" : ""}`} onClick={() => setQuarter(q)}>
                 {periodLabel(format, q)}{closedQuarters.includes(q) ? " 🔒" : ""}
               </button>
             ))}
           </div>
-          {!gameFinal && <button onClick={() => onAddOvertime(view.gameId)} style={backBtn}>+ OT</button>}
-          {!gameFinal && overtimePeriods > 0 && (
-            <button onClick={() => onRemoveOvertime(view.gameId)} style={backBtn}>
-              Remove {periodLabel(format, format.regulation_periods + overtimePeriods)}
+          {!gameFinal && <button onClick={() => onAddPeriod(view.gameId)} style={backBtn}>{addPeriodLabel(format)}</button>}
+          {!gameFinal && periodCount(format) > 1 && (
+            <button onClick={() => onRemovePeriod(view.gameId)} style={backBtn}>
+              Remove {periodLabel(format, periodCount(format))}
             </button>
           )}
           <button
@@ -367,8 +357,7 @@ function GamesTab({
           <GameFormatEditor
             gameId={view.gameId}
             format={format}
-            overtimePeriods={overtimePeriods}
-            onSaved={(f, ot) => { setFormat(f); setOvertimePeriods(ot); if (quarter > f.regulation_periods + ot) setQuarter(1); }}
+            onSaved={(f) => { setFormat(f); if (quarter > periodCount(f)) setQuarter(1); }}
           />
         </div>
         {finishing && (
@@ -425,7 +414,7 @@ function GamesTab({
         )}
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-        {periodsInPlay(format, overtimePeriods).map((q) => (
+        {periodsInPlay(format).map((q) => (
           <button key={q} onClick={() => setReportSel({ kind: "quarter", quarter: q })} style={pillBtn(reportSel.kind === "quarter" && reportSel.quarter === q)}>
             {periodLabel(format, q)}
           </button>
