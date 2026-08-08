@@ -25,6 +25,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import NumberField from "./NumberField";
 import {
   queuePossession,
   getQueuedPossessions,
@@ -188,7 +189,7 @@ export default function PossessionEditor({ gameId, opponent, format = DEFAULT_GA
               </Field>
 
               <Field label="Quarter">
-                <input type="number" min={1} max={12} value={p.quarter} onChange={(e) => save(p, { quarter: Number(e.target.value) })} style={selectStyle} />
+                <NumberField value={p.quarter} min={1} max={12} commitOn="blur" onChange={(n) => save(p, { quarter: n })} style={selectStyle} />
               </Field>
 
               <Field label="Possession type">
@@ -237,19 +238,19 @@ export default function PossessionEditor({ gameId, opponent, format = DEFAULT_GA
               </Field>
 
               <Field label="OREB count">
-                <input type="number" min={0} value={p.oreb_count} onChange={(e) => save(p, { oreb_count: Number(e.target.value) })} style={selectStyle} />
+                <NumberField value={p.oreb_count} min={0} max={20} commitOn="blur" onChange={(n) => save(p, { oreb_count: n })} style={selectStyle} />
               </Field>
 
               <Field label="Missed FG count">
-                <input type="number" min={0} value={p.missed_fg_count} onChange={(e) => save(p, { missed_fg_count: Number(e.target.value) })} style={selectStyle} />
+                <NumberField value={p.missed_fg_count} min={0} max={20} commitOn="blur" onChange={(n) => save(p, { missed_fg_count: n })} style={selectStyle} />
               </Field>
 
               <Field label="Absorbed FT attempts">
-                <input type="number" min={0} value={p.absorbed_ft_attempts} onChange={(e) => save(p, { absorbed_ft_attempts: Number(e.target.value) })} style={selectStyle} />
+                <NumberField value={p.absorbed_ft_attempts} min={0} max={20} commitOn="blur" onChange={(n) => save(p, { absorbed_ft_attempts: n })} style={selectStyle} />
               </Field>
 
               <Field label="Absorbed FT made">
-                <input type="number" min={0} value={p.absorbed_ft_made} onChange={(e) => save(p, { absorbed_ft_made: Number(e.target.value) })} style={selectStyle} />
+                <NumberField value={p.absorbed_ft_made} min={0} max={20} commitOn="blur" onChange={(n) => save(p, { absorbed_ft_made: n })} style={selectStyle} />
               </Field>
 
               <Field label="Outcome">
@@ -297,7 +298,7 @@ export default function PossessionEditor({ gameId, opponent, format = DEFAULT_GA
               )}
 
               <Field label="Points">
-                <input type="number" min={0} max={3} value={p.points} onChange={(e) => save(p, { points: Number(e.target.value) })} style={selectStyle} />
+                <NumberField value={p.points} min={0} max={3} commitOn="blur" onChange={(n) => save(p, { points: n })} style={selectStyle} />
               </Field>
             </div>
           </div>
