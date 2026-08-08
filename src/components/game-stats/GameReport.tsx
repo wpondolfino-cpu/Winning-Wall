@@ -148,7 +148,7 @@ export function ReportBody({
   canManage?: boolean;
 }) {
   const visible = statOrder.filter((s) => variant === "full" || s.inGame);
-  const numberStats = visible.filter((s) => s.kind === "number");
+  const numberStats = visible.filter((s) => s.kind === "number" && !s.goalOnly);
   const specialStats = visible.filter((s) => s.kind !== "number");
 
   const usStatsAll = computeTeamStats(possessions, "us", goals);
