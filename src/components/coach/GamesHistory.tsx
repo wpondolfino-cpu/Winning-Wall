@@ -17,7 +17,7 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { supabase } from "../../lib/supabase";
 import NumberField from "../game-stats/NumberField";
-import { finishGame, isGameFinal, computeFinalScore, syncQueue, listSeasons, GAME_STRUCTURES, buildGameFormat, GAME_TYPES, GAME_GROUPS, gameTypesForGroup, type Game, type GameType, type GameGroup, type PeriodFormat, type Possession } from "../../lib/gameStats";
+import { finishGame, isGameFinal, computeFinalScore, syncQueue, listSeasons, GAME_STRUCTURES, buildGameFormat, structuresForGameType, defaultStructureForGameType, GAME_TYPES, GAME_GROUPS, gameTypesForGroup, type Game, type GameType, type GameGroup, type PeriodFormat, type Possession } from "../../lib/gameStats";
 
 interface Props {
   userId: string;
@@ -208,9 +208,17 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
             <input type="date" value={gameDate} onChange={(e) => setGameDate(e.target.value)} style={newGameField} />
           </Field>
 
+          <Field label="Type">
+            <select value={gameType} onChange={(e) => pickGameType(e.target.value as GameType)} style={newGameField}>
+              {GAME_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </Field>
+
           <Field label="Structure">
             <select value={structure} onChange={(e) => pickStructure(e.target.value as PeriodFormat)} style={newGameField}>
-              {GAME_STRUCTURES.map((g) => (
+              {GAME_STRUCTURES.filter((g) => structuresForGameType(gameType).includes(g.value)).map((g) => (
                 <option key={g.value} value={g.value}>{g.label}</option>
               ))}
             </select>
@@ -222,14 +230,6 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
 
           <Field label="Min. each">
             <NumberField value={minutes} min={1} max={30} onChange={setMinutes} style={{ ...newGameField, width: 76 }} />
-          </Field>
-
-          <Field label="Type">
-            <select value={gameType} onChange={(e) => setGameType(e.target.value as GameType)} style={newGameField}>
-              {GAME_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
           </Field>
 
           <button className="btn-primary" style={{ width: "auto", padding: "8px 14px" }} onClick={createGame}>Start</button>
