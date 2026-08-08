@@ -394,7 +394,7 @@ function GamesTab({
             {periodLabel(format, quarter)} is closed to new tracking. Use "Reopen {periodLabel(format, quarter)}" above if that happened too early, or switch to another period tab.
           </div>
         ) : (
-          <GameTracker gameId={view.gameId} userId={userId} quarter={quarter} />
+          <GameTracker gameId={view.gameId} userId={userId} quarter={quarter} format={format} />
         )}
       </div>
     );
