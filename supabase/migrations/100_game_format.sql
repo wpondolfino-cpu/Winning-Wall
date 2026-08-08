@@ -75,9 +75,15 @@ alter table public.games add constraint games_period_lengths_check
     and array_length(period_lengths, 1) >= regulation_periods
   );
 
+-- 'tournament' and 'playoff' were split originally but behaved
+-- identically everywhere (both just rolled into the Games report group),
+-- so they're folded into a single 'postseason'. The update runs before the
+-- constraint so any rows already using the old values convert cleanly.
+update public.games set game_type = 'postseason' where game_type in ('tournament', 'playoff');
+
 alter table public.games drop constraint if exists games_game_type_check;
 alter table public.games add constraint games_game_type_check
-  check (game_type in ('regular', 'scrimmage', 'summer', 'tournament', 'playoff', 'practice'));
+  check (game_type in ('regular', 'postseason', 'summer', 'scrimmage', 'practice'));
 
 -- possessions.quarter is really "period number" -- regulation periods
 -- first, then overtimes. The old ceiling of 8 was fine for 4 quarters
