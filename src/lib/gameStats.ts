@@ -222,7 +222,7 @@ export interface Game {
 // aren't overtime; "sessions" (S1, S2...) is for practices, which hold
 // several intrasquad blocks rather than anything resembling a quarter.
 export type PeriodFormat = "quarters" | "halves" | "periods" | "sessions";
-export type GameType = "regular" | "scrimmage" | "summer" | "tournament" | "playoff" | "practice";
+export type GameType = "regular" | "postseason" | "summer" | "scrimmage" | "practice";
 
 export interface GameFormat {
   period_format: PeriodFormat;
@@ -265,17 +265,33 @@ export function buildGameFormat(structure: PeriodFormat, periods: number, minute
 
 export const GAME_TYPES: { value: GameType; label: string }[] = [
   { value: "regular", label: "Regular season" },
+  { value: "postseason", label: "Postseason" },
+  { value: "summer", label: "Summer league" },
   { value: "scrimmage", label: "Scrimmage" },
   { value: "practice", label: "Practice/intrasquad" },
-  { value: "summer", label: "Summer league" },
-  { value: "tournament", label: "Tournament" },
-  { value: "playoff", label: "Playoff" },
 ];
 
 /**
+ * Which period structures make sense for a game type. A real game is
+ * played in quarters or halves; a scrimmage runs straight periods; a
+ * practice runs sessions. Restricting the dropdown means you can't end up
+ * with a practice labelled Q1 or a scrimmage that thinks it's in overtime.
+ */
+export function structuresForGameType(type: GameType): PeriodFormat[] {
+  if (type === "scrimmage") return ["periods"];
+  if (type === "practice") return ["sessions"];
+  return ["quarters", "halves"];
+}
+
+/** The structure a game type should default to when it's picked. */
+export function defaultStructureForGameType(type: GameType): PeriodFormat {
+  return structuresForGameType(type)[0];
+}
+
+/**
  * Reports are scoped to a group of game types rather than a single type,
- * so "games" can mean regular plus tournament plus playoff without the
- * coach ticking three boxes. Scrimmage and practice data never lands in
+ * so "games" can mean regular season plus postseason without the coach
+ * ticking two boxes. Scrimmage and practice data never lands in
  * a games report -- practice possessions in particular are our players
  * on both ends, so their efficiency isn't on the same scale as a real
  * game's and averaging the two together would make both less meaningful.
@@ -283,7 +299,7 @@ export const GAME_TYPES: { value: GameType; label: string }[] = [
 export type GameGroup = "games" | "scrimmages" | "practices" | "summer";
 
 export const GAME_GROUPS: { value: GameGroup; label: string; types: GameType[] }[] = [
-  { value: "games", label: "Games", types: ["regular", "tournament", "playoff"] },
+  { value: "games", label: "Games", types: ["regular", "postseason"] },
   { value: "scrimmages", label: "Scrimmages", types: ["scrimmage"] },
   { value: "practices", label: "Practices", types: ["practice"] },
   { value: "summer", label: "Summer league", types: ["summer"] },
