@@ -322,7 +322,7 @@ function GamesTab({
             Reopen for tracking
           </button>
         </div>
-        <PossessionEditor gameId={view.gameId} opponent={activeOpponent} />
+        <PossessionEditor gameId={view.gameId} opponent={activeOpponent} format={format} />
       </div>
     );
   }
