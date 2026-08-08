@@ -37,11 +37,15 @@ alter table public.games
 
 alter table public.games drop constraint if exists games_period_format_check;
 alter table public.games add constraint games_period_format_check
-  check (period_format in ('quarters', 'halves'));
+  check (period_format in ('quarters', 'halves', 'periods', 'sessions'));
 
+-- Up to 8 rather than 4: a preseason scrimmage is commonly 5-6 running
+-- periods, and a practice can hold several intrasquad sessions. Those
+-- are full-length periods, not overtimes -- calling them OT would also
+-- make the minutes estimator use ot_minutes for them.
 alter table public.games drop constraint if exists games_regulation_periods_check;
 alter table public.games add constraint games_regulation_periods_check
-  check (regulation_periods between 1 and 4);
+  check (regulation_periods between 1 and 8);
 
 alter table public.games drop constraint if exists games_period_minutes_check;
 alter table public.games add constraint games_period_minutes_check
