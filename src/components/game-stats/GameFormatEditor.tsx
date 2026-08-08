@@ -19,6 +19,7 @@
 // it, which updateGameFormat() refuses outright.
 
 import { useState } from "react";
+import NumberField from "./NumberField";
 import {
   GAME_STRUCTURES,
   buildGameFormat,
@@ -152,12 +153,12 @@ export default function GameFormatEditor({ gameId, format, onSaved }: Props) {
 
         <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, color: "var(--muted)" }}>
           Periods
-          <input type="number" min={1} max={8} value={periods} onChange={(e) => setPeriods(Number(e.target.value))} style={{ ...fieldStyle, width: 70 }} />
+          <NumberField value={periods} min={1} max={8} onChange={setPeriods} style={{ ...fieldStyle, width: 70 }} />
         </label>
 
         <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, color: "var(--muted)" }}>
           Minutes each
-          <input type="number" min={1} max={30} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} style={{ ...fieldStyle, width: 80 }} />
+          <NumberField value={minutes} min={1} max={30} onChange={setMinutes} style={{ ...fieldStyle, width: 80 }} />
         </label>
 
         <button className="btn-primary" style={{ width: "auto", padding: "8px 14px" }} onClick={save} disabled={saving}>
