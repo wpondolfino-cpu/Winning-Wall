@@ -179,7 +179,12 @@ export default function GameFormatEditor({ gameId, format, gameType = "regular",
       <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 12, alignItems: "center" }}>
         {format.period_lengths.map((len, i) => {
           const isLast = i === format.period_lengths.length - 1;
-          const isExtra = i + 1 > format.regulation_periods;
+          // Droppable if it's an overtime on a game, or any trailing period
+          // on a scrimmage/practice (which have no overtime concept, so
+          // "past regulation" never applies there).
+          const isExtra = lengthsEditable(format)
+            ? format.period_lengths.length > 1
+            : i + 1 > format.regulation_periods;
           return (
             <span
               key={i}
