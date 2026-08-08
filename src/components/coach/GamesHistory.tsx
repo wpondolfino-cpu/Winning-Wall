@@ -16,7 +16,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { finishGame, isGameFinal, computeFinalScore, syncQueue, listSeasons, GAME_FORMAT_PRESETS, GAME_TYPES, type Game, type GameType, type Possession } from "../../lib/gameStats";
+import { finishGame, isGameFinal, computeFinalScore, syncQueue, listSeasons, GAME_STRUCTURES, buildGameFormat, GAME_TYPES, GAME_GROUPS, gameTypesForGroup, type Game, type GameType, type GameGroup, type PeriodFormat, type Possession } from "../../lib/gameStats";
 
 interface Props {
   userId: string;
@@ -31,8 +31,21 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
   const [creating, setCreating] = useState(false);
   const [opponent, setOpponent] = useState("");
   const [gameDate, setGameDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [formatIdx, setFormatIdx] = useState(0);
+  const [structure, setStructure] = useState<PeriodFormat>("quarters");
+  const [periods, setPeriods] = useState(4);
+  const [minutes, setMinutes] = useState(8);
+  const [otMinutes, setOtMinutes] = useState(4);
   const [gameType, setGameType] = useState<GameType>("regular");
+
+  // Picking a structure resets the count and minutes to that structure's
+  // usual shape, which the coach can then type over.
+  function pickStructure(next: PeriodFormat) {
+    const preset = GAME_STRUCTURES.find((g) => g.value === next)!;
+    setStructure(next);
+    setPeriods(preset.periods);
+    setMinutes(preset.minutes);
+    setOtMinutes(preset.otMinutes);
+  }
   const [finishingId, setFinishingId] = useState<string | null>(null);
   const [finalUs, setFinalUs] = useState("");
   const [finalThem, setFinalThem] = useState("");
@@ -40,6 +53,9 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
   const [notesDraft, setNotesDraft] = useState("");
   const [search, setSearch] = useState("");
   const [seasonFilter, setSeasonFilter] = useState<string>("all");
+  // Once scrimmages and practices exist they'd otherwise be mixed in
+  // among real games in this list, so it defaults to games only.
+  const [groupFilter, setGroupFilter] = useState<GameGroup | "all">("games");
   const [seasons, setSeasons] = useState<string[]>([]);
 
   useEffect(() => { load(); listSeasons().then(setSeasons); }, []);
@@ -54,7 +70,7 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
   async function createGame() {
     if (!opponent.trim()) return;
     const season = seasonForDate(gameDate);
-    const fmt = GAME_FORMAT_PRESETS[formatIdx].format;
+    const fmt = buildGameFormat(structure, periods, minutes, otMinutes);
     const { data, error } = await supabase
       .from("games")
       .insert({
@@ -64,7 +80,7 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
         created_by: userId,
         period_format: fmt.period_format,
         regulation_periods: fmt.regulation_periods,
-        period_minutes: fmt.period_minutes,
+        period_lengths: fmt.period_lengths,
         ot_minutes: fmt.ot_minutes,
         game_type: gameType,
       })
@@ -125,6 +141,7 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
 
   const filteredGames = games.filter((g) => {
     if (seasonFilter !== "all" && g.season !== seasonFilter) return false;
+    if (groupFilter !== "all" && !gameTypesForGroup(groupFilter).includes((g.game_type ?? "regular") as GameType)) return false;
     if (search.trim() && !g.opponent.toLowerCase().includes(search.trim().toLowerCase())) return false;
     return true;
   });
@@ -155,6 +172,16 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
+        <select
+          value={groupFilter}
+          onChange={(e) => setGroupFilter(e.target.value as GameGroup | "all")}
+          style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
+        >
+          {GAME_GROUPS.map((g) => (
+            <option key={g.value} value={g.value}>{g.label}</option>
+          ))}
+          <option value="all">All types</option>
+        </select>
       </div>
 
       {creating && (
@@ -173,14 +200,43 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
             style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
           />
           <select
-            value={formatIdx}
-            onChange={(e) => setFormatIdx(Number(e.target.value))}
+            value={structure}
+            onChange={(e) => pickStructure(e.target.value as PeriodFormat)}
             style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
           >
-            {GAME_FORMAT_PRESETS.map((p, i) => (
-              <option key={p.label} value={i}>{p.label}</option>
+            {GAME_STRUCTURES.map((g) => (
+              <option key={g.value} value={g.value}>{g.label}</option>
             ))}
           </select>
+          <input
+            type="number"
+            min={1}
+            max={8}
+            value={periods}
+            onChange={(e) => setPeriods(Number(e.target.value))}
+            title="How many periods"
+            style={{ width: 60, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
+          />
+          <input
+            type="number"
+            min={1}
+            max={30}
+            value={minutes}
+            onChange={(e) => setMinutes(Number(e.target.value))}
+            title="Minutes per period"
+            style={{ width: 70, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
+          />
+          {(structure === "quarters" || structure === "halves") && (
+            <input
+              type="number"
+              min={1}
+              max={30}
+              value={otMinutes}
+              onChange={(e) => setOtMinutes(Number(e.target.value))}
+              title="Overtime minutes"
+              style={{ width: 70, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" }}
+            />
+          )}
           <select
             value={gameType}
             onChange={(e) => setGameType(e.target.value as GameType)}
