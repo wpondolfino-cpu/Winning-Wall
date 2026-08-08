@@ -17,6 +17,7 @@ import PossessionEditor from "./PossessionEditor";
 import ReportBuilder from "./ReportBuilder";
 import GoalsManager from "./GoalsManager";
 import SyncIssuesViewer from "./SyncIssuesViewer";
+import GameFormatEditor from "./GameFormatEditor";
 
 interface Props {
   currentUserRole: "player" | "coach" | "admin";
@@ -169,7 +170,9 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
           setGameFinal={setGameFinal}
           closedQuarters={closedQuarters}
           format={format}
+          setFormat={setFormat}
           overtimePeriods={overtimePeriods}
+          setOvertimePeriods={setOvertimePeriods}
           onEndQuarter={handleEndQuarter}
           onReopenQuarter={handleReopenQuarter}
           onAddOvertime={handleAddOvertime}
@@ -210,7 +213,9 @@ function GamesTab({
   activeOpponent,
   closedQuarters,
   format,
+  setFormat,
   overtimePeriods,
+  setOvertimePeriods,
   onEndQuarter,
   onReopenQuarter,
   onAddOvertime,
@@ -239,7 +244,9 @@ function GamesTab({
   activeOpponent: string;
   closedQuarters: number[];
   format: GameFormat;
+  setFormat: (f: GameFormat) => void;
   overtimePeriods: number;
+  setOvertimePeriods: (n: number) => void;
   onEndQuarter: (gameId: string, q: number) => void;
   onReopenQuarter: (gameId: string, q: number) => void;
   onAddOvertime: (gameId: string) => void;
@@ -302,6 +309,12 @@ function GamesTab({
           >
             Stats →
           </button>
+          <GameFormatEditor
+            gameId={view.gameId}
+            format={format}
+            overtimePeriods={overtimePeriods}
+            onSaved={(f, ot) => { setFormat(f); setOvertimePeriods(ot); }}
+          />
           <button
             onClick={async () => {
               if (!window.confirm("Reopen this game for tracking? Its final score will be cleared until you finish it again.")) return;
@@ -351,6 +364,12 @@ function GamesTab({
             <button onClick={() => onReopenQuarter(view.gameId, quarter)} style={backBtn}>Reopen {periodLabel(format, quarter)}</button>
           )}
           {!gameFinal && <button onClick={() => startFinishing(view.gameId)} style={backBtn}>Finish game</button>}
+          <GameFormatEditor
+            gameId={view.gameId}
+            format={format}
+            overtimePeriods={overtimePeriods}
+            onSaved={(f, ot) => { setFormat(f); setOvertimePeriods(ot); if (quarter > f.regulation_periods + ot) setQuarter(1); }}
+          />
         </div>
         {finishing && (
           <div className="card" style={{ width: "100%", maxWidth: 1400, marginBottom: 10 }}>
