@@ -204,9 +204,8 @@ export interface Game {
   closed_quarters: number[];
   period_format: PeriodFormat;
   regulation_periods: number;
-  period_minutes: number;
+  period_lengths: number[];
   ot_minutes: number;
-  overtime_periods: number;
   game_type: GameType;
 }
 
@@ -228,26 +227,41 @@ export type GameType = "regular" | "scrimmage" | "summer" | "tournament" | "play
 export interface GameFormat {
   period_format: PeriodFormat;
   regulation_periods: number;
-  period_minutes: number;
+  /** Minutes of every period in order, regulation first then overtime. Its length IS the period count. */
+  period_lengths: number[];
+  /** Default length used when "+ OT" is pressed, so adding one courtside needs no prompt. */
   ot_minutes: number;
 }
 
 export const DEFAULT_GAME_FORMAT: GameFormat = {
   period_format: "quarters",
   regulation_periods: 4,
-  period_minutes: 8,
+  period_lengths: [8, 8, 8, 8],
   ot_minutes: 4,
 };
 
-export const GAME_FORMAT_PRESETS: { label: string; format: GameFormat }[] = [
-  { label: "4 x 8 min quarters (HS)", format: { period_format: "quarters", regulation_periods: 4, period_minutes: 8, ot_minutes: 4 } },
-  { label: "2 x 16 min halves", format: { period_format: "halves", regulation_periods: 2, period_minutes: 16, ot_minutes: 4 } },
-  { label: "2 x 20 min halves", format: { period_format: "halves", regulation_periods: 2, period_minutes: 20, ot_minutes: 5 } },
-  { label: "5 x 8 min periods (scrimmage)", format: { period_format: "periods", regulation_periods: 5, period_minutes: 8, ot_minutes: 4 } },
-  { label: "6 x 8 min periods (scrimmage)", format: { period_format: "periods", regulation_periods: 6, period_minutes: 8, ot_minutes: 4 } },
-  { label: "4 x 10 min sessions (practice)", format: { period_format: "sessions", regulation_periods: 4, period_minutes: 10, ot_minutes: 5 } },
-  { label: "6 x 10 min sessions (practice)", format: { period_format: "sessions", regulation_periods: 6, period_minutes: 10, ot_minutes: 5 } },
+/**
+ * Starting points for each structure. The coach types the actual minutes,
+ * so these are only defaults -- there's no preset per possible period
+ * count any more, since periods are added as the game or practice runs.
+ */
+export const GAME_STRUCTURES: { value: PeriodFormat; label: string; periods: number; minutes: number; otMinutes: number }[] = [
+  { value: "quarters", label: "Quarters", periods: 4, minutes: 8, otMinutes: 4 },
+  { value: "halves", label: "Halves", periods: 2, minutes: 16, otMinutes: 4 },
+  { value: "periods", label: "Periods (scrimmage)", periods: 5, minutes: 8, otMinutes: 8 },
+  { value: "sessions", label: "Sessions (practice)", periods: 4, minutes: 10, otMinutes: 10 },
 ];
+
+/** Builds a format from a structure choice plus a typed minutes value. */
+export function buildGameFormat(structure: PeriodFormat, periods: number, minutes: number, otMinutes: number): GameFormat {
+  const n = Math.max(1, Math.min(8, periods));
+  return {
+    period_format: structure,
+    regulation_periods: n,
+    period_lengths: Array.from({ length: n }, () => Math.max(1, Math.min(30, minutes))),
+    ot_minutes: Math.max(1, Math.min(30, otMinutes)),
+  };
+}
 
 export const GAME_TYPES: { value: GameType; label: string }[] = [
   { value: "regular", label: "Regular season" },
@@ -258,15 +272,76 @@ export const GAME_TYPES: { value: GameType; label: string }[] = [
   { value: "playoff", label: "Playoff" },
 ];
 
+/**
+ * Reports are scoped to a group of game types rather than a single type,
+ * so "games" can mean regular plus tournament plus playoff without the
+ * coach ticking three boxes. Scrimmage and practice data never lands in
+ * a games report -- practice possessions in particular are our players
+ * on both ends, so their efficiency isn't on the same scale as a real
+ * game's and averaging the two together would make both less meaningful.
+ */
+export type GameGroup = "games" | "scrimmages" | "practices" | "summer";
+
+export const GAME_GROUPS: { value: GameGroup; label: string; types: GameType[] }[] = [
+  { value: "games", label: "Games", types: ["regular", "tournament", "playoff"] },
+  { value: "scrimmages", label: "Scrimmages", types: ["scrimmage"] },
+  { value: "practices", label: "Practices", types: ["practice"] },
+  { value: "summer", label: "Summer league", types: ["summer"] },
+];
+
+export function gameTypesForGroup(group: GameGroup): GameType[] {
+  return (GAME_GROUPS.find((g) => g.value === group) ?? GAME_GROUPS[0]).types;
+}
+
+/**
+ * Whether extra periods on this game are overtimes or just more regulation.
+ * A scrimmage that runs six periods isn't going to overtime -- those are
+ * full-length periods, and calling them OT would also make the minutes
+ * estimator size them with ot_minutes instead of their real length.
+ */
+export function usesOvertime(fmt: GameFormat): boolean {
+  return fmt.period_format === "quarters" || fmt.period_format === "halves";
+}
+
+/** Label for the "add another period" button, which means different things per format. */
+export function addPeriodLabel(fmt: GameFormat): string {
+  if (usesOvertime(fmt)) return "+ OT";
+  return fmt.period_format === "sessions" ? "+ Session" : "+ Period";
+}
+
 /** Normalises whatever a query actually returned into a complete GameFormat, falling back to the old hardcoded 4 x 8 quarters. */
 export function gameFormat(game: Partial<GameFormat> | null | undefined): GameFormat {
   if (!game) return DEFAULT_GAME_FORMAT;
+  const regulation = game.regulation_periods ?? DEFAULT_GAME_FORMAT.regulation_periods;
+  const lengths = game.period_lengths?.length
+    ? game.period_lengths
+    : Array.from({ length: regulation }, () => 8);
   return {
     period_format: game.period_format ?? DEFAULT_GAME_FORMAT.period_format,
-    regulation_periods: game.regulation_periods ?? DEFAULT_GAME_FORMAT.regulation_periods,
-    period_minutes: game.period_minutes ?? DEFAULT_GAME_FORMAT.period_minutes,
+    regulation_periods: regulation,
+    period_lengths: lengths,
     ot_minutes: game.ot_minutes ?? DEFAULT_GAME_FORMAT.ot_minutes,
   };
+}
+
+/** Total periods including any overtime -- derived from the array, so there's nothing to keep in sync. */
+export function periodCount(fmt: GameFormat): number {
+  return fmt.period_lengths.length;
+}
+
+/** How many periods past regulation this game has. */
+export function overtimeCount(fmt: GameFormat): number {
+  return Math.max(0, periodCount(fmt) - fmt.regulation_periods);
+}
+
+/** Whether individual period lengths can be edited. Games run uniform periods; scrimmages and practices don't. */
+export function lengthsEditable(fmt: GameFormat): boolean {
+  return !usesOvertime(fmt);
+}
+
+/** Total game length in minutes. */
+export function gameLengthMinutes(fmt: GameFormat): number {
+  return fmt.period_lengths.reduce((a, b) => a + b, 0);
 }
 
 /** Regulation period numbers -- [1,2,3,4] for quarters, [1,2] for halves. */
@@ -274,10 +349,9 @@ export function regulationPeriods(fmt: GameFormat): number[] {
   return Array.from({ length: fmt.regulation_periods }, (_, i) => i + 1);
 }
 
-/** Every period this game actually has tabs for: all of regulation, plus however many overtimes have been added. */
-export function periodsInPlay(fmt: GameFormat, overtimePeriods: number): number[] {
-  const total = fmt.regulation_periods + Math.max(0, overtimePeriods);
-  return Array.from({ length: total }, (_, i) => i + 1);
+/** Every period this game has a tab for -- straight from period_lengths. */
+export function periodsInPlay(fmt: GameFormat): number[] {
+  return Array.from({ length: periodCount(fmt) }, (_, i) => i + 1);
 }
 
 /** "Q3" / "H2" / "P5" / "S2" / "OT" / "2OT" -- anything past regulation is an overtime. */
@@ -293,9 +367,9 @@ export function periodLabel(fmt: GameFormat, period: number): string {
   return ot === 1 ? "OT" : `${ot}OT`;
 }
 
-/** Length of a period in seconds. Regulation uses period_minutes, overtimes use ot_minutes. Used by the per-period minutes estimator. */
+/** Length of a period in seconds, straight from period_lengths. Used by the per-period minutes estimator. */
 export function periodLengthSeconds(fmt: GameFormat, period: number): number {
-  return (period <= fmt.regulation_periods ? fmt.period_minutes : fmt.ot_minutes) * 60;
+  return (fmt.period_lengths[period - 1] ?? fmt.ot_minutes) * 60;
 }
 
 /**
@@ -332,6 +406,7 @@ export interface SavedReport {
   season: string;
   game_count: "3" | "5" | "10" | "season";
   category: "all" | PossessionType;
+  game_group: GameGroup;
   created_by: string;
   created_at: string;
 }
@@ -859,17 +934,13 @@ export async function endQuarter(gameId: string, quarter: number, currentClosed:
 }
 
 /**
- * Changes an existing game's period structure. Guarded against orphaning
- * possessions: if the game already has possessions logged in a period
- * higher than the new structure allows, the change is refused rather than
- * leaving those rows unreachable from any tab.
+ * Writes a new period structure to an existing game. Guarded against
+ * orphaning possessions: if the game already has possessions logged in a
+ * period the new structure doesn't have, the change is refused rather
+ * than leaving those rows unreachable from any tab.
  */
-export async function updateGameFormat(
-  gameId: string,
-  fmt: GameFormat,
-  overtimePeriods: number,
-): Promise<{ error: string | null }> {
-  const highest = fmt.regulation_periods + Math.max(0, overtimePeriods);
+export async function updateGameFormat(gameId: string, fmt: GameFormat): Promise<{ error: string | null }> {
+  const highest = periodCount(fmt);
   const { data: stray } = await supabase
     .from("possessions")
     .select("quarter")
@@ -884,23 +955,48 @@ export async function updateGameFormat(
     .update({
       period_format: fmt.period_format,
       regulation_periods: fmt.regulation_periods,
-      period_minutes: fmt.period_minutes,
+      period_lengths: fmt.period_lengths,
       ot_minutes: fmt.ot_minutes,
-      overtime_periods: Math.max(0, overtimePeriods),
     })
     .eq("id", gameId);
   return { error: error?.message ?? null };
 }
 
 /**
- * Adds or removes an overtime period on a game. Overtimes are stored as a
- * count rather than inferred from logged possessions so the tab can exist
- * before anything has been tracked against it.
+ * Appends a period. For a game that's an overtime and the length is
+ * ot_minutes with no prompt -- it gets pressed courtside, so friction
+ * matters. For a scrimmage or practice the caller passes the minutes it
+ * asked for, since those genuinely run uneven blocks.
  */
-export async function setOvertimePeriods(gameId: string, count: number): Promise<{ error: string | null }> {
-  const next = Math.max(0, Math.min(8, count));
-  const { error } = await supabase.from("games").update({ overtime_periods: next }).eq("id", gameId);
-  return { error: error?.message ?? null };
+export async function addGamePeriod(gameId: string, fmt: GameFormat, minutes?: number): Promise<{ error: string | null; format: GameFormat }> {
+  if (periodCount(fmt) >= 12) return { error: "12 periods is the maximum.", format: fmt };
+  const length = usesOvertime(fmt) ? fmt.ot_minutes : Math.max(1, Math.min(30, minutes ?? fmt.period_lengths[fmt.period_lengths.length - 1] ?? 8));
+  const next: GameFormat = { ...fmt, period_lengths: [...fmt.period_lengths, length] };
+  const { error } = await updateGameFormat(gameId, next);
+  return { error, format: error ? fmt : next };
+}
+
+/** Drops the last period. Refused by updateGameFormat if it has possessions in it. */
+export async function removeLastPeriod(gameId: string, fmt: GameFormat): Promise<{ error: string | null; format: GameFormat }> {
+  if (periodCount(fmt) <= 1) return { error: null, format: fmt };
+  const lengths = fmt.period_lengths.slice(0, -1);
+  const next: GameFormat = {
+    ...fmt,
+    period_lengths: lengths,
+    regulation_periods: Math.min(fmt.regulation_periods, lengths.length),
+  };
+  const { error } = await updateGameFormat(gameId, next);
+  return { error, format: error ? fmt : next };
+}
+
+/** Changes one period's length. Only meaningful where lengthsEditable(fmt) is true. */
+export async function setPeriodLength(gameId: string, fmt: GameFormat, period: number, minutes: number): Promise<{ error: string | null; format: GameFormat }> {
+  const lengths = [...fmt.period_lengths];
+  if (period < 1 || period > lengths.length) return { error: null, format: fmt };
+  lengths[period - 1] = Math.max(1, Math.min(30, minutes));
+  const next: GameFormat = { ...fmt, period_lengths: lengths };
+  const { error } = await updateGameFormat(gameId, next);
+  return { error, format: error ? fmt : next };
 }
 
 /** Lowest period not yet closed -- used to default the period tab to wherever tracking should actually pick up, instead of always defaulting to the first. highestPeriod defaults to 4 so pre-format callers behave exactly as before. */
