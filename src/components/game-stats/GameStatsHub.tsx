@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { finishGame, isGameFinal, computeFinalScore, reopenGame, endQuarter, reopenQuarter, nextOpenQuarter, syncQueue, listSavedReports, deleteSavedReport, listSeasons, gameFormat, periodsInPlay, periodLabel, halfLabel, addGamePeriod, removeLastPeriod, suggestedPeriodMinutes, addPeriodLabel, periodCount, DEFAULT_GAME_FORMAT, type GameFormat, type SavedReport, type Possession } from "../../lib/gameStats";
+import { finishGame, isGameFinal, computeFinalScore, reopenGame, endQuarter, reopenQuarter, nextOpenQuarter, syncQueue, listSavedReports, deleteSavedReport, listSeasons, gameFormat, periodsInPlay, periodLabel, halfLabel, addGamePeriod, removeLastPeriod, suggestedPeriodMinutes, addPeriodLabel, periodCount, overtimeCount, lengthsEditable, emptyRegulationPeriods, DEFAULT_GAME_FORMAT, type GameFormat, type SavedReport, type Possession } from "../../lib/gameStats";
 import GamesHistory from "../coach/GamesHistory";
 import GameTracker from "../coach/GameTracker";
 import GameReport, { ReportScope } from "./GameReport";
@@ -114,6 +114,16 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   // times a season, so a prefilled prompt costs less than a minutes field
   // on the create form for every game.
   async function handleAddPeriod(gameId: string) {
+    // You can't reach overtime without playing out regulation, so an empty
+    // regulation period means this was probably a misclick. Warn, don't
+    // block -- entering a game from film out of order is legitimate.
+    if (!lengthsEditable(format)) {
+      const empty = await emptyRegulationPeriods(gameId, format);
+      if (empty.length) {
+        const names = empty.map((p) => periodLabel(format, p)).join(", ");
+        if (!window.confirm(`${names} ${empty.length === 1 ? "has" : "have"} no possessions logged yet. Add an overtime anyway?`)) return;
+      }
+    }
     const answer = window.prompt("Minutes for this period?", String(suggestedPeriodMinutes(format)));
     if (answer === null) return;
     const minutes = Number(answer);
@@ -331,7 +341,7 @@ function GamesTab({
             ))}
           </div>
           {!gameFinal && <button onClick={() => onAddPeriod(view.gameId)} style={backBtn}>{addPeriodLabel(format)}</button>}
-          {!gameFinal && periodCount(format) > 1 && (
+          {!gameFinal && (lengthsEditable(format) ? periodCount(format) > 1 : overtimeCount(format) > 0) && (
             <button onClick={() => onRemovePeriod(view.gameId)} style={backBtn}>
               Remove {periodLabel(format, periodCount(format))}
             </button>
