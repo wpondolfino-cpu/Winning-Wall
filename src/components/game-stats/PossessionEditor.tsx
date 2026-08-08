@@ -31,6 +31,10 @@ import {
   removeFromQueue,
   getLastSyncErrors,
   syncQueue,
+  periodLabel,
+  periodNoun,
+  DEFAULT_GAME_FORMAT,
+  type GameFormat,
   type Possession,
   type PlayCall,
   type Team,
@@ -45,6 +49,8 @@ import {
 interface Props {
   gameId: string;
   opponent: string;
+  /** Period structure, so the filters read H1/H2 or S1/S2 rather than always Q1/Q2. Optional so any older call site still works. */
+  format?: GameFormat;
 }
 
 const TEAMS: Team[] = ["us", "opponent"];
@@ -56,7 +62,7 @@ const QUALITIES: ShotQuality[] = ["great", "good", "live", "tough"];
 const TURNOVER_TYPES: TurnoverType[] = ["live", "dead", "charge"];
 const TURNOVER_TYPE_LABELS: Record<TurnoverType, string> = { live: "live", dead: "dead", charge: "charge / offensive foul" };
 
-export default function PossessionEditor({ gameId, opponent }: Props) {
+export default function PossessionEditor({ gameId, opponent, format = DEFAULT_GAME_FORMAT }: Props) {
   const [possessions, setPossessions] = useState<Possession[]>([]);
   const [queuedIds, setQueuedIds] = useState<Set<string>>(new Set());
   const [syncErrors, setSyncErrors] = useState<{ id: string; message: string }[]>([]);
@@ -135,9 +141,9 @@ export default function PossessionEditor({ gameId, opponent }: Props) {
       </div>
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-        <button onClick={() => setQuarterFilter("all")} style={pillStyle(quarterFilter === "all")}>All quarters</button>
+        <button onClick={() => setQuarterFilter("all")} style={pillStyle(quarterFilter === "all")}>All {periodNoun(format, true)}</button>
         {quartersPresent.map((q) => (
-          <button key={q} onClick={() => setQuarterFilter(q)} style={pillStyle(quarterFilter === q)}>Q{q}</button>
+          <button key={q} onClick={() => setQuarterFilter(q)} style={pillStyle(quarterFilter === q)}>{periodLabel(format, q)}</button>
         ))}
         <span style={{ width: 12 }} />
         <button onClick={() => setTeamFilter("all")} style={pillStyle(teamFilter === "all")}>Both teams</button>
@@ -162,7 +168,7 @@ export default function PossessionEditor({ gameId, opponent }: Props) {
           <div key={p.id} style={{ borderTop: "1px solid var(--border)", padding: "12px 0" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>Q{p.quarter} · #{p.sequence}</span>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>{periodLabel(format, p.quarter)} · #{p.sequence}</span>
                 {isQueued && (
                   <span style={{ fontSize: 12, color: "#c2402f" }} title={err ?? "Not yet synced"}>
                     ⚠ {err ? "sync failed" : "unsynced"}
@@ -182,7 +188,7 @@ export default function PossessionEditor({ gameId, opponent }: Props) {
               </Field>
 
               <Field label="Quarter">
-                <input type="number" min={1} max={8} value={p.quarter} onChange={(e) => save(p, { quarter: Number(e.target.value) })} style={selectStyle} />
+                <input type="number" min={1} max={12} value={p.quarter} onChange={(e) => save(p, { quarter: Number(e.target.value) })} style={selectStyle} />
               </Field>
 
               <Field label="Possession type">
