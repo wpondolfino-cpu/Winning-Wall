@@ -31,6 +31,8 @@ import {
   gameFormat,
   halfPeriods,
   qualityShotStatus,
+  gameTypesForGroup,
+  type GameGroup,
   type Possession,
   type PlayCall,
   type StatGoal,
@@ -44,7 +46,7 @@ export type ReportScope =
   | { kind: "quarter"; gameId: string; quarter: number }
   | { kind: "half"; gameId: string; half: 1 | 2 }
   | { kind: "game"; gameId: string }
-  | { kind: "season"; season: string; result?: "win" | "loss" };
+  | { kind: "season"; season: string; result?: "win" | "loss"; gameGroup?: GameGroup };
 
 export type ReportVariant = "in_game" | "full";
 
@@ -84,7 +86,7 @@ export default function GameReport({ scope, title, variant = "full", canManage =
     if (scope.kind === "quarter" || scope.kind === "half" || scope.kind === "game") {
       const { data: game } = await supabase
         .from("games")
-        .select("opponent, period_format, regulation_periods, period_minutes, ot_minutes")
+        .select("opponent, period_format, regulation_periods, period_lengths, ot_minutes")
         .eq("id", scope.gameId)
         .maybeSingle();
       setOpponentName((game as any)?.opponent ?? undefined);
@@ -102,10 +104,14 @@ export default function GameReport({ scope, title, variant = "full", canManage =
     if (scope.kind === "half") query = query.eq("game_id", scope.gameId).in("quarter", halfPeriods(fmt, scope.half));
     if (scope.kind === "game") query = query.eq("game_id", scope.gameId);
     if (scope.kind === "season") {
+      // Defaults to the "games" group -- real competition only. Without
+      // this, a tracked scrimmage or practice would land in season
+      // averages next to actual games.
       const { data: games } = await supabase
         .from("games")
         .select("id, final_score_us, final_score_them")
-        .eq("season", scope.season);
+        .eq("season", scope.season)
+        .in("game_type", gameTypesForGroup(scope.gameGroup ?? "games"));
       // Win/loss isn't a stored column -- it's derived from the final score,
       // so the filter happens here rather than in the query.
       const filtered = (games ?? []).filter((g: any) => {
