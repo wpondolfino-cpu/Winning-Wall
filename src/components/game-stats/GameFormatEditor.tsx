@@ -24,6 +24,7 @@ import {
   buildGameFormat,
   updateGameFormat,
   setPeriodLength,
+  removeLastPeriod,
   periodLabel,
   overtimeCount,
   lengthsEditable,
@@ -101,6 +102,18 @@ export default function GameFormatEditor({ gameId, format, onSaved }: Props) {
     setOpen(false);
   }
 
+  // Only the LAST period can be dropped -- removing one from the middle
+  // would leave later possessions numbered past the end. Guarded by
+  // updateGameFormat, which refuses if the period holds possessions.
+  async function dropLastPeriod() {
+    const label = periodLabel(format, format.period_lengths.length);
+    if (!window.confirm(`Remove ${label}? It has to be empty.`)) return;
+    const { error: err, format: next } = await removeLastPeriod(gameId, format);
+    if (err) { setError(err); return; }
+    setError(null);
+    onSaved(next);
+  }
+
   async function editPeriod(period: number) {
     const current = format.period_lengths[period - 1];
     const answer = window.prompt(`Minutes for ${periodLabel(format, period)}?`, String(current));
@@ -159,20 +172,36 @@ export default function GameFormatEditor({ gameId, format, onSaved }: Props) {
       </div>
 
       <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 12, alignItems: "center" }}>
-        {format.period_lengths.map((len, i) => (
-          <span
-            key={i}
-            onClick={lengthsEditable(format) ? () => editPeriod(i + 1) : undefined}
-            style={{
-              display: "inline-flex", gap: 5, alignItems: "baseline", padding: "5px 9px", borderRadius: 6,
-              background: "var(--surface2)", border: "1px solid var(--border)", fontSize: 13,
-              cursor: lengthsEditable(format) ? "pointer" : "default",
-            }}
-          >
-            <span>{periodLabel(format, i + 1)}</span>
-            <span style={{ fontSize: 11, color: "var(--muted)" }}>{len}m</span>
-          </span>
-        ))}
+        {format.period_lengths.map((len, i) => {
+          const isLast = i === format.period_lengths.length - 1;
+          const isExtra = i + 1 > format.regulation_periods;
+          return (
+            <span
+              key={i}
+              style={{
+                display: "inline-flex", gap: 5, alignItems: "baseline", padding: "5px 9px", borderRadius: 6,
+                background: "var(--surface2)", border: "1px solid var(--border)", fontSize: 13,
+              }}
+            >
+              <span
+                onClick={lengthsEditable(format) ? () => editPeriod(i + 1) : undefined}
+                style={{ cursor: lengthsEditable(format) ? "pointer" : "default" }}
+              >
+                {periodLabel(format, i + 1)}
+              </span>
+              <span style={{ fontSize: 11, color: "var(--muted)" }}>{len}m</span>
+              {isLast && isExtra && (
+                <span
+                  onClick={dropLastPeriod}
+                  title={`Remove ${periodLabel(format, i + 1)}`}
+                  style={{ cursor: "pointer", color: "var(--muted)", fontSize: 12, marginLeft: 2 }}
+                >
+                  ✕
+                </span>
+              )}
+            </span>
+          );
+        })}
         <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 4 }}>{gameLengthMinutes(format)} min total</span>
       </div>
 
@@ -180,6 +209,7 @@ export default function GameFormatEditor({ gameId, format, onSaved }: Props) {
         {lengthsEditable(format)
           ? "Tap a period to change just its length -- scrimmages and practices often run uneven blocks."
           : "Games run uniform periods, so \u201CMinutes each\u201D sets them all. Overtime length is asked for when you add one."}
+        {" "}Use the \u2715 on the last period to drop an extra one that shouldn't be there.
       </div>
       <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
         Possessions aren't moved or changed -- they're stored by period number, so a game tracked as Q1/Q2 is already correct as H1/H2 once relabelled.
