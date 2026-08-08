@@ -80,8 +80,14 @@ export default function GoalsManager({ userId }: Props) {
     }
   }
 
-  function move(index: number, dir: -1 | 1) {
-    const target = index + dir;
+  // Keyed rather than indexed: the rendered list hides goalOnly stats, so
+  // a positional index into `order` wouldn't line up with what's on screen.
+  // Hidden entries are skipped over so one click always moves one visible row.
+  function move(key: string, dir: -1 | 1) {
+    const index = order.findIndex((s) => s.key === key);
+    if (index < 0) return;
+    let target = index + dir;
+    while (target >= 0 && target < order.length && order[target].goalOnly) target += dir;
     if (target < 0 || target >= order.length) return;
     const next = [...order];
     [next[index], next[target]] = [next[target], next[index]];
@@ -99,6 +105,8 @@ export default function GoalsManager({ userId }: Props) {
     }
   }
 
+  const visibleOrder = order.filter((s) => !s.goalOnly);
+
   if (loading) return <div className="card">Loading goals…</div>;
 
   return (
@@ -109,12 +117,12 @@ export default function GoalsManager({ userId }: Props) {
           Controls the order stats appear in on every report. Any stat added later falls in at the bottom by default.
         </div>
 
-        {order.map((s, i) => (
+        {visibleOrder.map((s, i) => (
           <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: "1px solid var(--border)" }}>
             <span style={{ fontSize: 14, flex: 1 }}>{s.label}</span>
             {!s.inGame && <span style={{ fontSize: 11, color: "var(--muted)" }}>full report only</span>}
-            <button onClick={() => move(i, -1)} disabled={i === 0} style={arrowBtnStyle(i === 0)}>↑</button>
-            <button onClick={() => move(i, 1)} disabled={i === order.length - 1} style={arrowBtnStyle(i === order.length - 1)}>↓</button>
+            <button onClick={() => move(s.key, -1)} disabled={i === 0} style={arrowBtnStyle(i === 0)}>↑</button>
+            <button onClick={() => move(s.key, 1)} disabled={i === visibleOrder.length - 1} style={arrowBtnStyle(i === visibleOrder.length - 1)}>↓</button>
           </div>
         ))}
 
@@ -134,7 +142,7 @@ export default function GoalsManager({ userId }: Props) {
           <button className={`role-tab ${goalTeam === "opponent" ? "active" : ""}`} onClick={() => setGoalTeam("opponent")}>Opponent</button>
         </div>
 
-        {order.filter((s) => s.kind === "number" && !s.selfColored).map((s) => {
+        {order.filter((s) => s.kind === "number" && !s.selfColored && !(s.usOnly && goalTeam === "opponent")).map((s) => {
           const draftKey = `${goalTeam}:${s.key}`;
           const draft = drafts[draftKey] ?? { value: "", direction: s.defaultDirection ?? "higher_better", minSampleSize: "", note: "" };
           const existing = goals[draftKey];
