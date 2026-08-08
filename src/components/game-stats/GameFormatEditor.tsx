@@ -52,35 +52,31 @@ export default function GameFormatEditor({ gameId, format, onSaved }: Props) {
   const [structure, setStructure] = useState<PeriodFormat>(format.period_format);
   const [periods, setPeriods] = useState(format.regulation_periods);
   const [minutes, setMinutes] = useState(format.period_lengths[0] ?? 8);
-  const [otMinutes, setOtMinutes] = useState(format.ot_minutes);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const structureLabel = GAME_STRUCTURES.find((g) => g.value === format.period_format)?.label ?? format.period_format;
   const ots = overtimeCount(format);
   const summary = `${format.regulation_periods} x ${format.period_lengths[0] ?? "?"} min ${structureLabel.toLowerCase()}${ots ? ` +${ots} extra` : ""}`;
-  const structureUsesOt = structure === "quarters" || structure === "halves";
 
   function pickStructure(next: PeriodFormat) {
     const preset = GAME_STRUCTURES.find((g) => g.value === next)!;
     setStructure(next);
     setPeriods(preset.periods);
     setMinutes(preset.minutes);
-    setOtMinutes(preset.otMinutes);
   }
 
   function reset() {
     setStructure(format.period_format);
     setPeriods(format.regulation_periods);
     setMinutes(format.period_lengths[0] ?? 8);
-    setOtMinutes(format.ot_minutes);
     setError(null);
   }
 
   async function save() {
     setSaving(true);
     setError(null);
-    const rebuilt = buildGameFormat(structure, periods, minutes, otMinutes);
+    const rebuilt = buildGameFormat(structure, periods, minutes, format.ot_minutes);
 
     // Rebuilding flattens every period to the typed value. For a scrimmage
     // or practice whose structure isn't changing, re-apply the per-period
@@ -149,13 +145,6 @@ export default function GameFormatEditor({ gameId, format, onSaved }: Props) {
           <input type="number" min={1} max={30} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} style={{ ...fieldStyle, width: 80 }} />
         </label>
 
-        {structureUsesOt && (
-          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, color: "var(--muted)" }}>
-            OT minutes
-            <input type="number" min={1} max={30} value={otMinutes} onChange={(e) => setOtMinutes(Number(e.target.value))} style={{ ...fieldStyle, width: 80 }} />
-          </label>
-        )}
-
         <button className="btn-primary" style={{ width: "auto", padding: "8px 14px" }} onClick={save} disabled={saving}>
           {saving ? "Saving…" : "Save format"}
         </button>
@@ -188,7 +177,7 @@ export default function GameFormatEditor({ gameId, format, onSaved }: Props) {
       <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
         {lengthsEditable(format)
           ? "Tap a period to change just its length -- scrimmages and practices often run uneven blocks."
-          : "Games run uniform periods, so \u201CMinutes each\u201D sets them all. Overtime uses the OT value."}
+          : "Games run uniform periods, so \u201CMinutes each\u201D sets them all. Overtime length is asked for when you add one."}
       </div>
       <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
         Possessions aren't moved or changed -- they're stored by period number, so a game tracked as Q1/Q2 is already correct as H1/H2 once relabelled.
