@@ -7,10 +7,10 @@
 -- games. This adds the filter half of that feature.
 --
 -- Reports are now scoped to a game GROUP rather than a single type, so
--- "games" can mean regular season plus tournament plus playoff without
--- the coach having to tick three boxes:
+-- "games" can mean regular season plus postseason without the coach
+-- having to tick two boxes:
 --
---   games       -> regular, tournament, playoff   (real competition)
+--   games       -> regular, postseason            (real competition)
 --   scrimmages  -> scrimmage                      (preseason, vs another school)
 --   practices   -> practice                       (intrasquad sessions)
 --   summer      -> summer                         (summer league)
