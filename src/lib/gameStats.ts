@@ -347,6 +347,7 @@ export function periodCount(fmt: GameFormat): number {
 
 /** How many periods past regulation this game has. */
 export function overtimeCount(fmt: GameFormat): number {
+  if (!usesOvertime(fmt)) return 0;
   return Math.max(0, periodCount(fmt) - fmt.regulation_periods);
 }
 
@@ -372,7 +373,7 @@ export function periodsInPlay(fmt: GameFormat): number[] {
 
 /** "Q3" / "H2" / "P5" / "S2" / "OT" / "2OT" -- anything past regulation is an overtime. */
 export function periodLabel(fmt: GameFormat, period: number): string {
-  if (period <= fmt.regulation_periods) {
+  if (period <= fmt.regulation_periods || !usesOvertime(fmt)) {
     const prefix =
       fmt.period_format === "halves" ? "H" :
       fmt.period_format === "periods" ? "P" :
@@ -1003,6 +1004,10 @@ export async function addGamePeriod(gameId: string, fmt: GameFormat, minutes: nu
   const next: GameFormat = {
     ...fmt,
     period_lengths: [...fmt.period_lengths, length],
+    // A scrimmage's 6th period or a practice's 5th session is regulation --
+    // those formats have no overtime concept. Leaving regulation_periods
+    // behind would make periodLabel() render them as "OT".
+    regulation_periods: isOvertime ? fmt.regulation_periods : fmt.regulation_periods + 1,
     ot_minutes: isOvertime ? length : fmt.ot_minutes,
   };
   const { error } = await updateGameFormat(gameId, next);
