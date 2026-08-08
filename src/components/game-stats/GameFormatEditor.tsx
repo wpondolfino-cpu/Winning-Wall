@@ -22,6 +22,7 @@ import { useState } from "react";
 import NumberField from "./NumberField";
 import {
   GAME_STRUCTURES,
+  structuresForGameType,
   buildGameFormat,
   updateGameFormat,
   setPeriodLength,
@@ -32,11 +33,14 @@ import {
   gameLengthMinutes,
   type GameFormat,
   type PeriodFormat,
+  type GameType,
 } from "../../lib/gameStats";
 
 interface Props {
   gameId: string;
   format: GameFormat;
+  /** Restricts the structure choices -- a practice can't become quarters here any more than it could at creation. */
+  gameType?: GameType;
   onSaved: (fmt: GameFormat) => void;
 }
 
@@ -48,7 +52,7 @@ const fieldStyle = {
   color: "var(--text)",
 } as const;
 
-export default function GameFormatEditor({ gameId, format, onSaved }: Props) {
+export default function GameFormatEditor({ gameId, format, gameType = "regular", onSaved }: Props) {
   const [open, setOpen] = useState(false);
   const [structure, setStructure] = useState<PeriodFormat>(format.period_format);
   const [periods, setPeriods] = useState(format.regulation_periods);
@@ -145,7 +149,7 @@ export default function GameFormatEditor({ gameId, format, onSaved }: Props) {
         <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, color: "var(--muted)" }}>
           Structure
           <select value={structure} onChange={(e) => pickStructure(e.target.value as PeriodFormat)} style={fieldStyle}>
-            {GAME_STRUCTURES.map((g) => (
+            {GAME_STRUCTURES.filter((g) => structuresForGameType(gameType).includes(g.value)).map((g) => (
               <option key={g.value} value={g.value}>{g.label}</option>
             ))}
           </select>
