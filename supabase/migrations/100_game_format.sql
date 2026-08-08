@@ -19,7 +19,13 @@
 --
 -- game_type is here rather than in a later migration because it's what
 -- makes scrimmage/summer tracking a filter instead of a subsystem: a
--- scrimmage is just a game row with a different type.
+-- scrimmage is just a game row with a different type. 'scrimmage' means
+-- against another school; 'practice' means intrasquad. They're separate
+-- values because those are genuinely different data (see below), and
+-- re-tagging games after the fact would be manual work.
+--
+-- This file is idempotent -- every statement is add-if-not-exists or
+-- drop-constraint-if-exists -- so it's safe to re-run.
 
 alter table public.games
   add column if not exists period_format     text not null default 'quarters',
@@ -53,7 +59,7 @@ alter table public.games add constraint games_overtime_periods_check
 
 alter table public.games drop constraint if exists games_game_type_check;
 alter table public.games add constraint games_game_type_check
-  check (game_type in ('regular', 'scrimmage', 'summer', 'tournament', 'playoff'));
+  check (game_type in ('regular', 'scrimmage', 'summer', 'tournament', 'playoff', 'practice'));
 
 -- possessions.quarter is really "period number" -- regulation periods
 -- first, then overtimes. The old ceiling of 8 was fine for 4 quarters
