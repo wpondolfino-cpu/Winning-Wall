@@ -69,6 +69,9 @@ import {
   getLastSyncErrors,
   fetchDrawnPlaysForCategory,
   ensurePlayCallForPlay,
+  periodLabel,
+  DEFAULT_GAME_FORMAT,
+  type GameFormat,
   type Possession,
   type PlayCall,
   type PlayCallCategory,
@@ -86,6 +89,8 @@ interface Props {
   gameId: string;
   userId: string;
   quarter: number;
+  /** Period structure, so the header reads H1 or S2 rather than always Q1. Optional so any older call site still works. */
+  format?: GameFormat;
 }
 
 type Step =
@@ -141,7 +146,7 @@ interface FlowSnapshot {
 const QUARTER_ACCENT: Record<number, string> = { 1: "#3b6fd6", 2: "#2f9e63", 3: "#c9932f", 4: "#c2402f" };
 const DEFENSE_ACCENT = "#c2703a";
 
-export default function GameTracker({ gameId, userId, quarter }: Props) {
+export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_GAME_FORMAT }: Props) {
   const [playCalls, setPlayCalls] = useState<PlayCall[]>([]);
   const [drawnPlays, setDrawnPlays] = useState<Record<PlayCallCategory, DrawnPlay[]>>({ set: [], motion: [], blob: [], slob: [] });
   const [unsynced, setUnsynced] = useState(0);
@@ -484,7 +489,7 @@ export default function GameTracker({ gameId, userId, quarter }: Props) {
         }
       `}</style>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <span style={{ fontSize: 13, color: "var(--muted)" }}>Q{quarter} · Possession {sequence}</span>
+        <span style={{ fontSize: 13, color: "var(--muted)" }}>{periodLabel(format, quarter)} · Possession {sequence}</span>
         <span
           style={{ fontSize: 12, color: syncErrorCount ? "#c2402f" : unsynced ? "#e0a530" : "var(--muted)", cursor: syncErrorCount ? "pointer" : "default" }}
           onClick={syncErrorCount ? showSyncErrors : undefined}
