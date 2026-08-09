@@ -180,6 +180,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
           format={format}
           setFormat={setFormat}
           gameType={gameType}
+          rosterId={rosterId}
           onEndQuarter={handleEndQuarter}
           onReopenQuarter={handleReopenQuarter}
           onAddPeriod={handleAddPeriod}
@@ -222,6 +223,7 @@ function GamesTab({
   format,
   setFormat,
   gameType,
+  rosterId,
   onEndQuarter,
   onReopenQuarter,
   onAddPeriod,
@@ -252,6 +254,7 @@ function GamesTab({
   format: GameFormat;
   setFormat: (f: GameFormat) => void;
   gameType: GameType;
+  rosterId: string | null;
   onEndQuarter: (gameId: string, q: number) => void;
   onReopenQuarter: (gameId: string, q: number) => void;
   onAddPeriod: (gameId: string) => void;
