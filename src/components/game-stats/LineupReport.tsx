@@ -29,7 +29,7 @@ import { listGamePlayers, listLineupEvents, type Shift, type LineupPlayer } from
 import {
   computeComboRows, computeOnOff, computeTogetherApart, readiness,
   COMBO_LEVELS, SAMPLE_GATES,
-  type ComboLevel, type ComboRow, type GameSlice,
+  type ComboLevel, type ComboRow, type GameSlice, type OnOffRow,
 } from "../../lib/lineupStats";
 
 interface Props {
@@ -42,14 +42,15 @@ type Group = "overview" | "factors" | "playtype" | "shots" | "onoff";
 
 const LINEUP_EXPLAINERS: Record<string, { what: string; how: string }> = {
   poss: { what: "Offensive possessions with this group on the floor, and what share of the team's total that is.", how: "count of our trips while they were on / all our trips" },
-  min: { what: "Estimated minutes on the floor. Estimated, not measured — each period's length is spread across the possessions played in it.", how: "possessions x that period's seconds-per-possession" },
+  min: { what: "Estimated minutes on the floor — estimated, not measured. Each period's known length is spread across the possessions actually played in it, then rounded to the nearest 15 seconds.", how: "possessions x that period's seconds-per-possession" },
   net: { what: "Points scored minus points allowed, per 100 possessions, pulled toward the team average based on how little we've seen this group. The raw figure is in brackets.", how: "(n x raw + k x team) / (n + k), k estimated from the season" },
   offppp: { what: "Points we scored per offensive possession with this group on.", how: "our points / our possessions" },
   defppp: { what: "Points allowed per defensive possession with this group on.", how: "their points / their possessions" },
+  on_net: { what: "Team net rating over the possessions this individual or group was ON the floor.", how: "our points per 100 - their points per 100, while on" },
+  off_net: { what: "Team net rating over the possessions they were OFF the floor, counting only games they appeared in. For a PAIR this pools three situations — each one on without the other, and neither on — so expand the row for the four-way split.", how: "our points per 100 - their points per 100, while off" },
   onoff: { what: "Team net rating with this group on the floor, minus with them off. Off-court possessions only count games they appeared in. For a PAIR, \u201Coff\u201D pools three situations — one on without the other, and neither on — so expand the row for the four-way split.", how: "net rating on - net rating off" },
   oob_ppp: { what: "Points per possession on BLOB and SLOB trips. Which five you want out there for a sideline out with four seconds left.", how: "points on out-of-bounds trips / those trips" },
   three_rate: { what: "Share of field goal attempts that were threes. The clearest single expression of a group's shot selection.", how: "3PA / FGA" },
-  sq_mix: { what: "The spread of shot grades: great, good, live, tough.", how: "each grade / graded shots" },
   fouls: { what: "Foul trouble logged against this player, from the shift entry screen.", how: "count of foul-trouble events" },
 };
 
@@ -101,6 +102,9 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
   const [perGame, setPerGame] = useState(false);
   const [fouls, setFouls] = useState<Map<string, number>>(new Map());
   const [narrow, setNarrow] = useState(false);
+  // null means the default order: qualified rows first, then adjusted net
+  // descending. Clicking a heading overrides it.
+  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [explain, setExplain] = useState<string | null>(null);
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [gameId, rosterId, season, gameGroup, opponent]);
@@ -183,6 +187,14 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
     [slices, level, goals, excludeGarbage, clutchOnly, fouls],
   );
 
+  const onOffMap = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof computeOnOff>>();
+    if (group !== "onoff" || !slices.length) return m;
+    rows.forEach((r) => m.set(r.key, computeOnOff(slices, r.playerIds, goals, { excludeGarbage })));
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [group, rows, slices, goals, excludeGarbage]);
+
   const ready = useMemo(
     () => (slices.length ? readiness(slices, goals) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -201,10 +213,44 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
     );
   }
 
+  function sortValue(r: ComboRow, key: string): number | null {
+    const extra = side === "offense" ? r.offenseExtra : r.defenseExtra;
+    const stats = side === "offense" ? r.offense : r.defense;
+    switch (key) {
+      case "poss": return r.offPossessions;
+      case "min": return r.estMinutes;
+      case "shifts": return r.shifts;
+      case "fouls": return r.fouls;
+      case "off": return r.offPPP;
+      case "def": return r.defPPP;
+      case "net": return r.adjNet;
+      case "on_net": return onOffMap.get(r.key)?.onNet ?? null;
+      case "off_net": return onOffMap.get(r.key)?.offNet ?? null;
+      case "onoff_diff": return onOffMap.get(r.key)?.diff ?? null;
+      case "oob_ppp":
+      case "three_rate": return extra[key] ?? null;
+      default: return stats[key] ?? null;
+    }
+  }
+
   const sorted = [...rows].sort((a, b) => {
+    // Unqualified rows stay at the bottom whatever the sort -- otherwise a
+    // 12-possession lineup tops every column it happens to lead.
     if (a.qualified !== b.qualified) return a.qualified ? -1 : 1;
+    if (sort) {
+      const av = sortValue(a, sort.key);
+      const bv = sortValue(b, sort.key);
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (av !== bv) return (av - bv) * sort.dir;
+    }
     return (b.adjNet ?? -999) - (a.adjNet ?? -999);
   });
+
+  function toggleSort(key: string) {
+    setSort((cur) => (cur?.key !== key ? { key, dir: -1 } : cur.dir === -1 ? { key, dir: 1 } : null));
+  }
 
   return (
     <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
@@ -270,7 +316,7 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
 
       <div style={{ overflowX: "auto" }}>
         <div style={{ minWidth: narrow ? 0 : 620 }}>
-          <HeaderRow group={group} level={level} onExplain={setExplain} narrow={narrow} />
+          <HeaderRow group={group} level={level} onExplain={setExplain} narrow={narrow} sort={sort} onSort={toggleSort} explain={explain} />
           {sorted.map((r) => (
             <Row
               key={r.key}
@@ -283,28 +329,20 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
               onToggle={() => setExpanded(expanded === r.key ? null : r.key)}
               slices={slices}
               excludeGarbage={excludeGarbage}
-              goals={goals}
               perGame={perGame}
               narrow={narrow}
+              onOff={onOffMap.get(r.key) ?? null}
             />
           ))}
         </div>
       </div>
 
-      {explain && EXPLAINERS[explain] && (
-        <div style={{ marginTop: 10, padding: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8 }}>
-          <div style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.6 }}>{EXPLAINERS[explain].what}</div>
-          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, fontFamily: "monospace" }}>{EXPLAINERS[explain].how}</div>
-          <button onClick={() => setExplain(null)} style={{ ...pill(false), marginTop: 8 }}>close</button>
-        </div>
-      )}
-
       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 10, lineHeight: 1.6 }}>
         {level === 5
           ? "A 5-man row means exactly that five on the floor."
-          : `A ${level === 1 ? "player" : `${level}-man`} row means ${level === 1 ? "that player" : "all of them"} on the floor, whoever else is out there.`}
+          : `An ${level === 1 ? "individual" : `${level}-man group`} row means ${level === 1 ? "that player" : "all of them"} on the floor, whoever else is out there.`}
         {" "}Rows below {SAMPLE_GATES[level].possessions} possessions or {SAMPLE_GATES[level].games} games are marked and sorted last — treat them as directional.
-        {" "}Tap a column heading for what it means, or a row for its detail.
+        {" "}Tap a column heading for what it means, the arrow beside it to sort, or a row for its detail.
       </div>
     </div>
   );
@@ -312,21 +350,42 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
 
 // ── Rows ─────────────────────────────────────────────────────────
 
-function HeaderRow({ group, level, onExplain, narrow }: { group: Group; level: ComboLevel; onExplain: (k: string) => void; narrow: boolean }) {
+function HeaderRow({ group, level, onExplain, narrow, sort, onSort, explain }: {
+  group: Group; level: ComboLevel; onExplain: (k: string | null) => void; narrow: boolean;
+  sort: { key: string; dir: 1 | -1 } | null; onSort: (key: string) => void; explain: string | null;
+}) {
   const all = columnsFor(group, level);
   const cols = narrow ? all.filter((c) => ["poss", "net", "onoff_diff"].includes(c.key)) : all;
+  const active = cols.find((c) => c.explain && c.explain === explain);
   return (
-    <div style={{ display: "flex", gap: 8, padding: "8px 10px", fontSize: 11, color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>
-      <span style={{ flex: 1, minWidth: 0 }}>{level === 5 ? "Exact five" : level === 1 ? "Player" : `${level}-man group`}</span>
-      {cols.map((c) => (
-        <span
-          key={c.key}
-          onClick={() => c.explain && onExplain(c.explain)}
-          style={{ width: c.width, textAlign: "right", cursor: c.explain ? "pointer" : "default", textDecoration: c.explain ? "underline dotted" : "none" }}
-        >
-          {c.label}
-        </span>
-      ))}
+    <div style={{ borderBottom: "1px solid var(--border)" }}>
+      <div style={{ display: "flex", gap: 8, padding: "8px 10px", fontSize: 11, color: "var(--muted)" }}>
+        <span style={{ flex: 1, minWidth: 0 }}>{level === 5 ? "Exact five" : level === 1 ? "Individual" : `${level}-man group`}</span>
+        {cols.map((c) => (
+          <span key={c.key} style={{ width: c.width, textAlign: "right", display: "inline-flex", justifyContent: "flex-end", gap: 3 }}>
+            {/* Two targets in one heading: the label explains, the arrow sorts. */}
+            <span
+              onClick={() => c.explain && onExplain(explain === c.explain ? null : c.explain)}
+              style={{ cursor: c.explain ? "pointer" : "default", textDecoration: c.explain ? "underline dotted" : "none" }}
+            >
+              {c.label}
+            </span>
+            <span
+              onClick={() => onSort(c.key)}
+              title="Sort"
+              style={{ cursor: "pointer", color: sort?.key === c.key ? "var(--text)" : "var(--border-strong, var(--muted))" }}
+            >
+              {sort?.key === c.key ? (sort.dir === -1 ? "\u25BC" : "\u25B2") : "\u21C5"}
+            </span>
+          </span>
+        ))}
+      </div>
+      {active && EXPLAINERS[active.explain!] && (
+        <div style={{ padding: "8px 10px 10px", background: "var(--surface2)", borderTop: "1px solid var(--border)" }}>
+          <div style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.6 }}>{EXPLAINERS[active.explain!].what}</div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 5, fontFamily: "monospace" }}>{EXPLAINERS[active.explain!].how}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -359,35 +418,29 @@ function columnsFor(group: Group, level: ComboLevel): { key: string; label: stri
     { key: "poss", label: "Poss", width: 56, explain: "poss" },
     { key: "three_rate", label: "3PT rate", width: 66, explain: "three_rate" },
     { key: "quality_shot_pct", label: "Quality %", width: 70, explain: "quality_shot_pct" },
-    { key: "sq_mix", label: "Grade mix", width: 118, explain: "sq_mix" },
     { key: "extra_possessions", label: "Extra poss", width: 74, explain: "extra_possessions" },
   ];
   // on/off. Keys are deliberately not "on"/"off" -- "off" collides with
   // the overview's offensive-PPP column and would match that branch first.
+  // No Poss column here -- possessions and share already live on Overview.
   return [
-    { key: "poss", label: "Poss", width: 56, explain: "poss" },
-    { key: "on_net", label: "On", width: 62 },
-    { key: "off_net", label: "Off", width: 62 },
-    { key: "onoff_diff", label: "Diff", width: 62, explain: "onoff" },
+    { key: "on_net", label: "On", width: 66, explain: "on_net" },
+    { key: "off_net", label: "Off", width: 66, explain: "off_net" },
+    { key: "onoff_diff", label: "Diff", width: 66, explain: "onoff" },
   ];
 }
 
-function Row({ row, group, side, level, name, open, onToggle, slices, excludeGarbage, goals, perGame, narrow }: {
+function Row({ row, group, side, level, name, open, onToggle, slices, excludeGarbage, perGame, narrow, onOff }: {
   row: ComboRow; group: Group; side: "offense" | "defense"; level: ComboLevel;
   name: (id: string) => string; open: boolean; onToggle: () => void;
-  slices: GameSlice[]; excludeGarbage: boolean; goals: StatGoal[];
+  slices: GameSlice[]; excludeGarbage: boolean;
   perGame: boolean; narrow: boolean;
+  onOff: OnOffRow | null;
 }) {
   const dim = row.qualified ? {} : { color: "var(--muted)" as const };
   const stats = side === "offense" ? row.offense : row.defense;
   const allCols = columnsFor(group, level);
   const cols = narrow ? allCols.filter((c) => ["poss", "net", "onoff_diff"].includes(c.key)) : allCols;
-
-  const onOff = useMemo(
-    () => (group === "onoff" ? computeOnOff(slices, row.playerIds, goals, { excludeGarbage }) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [group, row.key, slices, excludeGarbage],
-  );
 
   // Counting stats only. Dividing a rate by games would weight a
   // 3-possession game the same as a 25-possession one.
@@ -396,18 +449,13 @@ function Row({ row, group, side, level, name, open, onToggle, slices, excludeGar
 
   function cell(key: string) {
     if (key === "poss") return `${cnt(row.offPossessions)}${group === "overview" && !perGame ? ` (${row.possessionShare}%)` : ""}`;
-    if (key === "min") return row.estMinutes ? `~${cnt(row.estMinutes)}` : "—";
+    if (key === "min") return row.estMinutes ? formatMinutes(row.estMinutes / per) : "—";
     if (key === "shifts") return String(cnt(row.shifts));
     if (key === "fouls") return row.fouls ? String(row.fouls) : "—";
     if (key === "oob_ppp" || key === "three_rate") {
       const v = (side === "offense" ? row.offenseExtra : row.defenseExtra)[key];
       if (v == null) return "—";
       return key === "three_rate" ? `${v}%` : v.toFixed(2);
-    }
-    if (key === "sq_mix") {
-      const e = side === "offense" ? row.offenseExtra : row.defenseExtra;
-      if (e.sq_great == null) return "—";
-      return `${e.sq_great}/${e.sq_good}/${e.sq_live}/${e.sq_tough}`;
     }
     if (key === "off") return row.offPPP?.toFixed(2) ?? "—";
     if (key === "def") return row.defPPP?.toFixed(2) ?? "—";
@@ -516,6 +564,18 @@ function TogetherApart({ slices, a, b, name, excludeGarbage }: {
       {line("Neither", r.neither)}
     </div>
   );
+}
+
+/**
+ * Minutes as 10:15 rather than 10.25. Rounded to the nearest 15 seconds --
+ * these are estimated from possession counts, so anything finer would imply
+ * a precision the number doesn't have.
+ */
+function formatMinutes(mins: number): string {
+  const secs = Math.round((mins * 60) / 15) * 15;
+  const m = Math.floor(secs / 60);
+  const rem = secs % 60;
+  return `${m}:${String(rem).padStart(2, "0")}`;
 }
 
 function pill(active: boolean): React.CSSProperties {
