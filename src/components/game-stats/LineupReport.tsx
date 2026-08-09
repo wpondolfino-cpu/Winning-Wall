@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { listGamePlayers, computeLineupRows, type LineupRow, type LineupPlayer } from "../../lib/lineups";
+import { gameTypesForGroup } from "../../lib/gameStats";
 import type { Possession } from "../../lib/gameStats";
 
 interface Props {
@@ -37,7 +38,10 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
     if (gameId) {
       gameIds = [gameId];
     } else {
-      let q = supabase.from("games").select("id").eq("game_type", "regular");
+      // The "games" group, not just regular season -- a playoff game is a
+      // real game and belongs in the same numbers. Scrimmages, practices and
+      // summer league stay out by default.
+      let q = supabase.from("games").select("id").in("game_type", gameTypesForGroup("games"));
       if (rosterId) q = q.eq("roster_id", rosterId);
       if (season) q = q.eq("season", season);
       const { data } = await q;
