@@ -97,7 +97,9 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
 
     setRows(out);
     setGameCount(withShifts.size);
-    setPlayers(await listGamePlayers(rosterId));
+    // All players, not just this roster: a shift can contain a call-up who
+    // isn't on it, and this list exists purely to turn ids into names.
+    setPlayers(await listGamePlayers(null));
     setLoading(false);
   }
 
