@@ -32,6 +32,7 @@ import {
   halfPeriods,
   qualityShotStatus,
   gameTypesForGroup,
+  STAT_EXPLAINERS,
   type GameGroup,
   type Possession,
   type PlayCall,
@@ -439,6 +440,10 @@ function SectionDivider({ label }: { label: string }) {
 const roleBg: Record<string, string> = { success: "#1f7a4d", warning: "#a3690d", danger: "#b8342e" };
 
 function PairedStatRows({ usRows, oppRows, opponentName }: { usRows: StatRow[]; oppRows: StatRow[]; opponentName?: string }) {
+  // Tapping a stat name explains it. The definitions live in gameStats.ts
+  // and are shared with the lineup reports, so a stat can't end up
+  // explained two different ways in two places.
+  const [explain, setExplain] = useState<string | null>(null);
   if (!usRows.length) return <div style={{ fontSize: 13, color: "var(--muted)", padding: "6px 0" }}>No stats in this set yet.</div>;
   return (
     <div>
@@ -455,8 +460,23 @@ function PairedStatRows({ usRows, oppRows, opponentName }: { usRows: StatRow[]; 
         return (
           <div key={us.key} className="gs-paired" style={{ display: "grid", alignItems: "center", gap: 8, padding: "8px 0", borderTop: "1px solid var(--border)" }}>
             <StatChip row={us} />
-            <span style={{ textAlign: "center", fontSize: 13, color: "var(--text)", whiteSpace: "nowrap" }}>{us.label}</span>
+            <span
+              onClick={() => STAT_EXPLAINERS[us.key] && setExplain(explain === us.key ? null : us.key)}
+              style={{
+                textAlign: "center", fontSize: 13, color: "var(--text)", whiteSpace: "nowrap",
+                cursor: STAT_EXPLAINERS[us.key] ? "pointer" : "default",
+                textDecoration: STAT_EXPLAINERS[us.key] ? "underline dotted" : "none",
+              }}
+            >
+              {us.label}
+            </span>
             {opp ? <StatChip row={opp} /> : <span />}
+            {explain === us.key && STAT_EXPLAINERS[us.key] && (
+              <div style={{ gridColumn: "1 / -1", padding: "8px 10px", marginTop: 4, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8 }}>
+                <div style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.6 }}>{STAT_EXPLAINERS[us.key].what}</div>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 5, fontFamily: "monospace" }}>{STAT_EXPLAINERS[us.key].how}</div>
+              </div>
+            )}
           </div>
         );
       })}
