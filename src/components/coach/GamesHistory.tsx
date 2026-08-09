@@ -23,11 +23,13 @@ import { finishGame, isGameFinal, computeFinalScore, syncQueue, listSeasons, GAM
 interface Props {
   userId: string;
   onOpenGame: (gameId: string) => void;
+  /** Jump straight to a game's shift entry. The shifts chip in the list is the natural way in -- it's where you notice the game needs them. */
+  onOpenShifts: (gameId: string) => void;
   onEditGame: (gameId: string, opponent: string) => void;
   onViewReport: (gameId: string, opponent: string) => void;
 }
 
-export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewReport }: Props) {
+export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditGame, onViewReport }: Props) {
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -304,11 +306,18 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
                     {GAME_TYPES.find((t) => t.value === g.game_type)?.label ?? g.game_type}
                   </span>
                 )}
-                {!gamesWithShifts.has(g.id) && (
-                  <span style={{ fontSize: 11, marginLeft: 6, padding: "1px 7px", borderRadius: 7, background: "var(--surface2)", color: "#c9a227" }}>
-                    no shifts yet
-                  </span>
-                )}
+                <span
+                  onClick={(e) => { e.stopPropagation(); onOpenShifts(g.id); }}
+                  title="Enter or edit shifts for this game"
+                  style={{
+                    fontSize: 11, marginLeft: 6, padding: "2px 8px", borderRadius: 7, cursor: "pointer",
+                    background: "var(--surface2)",
+                    border: `1px solid ${gamesWithShifts.has(g.id) ? "var(--border)" : "#7a5a20"}`,
+                    color: gamesWithShifts.has(g.id) ? "var(--muted)" : "#c9a227",
+                  }}
+                >
+                  {gamesWithShifts.has(g.id) ? "shifts →" : "no shifts yet →"}
+                </span>
                 {g.period_format === "halves" && (
                   <span style={{ fontSize: 11, marginLeft: 6, padding: "1px 7px", borderRadius: 7, background: "var(--surface2)", color: "var(--muted)" }}>
                     Halves
