@@ -249,49 +249,26 @@ export function ReportBody({
 
       {specialStats.map((s) => {
         if (s.kind === "shot_quality") {
-          const rows: { label: string; sq: typeof shotQuality; team: "us" | "opponent"; hint: string }[] = [
-            { label: "Quality shots taken (Great + Good)", sq: shotQuality, team: "us", hint: "our shot selection" },
-            { label: "Quality shots allowed (Great + Good)", sq: shotQualityAgainst, team: "opponent", hint: "the looks our defence gave up" },
-          ];
+          const usGoal = scoreAgainstGoal(goals, "quality_shot_pct", "us", shotQuality.qualityPct ?? 0).goal;
+          const oppGoal = scoreAgainstGoal(goals, "quality_shot_pct", "opponent", shotQualityAgainst.qualityPct ?? 0).goal;
+          // On defence a LOW share of good looks is the win, so the status is
+          // read against the mirror of the target.
+          const usStatus = qualityShotStatus(shotQuality.qualityPct, usGoal);
+          const oppStatus =
+            shotQualityAgainst.qualityPct == null || oppGoal == null
+              ? null
+              : qualityShotStatus(2 * oppGoal - shotQualityAgainst.qualityPct, oppGoal);
           return (
-            <div key={s.key}>
-              <SectionDivider label="Shot quality" />
-              {rows.map((r, ri) => {
-                const goal = scoreAgainstGoal(goals, "quality_shot_pct", r.team, r.sq.qualityPct ?? 0).goal;
-                // On defence the goal reads the other way, so "exceeding" a
-                // 65% target means we allowed too many good looks.
-                const status = r.sq.qualityPct == null || goal == null
-                  ? null
-                  : r.team === "us"
-                    ? qualityShotStatus(r.sq.qualityPct, goal)
-                    : qualityShotStatus(2 * goal - r.sq.qualityPct, goal);
-                const statusColor =
-                  status?.role === "success" ? "#2f9e63" : status?.role === "warning" ? "#c48a1f" : status?.role === "danger" ? "#8a2f2f" : "var(--muted)";
-                return (
-                  <div key={r.team} style={{ marginTop: ri ? 14 : 0 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 13, color: "var(--muted)" }}>{r.label}</span>
-                      <span style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                        <span style={{ fontSize: 18, fontWeight: 500 }}>
-                          {r.sq.qualityPct != null ? `${r.sq.qualityPct}%` : "—"}
-                        </span>
-                        {status && <span style={{ fontSize: 13, color: statusColor }}>{status.label}</span>}
-                        {goal != null && <span style={{ fontSize: 12, color: "var(--muted)" }}>goal {r.team === "us" ? "" : "under "}{goal}%</span>}
-                      </span>
-                    </div>
-                    <ShotQualityBar breakdown={r.sq.breakdown} />
-                    {r.sq.total === 0 && (
-                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, fontStyle: "italic" }}>
-                        Not graded in this game — shot quality on defence started being tracked partway through the season.
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, fontStyle: "italic" }}>
-                Half-court efficiency also counts BLOB/SLOB possessions that flowed into a set, so play-type shares overlap and won't total 100%.
-              </div>
-            </div>
+            <ShotQualityPair
+              key={s.key}
+              us={shotQuality}
+              them={shotQualityAgainst}
+              usStatus={usStatus}
+              oppStatus={oppStatus}
+              usGoal={usGoal}
+              oppGoal={oppGoal}
+              opponentName={opponentName}
+            />
           );
         }
         if (s.kind === "set_plays") {
@@ -519,6 +496,89 @@ function PlayCallTable({ rows }: { rows: ReturnType<typeof computePlayCallEffect
           <span style={{ color: "var(--muted)" }}>{r.calls} calls · {r.conversionPct}% · {r.ppp} ppp</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Shot quality as a paired row, matching every other stat in the report:
+ * our number on the left, theirs on the right, label between. Two stacked
+ * full-width bars were nearly impossible to tell apart at a glance, and
+ * worse, the bar's colours are category colours (great=green, tough=red) --
+ * so a great defensive performance rendered as a solid red bar, the exact
+ * opposite of what colour means everywhere else in this report.
+ *
+ * The breakdown is still one tap away; it just isn't the default view.
+ */
+function ShotQualityPair({ us, them, usStatus, oppStatus, usGoal, oppGoal, opponentName }: {
+  us: ReturnType<typeof computeShotQuality>;
+  them: ReturnType<typeof computeShotQuality>;
+  usStatus: { label: string; role: "success" | "warning" | "danger" } | null;
+  oppStatus: { label: string; role: "success" | "warning" | "danger" } | null;
+  usGoal: number | null;
+  oppGoal: number | null;
+  opponentName?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const tone = (r?: string) => (r === "success" ? "#2f9e63" : r === "warning" ? "#c48a1f" : r === "danger" ? "#8a2f2f" : "var(--muted)");
+
+  return (
+    <div>
+      <SectionDivider label="Shot quality" />
+      <div
+        onClick={() => setOpen((o) => !o)}
+        className="gs-paired"
+        style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", alignItems: "center", gap: 8, padding: "8px 0", cursor: "pointer" }}
+      >
+        <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+          <span style={{ fontSize: 18, fontWeight: 700 }}>{us.qualityPct != null ? `${us.qualityPct}%` : "—"}</span>
+          {usStatus && <span style={{ fontSize: 11, color: tone(usStatus.role) }}>{usStatus.label}</span>}
+        </span>
+        <span style={{ textAlign: "center", fontSize: 13, color: "var(--text)" }}>
+          Quality shots{" "}
+          <span style={{ fontSize: 11, color: "var(--muted)" }}>(Great + Good)</span>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+            {open ? "tap to hide breakdown ▲" : "tap for breakdown ▼"}
+          </div>
+        </span>
+        <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+          <span style={{ fontSize: 18, fontWeight: 700 }}>{them.qualityPct != null ? `${them.qualityPct}%` : "—"}</span>
+          {oppStatus && <span style={{ fontSize: 11, color: tone(oppStatus.role) }}>{oppStatus.label}</span>}
+        </span>
+      </div>
+
+      {(usGoal != null || oppGoal != null) && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>
+          <span style={{ textAlign: "center" }}>{usGoal != null ? `goal ${usGoal}%+` : ""}</span>
+          <span />
+          <span style={{ textAlign: "center" }}>{oppGoal != null ? `goal under ${oppGoal}%` : ""}</span>
+        </div>
+      )}
+
+      {open && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 6 }}>
+          <div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Shots we took</div>
+            {us.total ? <ShotQualityBar breakdown={us.breakdown} /> : <NotGraded />}
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Looks we gave up{opponentName ? ` to ${opponentName}` : ""}</div>
+            {them.total ? <ShotQualityBar breakdown={them.breakdown} /> : <NotGraded />}
+          </div>
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, fontStyle: "italic" }}>
+        Bar colours grade the shot itself, not who benefits — on the right, more red means better defence.
+      </div>
+    </div>
+  );
+}
+
+function NotGraded() {
+  return (
+    <div style={{ fontSize: 11, color: "var(--muted)", fontStyle: "italic", padding: "6px 0" }}>
+      Not graded in this game.
     </div>
   );
 }
