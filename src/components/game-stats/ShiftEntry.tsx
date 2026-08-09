@@ -196,6 +196,15 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
     setEvents((e) => e.filter((x) => x.id !== id));
   }
 
+  // Nobody available is the normal offseason state: rosters exist but
+  // players haven't been assigned to one yet, so a roster filter matches
+  // nobody. Say so rather than rendering a blank bench.
+  const rosterHint = players.length
+    ? null
+    : activeRoster
+      ? "No players are assigned to this roster yet. Switch to \u201CAll players\u201D above, or assign them under Rosters."
+      : "No players found. Players need the \u201Cplayer\u201D role to appear here.";
+
   if (loading) return <div className="card">Loading possessions…</div>;
   if (!possessions.length) {
     return <div className="card">No possessions tracked for this game yet — there's nothing to assign shifts to.</div>;
@@ -222,6 +231,9 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
             {rosters.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         </label>
+        <span style={{ fontSize: 12, color: players.length ? "var(--muted)" : "#c9a227" }}>
+          {players.length} player{players.length === 1 ? "" : "s"} available
+        </span>
         {!sortedShifts.length && (
           <button
             onClick={() => openNew(possessions[0].sequence, possessions[0].quarter)}
@@ -279,6 +291,7 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
                   jersey={jersey} setJersey={setJersey} onJerseyKey={onJerseyKey}
                   onToggle={toggle} onConfirm={confirm} onCancel={closePanel}
                   balanced={balanced} changed={changed} busy={busy} count={nextFive.length}
+                  rosterHint={rosterHint}
                 />
               )}
               {panel?.mode === "edit" && panel.shift.start_sequence === p.sequence && (
@@ -289,6 +302,7 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
                   jersey={jersey} setJersey={setJersey} onJerseyKey={onJerseyKey}
                   onToggle={toggle} onConfirm={confirm} onCancel={closePanel}
                   balanced={balanced} changed={changed} busy={busy} count={nextFive.length}
+                  rosterHint={rosterHint}
                 />
               )}
 
@@ -368,24 +382,30 @@ function SubPanel(props: {
   onToggle: (id: string) => void;
   onConfirm: () => void; onCancel: () => void;
   balanced: boolean; changed: boolean; busy: boolean; count: number;
+  rosterHint: string | null;
 }) {
   const { players, labelFor, on, inList, outList, jersey, setJersey, onJerseyKey, onToggle } = props;
   const bench = players.filter((p) => !on.includes(p.id) && !inList.includes(p.id) && !outList.includes(p.id));
+  const anyJerseys = players.some((p) => p.jersey != null);
 
   return (
     <div style={{ background: "var(--surface2)", border: "1px solid var(--accent, #3a5fd0)", borderRadius: 8, padding: 12, margin: "8px 0" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: 12, color: "var(--text)" }}>{props.title}</span>
-        <input
-          value={jersey}
-          onChange={(e) => setJersey(e.target.value.replace(/\D/g, ""))}
-          onKeyDown={onJerseyKey}
-          placeholder="#"
-          inputMode="numeric"
-          autoFocus
-          style={{ width: 56, padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", fontSize: 13 }}
-        />
-        <span style={{ fontSize: 11, color: "var(--muted)" }}>type a number, Enter to move</span>
+        {anyJerseys && (
+          <>
+            <input
+              value={jersey}
+              onChange={(e) => setJersey(e.target.value.replace(/\D/g, ""))}
+              onKeyDown={onJerseyKey}
+              placeholder="#"
+              inputMode="numeric"
+              autoFocus
+              style={{ width: 56, padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", fontSize: 13 }}
+            />
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>type a number, Enter to move</span>
+          </>
+        )}
       </div>
 
       <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>On floor</div>
@@ -397,6 +417,9 @@ function SubPanel(props: {
 
       <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Bench</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+        {props.rosterHint && !bench.length && !inList.length && (
+          <span style={{ fontSize: 12, color: "#c9a227" }}>{props.rosterHint}</span>
+        )}
         {inList.map((id) => <Chip key={id} label={labelFor(id)} kind="in" match={jersey} onClick={() => onToggle(id)} />)}
         {bench.map((p) => (
           <Chip
