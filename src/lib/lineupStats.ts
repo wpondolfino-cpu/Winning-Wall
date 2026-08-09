@@ -20,6 +20,7 @@
 //      a conclusion yet.
 
 import {
+  computeShotQuality,
   computeTeamStats,
   periodLengthSeconds,
   type GameFormat,
@@ -169,13 +170,17 @@ export function shrink(value: number, n: number, teamValue: number, k: number): 
 export function estimateK(
   rows: { value: number; n: number }[],
   perPossessionVariance: number,
+  sample: { distinctPossessions: number; games: number },
   fallback = 70,
   min = 25,
   max = 200,
 ): number {
   const qualifying = rows.filter((r) => r.n > 0);
+  // Distinct possessions, not the sum across rows -- at individual level
+  // every possession belongs to five rows, so summing made one game look
+  // like a season and let a meaningless estimate through.
+  if (qualifying.length < 3 || sample.games < 5 || sample.distinctPossessions < 600) return fallback;
   const totalN = qualifying.reduce((s, r) => s + r.n, 0);
-  if (qualifying.length < 3 || totalN < 300) return fallback;
 
   const weighted = qualifying.reduce((s, r) => s + r.value * r.n, 0) / totalN;
   const observedVar =
@@ -220,12 +225,43 @@ export interface ComboRow {
   /** Full stat sets, computed by the same code the team report uses. */
   offense: Record<string, number>;
   defense: Record<string, number>;
+  /** Lineup-only stats -- BLOB/SLOB PPP, 3PT rate, shot quality mix. */
+  offenseExtra: Record<string, number | null>;
+  defenseExtra: Record<string, number | null>;
+  /** Foul trouble logged against members of this group. Individual level only. */
+  fouls: number;
 }
 
 function statMap(possessions: Possession[], team: "us" | "opponent", goals: StatGoal[]): Record<string, number> {
   const out: Record<string, number> = {};
   computeTeamStats(possessions, team, goals).forEach((r) => { out[r.key] = r.value; });
   return out;
+}
+
+/**
+ * Stats the team report doesn't have, so they're defined once here.
+ *
+ * BLOB/SLOB PPP is the one worth calling out: which five you want on the
+ * floor for a sideline out with four seconds left is a real coaching
+ * question that no product answers. computeOobEffectiveness() exists but
+ * returns a scored/flowed/turnover breakdown for the OOB display block,
+ * not points per trip, so this computes the trips directly.
+ */
+function extraStats(possessions: Possession[], team: "us" | "opponent"): Record<string, number | null> {
+  const own = possessions.filter((p) => p.team === team);
+  const oob = own.filter((p) => p.possession_type === "blob" || p.possession_type === "slob");
+  const fga = own.filter((p) => p.outcome === "fg_made" || p.outcome === "fg_missed");
+  const fga3 = fga.filter((p) => p.shot_type === 3);
+  const sq = computeShotQuality(possessions, team);
+  return {
+    oob_ppp: oob.length ? round2(oob.reduce((s, p) => s + (p.points ?? 0), 0) / oob.length) : null,
+    oob_trips: oob.length,
+    three_rate: fga.length ? Math.round((fga3.length / fga.length) * 1000) / 10 : null,
+    sq_great: sq.total ? sq.breakdown.great : null,
+    sq_good: sq.total ? sq.breakdown.good : null,
+    sq_live: sq.total ? sq.breakdown.live : null,
+    sq_tough: sq.total ? sq.breakdown.tough : null,
+  };
 }
 
 /** Every k-sized subset of a five, as sorted id arrays. */
@@ -260,7 +296,7 @@ export function computeComboRows(
   slices: GameSlice[],
   level: ComboLevel,
   goals: StatGoal[],
-  opts: { excludeGarbage?: boolean; clutchOnly?: boolean } = {},
+  opts: { excludeGarbage?: boolean; clutchOnly?: boolean; foulsByPlayer?: Map<string, number> } = {},
 ): { rows: ComboRow[]; teamOffPPP: number; teamDefPPP: number; k: number; gamesCounted: number } {
   type Bucket = {
     playerIds: string[];
@@ -271,6 +307,7 @@ export function computeComboRows(
     seconds: number;
   };
   const buckets = new Map<string, Bucket>();
+  const foulsByPlayer = opts.foulsByPlayer ?? new Map<string, number>();
 
   let teamOff: Possession[] = [];
   let teamDef: Possession[] = [];
@@ -328,6 +365,7 @@ export function computeComboRows(
   const k = estimateK(
     draft.filter((d) => d.rawNet != null).map((d) => ({ value: d.rawNet as number, n: d.n })),
     perPossessionVariance([...teamOff, ...teamDef]) * 10000,
+    { distinctPossessions: teamOff.length + teamDef.length, games: gamesCounted.size },
   );
 
   const gate = SAMPLE_GATES[level];
@@ -350,6 +388,9 @@ export function computeComboRows(
     qualified: b.off.length >= gate.possessions && b.games.size >= gate.games,
     offense: statMap(b.off, "us", goals),
     defense: statMap(b.def, "opponent", goals),
+    offenseExtra: extraStats(b.off, "us"),
+    defenseExtra: extraStats(b.def, "opponent"),
+    fouls: b.playerIds.reduce((n, id) => n + (foulsByPlayer.get(id) ?? 0), 0),
   }));
 
   rows.sort((a, b) => b.offPossessions - a.offPossessions);
@@ -365,6 +406,8 @@ export interface OnOffRow {
   onNet: number | null;
   offNet: number | null;
   diff: number | null;
+  /** Four factors and shot quality, on vs off, so the net difference can be explained. */
+  factors: { key: string; label: string; on: number | null; off: number | null; diff: number | null; lowerBetter?: boolean }[];
 }
 
 /**
@@ -381,6 +424,7 @@ export interface OnOffRow {
 export function computeOnOff(
   slices: GameSlice[],
   playerIds: string[],
+  goals: StatGoal[],
   opts: { excludeGarbage?: boolean } = {},
 ): OnOffRow {
   const key = new Set(playerIds);
@@ -390,6 +434,7 @@ export function computeOnOff(
 
   let onFor = 0, onAgainst = 0, onOff = 0, onDef = 0;
   let offFor = 0, offAgainst = 0, offOff = 0, offDef = 0;
+  const onPoss: Possession[] = [], offPoss: Possession[] = [];
 
   for (const slice of slices) {
     if (!appeared.has(slice.gameId) || !slice.shifts.length) continue;
@@ -404,6 +449,7 @@ export function computeOnOff(
       const shift = shiftById.get(shiftId);
       if (!shift) continue;
       const on = [...key].every((id) => shift.player_ids.includes(id));
+      (on ? onPoss : offPoss).push(p);
       const pts = p.points ?? 0;
       if (p.team === "us") {
         if (on) { onFor += pts; onOff++; } else { offFor += pts; offOff++; }
@@ -418,6 +464,22 @@ export function computeOnOff(
 
   const onNet = net(onFor, onOff, onAgainst, onDef);
   const offNet = net(offFor, offOff, offAgainst, offDef);
+
+  const onStats = statMap(onPoss, "us", goals);
+  const offStats = statMap(offPoss, "us", goals);
+  const FACTORS: { key: string; label: string; lowerBetter?: boolean }[] = [
+    { key: "efg_pct", label: "eFG%" },
+    { key: "tov_pct", label: "TOV%", lowerBetter: true },
+    { key: "oreb_pct", label: "OREB%" },
+    { key: "ft_rate", label: "FT rate" },
+    { key: "quality_shot_pct", label: "Quality shot %" },
+  ];
+  const factors = FACTORS.map((f) => {
+    const on = onPoss.length ? onStats[f.key] ?? null : null;
+    const off = offPoss.length ? offStats[f.key] ?? null : null;
+    return { ...f, on, off, diff: on != null && off != null ? Math.round((on - off) * 10) / 10 : null };
+  });
+
   return {
     playerIds,
     onPossessions: onOff + onDef,
@@ -425,6 +487,7 @@ export function computeOnOff(
     onNet,
     offNet,
     diff: onNet != null && offNet != null ? onNet - offNet : null,
+    factors,
   };
 }
 
