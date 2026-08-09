@@ -15,6 +15,10 @@ interface EditPlayer {
   name: string;
   grade_category: string;
   home_roster_id: string | null;
+  /** Coach-assigned, and only once a player is on a roster -- somebody who
+   *  doesn't make the team never needs a number. Deliberately not part of
+   *  account creation. */
+  jersey: number | null;
 }
 
 interface EditScore {
@@ -247,6 +251,10 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const [inviteSending, setInviteSending] = useState(false);
   const [inviteMsg, setInviteMsg]     = useState("");
   const [editPlayer, setEditPlayer]   = useState<EditPlayer | null>(null);
+  // Jersey numbers already taken on each roster, so assigning a duplicate
+  // gets a warning. Not blocked -- two players can legitimately share a
+  // number across a season if one leaves.
+  const [takenJerseys, setTakenJerseys] = useState<{ id: string; jersey: number; roster: string | null; name: string }[]>([]);
   const [editSaving, setEditSaving]   = useState(false);
   const [editError, setEditError]     = useState("");
   const [removing, setRemoving]         = useState<string | null>(null);
@@ -423,16 +431,44 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
 
   async function openEditPlayer(p: typeof playersWithStatus[0]) {
     setEditError("");
+    const { data: taken } = await supabase
+      .from("profiles")
+      .select("id, name, jersey, home_roster_id")
+      .eq("role", "player")
+      .not("jersey", "is", null);
+    setTakenJerseys(((taken ?? []) as any[]).map((r) => ({ id: r.id, jersey: r.jersey, roster: r.home_roster_id, name: r.name ?? "" })));
     // Fetch fresh rather than trusting the leaderboard row, which may not carry this field.
-    const { data } = await supabase.from("profiles").select("home_roster_id").eq("id", p.id).single();
-    setEditPlayer({ id: p.id, name: p.name, grade_category: p.grade_category ?? GRADE_CATEGORIES[0], home_roster_id: data?.home_roster_id ?? null });
+    const { data } = await supabase.from("profiles").select("home_roster_id, jersey").eq("id", p.id).single();
+    setEditPlayer({
+      id: p.id,
+      name: p.name,
+      grade_category: p.grade_category ?? GRADE_CATEGORIES[0],
+      home_roster_id: data?.home_roster_id ?? null,
+      jersey: data?.jersey ?? null,
+    });
   }
+
+  const jerseyClash = (() => {
+    if (!editPlayer?.home_roster_id || editPlayer.jersey == null) return null;
+    const clash = takenJerseys.find(
+      (t) => t.id !== editPlayer.id && t.roster === editPlayer.home_roster_id && t.jersey === editPlayer.jersey,
+    );
+    return clash ? `${clash.name} already has #${clash.jersey} on this roster.` : null;
+  })();
 
   async function savePlayerEdit() {
     if (!editPlayer) return;
     setEditSaving(true); setEditError("");
     try {
-      await supabase.from("profiles").update({ name: editPlayer.name, grade_category: editPlayer.grade_category, home_roster_id: editPlayer.home_roster_id }).eq("id", editPlayer.id);
+      // Dropping a player off a roster clears their number too -- leaving a
+      // stale jersey on an unrostered player would let two people show the
+      // same number once someone else inherits it.
+      await supabase.from("profiles").update({
+        name: editPlayer.name,
+        grade_category: editPlayer.grade_category,
+        home_roster_id: editPlayer.home_roster_id,
+        jersey: editPlayer.home_roster_id ? editPlayer.jersey : null,
+      }).eq("id", editPlayer.id);
       setEditPlayer(null); refresh();
     } catch (e: any) { setEditError(e.message); }
     finally { setEditSaving(false); }
@@ -807,7 +843,32 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", marginBottom: 16 }}>✏️ Edit Player</div>
             <div style={{ marginBottom: 12 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label><input value={editPlayer.name} onChange={e => setEditPlayer({ ...editPlayer, name: e.target.value })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" as const }} /></div>
             <div style={{ marginBottom: 16 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Grade</label><select value={editPlayer.grade_category} onChange={e => setEditPlayer({ ...editPlayer, grade_category: e.target.value })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }}>{GRADE_CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
-            <div style={{ marginBottom: 16 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Roster</label><select value={editPlayer.home_roster_id ?? ""} onChange={e => setEditPlayer({ ...editPlayer, home_roster_id: e.target.value || null })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }}><option value="">— No roster —</option>{rosters.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
+            <div style={{ marginBottom: 12 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Roster</label><select value={editPlayer.home_roster_id ?? ""} onChange={e => setEditPlayer({ ...editPlayer, home_roster_id: e.target.value || null })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }}><option value="">— No roster —</option>{rosters.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
+
+            {/* Only once they're on a roster -- a player who doesn't make
+                the team has no number to assign. Clearing the roster above
+                clears the number on save. */}
+            {editPlayer.home_roster_id && (
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Jersey number</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={99}
+                  value={editPlayer.jersey ?? ""}
+                  onChange={e => {
+                    const raw = e.target.value;
+                    setEditPlayer({ ...editPlayer, jersey: raw === "" ? null : Math.max(0, Math.min(99, Number(raw))) });
+                  }}
+                  placeholder="—"
+                  style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" as const }}
+                />
+                {jerseyClash && (
+                  <div style={{ fontSize: 11, color: "#c9a227", marginTop: 4 }}>{jerseyClash}</div>
+                )}
+              </div>
+            )}
             {editError && <div style={{ color: "#ff7b7b", fontSize: 12, marginBottom: 10 }}>{editError}</div>}
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={savePlayerEdit} disabled={editSaving} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{editSaving ? "Saving…" : "Save"}</button>
