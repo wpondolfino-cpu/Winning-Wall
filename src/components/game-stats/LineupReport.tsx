@@ -19,13 +19,13 @@
 // went +47 over 22 possessions is not your best lineup and shouldn't sit
 // at the top of a list that implies it is.
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import {
-  listStatGoals, gameFormat, gameTypesForGroup, GAME_GROUPS,
+  listStatGoals, gameFormat, gameTypesForGroup, GAME_GROUPS, STAT_EXPLAINERS,
   type GameFormat, type Possession, type StatGoal, type GameGroup,
 } from "../../lib/gameStats";
-import { listGamePlayers, type Shift, type LineupPlayer } from "../../lib/lineups";
+import { listGamePlayers, listLineupEvents, type Shift, type LineupPlayer } from "../../lib/lineups";
 import {
   computeComboRows, computeOnOff, computeTogetherApart, readiness,
   COMBO_LEVELS, SAMPLE_GATES,
@@ -40,28 +40,37 @@ interface Props {
 
 type Group = "overview" | "factors" | "playtype" | "shots" | "onoff";
 
-const EXPLAINERS: Record<string, { what: string; how: string }> = {
+const LINEUP_EXPLAINERS: Record<string, { what: string; how: string }> = {
   poss: { what: "Offensive possessions with this group on the floor, and what share of the team's total that is.", how: "count of our trips while they were on / all our trips" },
   min: { what: "Estimated minutes on the floor. Estimated, not measured — each period's length is spread across the possessions played in it.", how: "possessions x that period's seconds-per-possession" },
   net: { what: "Points scored minus points allowed, per 100 possessions, pulled toward the team average based on how little we've seen this group. The raw figure is in brackets.", how: "(n x raw + k x team) / (n + k), k estimated from the season" },
   offppp: { what: "Points we scored per offensive possession with this group on.", how: "our points / our possessions" },
   defppp: { what: "Points allowed per defensive possession with this group on.", how: "their points / their possessions" },
-  efg_pct: { what: "Field goal percentage with threes counted as worth more.", how: "(FGM + 0.5 x 3PM) / FGA" },
-  tov_pct: { what: "Share of possessions ending in a turnover.", how: "turnovers / possessions" },
-  oreb_pct: { what: "Share of available offensive rebounds collected.", how: "OREB / (OREB + their DREB chances)" },
-  ft_rate: { what: "How often we get to the line relative to shooting.", how: "FTA / FGA" },
-  transition_pct: { what: "Share of possessions that were transition.", how: "transition trips / all trips" },
-  transition_ppp: { what: "Points per possession in transition.", how: "transition points / transition trips" },
-  halfcourt_ppp: { what: "Points per possession in the half court. Includes BLOB/SLOB trips that flowed into a set, matching the team report.", how: "half-court points / half-court trips" },
-  quality_shot_pct: { what: "Share of shots graded great or good.", how: "(great + good) / graded shots" },
-  extra_possessions: { what: "Net extra chances created.", how: "(our OREB + their TOV) - (their OREB + our TOV)" },
-  onoff: { what: "Team net rating with this group on the floor, minus with them off. Off-court possessions only count games they appeared in.", how: "net rating on - net rating off" },
+  onoff: { what: "Team net rating with this group on the floor, minus with them off. Off-court possessions only count games they appeared in. For a PAIR, \u201Coff\u201D pools three situations — one on without the other, and neither on — so expand the row for the four-way split.", how: "net rating on - net rating off" },
+  oob_ppp: { what: "Points per possession on BLOB and SLOB trips. Which five you want out there for a sideline out with four seconds left.", how: "points on out-of-bounds trips / those trips" },
+  three_rate: { what: "Share of field goal attempts that were threes. The clearest single expression of a group's shot selection.", how: "3PA / FGA" },
+  sq_mix: { what: "The spread of shot grades: great, good, live, tough.", how: "each grade / graded shots" },
+  fouls: { what: "Foul trouble logged against this player, from the shift entry screen.", how: "count of foul-trouble events" },
 };
 
+const EXPLAINERS: Record<string, { what: string; how: string }> = { ...STAT_EXPLAINERS, ...LINEUP_EXPLAINERS };
+
+/**
+ * Each level gets the stats that answer ITS question, not one shared set.
+ *
+ * Individual and the small groups deliberately have no raw four-factors
+ * view: a player's on-court eFG% mostly reflects his teammates. The same
+ * numbers appear as on/off differentials inside the On/off row detail,
+ * where they explain the net difference instead of standing alone.
+ *
+ * Five-man is the reverse -- on/off is meaningless there ("without this
+ * exact five" is nearly the whole season) but play type matters most,
+ * because you pick a five for a situation.
+ */
 const GROUPS_FOR: Record<ComboLevel, Group[]> = {
-  1: ["overview", "onoff", "factors", "shots"],
-  2: ["overview", "onoff", "factors"],
-  3: ["overview", "onoff", "factors"],
+  1: ["overview", "onoff"],
+  2: ["overview", "onoff"],
+  3: ["overview", "onoff"],
   5: ["overview", "playtype", "factors", "shots"],
 };
 
@@ -87,10 +96,25 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
   const [gameGroup, setGameGroup] = useState<GameGroup>("games");
   const [opponent, setOpponent] = useState<string>("");
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Per-game applies to counting stats only. A per-game average of a RATE
+  // would weight a 3-possession game the same as a 25-possession one.
+  const [perGame, setPerGame] = useState(false);
+  const [fouls, setFouls] = useState<Map<string, number>>(new Map());
+  const [narrow, setNarrow] = useState(false);
   const [explain, setExplain] = useState<string | null>(null);
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [gameId, rosterId, season, gameGroup, opponent]);
   useEffect(() => { if (!GROUPS_FOR[level].includes(group)) setGroup("overview"); }, [level, group]);
+
+  // Narrow screens get name + possessions + net only; the rest of the row
+  // moves into the expandable detail rather than a horizontal scroll.
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 700px)");
+    const sync = () => setNarrow(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
 
   async function load() {
     setLoading(true);
@@ -133,6 +157,10 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
         format: formats.get(id) ?? gameFormat(null),
       })));
       setPlayers(await listGamePlayers(null));
+      const events = (await Promise.all(gameIds.map((id) => listLineupEvents(id)))).flat();
+      const counts = new Map<string, number>();
+      events.forEach((e) => counts.set(e.player_id, (counts.get(e.player_id) ?? 0) + 1));
+      setFouls(counts);
       setError(null);
     } catch (e: any) {
       setError(e?.message ?? "Couldn't load lineup data.");
@@ -147,12 +175,12 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
     return p.jersey != null ? `${p.jersey} ${p.name.split(" ").slice(-1)[0]}` : (p.name || "?");
   };
 
-  const filters = { excludeGarbage, clutchOnly };
+  const filters = { excludeGarbage, clutchOnly, foulsByPlayer: fouls };
 
   const { rows, k, gamesCounted } = useMemo(
     () => (slices.length ? computeComboRows(slices, level, goals, filters) : { rows: [], k: 70, gamesCounted: 0, teamOffPPP: 0, teamDefPPP: 0 }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [slices, level, goals, excludeGarbage, clutchOnly],
+    [slices, level, goals, excludeGarbage, clutchOnly, fouls],
   );
 
   const ready = useMemo(
@@ -222,6 +250,10 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
           <input type="checkbox" checked={clutchOnly} onChange={(e) => setClutchOnly(e.target.checked)} />
           Clutch only
         </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} title="Counting stats only — rates are unaffected">
+          <input type="checkbox" checked={perGame} onChange={(e) => setPerGame(e.target.checked)} />
+          Per game
+        </label>
         {!gameId && (
           <select value={gameGroup} onChange={(e) => setGameGroup(e.target.value as GameGroup)} style={selectStyle}>
             {GAME_GROUPS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
@@ -237,8 +269,8 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
       </div>
 
       <div style={{ overflowX: "auto" }}>
-        <div style={{ minWidth: 620 }}>
-          <HeaderRow group={group} level={level} onExplain={setExplain} />
+        <div style={{ minWidth: narrow ? 0 : 620 }}>
+          <HeaderRow group={group} level={level} onExplain={setExplain} narrow={narrow} />
           {sorted.map((r) => (
             <Row
               key={r.key}
@@ -251,6 +283,9 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
               onToggle={() => setExpanded(expanded === r.key ? null : r.key)}
               slices={slices}
               excludeGarbage={excludeGarbage}
+              goals={goals}
+              perGame={perGame}
+              narrow={narrow}
             />
           ))}
         </div>
@@ -277,8 +312,9 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
 
 // ── Rows ─────────────────────────────────────────────────────────
 
-function HeaderRow({ group, level, onExplain }: { group: Group; level: ComboLevel; onExplain: (k: string) => void }) {
-  const cols = columnsFor(group, level);
+function HeaderRow({ group, level, onExplain, narrow }: { group: Group; level: ComboLevel; onExplain: (k: string) => void; narrow: boolean }) {
+  const all = columnsFor(group, level);
+  const cols = narrow ? all.filter((c) => ["poss", "net", "onoff_diff"].includes(c.key)) : all;
   return (
     <div style={{ display: "flex", gap: 8, padding: "8px 10px", fontSize: 11, color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>
       <span style={{ flex: 1, minWidth: 0 }}>{level === 5 ? "Exact five" : level === 1 ? "Player" : `${level}-man group`}</span>
@@ -300,6 +336,7 @@ function columnsFor(group: Group, level: ComboLevel): { key: string; label: stri
     { key: "poss", label: "Poss", width: 78, explain: "poss" },
     { key: "min", label: "~Min", width: 54, explain: "min" },
     { key: "shifts", label: "Shifts", width: 48 },
+    ...(level === 1 ? [{ key: "fouls", label: "Foul tr.", width: 56, explain: "fouls" }] : []),
     { key: "off", label: "Off", width: 52, explain: "offppp" },
     { key: "def", label: "Def", width: 52, explain: "defppp" },
     { key: "net", label: "Net", width: 88, explain: "net" },
@@ -316,45 +353,68 @@ function columnsFor(group: Group, level: ComboLevel): { key: string; label: stri
     { key: "transition_pct", label: "Trans %", width: 62, explain: "transition_pct" },
     { key: "transition_ppp", label: "Trans PPP", width: 74, explain: "transition_ppp" },
     { key: "halfcourt_ppp", label: "Half ct PPP", width: 82, explain: "halfcourt_ppp" },
+    { key: "oob_ppp", label: "BLOB/SLOB", width: 84, explain: "oob_ppp" },
   ];
   if (group === "shots") return [
     { key: "poss", label: "Poss", width: 56, explain: "poss" },
-    { key: "quality_shot_pct", label: "Quality %", width: 74, explain: "quality_shot_pct" },
-    { key: "extra_possessions", label: "Extra poss", width: 78, explain: "extra_possessions" },
+    { key: "three_rate", label: "3PT rate", width: 66, explain: "three_rate" },
+    { key: "quality_shot_pct", label: "Quality %", width: 70, explain: "quality_shot_pct" },
+    { key: "sq_mix", label: "Grade mix", width: 118, explain: "sq_mix" },
+    { key: "extra_possessions", label: "Extra poss", width: 74, explain: "extra_possessions" },
   ];
-  // on/off
+  // on/off. Keys are deliberately not "on"/"off" -- "off" collides with
+  // the overview's offensive-PPP column and would match that branch first.
   return [
-    { key: "on", label: "On", width: 62 },
-    { key: "off", label: "Off", width: 62 },
-    { key: "diff", label: "Diff", width: 62, explain: "onoff" },
+    { key: "poss", label: "Poss", width: 56, explain: "poss" },
+    { key: "on_net", label: "On", width: 62 },
+    { key: "off_net", label: "Off", width: 62 },
+    { key: "onoff_diff", label: "Diff", width: 62, explain: "onoff" },
   ];
 }
 
-function Row({ row, group, side, level, name, open, onToggle, slices, excludeGarbage }: {
+function Row({ row, group, side, level, name, open, onToggle, slices, excludeGarbage, goals, perGame, narrow }: {
   row: ComboRow; group: Group; side: "offense" | "defense"; level: ComboLevel;
   name: (id: string) => string; open: boolean; onToggle: () => void;
-  slices: GameSlice[]; excludeGarbage: boolean;
+  slices: GameSlice[]; excludeGarbage: boolean; goals: StatGoal[];
+  perGame: boolean; narrow: boolean;
 }) {
   const dim = row.qualified ? {} : { color: "var(--muted)" as const };
   const stats = side === "offense" ? row.offense : row.defense;
-  const cols = columnsFor(group, level);
+  const allCols = columnsFor(group, level);
+  const cols = narrow ? allCols.filter((c) => ["poss", "net", "onoff_diff"].includes(c.key)) : allCols;
 
   const onOff = useMemo(
-    () => (group === "onoff" ? computeOnOff(slices, row.playerIds, { excludeGarbage }) : null),
+    () => (group === "onoff" ? computeOnOff(slices, row.playerIds, goals, { excludeGarbage }) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [group, row.key, slices, excludeGarbage],
   );
 
+  // Counting stats only. Dividing a rate by games would weight a
+  // 3-possession game the same as a 25-possession one.
+  const per = perGame && row.games ? row.games : 1;
+  const cnt = (n: number) => (per > 1 ? Math.round((n / per) * 10) / 10 : n);
+
   function cell(key: string) {
-    if (key === "poss") return `${row.offPossessions}${group === "overview" ? ` (${row.possessionShare}%)` : ""}`;
-    if (key === "min") return row.estMinutes ? `~${row.estMinutes}` : "—";
-    if (key === "shifts") return String(row.shifts);
+    if (key === "poss") return `${cnt(row.offPossessions)}${group === "overview" && !perGame ? ` (${row.possessionShare}%)` : ""}`;
+    if (key === "min") return row.estMinutes ? `~${cnt(row.estMinutes)}` : "—";
+    if (key === "shifts") return String(cnt(row.shifts));
+    if (key === "fouls") return row.fouls ? String(row.fouls) : "—";
+    if (key === "oob_ppp" || key === "three_rate") {
+      const v = (side === "offense" ? row.offenseExtra : row.defenseExtra)[key];
+      if (v == null) return "—";
+      return key === "three_rate" ? `${v}%` : v.toFixed(2);
+    }
+    if (key === "sq_mix") {
+      const e = side === "offense" ? row.offenseExtra : row.defenseExtra;
+      if (e.sq_great == null) return "—";
+      return `${e.sq_great}/${e.sq_good}/${e.sq_live}/${e.sq_tough}`;
+    }
     if (key === "off") return row.offPPP?.toFixed(2) ?? "—";
     if (key === "def") return row.defPPP?.toFixed(2) ?? "—";
     if (key === "net") return row.adjNet == null ? "—" : `${row.adjNet > 0 ? "+" : ""}${row.adjNet}`;
-    if (key === "on") return onOff?.onNet == null ? "—" : `${onOff.onNet > 0 ? "+" : ""}${onOff.onNet}`;
-    if (key === "off" && group === "onoff") return onOff?.offNet == null ? "—" : `${onOff.offNet > 0 ? "+" : ""}${onOff.offNet}`;
-    if (key === "diff") return onOff?.diff == null ? "—" : `${onOff.diff > 0 ? "+" : ""}${onOff.diff}`;
+    if (key === "on_net") return onOff?.onNet == null ? "—" : `${onOff.onNet > 0 ? "+" : ""}${onOff.onNet}`;
+    if (key === "off_net") return onOff?.offNet == null ? "—" : `${onOff.offNet > 0 ? "+" : ""}${onOff.offNet}`;
+    if (key === "onoff_diff") return onOff?.diff == null ? "—" : `${onOff.diff > 0 ? "+" : ""}${onOff.diff}`;
     const v = stats[key];
     if (v == null) return "—";
     if (key === "ft_rate" || key.endsWith("_ppp")) return v.toFixed(2);
@@ -372,7 +432,7 @@ function Row({ row, group, side, level, name, open, onToggle, slices, excludeGar
           {row.playerIds.map(name).join(" · ")}
         </span>
         {cols.map((c) => (
-          <span key={c.key} style={{ width: c.width, textAlign: "right", ...(c.key === "net" || c.key === "diff" ? { color: row.qualified ? netColor : "var(--muted)" } : dim) }}>
+          <span key={c.key} style={{ width: c.width, textAlign: "right", ...(c.key === "net" || c.key === "onoff_diff" ? { color: row.qualified ? netColor : "var(--muted)" } : dim) }}>
             {cell(c.key)}
             {c.key === "net" && row.rawNet != null && (
               <span style={{ fontSize: 11, color: "var(--muted)" }}> ({row.rawNet > 0 ? "+" : ""}{row.rawNet})</span>
@@ -387,6 +447,38 @@ function Row({ row, group, side, level, name, open, onToggle, slices, excludeGar
             {row.games} game{row.games === 1 ? "" : "s"} · {row.offPossessions} offensive and {row.defPossessions} defensive possessions ·
             {" "}{row.pointsFor} for, {row.pointsAgainst} against
           </div>
+          {narrow && allCols.filter((c) => !cols.includes(c)).length > 0 && (
+            <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "1fr auto", gap: "2px 12px" }}>
+              {allCols.filter((c) => !cols.includes(c)).map((c) => (
+                <Fragment key={c.key}>
+                  <span>{c.label}</span>
+                  <span style={{ textAlign: "right" }}>{cell(c.key)}</span>
+                </Fragment>
+              ))}
+            </div>
+          )}
+          {group === "onoff" && onOff && (
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+              <div style={{ marginBottom: 4 }}>What changes when they're on the floor</div>
+              <div style={{ display: "flex", gap: 8, fontSize: 11, color: "var(--muted)" }}>
+                <span style={{ flex: 1 }} /><span style={{ width: 56, textAlign: "right" }}>On</span>
+                <span style={{ width: 56, textAlign: "right" }}>Off</span><span style={{ width: 56, textAlign: "right" }}>Diff</span>
+              </div>
+              {onOff.factors.map((f) => {
+                const good = f.diff == null ? null : f.lowerBetter ? f.diff < 0 : f.diff > 0;
+                return (
+                  <div key={f.key} style={{ display: "flex", gap: 8 }}>
+                    <span style={{ flex: 1 }}>{f.label}</span>
+                    <span style={{ width: 56, textAlign: "right" }}>{f.on == null ? "—" : f.on}</span>
+                    <span style={{ width: 56, textAlign: "right" }}>{f.off == null ? "—" : f.off}</span>
+                    <span style={{ width: 56, textAlign: "right", color: good == null ? "var(--muted)" : good ? "#5cb98b" : "#d98b8b" }}>
+                      {f.diff == null ? "—" : `${f.diff > 0 ? "+" : ""}${f.diff}`}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           {level === 2 && <TogetherApart slices={slices} a={row.playerIds[0]} b={row.playerIds[1]} name={name} excludeGarbage={excludeGarbage} />}
           {!row.qualified && (
             <div style={{ color: "#c9a227", marginTop: 6 }}>
