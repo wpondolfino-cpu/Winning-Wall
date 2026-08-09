@@ -208,6 +208,16 @@ export async function updateShiftFive(
   };
 }
 
+/**
+ * Assigns (or reassigns) which roster a game's players come from. Games
+ * created before migration 102 have no roster, so they offer every player
+ * until this is set.
+ */
+export async function setGameRoster(gameId: string, rosterId: string | null): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("games").update({ roster_id: rosterId }).eq("id", gameId);
+  return { error: error?.message ?? null };
+}
+
 export async function deleteShift(shiftId: string): Promise<{ error: string | null }> {
   const { error } = await supabase.from("shifts").delete().eq("id", shiftId);
   return { error: error?.message ?? null };
