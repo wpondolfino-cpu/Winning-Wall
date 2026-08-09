@@ -16,9 +16,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import { getRosters } from "../../lib/practicePlanner";
 import {
   listShifts, listLineupEvents, listGamePlayers, lastStartingFive,
-  createShift, updateShiftFive, deleteShift, addFoulTrouble, deleteLineupEvent,
+  createShift, updateShiftFive, deleteShift, addFoulTrouble, deleteLineupEvent, setGameRoster,
   assignPossessions, validateShifts, FOUL_LEVELS,
   type Shift, type LineupEvent, type LineupPlayer, type FoulLevel,
 } from "../../lib/lineups";
@@ -29,12 +30,14 @@ interface Props {
   userId: string;
   rosterId: string | null;
   format?: GameFormat;
+  /** Lets the screen tell the hub the roster changed, so it reloads too. */
+  onRosterChange?: (rosterId: string | null) => void;
 }
 
 const BAND_BG = ["#12241f", "#191a2c", "#241a14", "#241521"];
 const BAND_LINE = ["#2f6e56", "#4a46a0", "#8a4b28", "#8a3a56"];
 
-export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_GAME_FORMAT }: Props) {
+export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_GAME_FORMAT, onRosterChange }: Props) {
   const [possessions, setPossessions] = useState<Possession[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [events, setEvents] = useState<LineupEvent[]>([]);
@@ -56,8 +59,24 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
   const [jersey, setJersey] = useState("");
 
   const [foulFor, setFoulFor] = useState<{ sequence: number; quarter: number } | null>(null);
+  const [rosters, setRosters] = useState<{ id: string; name: string }[]>([]);
+  const [activeRoster, setActiveRoster] = useState<string>(rosterId ?? "");
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [gameId, rosterId]);
+  useEffect(() => { setActiveRoster(rosterId ?? ""); }, [rosterId]);
+  useEffect(() => { getRosters().then((rs) => setRosters(rs.map((r) => ({ id: r.id, name: r.name })))); }, []);
+
+  // Games created before migration 102 have no roster, so they offer every
+  // player. Setting it here rather than in a game-settings panel puts the
+  // control where the problem is actually visible -- a bench list with
+  // thirty names on it.
+  async function changeRoster(next: string) {
+    setActiveRoster(next);
+    const { error: err } = await setGameRoster(gameId, next || null);
+    if (err) { setError(err); return; }
+    setPlayers(await listGamePlayers(next || null));
+    onRosterChange?.(next || null);
+  }
 
   async function load() {
     setLoading(true);
@@ -192,6 +211,17 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
         <span style={{ fontSize: 12, color: "var(--muted)" }}>
           {sortedShifts.length} shift{sortedShifts.length === 1 ? "" : "s"} · {assignedCount} of {possessions.length} possessions assigned
         </span>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
+          Roster
+          <select
+            value={activeRoster}
+            onChange={(e) => changeRoster(e.target.value)}
+            style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontSize: 12 }}
+          >
+            <option value="">All players</option>
+            {rosters.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+        </label>
         {!sortedShifts.length && (
           <button
             onClick={() => openNew(possessions[0].sequence, possessions[0].quarter)}
