@@ -17,6 +17,7 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { supabase } from "../../lib/supabase";
 import NumberField from "../game-stats/NumberField";
+import { getRosters } from "../../lib/practicePlanner";
 import { finishGame, isGameFinal, computeFinalScore, syncQueue, listSeasons, GAME_STRUCTURES, buildGameFormat, structuresForGameType, defaultStructureForGameType, GAME_TYPES, GAME_GROUPS, gameTypesForGroup, type Game, type GameType, type GameGroup, type PeriodFormat, type Possession } from "../../lib/gameStats";
 
 interface Props {
@@ -36,6 +37,11 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
   const [periods, setPeriods] = useState(4);
   const [minutes, setMinutes] = useState(8);
   const [gameType, setGameType] = useState<GameType>("regular");
+  // Which roster this game's players come from. Shift entry needs it to
+  // know whether to offer varsity, JV, or everyone.
+  const [rosters, setRosters] = useState<{ id: string; name: string }[]>([]);
+  const [rosterId, setRosterId] = useState<string>("");
+  const [gamesWithShifts, setGamesWithShifts] = useState<Set<string>>(new Set());
 
   // Picking a structure resets the count and minutes to that structure's
   // usual shape, which the coach can then type over.
@@ -79,6 +85,26 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
     setLoading(false);
   }
 
+  useEffect(() => {
+    // getRosters() already excludes archived unless asked otherwise.
+    getRosters().then((rs) => {
+      const active = rs.map((r) => ({ id: r.id, name: r.name }));
+      setRosters(active);
+      setRosterId((cur) => cur || (active[0]?.id ?? ""));
+    });
+  }, []);
+
+  // Which games already have shifts entered, so the list can flag the ones
+  // that still need them. One query, not one per row.
+  useEffect(() => {
+    if (!games.length) return;
+    supabase
+      .from("shifts")
+      .select("game_id")
+      .in("game_id", games.map((g) => g.id))
+      .then(({ data }) => setGamesWithShifts(new Set(((data ?? []) as any[]).map((r) => r.game_id))));
+  }, [games]);
+
   async function createGame() {
     // A practice doesn't have an opponent to name, so let the field be
     // blank there and fall back to a label built from the date.
@@ -101,6 +127,7 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
         period_lengths: fmt.period_lengths,
         ot_minutes: fmt.ot_minutes,
         game_type: gameType,
+        roster_id: rosterId || null,
       })
       .select()
       .single();
@@ -221,6 +248,16 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
             <input type="date" value={gameDate} onChange={(e) => setGameDate(e.target.value)} style={newGameField} />
           </Field>
 
+          {rosters.length > 1 && (
+            <Field label="Roster">
+              <select value={rosterId} onChange={(e) => setRosterId(e.target.value)} style={newGameField}>
+                {rosters.map((r) => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+              </select>
+            </Field>
+          )}
+
           <Field label="Type">
             <select value={gameType} onChange={(e) => pickGameType(e.target.value as GameType)} style={newGameField}>
               {GAME_TYPES.map((t) => (
@@ -265,6 +302,11 @@ export default function GamesHistory({ userId, onOpenGame, onEditGame, onViewRep
                 {g.game_type && g.game_type !== "regular" && (
                   <span style={{ fontSize: 11, marginLeft: 6, padding: "1px 7px", borderRadius: 7, background: "var(--surface2)", color: "var(--muted)" }}>
                     {GAME_TYPES.find((t) => t.value === g.game_type)?.label ?? g.game_type}
+                  </span>
+                )}
+                {!gamesWithShifts.has(g.id) && (
+                  <span style={{ fontSize: 11, marginLeft: 6, padding: "1px 7px", borderRadius: 7, background: "var(--surface2)", color: "#c9a227" }}>
+                    no shifts yet
                   </span>
                 )}
                 {g.period_format === "halves" && (
