@@ -1,4 +1,4 @@
-// src/lib/lineups.ts
+ // src/lib/lineups.ts
 // Lineup tracker data layer. Kept out of gameStats.ts on purpose -- that
 // file is already 1000+ lines and this is a separate concern that only
 // consumes possessions, never produces them.
@@ -48,20 +48,23 @@ export interface LineupPlayer {
 // ── Reads ────────────────────────────────────────────────────────
 
 export async function listShifts(gameId: string): Promise<Shift[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("shifts")
     .select("*")
     .eq("game_id", gameId)
     .order("start_sequence", { ascending: true });
+  // A missing table or an RLS block would otherwise read as "no shifts yet".
+  if (error) throw new Error(`Couldn't load shifts: ${error.message}`);
   return (data ?? []) as Shift[];
 }
 
 export async function listLineupEvents(gameId: string): Promise<LineupEvent[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("lineup_events")
     .select("*")
     .eq("game_id", gameId)
     .order("sequence", { ascending: true });
+  if (error) throw new Error(`Couldn't load foul trouble events: ${error.message}`);
   return (data ?? []) as LineupEvent[];
 }
 
@@ -74,20 +77,29 @@ export async function listLineupEvents(gameId: string): Promise<LineupEvent[]> {
  * every player, which is the old behaviour rather than an empty bench.
  */
 export async function listGamePlayers(rosterId: string | null): Promise<LineupPlayer[]> {
-  const { data } = await supabase
+  // NOTE: call-ups live on practice_attendance_overrides, not profiles --
+  // that column is per-practice, so there's nothing on the player record to
+  // read here. Game-level call-ups need their own field; until then a
+  // called-up player is picked from "All players".
+  const { data, error } = await supabase
     .from("profiles")
-    .select("id, name, jersey, home_roster_id, called_up_to_roster_id")
+    .select("id, name, jersey, home_roster_id")
     .eq("role", "player")
     .order("jersey", { ascending: true, nullsFirst: false });
 
+  // Surfacing this matters: a bad column name makes PostgREST reject the
+  // whole request, and swallowing that into an empty array looks exactly
+  // like "nobody is on this roster".
+  if (error) throw new Error(`Couldn't load players: ${error.message}`);
+
   const rows = (data ?? []) as any[];
   const mapped: LineupPlayer[] = rows
-    .filter((p) => !rosterId || p.home_roster_id === rosterId || p.called_up_to_roster_id === rosterId)
+    .filter((p) => !rosterId || p.home_roster_id === rosterId)
     .map((p) => ({
       id: p.id,
       name: p.name ?? "",
       jersey: p.jersey ?? null,
-      called_up: !!rosterId && p.home_roster_id !== rosterId && p.called_up_to_roster_id === rosterId,
+      called_up: false,
     }));
 
   // Roster players first, call-ups after, each by jersey then name.
