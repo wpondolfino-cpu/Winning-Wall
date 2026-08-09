@@ -181,6 +181,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
           setFormat={setFormat}
           gameType={gameType}
           rosterId={rosterId}
+          onRosterChange={setRosterId}
           onEndQuarter={handleEndQuarter}
           onReopenQuarter={handleReopenQuarter}
           onAddPeriod={handleAddPeriod}
@@ -224,6 +225,7 @@ function GamesTab({
   setFormat,
   gameType,
   rosterId,
+  onRosterChange,
   onEndQuarter,
   onReopenQuarter,
   onAddPeriod,
@@ -255,6 +257,7 @@ function GamesTab({
   setFormat: (f: GameFormat) => void;
   gameType: GameType;
   rosterId: string | null;
+  onRosterChange: (id: string | null) => void;
   onEndQuarter: (gameId: string, q: number) => void;
   onReopenQuarter: (gameId: string, q: number) => void;
   onAddPeriod: (gameId: string) => void;
@@ -348,7 +351,7 @@ function GamesTab({
           <button onClick={() => setView({ mode: "list" })} style={backBtn}>← Games</button>
           <button onClick={() => setView({ mode: "track", gameId: view.gameId })} style={backBtn}>← Back to tracker</button>
         </div>
-        <ShiftEntry gameId={view.gameId} userId={userId} rosterId={rosterId} format={format} onRosterChange={setRosterId} />
+        <ShiftEntry gameId={view.gameId} userId={userId} rosterId={rosterId} format={format} onRosterChange={onRosterChange} />
       </div>
     );
   }
