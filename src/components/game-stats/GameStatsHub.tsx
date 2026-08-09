@@ -282,6 +282,7 @@ function GamesTab({
         <GamesHistory
           userId={userId}
           onOpenGame={(gameId) => setView({ mode: "track", gameId })}
+          onOpenShifts={(gameId) => setView({ mode: "shifts", gameId })}
           onEditGame={(gameId, opponent) => setView({ mode: "edit", gameId, opponent })}
           onViewReport={(gameId, opponent) => { setReportSel({ kind: "game" }); setView({ mode: "report", gameId, opponent }); }}
         />
@@ -347,7 +348,7 @@ function GamesTab({
           <button onClick={() => setView({ mode: "list" })} style={backBtn}>← Games</button>
           <button onClick={() => setView({ mode: "track", gameId: view.gameId })} style={backBtn}>← Back to tracker</button>
         </div>
-        <ShiftEntry gameId={view.gameId} userId={userId} rosterId={rosterId} format={format} />
+        <ShiftEntry gameId={view.gameId} userId={userId} rosterId={rosterId} format={format} onRosterChange={setRosterId} />
       </div>
     );
   }
