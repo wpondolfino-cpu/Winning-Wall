@@ -74,21 +74,33 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
     setActiveRoster(next);
     const { error: err } = await setGameRoster(gameId, next || null);
     if (err) { setError(err); return; }
-    setPlayers(await listGamePlayers(next || null));
+    try {
+      setPlayers(await listGamePlayers(next || null));
+      setError(null);
+    } catch (e: any) {
+      setError(e?.message ?? "Couldn't load players.");
+      setPlayers([]);
+    }
     onRosterChange?.(next || null);
   }
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase
-      .from("possessions")
-      .select("*")
-      .eq("game_id", gameId)
-      .order("sequence", { ascending: true });
-    setPossessions((data ?? []) as Possession[]);
-    setShifts(await listShifts(gameId));
-    setEvents(await listLineupEvents(gameId));
-    setPlayers(await listGamePlayers(rosterId));
+    try {
+      const { data, error: possErr } = await supabase
+        .from("possessions")
+        .select("*")
+        .eq("game_id", gameId)
+        .order("sequence", { ascending: true });
+      if (possErr) throw new Error(`Couldn't load possessions: ${possErr.message}`);
+      setPossessions((data ?? []) as Possession[]);
+      setShifts(await listShifts(gameId));
+      setEvents(await listLineupEvents(gameId));
+      setPlayers(await listGamePlayers(rosterId));
+      setError(null);
+    } catch (e: any) {
+      setError(e?.message ?? "Couldn't load this game's data.");
+    }
     setLoading(false);
   }
 
