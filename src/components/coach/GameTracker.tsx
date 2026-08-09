@@ -330,30 +330,15 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
   }
 
   /** Shared by every Make/Miss button (flags screen and quick_shot screen).
-      We don't track shot quality for the opponent -- it's our own shot
-      selection we're coaching, not theirs -- so a defensive miss skips
-      straight to the OREB question with no quality step. */
+      Shot quality is now graded on BOTH ends. On defence it answers the
+      question outcomes can't: did we force a bad shot they happened to
+      make, or give up a good look they happened to miss? The buttons grade
+      the shot itself, so they mean the same thing either way -- only who
+      benefits flips, which the report handles by inverting the goal. */
   function selectShot(shotType: 2 | 3, made: boolean) {
     pushHistory();
-    if (made) {
-      if (team === "opponent") {
-        commit("fg_made", { shot_type: shotType, points: shotType, shot_quality: null });
-      } else {
-        setPendingShot({ shotType, made: true });
-        setStep("shot_quality");
-      }
-    } else if (team === "opponent") {
-      setPendingCommit({
-        outcome: "fg_missed",
-        extra: { shot_type: shotType, points: 0, shot_quality: null },
-        isFgMiss: true,
-        label: `missed ${shotType}`,
-      });
-      setStep("oreb_check");
-    } else {
-      setPendingShot({ shotType, made: false });
-      setStep("shot_quality");
-    }
+    setPendingShot({ shotType, made });
+    setStep("shot_quality");
   }
 
   /** "No" on the OREB question -- the pending miss (FG or FT) is the trip's
@@ -786,7 +771,7 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
       )}
 
       {step === "shot_quality" && (
-        <Section label="Shot quality (last attempt)">
+        <Section label={team === "us" ? "Shot quality (last attempt)" : "Shot allowed (last attempt)"}>
           <Grid cols={4}>
             <Btn tone="success" subtitle="Layups & Free-throws" onClick={() => commitPendingShot("great")}>Great</Btn>
             <Btn tone="success" subtitle="Open, Catch & Shoot " onClick={() => commitPendingShot("good")}>Good</Btn>
@@ -814,7 +799,7 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
                 commit("fg_made", {
                   shot_type: pendingShot.shotType,
                   points: pendingShot.shotType + 1,
-                  shot_quality: team === "us" ? "great" : null,
+                  shot_quality: "great",
                   absorbed_ft_attempts: 1,
                   absorbed_ft_made: 1,
                 })
@@ -827,7 +812,7 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
                 commit("fg_made", {
                   shot_type: pendingShot.shotType,
                   points: pendingShot.shotType,
-                  shot_quality: team === "us" ? "great" : null,
+                  shot_quality: "great",
                   absorbed_ft_attempts: 1,
                   absorbed_ft_made: 0,
                 })
@@ -862,7 +847,7 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
         <Section label={`Points made (of ${ftAttempts})`}>
           <Grid cols={ftAttempts + 1}>
             {Array.from({ length: ftAttempts + 1 }, (_, n) => n).map((n) => {
-              const extra: Partial<Possession> = { points: n, ft_attempts: ftAttempts, shot_quality: team === "us" ? "great" : null };
+              const extra: Partial<Possession> = { points: n, ft_attempts: ftAttempts, shot_quality: "great" };
               const missed = n < ftAttempts;
               return (
                 <Btn
