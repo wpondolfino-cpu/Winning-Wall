@@ -18,6 +18,7 @@ import ReportBuilder from "./ReportBuilder";
 import GoalsManager from "./GoalsManager";
 import SyncIssuesViewer from "./SyncIssuesViewer";
 import GameFormatEditor from "./GameFormatEditor";
+import ShiftEntry from "./ShiftEntry";
 
 interface Props {
   currentUserRole: "player" | "coach" | "admin";
@@ -29,6 +30,7 @@ type GamesView =
   | { mode: "track"; gameId: string }
   | { mode: "report"; gameId: string; opponent: string }
   | { mode: "edit"; gameId: string; opponent: string }
+  | { mode: "shifts"; gameId: string }
   | { mode: "sync" };
 
 type ReportsView = { mode: "history" } | { mode: "builder"; saved?: SavedReport };
@@ -42,6 +44,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   const [closedQuarters, setClosedQuarters] = useState<number[]>([]);
   const [format, setFormat] = useState<GameFormat>(DEFAULT_GAME_FORMAT);
   const [gameType, setGameType] = useState<GameType>("regular");
+  const [rosterId, setRosterId] = useState<string | null>(null);
   const [activeOpponent, setActiveOpponent] = useState<string>("");
   const [finishing, setFinishing] = useState(false);
   const [finalUs, setFinalUs] = useState("");
@@ -53,10 +56,10 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   const activeGameId = gamesView.mode === "track" || gamesView.mode === "report" || gamesView.mode === "edit" ? gamesView.gameId : null;
 
   useEffect(() => {
-    if (!activeGameId) { setGameFinal(null); setActiveOpponent(""); setClosedQuarters([]); setFormat(DEFAULT_GAME_FORMAT); setGameType("regular"); return; }
+    if (!activeGameId) { setGameFinal(null); setActiveOpponent(""); setClosedQuarters([]); setFormat(DEFAULT_GAME_FORMAT); setGameType("regular"); setRosterId(null); return; }
     supabase
       .from("games")
-      .select("final_score_us, final_score_them, opponent, closed_quarters, game_type, period_format, regulation_periods, period_lengths, ot_minutes")
+      .select("final_score_us, final_score_them, opponent, closed_quarters, game_type, roster_id, period_format, regulation_periods, period_lengths, ot_minutes")
       .eq("id", activeGameId)
       .single()
       .then(({ data }) => {
@@ -67,6 +70,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
         setClosedQuarters(closed);
         setFormat(fmt);
         setGameType((((data as any)?.game_type) as GameType) ?? "regular");
+        setRosterId(((data as any)?.roster_id as string | null) ?? null);
         setQuarter(nextOpenQuarter(closed, periodCount(fmt)));
       });
   }, [activeGameId]);
@@ -333,6 +337,18 @@ function GamesTab({
     );
   }
 
+  if (view.mode === "shifts") {
+    return (
+      <div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          <button onClick={() => setView({ mode: "list" })} style={backBtn}>← Games</button>
+          <button onClick={() => setView({ mode: "track", gameId: view.gameId })} style={backBtn}>← Back to tracker</button>
+        </div>
+        <ShiftEntry gameId={view.gameId} userId={userId} rosterId={rosterId} format={format} />
+      </div>
+    );
+  }
+
   if (view.mode === "track") {
     const quarterClosed = closedQuarters.includes(quarter);
     return (
@@ -358,6 +374,7 @@ function GamesTab({
           >
             View report →
           </button>
+          <button onClick={() => setView({ mode: "shifts", gameId: view.gameId })} style={backBtn}>Shifts</button>
           {!gameFinal && !quarterClosed && (
             <button onClick={() => onEndQuarter(view.gameId, quarter)} style={backBtn}>End {periodLabel(format, quarter)}</button>
           )}
@@ -424,6 +441,7 @@ function GamesTab({
         {gameFinal && (
           <button onClick={() => setView({ mode: "edit", gameId: view.gameId, opponent: activeOpponent })} style={backBtn}>Edit stats</button>
         )}
+        <button onClick={() => setView({ mode: "shifts", gameId: view.gameId })} style={backBtn}>Shifts</button>
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
         {periodsInPlay(format).map((q) => (
