@@ -20,6 +20,7 @@ import { getRosters } from "../../lib/practicePlanner";
 import {
   listShifts, listLineupEvents, listGamePlayers, lastStartingFive,
   createShift, updateShiftFive, deleteShift, addFoulTrouble, deleteLineupEvent, setGameRoster,
+  listCallUpCandidates, addCallUp, removeCallUp,
   assignPossessions, validateShifts, FOUL_LEVELS,
   type Shift, type LineupEvent, type LineupPlayer, type FoulLevel,
 } from "../../lib/lineups";
@@ -58,8 +59,12 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
   const [draftOut, setDraftOut] = useState<string[]>([]);
   const [jersey, setJersey] = useState("");
 
-  const [foulFor, setFoulFor] = useState<{ sequence: number; quarter: number } | null>(null);
   const [rosters, setRosters] = useState<{ id: string; name: string }[]>([]);
+  // Call-ups are per game, so the picker is opened from here rather than
+  // being set up in advance -- you find out you need someone at the exact
+  // moment you go looking for them on the bench.
+  const [callUpOpen, setCallUpOpen] = useState(false);
+  const [candidates, setCandidates] = useState<(LineupPlayer & { fromRoster: string })[]>([]);
   const [activeRoster, setActiveRoster] = useState<string>(rosterId ?? "");
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [gameId, rosterId]);
@@ -75,7 +80,7 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
     const { error: err } = await setGameRoster(gameId, next || null);
     if (err) { setError(err); return; }
     try {
-      setPlayers(await listGamePlayers(next || null));
+      setPlayers(await listGamePlayers(next || null, gameId));
       setError(null);
     } catch (e: any) {
       setError(e?.message ?? "Couldn't load players.");
@@ -96,7 +101,7 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
       setPossessions((data ?? []) as Possession[]);
       setShifts(await listShifts(gameId));
       setEvents(await listLineupEvents(gameId));
-      setPlayers(await listGamePlayers(rosterId));
+      setPlayers(await listGamePlayers(rosterId, gameId));
       setError(null);
     } catch (e: any) {
       setError(e?.message ?? "Couldn't load this game's data.");
@@ -194,12 +199,32 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
     setShifts((s) => s.filter((x) => x.id !== shift.id));
   }
 
+  async function openCallUp() {
+    try {
+      setCandidates(await listCallUpCandidates(activeRoster || null));
+      setCallUpOpen(true);
+      setError(null);
+    } catch (e: any) { setError(e?.message ?? "Couldn't load players."); }
+  }
+
+  async function toggleCallUp(playerId: string, currentlyUp: boolean) {
+    const { error: err } = currentlyUp
+      ? await removeCallUp(gameId, playerId)
+      : await addCallUp(gameId, playerId, userId);
+    if (err) { setError(err); return; }
+    try { setPlayers(await listGamePlayers(activeRoster || null, gameId)); }
+    catch (e: any) { setError(e?.message ?? "Couldn't reload players."); }
+  }
+
+  // Position comes from whichever panel is open -- foul trouble is recorded
+  // at the moment you're already looking at, with the five in front of you.
   async function recordFoul(playerId: string, detail: FoulLevel) {
-    if (!foulFor) return;
-    const { error: err, event } = await addFoulTrouble(gameId, foulFor.quarter, foulFor.sequence, playerId, detail, userId);
+    if (!panel) return;
+    const sequence = panel.mode === "new" ? panel.sequence : panel.shift.start_sequence;
+    const quarter = panel.mode === "new" ? panel.quarter : panel.shift.quarter;
+    const { error: err, event } = await addFoulTrouble(gameId, quarter, sequence, playerId, detail, userId);
     if (err) { setError(err); return; }
     if (event) setEvents((e) => [...e, event]);
-    setFoulFor(null);
   }
 
   async function removeFoul(id: string) {
@@ -246,6 +271,9 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
         <span style={{ fontSize: 12, color: players.length ? "var(--muted)" : "#c9a227" }}>
           {players.length} player{players.length === 1 ? "" : "s"} available
         </span>
+        <button onClick={() => (callUpOpen ? setCallUpOpen(false) : openCallUp())} style={iconBtn}>
+          {callUpOpen ? "done" : "+ call up"}
+        </button>
         {!sortedShifts.length && (
           <button
             onClick={() => openNew(possessions[0].sequence, possessions[0].quarter)}
@@ -265,6 +293,36 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
       )}
 
       {error && <div style={{ fontSize: 12, color: "#c66", marginBottom: 8 }}>{error}</div>}
+
+      {callUpOpen && (
+        <div style={{ background: "var(--surface2)", border: "1px solid #7a5a20", borderRadius: 8, padding: 12, marginBottom: 10 }}>
+          <div style={{ fontSize: 12, color: "#e0b464", marginBottom: 8 }}>
+            Call up for this game only — tap to add or remove. A permanent move belongs in Players &amp; coaches instead.
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {candidates.map((c) => {
+              const up = players.some((p) => p.id === c.id);
+              return (
+                <span
+                  key={c.id}
+                  onClick={() => toggleCallUp(c.id, up)}
+                  style={{
+                    fontSize: 13, padding: "5px 9px", borderRadius: 6, cursor: "pointer",
+                    background: up ? "#2a1f10" : "var(--surface)",
+                    border: `1px solid ${up ? "#7a5a20" : "var(--border)"}`,
+                    color: up ? "#e0b464" : "var(--muted)",
+                  }}
+                >
+                  {c.jersey != null ? `${c.jersey} ${c.name}` : c.name}
+                  <span style={{ fontSize: 10, opacity: 0.7, marginLeft: 5 }}>{c.fromRoster}</span>
+                  {up && <span style={{ marginLeft: 5 }}>✓</span>}
+                </span>
+              );
+            })}
+            {!candidates.length && <span style={{ fontSize: 12, color: "var(--muted)" }}>Everyone is already on this roster.</span>}
+          </div>
+        </div>
+      )}
 
       <div>
         {possessions.map((p, i) => {
@@ -304,6 +362,7 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
                   onToggle={toggle} onConfirm={confirm} onCancel={closePanel}
                   balanced={balanced} changed={changed} busy={busy} count={nextFive.length}
                   rosterHint={rosterHint}
+                  onFoul={recordFoul}
                 />
               )}
               {panel?.mode === "edit" && panel.shift.start_sequence === p.sequence && (
@@ -315,6 +374,7 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
                   onToggle={toggle} onConfirm={confirm} onCancel={closePanel}
                   balanced={balanced} changed={changed} busy={busy} count={nextFive.length}
                   rosterHint={rosterHint}
+                  onFoul={recordFoul}
                 />
               )}
 
@@ -337,9 +397,6 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
                 >
                   ⇄
                 </button>
-                <button onClick={() => setFoulFor({ sequence: p.sequence, quarter: p.quarter })} title="Foul trouble" style={iconBtn}>
-                  ⚠
-                </button>
               </div>
 
               {foulsHere.map((e) => (
@@ -349,14 +406,6 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
                 </div>
               ))}
 
-              {foulFor?.sequence === p.sequence && (
-                <FoulPanel
-                  five={fiveBefore(p.sequence)}
-                  labelFor={label}
-                  onPick={recordFoul}
-                  onCancel={() => setFoulFor(null)}
-                />
-              )}
             </div>
           );
         })}
@@ -395,7 +444,11 @@ function SubPanel(props: {
   onConfirm: () => void; onCancel: () => void;
   balanced: boolean; changed: boolean; busy: boolean; count: number;
   rosterHint: string | null;
+  onFoul: (playerId: string, detail: FoulLevel) => void;
 }) {
+  // Which on-floor player is having a foul recorded. Local to the panel --
+  // it's a two-tap flourish (who, then which foul), not app state.
+  const [foulPlayer, setFoulPlayer] = useState<string | null>(null);
   const { players, labelFor, on, inList, outList, jersey, setJersey, onJerseyKey, onToggle } = props;
   const bench = players.filter((p) => !on.includes(p.id) && !inList.includes(p.id) && !outList.includes(p.id));
   const anyJerseys = players.some((p) => p.jersey != null);
@@ -420,12 +473,41 @@ function SubPanel(props: {
         )}
       </div>
 
-      <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>On floor</div>
+      <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>
+        On floor <span style={{ opacity: 0.7 }}>— tap a name to sub, ⚠ to log foul trouble</span>
+      </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-        {on.map((id) => <Chip key={id} label={labelFor(id)} kind="on" match={jersey} onClick={() => onToggle(id)} />)}
+        {on.map((id) => (
+          <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+            <Chip label={labelFor(id)} kind="on" match={jersey} onClick={() => onToggle(id)} />
+            <span
+              onClick={() => setFoulPlayer(foulPlayer === id ? null : id)}
+              title="Foul trouble"
+              style={{ cursor: "pointer", fontSize: 12, padding: "4px 5px", color: foulPlayer === id ? "#e0b464" : "var(--muted)" }}
+            >
+              ⚠
+            </span>
+          </span>
+        ))}
         {outList.map((id) => <Chip key={id} label={labelFor(id)} kind="out" match={jersey} onClick={() => onToggle(id)} />)}
         {!on.length && !outList.length && <span style={{ fontSize: 12, color: "var(--muted)" }}>nobody yet — tap five from the bench</span>}
       </div>
+
+      {foulPlayer && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 10, padding: "8px 10px", background: "#2a1f10", border: "1px solid #7a5a20", borderRadius: 8 }}>
+          <span style={{ fontSize: 12, color: "#e0b464" }}>Which foul for {labelFor(foulPlayer)}?</span>
+          {FOUL_LEVELS.map((f) => (
+            <span
+              key={f}
+              onClick={() => { props.onFoul(foulPlayer, f); setFoulPlayer(null); }}
+              style={{ fontSize: 13, padding: "4px 10px", borderRadius: 6, background: "var(--surface)", border: "1px solid var(--border)", cursor: "pointer" }}
+            >
+              {f}
+            </span>
+          ))}
+          <span onClick={() => setFoulPlayer(null)} style={{ fontSize: 12, color: "var(--muted)", cursor: "pointer", marginLeft: 4 }}>cancel</span>
+        </div>
+      )}
 
       <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Bench</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
@@ -485,40 +567,6 @@ function Chip({ label, kind, match, onClick }: {
     <span onClick={onClick} style={{ ...base, ...styles[kind], outline: hit ? "2px solid #6f8fe0" : undefined }}>
       {label}
     </span>
-  );
-}
-
-function FoulPanel({ five, labelFor, onPick, onCancel }: {
-  five: string[]; labelFor: (id: string) => string;
-  onPick: (playerId: string, detail: FoulLevel) => void; onCancel: () => void;
-}) {
-  const [player, setPlayer] = useState<string | null>(null);
-  if (!five.length) {
-    return (
-      <div style={{ padding: "6px 10px", fontSize: 12, color: "var(--muted)" }}>
-        Set the five on the floor first. <button onClick={onCancel} style={iconBtn}>cancel</button>
-      </div>
-    );
-  }
-  return (
-    <div style={{ background: "#2a1f10", border: "1px solid #7a5a20", borderRadius: 8, padding: 10, margin: "6px 0" }}>
-      <div style={{ fontSize: 12, color: "#e0b464", marginBottom: 6 }}>
-        {player ? `Which foul for ${labelFor(player)}?` : "Foul trouble — who?"}
-      </div>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {!player && five.map((id) => (
-          <span key={id} onClick={() => setPlayer(id)} style={{ fontSize: 13, padding: "5px 9px", borderRadius: 6, background: "var(--surface2)", border: "1px solid var(--border)", cursor: "pointer" }}>
-            {labelFor(id)}
-          </span>
-        ))}
-        {player && FOUL_LEVELS.map((f) => (
-          <span key={f} onClick={() => onPick(player, f)} style={{ fontSize: 13, padding: "5px 11px", borderRadius: 6, background: "var(--surface2)", border: "1px solid var(--border)", cursor: "pointer" }}>
-            {f}
-          </span>
-        ))}
-        <button onClick={onCancel} style={iconBtn}>cancel</button>
-      </div>
-    </div>
   );
 }
 
