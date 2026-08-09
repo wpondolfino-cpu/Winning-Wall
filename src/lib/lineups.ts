@@ -1,4 +1,4 @@
- // src/lib/lineups.ts
+// src/lib/lineups.ts
 // Lineup tracker data layer. Kept out of gameStats.ts on purpose -- that
 // file is already 1000+ lines and this is a separate concern that only
 // consumes possessions, never produces them.
@@ -69,18 +69,17 @@ export async function listLineupEvents(gameId: string): Promise<LineupEvent[]> {
 }
 
 /**
- * Who's available for this game. A game's roster_id decides the base list;
- * anyone called up to that roster from elsewhere is appended and flagged,
- * so a JV kid who played six varsity minutes is still tappable.
+ * Who's available for this game: the roster's own players, plus anyone
+ * called up for this specific game (flagged, so the bench shows them
+ * differently).
  *
- * A game with no roster_id (created before migration 102) falls back to
- * every player, which is the old behaviour rather than an empty bench.
+ * A game with no roster_id falls back to every player rather than an empty
+ * bench. Passing no gameId skips call-ups -- useful where the list is only
+ * needed to turn ids into names.
  */
-export async function listGamePlayers(rosterId: string | null): Promise<LineupPlayer[]> {
-  // NOTE: call-ups live on practice_attendance_overrides, not profiles --
-  // that column is per-practice, so there's nothing on the player record to
-  // read here. Game-level call-ups need their own field; until then a
-  // called-up player is picked from "All players".
+export async function listGamePlayers(rosterId: string | null, gameId?: string): Promise<LineupPlayer[]> {
+  const calledUp = gameId ? await listCallUpIds(gameId) : new Set<string>();
+
   const { data, error } = await supabase
     .from("profiles")
     .select("id, name, jersey, home_roster_id")
@@ -94,12 +93,12 @@ export async function listGamePlayers(rosterId: string | null): Promise<LineupPl
 
   const rows = (data ?? []) as any[];
   const mapped: LineupPlayer[] = rows
-    .filter((p) => !rosterId || p.home_roster_id === rosterId)
+    .filter((p) => !rosterId || p.home_roster_id === rosterId || calledUp.has(p.id))
     .map((p) => ({
       id: p.id,
       name: p.name ?? "",
       jersey: p.jersey ?? null,
-      called_up: false,
+      called_up: !!rosterId && p.home_roster_id !== rosterId && calledUp.has(p.id),
     }));
 
   // Roster players first, call-ups after, each by jersey then name.
@@ -110,6 +109,47 @@ export async function listGamePlayers(rosterId: string | null): Promise<LineupPl
     if (b.jersey != null) return 1;
     return a.name.localeCompare(b.name);
   });
+}
+
+/** Player ids called up for this specific game. */
+export async function listCallUpIds(gameId: string): Promise<Set<string>> {
+  const { data, error } = await supabase.from("game_call_ups").select("player_id").eq("game_id", gameId);
+  if (error) throw new Error(`Couldn't load call-ups: ${error.message}`);
+  return new Set(((data ?? []) as any[]).map((r) => r.player_id as string));
+}
+
+/**
+ * Players eligible to be called up: anyone with the player role who isn't
+ * already on this roster. Returns their own roster's name so the picker can
+ * say where they're coming from.
+ */
+export async function listCallUpCandidates(rosterId: string | null): Promise<(LineupPlayer & { fromRoster: string })[]> {
+  const [{ data, error }, { data: rosters }] = await Promise.all([
+    supabase.from("profiles").select("id, name, jersey, home_roster_id").eq("role", "player"),
+    supabase.from("rosters").select("id, name"),
+  ]);
+  if (error) throw new Error(`Couldn't load players: ${error.message}`);
+  const rosterName = new Map(((rosters ?? []) as any[]).map((r) => [r.id, r.name as string]));
+  return ((data ?? []) as any[])
+    .filter((p) => p.home_roster_id !== rosterId)
+    .map((p) => ({
+      id: p.id,
+      name: p.name ?? "",
+      jersey: p.jersey ?? null,
+      called_up: true,
+      fromRoster: rosterName.get(p.home_roster_id) ?? "no roster",
+    }))
+    .sort((a, b) => a.fromRoster.localeCompare(b.fromRoster) || (a.jersey ?? 999) - (b.jersey ?? 999) || a.name.localeCompare(b.name));
+}
+
+export async function addCallUp(gameId: string, playerId: string, userId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("game_call_ups").insert({ game_id: gameId, player_id: playerId, created_by: userId });
+  return { error: error?.message ?? null };
+}
+
+export async function removeCallUp(gameId: string, playerId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("game_call_ups").delete().eq("game_id", gameId).eq("player_id", playerId);
+  return { error: error?.message ?? null };
 }
 
 /**
