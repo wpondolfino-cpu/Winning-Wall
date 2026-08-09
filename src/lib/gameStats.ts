@@ -159,6 +159,30 @@ export const DEFAULT_STAT_ORDER: StatDef[] = [
   { key: "defense_schemes", label: "Defense schemes (Man / Zone / Press)", kind: "defense_schemes", inGame: false },
 ];
 
+/**
+ * Plain-English definitions, shared by the team report and the lineup
+ * reports so a stat can never be explained two different ways. Keyed by
+ * stat key where one exists; lineup-only keys are added at the end.
+ */
+export const STAT_EXPLAINERS: Record<string, { what: string; how: string }> = {
+  efg_pct: { what: "Field goal percentage with threes counted as worth more, since they are.", how: "(FGM + 0.5 x 3PM) / FGA" },
+  fg2_pct: { what: "Two-point field goal percentage.", how: "2PM / 2PA" },
+  fg3_pct: { what: "Three-point field goal percentage.", how: "3PM / 3PA" },
+  ft_pct: { what: "Free throw percentage.", how: "FTM / FTA" },
+  ft_rate: { what: "How often we get to the line relative to how often we shoot. A proxy for attacking rather than settling.", how: "FTA / FGA" },
+  tov_pct: { what: "Share of possessions that ended in a turnover.", how: "turnovers / possessions" },
+  oreb_pct: { what: "Share of available offensive rebounds collected.", how: "OREB / (OREB + their defensive rebound chances)" },
+  transition_pct: { what: "Share of possessions that were transition rather than half court.", how: "transition trips / all trips" },
+  transition_ppp: { what: "Points per possession in transition.", how: "transition points / transition trips" },
+  halfcourt_ppp: { what: "Points per possession in the half court. Includes BLOB and SLOB trips that flowed into a set.", how: "half-court points / half-court trips" },
+  quality_shot_pct: { what: "Share of shots graded great or good. On the defensive side this is the looks we allowed, so lower is better.", how: "(great + good) / graded shots" },
+  extra_possessions: { what: "Net extra chances created, the possession-count version of winning the margins.", how: "(our OREB + their turnovers) - (their OREB + our turnovers)" },
+  points_off_live_to: { what: "Points scored on possessions that followed a live-ball turnover.", how: "sum of points after live turnovers" },
+  second_chance_points: { what: "Points scored after an offensive rebound on the same trip.", how: "sum of points following an OREB" },
+  paint_touch_single: { what: "Share of half-court trips where the ball touched the paint.", how: "paint touches / half-court trips" },
+  paint_touch_both: { what: "Share of half-court trips where the ball changed sides of the floor.", how: "both-sides trips / half-court trips" },
+};
+
 /** Goal-settable stats, for the Goals tab -- "number" kind, excluding self-colored ones like Extra Possessions that don't compare against a target. Includes goalOnly stats, which get a target but no report row of their own. */
 export const GOAL_STATS = DEFAULT_STAT_ORDER.filter((s) => s.kind === "number" && !s.selfColored) as
   { key: string; label: string; defaultDirection: "higher_better" | "lower_better" }[];
