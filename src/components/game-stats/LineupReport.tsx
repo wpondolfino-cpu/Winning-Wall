@@ -41,20 +41,33 @@ interface Props {
 type Group = "overview" | "factors" | "playtype" | "shots" | "onoff";
 
 const LINEUP_EXPLAINERS: Record<string, { what: string; how: string }> = {
-  poss: { what: "Offensive possessions with this group on the floor, and what share of the team's total that is.", how: "count of our trips while they were on / all our trips" },
+  poss: { what: "Offensive possessions with {subject} on the floor, and what share of the team's total that is.", how: "count of our trips while they were on / all our trips" },
   min: { what: "Estimated minutes on the floor — estimated, not measured. Each period's known length is spread across the possessions actually played in it, then rounded to the nearest 15 seconds.", how: "possessions x that period's seconds-per-possession" },
-  net: { what: "Points scored minus points allowed, per 100 possessions, pulled toward the team average based on how little we've seen this group. The raw figure is in brackets.", how: "(n x raw + k x team) / (n + k), k estimated from the season" },
-  offppp: { what: "Points we scored per offensive possession with this group on.", how: "our points / our possessions" },
-  defppp: { what: "Points allowed per defensive possession with this group on.", how: "their points / their possessions" },
-  on_net: { what: "Team net rating over the possessions this individual or group was ON the floor.", how: "our points per 100 - their points per 100, while on" },
-  off_net: { what: "Team net rating over the possessions they were OFF the floor, counting only games they appeared in. For a PAIR this pools three situations — each one on without the other, and neither on — so expand the row for the four-way split.", how: "our points per 100 - their points per 100, while off" },
-  onoff: { what: "Team net rating with this group on the floor, minus with them off. Off-court possessions only count games they appeared in. For a PAIR, \u201Coff\u201D pools three situations — one on without the other, and neither on — so expand the row for the four-way split.", how: "net rating on - net rating off" },
+  net: { what: "Points scored minus points allowed, per 100 possessions, pulled toward the team average based on how little we've seen {subject}. The raw figure is in brackets.", how: "(n x raw + k x team) / (n + k), k estimated from the season" },
+  offppp: { what: "Points we scored per offensive possession with {subject} on the floor.", how: "our points / our possessions" },
+  defppp: { what: "Points allowed per defensive possession with {subject} on the floor.", how: "their points / their possessions" },
+  on_net: { what: "Team net rating over the possessions {subject} was ON the floor.", how: "our points per 100 - their points per 100, while on" },
+  off_net: { what: "Team net rating over the possessions {subject} was OFF the floor, counting only games they appeared in. For a PAIR this pools three situations — each one on without the other, and neither on — so expand the row for the four-way split.", how: "our points per 100 - their points per 100, while off" },
+  onoff: { what: "Team net rating with {subject} on the floor, minus with them off. Off-court possessions only count games they appeared in. For a PAIR, \u201Coff\u201D pools three situations — one on without the other, and neither on — so expand the row for the four-way split.", how: "net rating on - net rating off" },
   oob_ppp: { what: "Points per possession on BLOB and SLOB trips. Which five you want out there for a sideline out with four seconds left.", how: "points on out-of-bounds trips / those trips" },
-  three_rate: { what: "Share of field goal attempts that were threes. The clearest single expression of a group's shot selection.", how: "3PA / FGA" },
-  fouls: { what: "Foul trouble logged against this player, from the shift entry screen.", how: "count of foul-trouble events" },
+  three_rate: { what: "Share of field goal attempts that were threes. The clearest single expression of {subject}'s shot selection.", how: "3PA / FGA" },
+  fouls: { what: "Foul trouble logged against {subject}, from the shift entry screen.", how: "count of foul-trouble events" },
 };
 
 const EXPLAINERS: Record<string, { what: string; how: string }> = { ...STAT_EXPLAINERS, ...LINEUP_EXPLAINERS };
+
+/** What "{subject}" resolves to, so one string serves all four levels. */
+function subjectFor(level: ComboLevel): string {
+  if (level === 1) return "this player";
+  if (level === 5) return "this exact five";
+  return "this group";
+}
+
+function explainerFor(key: string, level: ComboLevel): { what: string; how: string } | null {
+  const e = EXPLAINERS[key];
+  if (!e) return null;
+  return { what: e.what.replace(/\{subject\}/g, subjectFor(level)), how: e.how };
+}
 
 /**
  * Each level gets the stats that answer ITS question, not one shared set.
@@ -380,10 +393,10 @@ function HeaderRow({ group, level, onExplain, narrow, sort, onSort, explain }: {
           </span>
         ))}
       </div>
-      {active && EXPLAINERS[active.explain!] && (
+      {active && explainerFor(active.explain!, level) && (
         <div style={{ padding: "8px 10px 10px", background: "var(--surface2)", borderTop: "1px solid var(--border)" }}>
-          <div style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.6 }}>{EXPLAINERS[active.explain!].what}</div>
-          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 5, fontFamily: "monospace" }}>{EXPLAINERS[active.explain!].how}</div>
+          <div style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.6 }}>{explainerFor(active.explain!, level)!.what}</div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 5, fontFamily: "monospace" }}>{explainerFor(active.explain!, level)!.how}</div>
         </div>
       )}
     </div>
