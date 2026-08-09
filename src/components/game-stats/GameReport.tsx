@@ -200,6 +200,10 @@ export function ReportBody({
   const oppRows = numberStats.map((s) => oppByKey.get(s.key)).filter(Boolean) as StatRow[];
 
   const shotQuality = computeShotQuality(possessions, "us");
+  // Graded on defence too now: this is the shot diet we ALLOWED, so a
+  // high great+good share here is bad for us. scoreAgainstGoal inverts
+  // the direction automatically when only an "us" goal is set.
+  const shotQualityAgainst = computeShotQuality(possessions, "opponent");
   const streaks = computeStreaks(possessions);
   const blob = computeOobEffectiveness(possessions, "blob");
   const slob = computeOobEffectiveness(possessions, "slob");
@@ -235,7 +239,7 @@ export function ReportBody({
             isPractice={isPractice}
             usRows={usRows}
             oppRows={oppRows}
-            shotQuality={shotQuality}
+            shotQuality={shotQuality} shotQualityAgainst={shotQualityAgainst}
             streaks={streaks}
           />
         </div>
@@ -245,25 +249,46 @@ export function ReportBody({
 
       {specialStats.map((s) => {
         if (s.kind === "shot_quality") {
-          const qualityGoal = scoreAgainstGoal(goals, "quality_shot_pct", "us", shotQuality.qualityPct ?? 0).goal;
-          const status = qualityShotStatus(shotQuality.qualityPct, qualityGoal);
-          const statusColor =
-            status?.role === "success" ? "#2f9e63" : status?.role === "warning" ? "#c48a1f" : status?.role === "danger" ? "#8a2f2f" : "var(--muted)";
+          const rows: { label: string; sq: typeof shotQuality; team: "us" | "opponent"; hint: string }[] = [
+            { label: "Quality shots taken (Great + Good)", sq: shotQuality, team: "us", hint: "our shot selection" },
+            { label: "Quality shots allowed (Great + Good)", sq: shotQualityAgainst, team: "opponent", hint: "the looks our defence gave up" },
+          ];
           return (
             <div key={s.key}>
               <SectionDivider label="Shot quality" />
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 13, color: "var(--muted)" }}>Quality shots (Great + Good)</span>
-                <span style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                  <span style={{ fontSize: 18, fontWeight: 500 }}>
-                    {shotQuality.qualityPct != null ? `${shotQuality.qualityPct}%` : "—"}
-                  </span>
-                  {status && <span style={{ fontSize: 13, color: statusColor }}>{status.label}</span>}
-                  {qualityGoal != null && <span style={{ fontSize: 12, color: "var(--muted)" }}>goal {qualityGoal}%</span>}
-                </span>
-              </div>
-              <ShotQualityBar breakdown={shotQuality.breakdown} />
-              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, fontStyle: "italic" }}>
+              {rows.map((r, ri) => {
+                const goal = scoreAgainstGoal(goals, "quality_shot_pct", r.team, r.sq.qualityPct ?? 0).goal;
+                // On defence the goal reads the other way, so "exceeding" a
+                // 65% target means we allowed too many good looks.
+                const status = r.sq.qualityPct == null || goal == null
+                  ? null
+                  : r.team === "us"
+                    ? qualityShotStatus(r.sq.qualityPct, goal)
+                    : qualityShotStatus(2 * goal - r.sq.qualityPct, goal);
+                const statusColor =
+                  status?.role === "success" ? "#2f9e63" : status?.role === "warning" ? "#c48a1f" : status?.role === "danger" ? "#8a2f2f" : "var(--muted)";
+                return (
+                  <div key={r.team} style={{ marginTop: ri ? 14 : 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8, gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 13, color: "var(--muted)" }}>{r.label}</span>
+                      <span style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                        <span style={{ fontSize: 18, fontWeight: 500 }}>
+                          {r.sq.qualityPct != null ? `${r.sq.qualityPct}%` : "—"}
+                        </span>
+                        {status && <span style={{ fontSize: 13, color: statusColor }}>{status.label}</span>}
+                        {goal != null && <span style={{ fontSize: 12, color: "var(--muted)" }}>goal {r.team === "us" ? "" : "under "}{goal}%</span>}
+                      </span>
+                    </div>
+                    <ShotQualityBar breakdown={r.sq.breakdown} />
+                    {r.sq.total === 0 && (
+                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, fontStyle: "italic" }}>
+                        Not graded in this game — shot quality on defence started being tracked partway through the season.
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, fontStyle: "italic" }}>
                 Half-court efficiency also counts BLOB/SLOB possessions that flowed into a set, so play-type shares overlap and won't total 100%.
               </div>
             </div>
@@ -363,6 +388,7 @@ function CopyReportButton({
   title,
   opponentName,
   isPractice,
+  shotQualityAgainst,
   usRows,
   oppRows,
   shotQuality,
@@ -374,6 +400,7 @@ function CopyReportButton({
   usRows: StatRow[];
   oppRows: StatRow[];
   shotQuality: ReturnType<typeof computeShotQuality>;
+  shotQualityAgainst: ReturnType<typeof computeShotQuality>;
   streaks: ReturnType<typeof computeStreaks>;
 }) {
   const [copied, setCopied] = useState(false);
@@ -387,9 +414,14 @@ function CopyReportButton({
       const opp = oppRows[i];
       lines.push(`${us.label}: ${us.value}${us.raw ? ` (${us.raw})` : ""} | ${opp ? `${opp.value}${opp.raw ? ` (${opp.raw})` : ""}` : "—"}`);
     });
-    if (shotQuality.qualityPct != null) {
+    if (shotQuality.qualityPct != null || shotQualityAgainst.qualityPct != null) {
       lines.push("");
-      lines.push(`Quality shots (Great + Good): ${shotQuality.qualityPct}% (Great ${shotQuality.breakdown.great}% / Good ${shotQuality.breakdown.good}% / Live ${shotQuality.breakdown.live}% / Tough ${shotQuality.breakdown.tough}%)`);
+      if (shotQuality.qualityPct != null) {
+        lines.push(`Quality shots taken (Great + Good): ${shotQuality.qualityPct}% (Great ${shotQuality.breakdown.great}% / Good ${shotQuality.breakdown.good}% / Live ${shotQuality.breakdown.live}% / Tough ${shotQuality.breakdown.tough}%)`);
+      }
+      if (shotQualityAgainst.qualityPct != null) {
+        lines.push(`Quality shots allowed (Great + Good): ${shotQualityAgainst.qualityPct}% (Great ${shotQualityAgainst.breakdown.great}% / Good ${shotQualityAgainst.breakdown.good}% / Live ${shotQualityAgainst.breakdown.live}% / Tough ${shotQualityAgainst.breakdown.tough}%)`);
+      }
     }
     lines.push("");
     lines.push(`Scoring runs (3+): ${streaks.scoringRuns.count}, best ${streaks.scoringRuns.best}`);
