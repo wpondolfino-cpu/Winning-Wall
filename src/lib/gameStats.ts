@@ -129,7 +129,7 @@ export interface StatDef {
   defaultDirection?: "higher_better" | "lower_better";
   selfColored?: boolean; // true for stats colored by their own sign (+/-), not against a goal target
   goalOnly?: boolean;    // settable as a goal, but not its own report row and not in the reorder list -- it's the headline of another block
-  usOnly?: boolean;      // no opponent-side equivalent (we don't grade their shot selection), so no Opponent goal input
+  usOnly?: boolean;      // no opponent-side equivalent, so no Opponent goal input. Nothing uses it now that shot quality is graded on both ends, but the mechanism stays for the next stat that needs it
 }
 
 export const DEFAULT_STAT_ORDER: StatDef[] = [
@@ -152,7 +152,7 @@ export const DEFAULT_STAT_ORDER: StatDef[] = [
   // Not a paired us/opponent row of its own -- it is the headline of the
   // Shot quality block above. goalOnly keeps it out of the report rows and
   // out of the reorder list while still giving it a goal input.
-  { key: "quality_shot_pct", label: "Quality shots % (Great + Good)", kind: "number", inGame: true, defaultDirection: "higher_better", goalOnly: true, usOnly: true },
+  { key: "quality_shot_pct", label: "Quality shots % (Great + Good)", kind: "number", inGame: true, defaultDirection: "higher_better", goalOnly: true },
   { key: "set_plays", label: "Set plays (Set / Motion)", kind: "set_plays", inGame: false },
   { key: "oob_plays", label: "Set plays (BLOB / SLOB)", kind: "oob", inGame: false },
   { key: "streaks", label: "Streaks", kind: "streaks", inGame: true },
