@@ -22,6 +22,7 @@ import {
   type StatGoal,
   type StatDef,
   type Team,
+  LINEUP_GOAL_STATS,
 } from "../../lib/gameStats";
 
 interface Props {
@@ -106,6 +107,11 @@ export default function GoalsManager({ userId }: Props) {
   }
 
   const visibleOrder = order.filter((s) => !s.goalOnly);
+  // Team stats first, then lineup-only ones under their own heading. Lineup
+  // goals are us-only, so they drop out of the Opponent tab entirely.
+  const teamGoalRows = order.filter((s) => s.kind === "number" && !s.selfColored && !(s.usOnly && goalTeam === "opponent"));
+  const lineupGoalRows = goalTeam === "opponent" ? [] : LINEUP_GOAL_STATS;
+  const goalRows = [...teamGoalRows, ...lineupGoalRows];
 
   if (loading) return <div className="card">Loading goals…</div>;
 
@@ -142,13 +148,18 @@ export default function GoalsManager({ userId }: Props) {
           <button className={`role-tab ${goalTeam === "opponent" ? "active" : ""}`} onClick={() => setGoalTeam("opponent")}>Opponent</button>
         </div>
 
-        {order.filter((s) => s.kind === "number" && !s.selfColored && !(s.usOnly && goalTeam === "opponent")).map((s) => {
+        {goalRows.map((s) => {
           const draftKey = `${goalTeam}:${s.key}`;
           const draft = drafts[draftKey] ?? { value: "", direction: s.defaultDirection ?? "higher_better", minSampleSize: "", note: "" };
           const existing = goals[draftKey];
           const usGoal = goals[`us:${s.key}`];
           return (
             <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: "1px solid var(--border)", flexWrap: "wrap" }}>
+              {s.key === lineupGoalRows[0]?.key && (
+                <div style={{ width: "100%", fontSize: 12, color: "var(--muted)", marginBottom: 2 }}>
+                  Lineups only — these don't appear on the team report, where transition, half-court and BLOB/SLOB PPP already cover efficiency in more detail.
+                </div>
+              )}
               <span style={{ fontSize: 14, width: 150 }}>{s.label}</span>
 
               <input
