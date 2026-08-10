@@ -27,7 +27,7 @@ import {
   type Possession,
   type StatGoal,
 } from "./gameStats";
-import { assignPossessions, lineupKey, type Shift } from "./lineups";
+import { assignPossessionSides, lineupKey, type Shift } from "./lineups";
 
 export type ComboLevel = 1 | 2 | 3 | 5;
 
@@ -319,7 +319,7 @@ export function computeComboRows(
 
     const ctx = possessionContexts(slice.possessions);
     const spp = secondsPerPossession(slice.possessions, slice.format);
-    const assigned = assignPossessions(slice.possessions, slice.shifts);
+    const assigned = assignPossessionSides(slice.possessions, slice.shifts);
     const shiftById = new Map(slice.shifts.map((s) => [s.id, s]));
 
     for (const p of slice.possessions) {
@@ -329,23 +329,32 @@ export function computeComboRows(
 
       if (p.team === "us") teamOff.push(p); else teamDef.push(p);
 
-      const shiftId = assigned.get(p.id);
-      if (!shiftId) continue;
-      const shift = shiftById.get(shiftId);
-      if (!shift) continue;
+      const ends = assigned.get(p.id);
+      if (!ends) continue;
 
-      const groups = level === 5 ? [[...shift.player_ids].sort()] : combinations([...shift.player_ids].sort(), level);
-      for (const g of groups) {
-        const key = lineupKey(g);
-        let b = buckets.get(key);
-        if (!b) {
-          b = { playerIds: g, off: [], def: [], games: new Set(), shifts: new Set(), seconds: 0 };
-          buckets.set(key, b);
+      // Both ends are credited. In a game only one of them resolves, so
+      // this is the same as before. In an intrasquad practice both do:
+      // one of your lineups scored and another gave it up.
+      for (const [shiftId, end] of [[ends.off, "off"], [ends.def, "def"]] as const) {
+        if (!shiftId) continue;
+        const shift = shiftById.get(shiftId);
+        if (!shift) continue;
+
+        const groups = level === 5 ? [[...shift.player_ids].sort()] : combinations([...shift.player_ids].sort(), level);
+        for (const g of groups) {
+          const key = lineupKey(g);
+          let b = buckets.get(key);
+          if (!b) {
+            b = { playerIds: g, off: [], def: [], games: new Set(), shifts: new Set(), seconds: 0 };
+            buckets.set(key, b);
+          }
+          if (end === "off") b.off.push(p); else b.def.push(p);
+          b.games.add(slice.gameId);
+          b.shifts.add(shiftId);
+          // Only count the clock once per possession per group, or a
+          // practice lineup on the floor for both ends would double.
+          if (end === "off") b.seconds += spp.get(p.quarter) ?? 16;
         }
-        if (p.team === "us") b.off.push(p); else b.def.push(p);
-        b.games.add(slice.gameId);
-        b.shifts.add(shiftId);
-        b.seconds += spp.get(p.quarter) ?? 16;
       }
     }
   }
@@ -394,7 +403,14 @@ export function computeComboRows(
   }));
 
   rows.sort((a, b) => b.offPossessions - a.offPossessions);
-  return { rows, teamOffPPP, teamDefPPP, k, gamesCounted: gamesCounted.size };
+  return {
+    rows, teamOffPPP, teamDefPPP, k, gamesCounted: gamesCounted.size,
+    teamNet: Math.round(teamNet),
+    teamOffense: statMap(teamOff, "us", goals),
+    teamDefense: statMap(teamDef, "opponent", goals),
+    teamOffenseExtra: extraStats(teamOff, "us"),
+    teamDefenseExtra: extraStats(teamDef, "opponent"),
+  };
 }
 
 // ── On/off ───────────────────────────────────────────────────────
@@ -439,21 +455,24 @@ export function computeOnOff(
   for (const slice of slices) {
     if (!appeared.has(slice.gameId) || !slice.shifts.length) continue;
     const ctx = possessionContexts(slice.possessions);
-    const assigned = assignPossessions(slice.possessions, slice.shifts);
+    const assigned = assignPossessionSides(slice.possessions, slice.shifts);
     const shiftById = new Map(slice.shifts.map((s) => [s.id, s]));
 
     for (const p of slice.possessions) {
       if (opts.excludeGarbage && ctx.get(p.id)?.garbage) continue;
-      const shiftId = assigned.get(p.id);
-      if (!shiftId) continue;
-      const shift = shiftById.get(shiftId);
-      if (!shift) continue;
-      const on = [...key].every((id) => shift.player_ids.includes(id));
-      (on ? onPoss : offPoss).push(p);
+      const ends = assigned.get(p.id);
+      if (!ends) continue;
+      const offShift = ends.off ? shiftById.get(ends.off) : null;
+      const defShift = ends.def ? shiftById.get(ends.def) : null;
       const pts = p.points ?? 0;
-      if (p.team === "us") {
+
+      if (offShift) {
+        const on = [...key].every((id) => offShift.player_ids.includes(id));
+        (on ? onPoss : offPoss).push(p);
         if (on) { onFor += pts; onOff++; } else { offFor += pts; offOff++; }
-      } else {
+      }
+      if (defShift) {
+        const on = [...key].every((id) => defShift.player_ids.includes(id));
         if (on) { onAgainst += pts; onDef++; } else { offAgainst += pts; offDef++; }
       }
     }
@@ -502,18 +521,23 @@ export function computeTogetherApart(slices: GameSlice[], a: string, b: string, 
   for (const slice of slices) {
     if (!slice.shifts.length) continue;
     const ctx = possessionContexts(slice.possessions);
-    const assigned = assignPossessions(slice.possessions, slice.shifts);
+    const assigned = assignPossessionSides(slice.possessions, slice.shifts);
     const shiftById = new Map(slice.shifts.map((s) => [s.id, s]));
 
     for (const p of slice.possessions) {
       if (opts.excludeGarbage && ctx.get(p.id)?.garbage) continue;
-      const shift = shiftById.get(assigned.get(p.id) ?? "");
-      if (!shift) continue;
-      const hasA = shift.player_ids.includes(a);
-      const hasB = shift.player_ids.includes(b);
-      const bucket = hasA && hasB ? buckets.both : hasA ? buckets.aOnly : hasB ? buckets.bOnly : buckets.neither;
+      const ends = assigned.get(p.id);
+      if (!ends) continue;
       const pts = p.points ?? 0;
-      if (p.team === "us") { bucket[0] += pts; bucket[1]++; } else { bucket[2] += pts; bucket[3]++; }
+      const bucketFor = (sh: Shift) => {
+        const hasA = sh.player_ids.includes(a);
+        const hasB = sh.player_ids.includes(b);
+        return hasA && hasB ? buckets.both : hasA ? buckets.aOnly : hasB ? buckets.bOnly : buckets.neither;
+      };
+      const offShift = ends.off ? shiftById.get(ends.off) : null;
+      const defShift = ends.def ? shiftById.get(ends.def) : null;
+      if (offShift) { const bk = bucketFor(offShift); bk[0] += pts; bk[1]++; }
+      if (defShift) { const bk = bucketFor(defShift); bk[2] += pts; bk[3]++; }
     }
   }
 
