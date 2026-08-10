@@ -22,8 +22,8 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import {
-  listStatGoals, gameFormat, gameTypesForGroup, GAME_GROUPS, STAT_EXPLAINERS, LINEUP_GOAL_STATS,
-  type GameFormat, type Possession, type StatGoal, type GameGroup,
+  listStatGoals, gameFormat, STAT_EXPLAINERS, LINEUP_GOAL_STATS,
+  type GameFormat, type Possession, type StatGoal,
 } from "../../lib/gameStats";
 import { listGamePlayers, listLineupEvents, type Shift, type LineupPlayer } from "../../lib/lineups";
 import {
@@ -33,9 +33,8 @@ import {
 } from "../../lib/lineupStats";
 
 interface Props {
-  gameId: string | null;
-  rosterId: string | null;
-  season?: string;
+  /** Exactly which games to cover. LineupsTab owns scope selection; this component owns how to read it. */
+  gameIds: string[];
 }
 
 type Group = "overview" | "factors" | "playtype" | "shots" | "onoff";
@@ -99,13 +98,10 @@ const GROUP_LABEL: Record<Group, string> = {
   overview: "Overview", factors: "Four factors", playtype: "Play type", shots: "Shot profile", onoff: "On / off",
 };
 
-export default function LineupReport({ gameId, rosterId, season }: Props) {
+export default function LineupReport({ gameIds }: Props) {
   const [slices, setSlices] = useState<GameSlice[]>([]);
   const [goals, setGoals] = useState<StatGoal[]>([]);
   const [players, setPlayers] = useState<LineupPlayer[]>([]);
-  // Distinct opponents across the loaded season, so a rematch can be
-  // checked against what happened the first time.
-  const [opponents, setOpponents] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -114,8 +110,6 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
   const [side, setSide] = useState<"offense" | "defense">("offense");
   const [excludeGarbage, setExcludeGarbage] = useState(true);
   const [clutchOnly, setClutchOnly] = useState(false);
-  const [gameGroup, setGameGroup] = useState<GameGroup>("games");
-  const [opponent, setOpponent] = useState<string>("");
   const [expanded, setExpanded] = useState<string | null>(null);
   // Per-game applies to counting stats only. A per-game average of a RATE
   // would weight a 3-possession game the same as a 25-possession one.
@@ -136,7 +130,7 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
   }, [colorOn]);
   const [explain, setExplain] = useState<string | null>(null);
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [gameId, rosterId, season, gameGroup, opponent]);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [gameIds.join(",")]);
   useEffect(() => { if (!GROUPS_FOR[level].includes(group)) setGroup("overview"); }, [level, group]);
 
   // Narrow screens get name + possessions + net only; the rest of the row
@@ -151,26 +145,12 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
 
   async function load() {
     setLoading(true);
+    if (!gameIds.length) { setSlices([]); setError(null); setLoading(false); return; }
     try {
-      let gameIds: string[] = [];
-      let formats = new Map<string, GameFormat>();
-
-      if (gameId) {
-        const { data } = await supabase.from("games").select("*").eq("id", gameId).maybeSingle();
-        if (data) { gameIds = [gameId]; formats.set(gameId, gameFormat(data as any)); }
-      } else {
-        let q = supabase.from("games").select("*").in("game_type", gameTypesForGroup(gameGroup));
-        if (rosterId) q = q.eq("roster_id", rosterId);
-        if (season) q = q.eq("season", season);
-        const { data, error: err } = await q;
-        if (err) throw new Error(err.message);
-        const all = (data ?? []) as any[];
-        setOpponents([...new Set(all.map((g) => g.opponent as string))].filter(Boolean).sort());
-        all.filter((g) => !opponent || g.opponent === opponent)
-           .forEach((g) => { gameIds.push(g.id); formats.set(g.id, gameFormat(g)); });
-      }
-
-      if (!gameIds.length) { setSlices([]); setLoading(false); return; }
+      const formats = new Map<string, GameFormat>();
+      const { data: gameRows, error: gameErr } = await supabase.from("games").select("*").in("id", gameIds);
+      if (gameErr) throw new Error(gameErr.message);
+      ((gameRows ?? []) as any[]).forEach((g) => formats.set(g.id, gameFormat(g)));
 
       const [{ data: poss }, { data: shiftRows }, { data: goalRows }] = await Promise.all([
         supabase.from("possessions").select("*").in("game_id", gameIds).order("sequence", { ascending: true }),
@@ -407,17 +387,6 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
           <input type="checkbox" checked={colorOn} onChange={(e) => setColorOn(e.target.checked)} />
           Color
         </label>
-        {!gameId && (
-          <select value={gameGroup} onChange={(e) => setGameGroup(e.target.value as GameGroup)} style={selectStyle}>
-            {GAME_GROUPS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
-          </select>
-        )}
-        {!gameId && opponents.length > 1 && (
-          <select value={opponent} onChange={(e) => setOpponent(e.target.value)} style={selectStyle}>
-            <option value="">All opponents</option>
-            {opponents.map((o) => <option key={o} value={o}>{o}</option>)}
-          </select>
-        )}
         <span style={{ marginLeft: "auto", fontSize: 11 }}>k = {Math.round(k)}</span>
       </div>
 
@@ -716,8 +685,3 @@ function pill(active: boolean): React.CSSProperties {
     color: active ? "#fff" : "var(--muted)",
   };
 }
-
-const selectStyle: React.CSSProperties = {
-  padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)",
-  background: "var(--surface2)", color: "var(--text)", fontSize: 12,
-};
