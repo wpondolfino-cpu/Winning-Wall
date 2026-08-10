@@ -183,6 +183,25 @@ export const STAT_EXPLAINERS: Record<string, { what: string; how: string }> = {
   paint_touch_both: { what: "Share of half-court trips where the ball changed sides of the floor.", how: "both-sides trips / half-court trips" },
 };
 
+/**
+ * Goals that only make sense for a lineup, not for the team report.
+ *
+ * The team report already covers efficiency better than a single PPP number
+ * would -- transition, half court and BLOB/SLOB PPP each tell you something
+ * you can act on. A lineup doesn't need that breakdown: you're comparing
+ * units against each other, so broad offence and defence is the question.
+ *
+ * Kept out of DEFAULT_STAT_ORDER so they never appear as team report rows,
+ * but stored in the same stat_goals table (its stat_key is free text), and
+ * marked usOnly because a lineup goal has no opponent side.
+ */
+export const LINEUP_GOAL_STATS: StatDef[] = [
+  { key: "lineup_off_ppp", label: "Offensive PPP", kind: "number", inGame: true, defaultDirection: "higher_better", usOnly: true },
+  { key: "lineup_def_ppp", label: "Defensive PPP", kind: "number", inGame: true, defaultDirection: "lower_better", usOnly: true },
+  { key: "lineup_net_rating", label: "Net rating (per 100)", kind: "number", inGame: true, defaultDirection: "higher_better", usOnly: true },
+  { key: "lineup_oob_ppp", label: "BLOB / SLOB PPP", kind: "number", inGame: true, defaultDirection: "higher_better", usOnly: true },
+];
+
 /** Goal-settable stats, for the Goals tab -- "number" kind, excluding self-colored ones like Extra Possessions that don't compare against a target. Includes goalOnly stats, which get a target but no report row of their own. */
 export const GOAL_STATS = DEFAULT_STAT_ORDER.filter((s) => s.kind === "number" && !s.selfColored) as
   { key: string; label: string; defaultDirection: "higher_better" | "lower_better" }[];
