@@ -1,548 +1,447 @@
-// src/lib/lineupStats.ts
-// Phase 2 of the lineup tracker: turning shifts into numbers you can act on.
+// src/lib/lineups.ts
+// Lineup tracker data layer. Kept out of gameStats.ts on purpose -- that
+// file is already 1000+ lines and this is a separate concern that only
+// consumes possessions, never produces them.
 //
-// Split from lineups.ts on purpose -- that file is the data layer (reading
-// and writing shifts), this is the analytics layer. Nothing here talks to
-// the database.
-//
-// Two principles run through all of it:
-//
-//   1. REUSE THE TEAM DEFINITIONS. Every rate stat comes from
-//      computeTeamStats() in gameStats.ts, run over a filtered possession
-//      set. So a lineup's eFG% is computed by exactly the same code as the
-//      team's eFG%, and the two can never drift apart. That was the whole
-//      argument for one tracker instead of two.
-//
-//   2. BE HONEST ABOUT SMALL SAMPLES. Raw numbers on 20 possessions are
-//      mostly noise, and noise presented confidently is worse than no
-//      number at all. Hence shrinkage toward the team mean, sample gates
-//      per level, and a readiness strip that says which levels can support
-//      a conclusion yet.
+// The core idea: shifts are stored, lineups are derived. A shift is one
+// continuous stretch with the same five on the floor, recorded by where it
+// STARTS. A possession belongs to the latest shift whose start_sequence is
+// at or before its own, so nothing ever has to be written back onto the
+// possessions table and the live tracker is untouched.
 
-import {
-  computeShotQuality,
-  computeTeamStats,
-  periodLengthSeconds,
-  type GameFormat,
-  type Possession,
-  type StatGoal,
-} from "./gameStats";
-import { assignPossessions, lineupKey, type Shift } from "./lineups";
+import { supabase } from "./supabase";
+import type { Possession } from "./gameStats";
 
-export type ComboLevel = 1 | 2 | 3 | 5;
+export type ShiftSide = "us" | "opponent";
 
-export const COMBO_LEVELS: { value: ComboLevel; label: string }[] = [
-  { value: 1, label: "Individual" },
-  { value: 2, label: "2-man" },
-  { value: 3, label: "3-man" },
-  { value: 5, label: "5-man" },
-];
+/** "Team 1" and "Team 2" in a practice. Games only ever use the us side. */
+export const SIDE_LABEL: Record<ShiftSide, string> = { us: "Team 1", opponent: "Team 2" };
 
-/**
- * Minimum possessions and games before a row is treated as meaningful.
- * Tuned so an actual rotation clears them around game 3-4 rather than
- * never: an individual starter sees ~46 possessions a game, a top pair
- * ~40, a top trio ~34, the starting five ~22.
- */
-export const SAMPLE_GATES: Record<ComboLevel, { possessions: number; games: number }> = {
-  1: { possessions: 120, games: 3 },
-  2: { possessions: 100, games: 3 },
-  3: { possessions: 80, games: 3 },
-  5: { possessions: 60, games: 3 },
-};
+export interface Shift {
+  id: string;
+  game_id: string;
+  quarter: number;
+  start_sequence: number;
+  player_ids: string[];
+  start_clock_seconds: number | null;
+  source: "post_game" | "live";
+  /** Which squad this five belongs to. Always "us" for a real game. */
+  side: ShiftSide;
+  created_at: string;
+}
 
-// ── Score margin, garbage time, clutch ───────────────────────────
+export type FoulLevel = "2nd" | "3rd" | "4th" | "5th";
+export const FOUL_LEVELS: FoulLevel[] = ["2nd", "3rd", "4th", "5th"];
 
-export interface PossessionContext {
-  /** Our margin AFTER this possession. Derived from the log -- never entered. */
-  margin: number;
-  /** Possessions remaining in the game after this one. */
-  remaining: number;
-  garbage: boolean;
-  clutch: boolean;
+export interface LineupEvent {
+  id: string;
+  game_id: string;
+  quarter: number;
+  sequence: number;
+  player_id: string;
+  event_type: "foul_trouble";
+  detail: FoulLevel | null;
+  created_at: string;
+}
+
+export interface LineupPlayer {
+  id: string;
+  name: string;
+  jersey: number | null;
+  /** True when they belong to another roster and were called up to this one. */
+  called_up: boolean;
+}
+
+// ── Reads ────────────────────────────────────────────────────────
+
+export async function listShifts(gameId: string): Promise<Shift[]> {
+  const { data, error } = await supabase
+    .from("shifts")
+    .select("*")
+    .eq("game_id", gameId)
+    .order("start_sequence", { ascending: true });
+  // A missing table or an RLS block would otherwise read as "no shifts yet".
+  if (error) throw new Error(`Couldn't load shifts: ${error.message}`);
+  return (data ?? []) as Shift[];
+}
+
+export async function listLineupEvents(gameId: string): Promise<LineupEvent[]> {
+  const { data, error } = await supabase
+    .from("lineup_events")
+    .select("*")
+    .eq("game_id", gameId)
+    .order("sequence", { ascending: true });
+  if (error) throw new Error(`Couldn't load foul trouble events: ${error.message}`);
+  return (data ?? []) as LineupEvent[];
 }
 
 /**
- * Walks one game's possessions and works out the score context of each.
+ * Who's available for this game: the roster's own players, plus anyone
+ * called up for this specific game (flagged, so the bench shows them
+ * differently).
  *
- * The margin is derived, not recorded: every possession already carries
- * points and which team scored them, so a running total is free.
- *
- * Garbage time and clutch are expressed in POSSESSIONS REMAINING rather
- * than clock time, because the game clock isn't reliably legible on film.
- * Once garbage time triggers it stays on unless the margin closes back
- * under a lower threshold -- otherwise one free throw flips it on and off.
+ * A game with no roster_id falls back to every player rather than an empty
+ * bench. Passing no gameId skips call-ups -- useful where the list is only
+ * needed to turn ids into names.
  */
-export function possessionContexts(
-  gamePossessions: Possession[],
-  opts: { garbageMargin?: number; garbageRemaining?: number; garbageExit?: number; clutchMargin?: number; clutchRemaining?: number } = {},
-): Map<string, PossessionContext> {
-  const garbageMargin = opts.garbageMargin ?? 20;
-  const garbageRemaining = opts.garbageRemaining ?? 12;
-  const garbageExit = opts.garbageExit ?? 15;
-  const clutchMargin = opts.clutchMargin ?? 6;
-  const clutchRemaining = opts.clutchRemaining ?? 10;
+export async function listGamePlayers(rosterId: string | null, gameId?: string): Promise<LineupPlayer[]> {
+  const calledUp = gameId ? await listCallUpIds(gameId) : new Set<string>();
 
-  const sorted = [...gamePossessions].sort((a, b) => a.sequence - b.sequence);
-  const total = sorted.length;
-  const out = new Map<string, PossessionContext>();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, name, jersey, home_roster_id")
+    .eq("role", "player")
+    .order("jersey", { ascending: true, nullsFirst: false });
 
-  let margin = 0;
-  let inGarbage = false;
+  // Surfacing this matters: a bad column name makes PostgREST reject the
+  // whole request, and swallowing that into an empty array looks exactly
+  // like "nobody is on this roster".
+  if (error) throw new Error(`Couldn't load players: ${error.message}`);
 
-  sorted.forEach((p, i) => {
-    margin += (p.team === "us" ? 1 : -1) * (p.points ?? 0);
-    const remaining = total - i - 1;
-    const abs = Math.abs(margin);
+  const rows = (data ?? []) as any[];
+  const mapped: LineupPlayer[] = rows
+    .filter((p) => !rosterId || p.home_roster_id === rosterId || calledUp.has(p.id))
+    .map((p) => ({
+      id: p.id,
+      name: p.name ?? "",
+      jersey: p.jersey ?? null,
+      called_up: !!rosterId && p.home_roster_id !== rosterId && calledUp.has(p.id),
+    }));
 
-    if (!inGarbage && abs >= garbageMargin && remaining <= garbageRemaining) inGarbage = true;
-    else if (inGarbage && abs < garbageExit) inGarbage = false;
-
-    out.set(p.id, {
-      margin,
-      remaining,
-      garbage: inGarbage,
-      clutch: abs <= clutchMargin && remaining <= clutchRemaining,
-    });
+  // Roster players first, call-ups after, each by jersey then name.
+  return mapped.sort((a, b) => {
+    if (a.called_up !== b.called_up) return a.called_up ? 1 : -1;
+    if (a.jersey != null && b.jersey != null) return a.jersey - b.jersey;
+    if (a.jersey != null) return -1;
+    if (b.jersey != null) return 1;
+    return a.name.localeCompare(b.name);
   });
-
-  return out;
 }
 
-// ── Minutes estimate ─────────────────────────────────────────────
-
-/**
- * Estimated seconds per possession, calibrated per period.
- *
- * Each period's known length is spread across the possessions actually
- * played in it, so a foul-heavy fourth quarter (short possessions, lots of
- * stopped clock) doesn't distort a fast-paced first. Error can't compound
- * across the game because every period is anchored independently.
- *
- * A period with almost no possessions falls back to the game average --
- * an 8-possession overtime would otherwise produce a wild number.
- */
-export function secondsPerPossession(gamePossessions: Possession[], fmt: GameFormat): Map<number, number> {
-  const byPeriod = new Map<number, number>();
-  gamePossessions.forEach((p) => byPeriod.set(p.quarter, (byPeriod.get(p.quarter) ?? 0) + 1));
-
-  let totalSeconds = 0;
-  let totalPossessions = 0;
-  byPeriod.forEach((count, period) => {
-    totalSeconds += periodLengthSeconds(fmt, period);
-    totalPossessions += count;
-  });
-  const gameAverage = totalPossessions ? totalSeconds / totalPossessions : 16;
-
-  const out = new Map<number, number>();
-  byPeriod.forEach((count, period) => {
-    out.set(period, count >= 10 ? periodLengthSeconds(fmt, period) / count : gameAverage);
-  });
-  return out;
-}
-
-// ── Shrinkage ────────────────────────────────────────────────────
-
-/**
- * Pulls a rate toward the team mean in proportion to how little of it
- * we've seen. At n possessions the row's own data carries n/(n+k) of the
- * weight, so a lineup at +47 over 22 possessions lands nearer the team
- * average than its raw number suggests.
- */
-export function shrink(value: number, n: number, teamValue: number, k: number): number {
-  if (n <= 0) return teamValue;
-  return (n * value + k * teamValue) / (n + k);
+/** Player ids called up for this specific game. */
+export async function listCallUpIds(gameId: string): Promise<Set<string>> {
+  const { data, error } = await supabase.from("game_call_ups").select("player_id").eq("game_id", gameId);
+  if (error) throw new Error(`Couldn't load call-ups: ${error.message}`);
+  return new Set(((data ?? []) as any[]).map((r) => r.player_id as string));
 }
 
 /**
- * Estimates k from the data instead of asking a coach to pick one.
- *
- * The spread you observe between lineups is real differences plus noise.
- * The noise is measurable -- it's the per-possession scoring variance
- * divided by each lineup's possession count -- so subtracting it leaves the
- * real spread, and k is the ratio of the two.
- *
- * Guarded three ways, because the estimate is itself noisy early on:
- * clamped to a sane range, floored on total sample before it's trusted at
- * all, and handled for the case where lineups vary LESS than noise alone
- * would predict (meaning no detectable difference, so regress hard).
+ * Players eligible to be called up: anyone with the player role who isn't
+ * already on this roster. Returns their own roster's name so the picker can
+ * say where they're coming from.
  */
-export function estimateK(
-  rows: { value: number; n: number }[],
-  perPossessionVariance: number,
-  sample: { distinctPossessions: number; games: number },
-  fallback = 70,
-  min = 25,
-  max = 200,
-): number {
-  const qualifying = rows.filter((r) => r.n > 0);
-  // Distinct possessions, not the sum across rows -- at individual level
-  // every possession belongs to five rows, so summing made one game look
-  // like a season and let a meaningless estimate through.
-  if (qualifying.length < 3 || sample.games < 5 || sample.distinctPossessions < 600) return fallback;
-  const totalN = qualifying.reduce((s, r) => s + r.n, 0);
-
-  const weighted = qualifying.reduce((s, r) => s + r.value * r.n, 0) / totalN;
-  const observedVar =
-    qualifying.reduce((s, r) => s + r.n * Math.pow(r.value - weighted, 2), 0) / totalN;
-  const expectedNoise =
-    qualifying.reduce((s, r) => s + perPossessionVariance / r.n, 0) / qualifying.length;
-
-  const trueVar = observedVar - expectedNoise;
-  if (!(trueVar > 0)) return max; // lineups vary less than noise -- regress hard
-  return Math.max(min, Math.min(max, perPossessionVariance / trueVar));
+export async function listCallUpCandidates(rosterId: string | null): Promise<(LineupPlayer & { fromRoster: string })[]> {
+  const [{ data, error }, { data: rosters }] = await Promise.all([
+    supabase.from("profiles").select("id, name, jersey, home_roster_id").eq("role", "player"),
+    supabase.from("rosters").select("id, name"),
+  ]);
+  if (error) throw new Error(`Couldn't load players: ${error.message}`);
+  const rosterName = new Map(((rosters ?? []) as any[]).map((r) => [r.id, r.name as string]));
+  return ((data ?? []) as any[])
+    .filter((p) => p.home_roster_id !== rosterId)
+    .map((p) => ({
+      id: p.id,
+      name: p.name ?? "",
+      jersey: p.jersey ?? null,
+      called_up: true,
+      fromRoster: rosterName.get(p.home_roster_id) ?? "no roster",
+    }))
+    .sort((a, b) => a.fromRoster.localeCompare(b.fromRoster) || (a.jersey ?? 999) - (b.jersey ?? 999) || a.name.localeCompare(b.name));
 }
 
-/** Per-possession variance of points scored, for the noise term above. */
-export function perPossessionVariance(possessions: Possession[]): number {
-  if (!possessions.length) return 1.3;
-  const mean = possessions.reduce((s, p) => s + (p.points ?? 0), 0) / possessions.length;
-  return possessions.reduce((s, p) => s + Math.pow((p.points ?? 0) - mean, 2), 0) / possessions.length;
+export async function addCallUp(gameId: string, playerId: string, userId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("game_call_ups").insert({ game_id: gameId, player_id: playerId, created_by: userId });
+  return { error: error?.message ?? null };
 }
 
-// ── Combination rows ─────────────────────────────────────────────
-
-export interface ComboRow {
-  key: string;
-  playerIds: string[];
-  offPossessions: number;
-  defPossessions: number;
-  totalPossessions: number;
-  possessionShare: number;
-  estMinutes: number;
-  games: number;
-  shifts: number;
-  pointsFor: number;
-  pointsAgainst: number;
-  offPPP: number | null;
-  defPPP: number | null;
-  /** Raw offence minus defence, per 100 possessions. */
-  rawNet: number | null;
-  /** Same, pulled toward the team mean by sample size. This is what ranks. */
-  adjNet: number | null;
-  /** True once both the possession and game gates are cleared. */
-  qualified: boolean;
-  /** Full stat sets, computed by the same code the team report uses. */
-  offense: Record<string, number>;
-  defense: Record<string, number>;
-  /** Lineup-only stats -- BLOB/SLOB PPP, 3PT rate, shot quality mix. */
-  offenseExtra: Record<string, number | null>;
-  defenseExtra: Record<string, number | null>;
-  /** Foul trouble logged against members of this group. Individual level only. */
-  fouls: number;
-}
-
-function statMap(possessions: Possession[], team: "us" | "opponent", goals: StatGoal[]): Record<string, number> {
-  const out: Record<string, number> = {};
-  computeTeamStats(possessions, team, goals).forEach((r) => { out[r.key] = r.value; });
-  return out;
+export async function removeCallUp(gameId: string, playerId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("game_call_ups").delete().eq("game_id", gameId).eq("player_id", playerId);
+  return { error: error?.message ?? null };
 }
 
 /**
- * Stats the team report doesn't have, so they're defined once here.
- *
- * BLOB/SLOB PPP is the one worth calling out: which five you want on the
- * floor for a sideline out with four seconds left is a real coaching
- * question that no product answers. computeOobEffectiveness() exists but
- * returns a scored/flowed/turnover breakdown for the OOB display block,
- * not points per trip, so this computes the trips directly.
+ * The five that started the most recent game with any shifts entered, so a
+ * new game's first shift can be prefilled. Restricted to the same roster --
+ * last season's varsity starters are no help for a JV game.
  */
-function extraStats(possessions: Possession[], team: "us" | "opponent"): Record<string, number | null> {
-  const own = possessions.filter((p) => p.team === team);
-  const oob = own.filter((p) => p.possession_type === "blob" || p.possession_type === "slob");
-  const fga = own.filter((p) => p.outcome === "fg_made" || p.outcome === "fg_missed");
-  const fga3 = fga.filter((p) => p.shot_type === 3);
-  const sq = computeShotQuality(possessions, team);
-  return {
-    oob_ppp: oob.length ? round2(oob.reduce((s, p) => s + (p.points ?? 0), 0) / oob.length) : null,
-    oob_trips: oob.length,
-    three_rate: fga.length ? Math.round((fga3.length / fga.length) * 1000) / 10 : null,
-    sq_great: sq.total ? sq.breakdown.great : null,
-    sq_good: sq.total ? sq.breakdown.good : null,
-    sq_live: sq.total ? sq.breakdown.live : null,
-    sq_tough: sq.total ? sq.breakdown.tough : null,
-  };
-}
+export async function lastStartingFive(rosterId: string | null, excludeGameId: string): Promise<string[] | null> {
+  let q = supabase.from("games").select("id, game_date").order("game_date", { ascending: false }).limit(25);
+  if (rosterId) q = q.eq("roster_id", rosterId);
+  const { data: games } = await q;
+  const ids = (games ?? []).map((g: any) => g.id).filter((id: string) => id !== excludeGameId);
+  if (!ids.length) return null;
 
-/** Every k-sized subset of a five, as sorted id arrays. */
-function combinations(ids: string[], size: number): string[][] {
-  if (size > ids.length) return [];
-  const out: string[][] = [];
-  const walk = (start: number, acc: string[]) => {
-    if (acc.length === size) { out.push([...acc]); return; }
-    for (let i = start; i < ids.length; i++) walk(i + 1, [...acc, ids[i]]);
-  };
-  walk(0, []);
-  return out;
-}
+  const { data: shifts } = await supabase
+    .from("shifts")
+    .select("game_id, player_ids, start_sequence")
+    .in("game_id", ids)
+    .order("start_sequence", { ascending: true });
+  if (!shifts?.length) return null;
 
-export interface GameSlice {
-  gameId: string;
-  possessions: Possession[];
-  shifts: Shift[];
-  format: GameFormat;
-}
-
-/**
- * Builds one row per distinct combination at the requested size.
- *
- * A 5-man row means exactly that five on the floor. Below five it means
- * ALL of those players on the floor together, whoever else is out there --
- * "Doucette + Fontes with any other three". Different questions, and the
- * UI has to say which, or people read a pair's number as if it were the
- * pair alone.
- */
-export function computeComboRows(
-  slices: GameSlice[],
-  level: ComboLevel,
-  goals: StatGoal[],
-  opts: { excludeGarbage?: boolean; clutchOnly?: boolean; foulsByPlayer?: Map<string, number> } = {},
-): { rows: ComboRow[]; teamOffPPP: number; teamDefPPP: number; k: number; gamesCounted: number } {
-  type Bucket = {
-    playerIds: string[];
-    off: Possession[];
-    def: Possession[];
-    games: Set<string>;
-    shifts: Set<string>;
-    seconds: number;
-  };
-  const buckets = new Map<string, Bucket>();
-  const foulsByPlayer = opts.foulsByPlayer ?? new Map<string, number>();
-
-  let teamOff: Possession[] = [];
-  let teamDef: Possession[] = [];
-  const gamesCounted = new Set<string>();
-
-  for (const slice of slices) {
-    if (!slice.shifts.length) continue;
-    gamesCounted.add(slice.gameId);
-
-    const ctx = possessionContexts(slice.possessions);
-    const spp = secondsPerPossession(slice.possessions, slice.format);
-    const assigned = assignPossessions(slice.possessions, slice.shifts);
-    const shiftById = new Map(slice.shifts.map((s) => [s.id, s]));
-
-    for (const p of slice.possessions) {
-      const c = ctx.get(p.id);
-      if (opts.excludeGarbage && c?.garbage) continue;
-      if (opts.clutchOnly && !c?.clutch) continue;
-
-      if (p.team === "us") teamOff.push(p); else teamDef.push(p);
-
-      const shiftId = assigned.get(p.id);
-      if (!shiftId) continue;
-      const shift = shiftById.get(shiftId);
-      if (!shift) continue;
-
-      const groups = level === 5 ? [[...shift.player_ids].sort()] : combinations([...shift.player_ids].sort(), level);
-      for (const g of groups) {
-        const key = lineupKey(g);
-        let b = buckets.get(key);
-        if (!b) {
-          b = { playerIds: g, off: [], def: [], games: new Set(), shifts: new Set(), seconds: 0 };
-          buckets.set(key, b);
-        }
-        if (p.team === "us") b.off.push(p); else b.def.push(p);
-        b.games.add(slice.gameId);
-        b.shifts.add(shiftId);
-        b.seconds += spp.get(p.quarter) ?? 16;
-      }
-    }
+  // Walk games newest-first and take the first one that has a shift.
+  for (const id of ids) {
+    const first = (shifts as any[]).find((s) => s.game_id === id);
+    if (first) return first.player_ids as string[];
   }
-
-  const teamOffPPP = teamOff.length ? teamOff.reduce((s, p) => s + (p.points ?? 0), 0) / teamOff.length : 0;
-  const teamDefPPP = teamDef.length ? teamDef.reduce((s, p) => s + (p.points ?? 0), 0) / teamDef.length : 0;
-  const teamNet = (teamOffPPP - teamDefPPP) * 100;
-  const totalTeamOff = teamOff.length;
-
-  const draft = [...buckets.values()].map((b) => {
-    const offPPP = b.off.length ? b.off.reduce((s, p) => s + (p.points ?? 0), 0) / b.off.length : null;
-    const defPPP = b.def.length ? b.def.reduce((s, p) => s + (p.points ?? 0), 0) / b.def.length : null;
-    const rawNet = offPPP != null && defPPP != null ? (offPPP - defPPP) * 100 : null;
-    return { b, offPPP, defPPP, rawNet, n: b.off.length + b.def.length };
-  });
-
-  const k = estimateK(
-    draft.filter((d) => d.rawNet != null).map((d) => ({ value: d.rawNet as number, n: d.n })),
-    perPossessionVariance([...teamOff, ...teamDef]) * 10000,
-    { distinctPossessions: teamOff.length + teamDef.length, games: gamesCounted.size },
-  );
-
-  const gate = SAMPLE_GATES[level];
-  const rows: ComboRow[] = draft.map(({ b, offPPP, defPPP, rawNet, n }) => ({
-    key: lineupKey(b.playerIds),
-    playerIds: b.playerIds,
-    offPossessions: b.off.length,
-    defPossessions: b.def.length,
-    totalPossessions: n,
-    possessionShare: totalTeamOff ? Math.round((b.off.length / totalTeamOff) * 100) : 0,
-    estMinutes: Math.round((b.seconds / 60) * 10) / 10,
-    games: b.games.size,
-    shifts: b.shifts.size,
-    pointsFor: b.off.reduce((s, p) => s + (p.points ?? 0), 0),
-    pointsAgainst: b.def.reduce((s, p) => s + (p.points ?? 0), 0),
-    offPPP: offPPP != null ? round2(offPPP) : null,
-    defPPP: defPPP != null ? round2(defPPP) : null,
-    rawNet: rawNet != null ? Math.round(rawNet) : null,
-    adjNet: rawNet != null ? Math.round(shrink(rawNet, n, teamNet, k)) : null,
-    qualified: b.off.length >= gate.possessions && b.games.size >= gate.games,
-    offense: statMap(b.off, "us", goals),
-    defense: statMap(b.def, "opponent", goals),
-    offenseExtra: extraStats(b.off, "us"),
-    defenseExtra: extraStats(b.def, "opponent"),
-    fouls: b.playerIds.reduce((n, id) => n + (foulsByPlayer.get(id) ?? 0), 0),
-  }));
-
-  rows.sort((a, b) => b.offPossessions - a.offPossessions);
-  return {
-    rows, teamOffPPP, teamDefPPP, k, gamesCounted: gamesCounted.size,
-    teamNet: Math.round(teamNet),
-    teamOffense: statMap(teamOff, "us", goals),
-    teamDefense: statMap(teamDef, "opponent", goals),
-    teamOffenseExtra: extraStats(teamOff, "us"),
-    teamDefenseExtra: extraStats(teamDef, "opponent"),
-  };
+  return null;
 }
 
-// ── On/off ───────────────────────────────────────────────────────
+// ── Writes ───────────────────────────────────────────────────────
 
-export interface OnOffRow {
-  playerIds: string[];
-  onPossessions: number;
-  offPossessions: number;
-  onNet: number | null;
-  offNet: number | null;
-  diff: number | null;
-  /** Four factors and shot quality, on vs off, so the net difference can be explained. */
-  factors: { key: string; label: string; on: number | null; off: number | null; diff: number | null; lowerBetter?: boolean }[];
-}
-
-/**
- * Team net rating with a group on the floor, minus with them off.
- *
- * The "off" side is restricted to games the player actually appeared in.
- * Without that, a January call-up's off sample includes every December
- * game he wasn't on the roster for, and the number stops measuring him and
- * starts measuring when he joined the team.
- *
- * Meaningless at five-man -- "without this exact five" is nearly the whole
- * season -- so it's only offered below that.
- */
-export function computeOnOff(
-  slices: GameSlice[],
+export async function createShift(
+  gameId: string,
+  quarter: number,
+  startSequence: number,
   playerIds: string[],
-  goals: StatGoal[],
-  opts: { excludeGarbage?: boolean } = {},
-): OnOffRow {
-  const key = new Set(playerIds);
-  const appeared = new Set(
-    slices.filter((s) => s.shifts.some((sh) => playerIds.every((id) => sh.player_ids.includes(id)))).map((s) => s.gameId),
-  );
+  userId: string,
+  side: ShiftSide = "us",
+  startClockSeconds?: number | null,
+): Promise<{ error: string | null; shift: Shift | null }> {
+  if (playerIds.length !== 5) return { error: "A shift needs exactly five players.", shift: null };
+  const { data, error } = await supabase
+    .from("shifts")
+    .insert({
+      game_id: gameId,
+      quarter,
+      start_sequence: startSequence,
+      player_ids: playerIds,
+      start_clock_seconds: startClockSeconds ?? null,
+      side,
+      created_by: userId,
+    })
+    .select()
+    .single();
+  return { error: error?.message ?? null, shift: (data as Shift) ?? null };
+}
 
-  let onFor = 0, onAgainst = 0, onOff = 0, onDef = 0;
-  let offFor = 0, offAgainst = 0, offOff = 0, offDef = 0;
-  const onPoss: Possession[] = [], offPoss: Possession[] = [];
+/**
+ * Changes who's on the floor for an existing shift.
+ *
+ * Cascade is deliberate. The editor works in swap terms even though the
+ * database stores absolute fives, so correcting "10 in for 32" to "10 in
+ * for 21" has to follow through every later shift -- otherwise you'd fix
+ * one shift and leave the rest of the game built on the wrong five. The
+ * cascade stops at the first later shift that already mentions either
+ * player, since that shift set them deliberately.
+ */
+export async function updateShiftFive(
+  shiftId: string,
+  playerIds: string[],
+  allShifts: Shift[],
+): Promise<{ error: string | null; shifts: Shift[] }> {
+  if (playerIds.length !== 5) return { error: "A shift needs exactly five players.", shifts: allShifts };
 
-  for (const slice of slices) {
-    if (!appeared.has(slice.gameId) || !slice.shifts.length) continue;
-    const ctx = possessionContexts(slice.possessions);
-    const assigned = assignPossessions(slice.possessions, slice.shifts);
-    const shiftById = new Map(slice.shifts.map((s) => [s.id, s]));
+  const target = allShifts.find((s) => s.id === shiftId);
+  if (!target) return { error: "Shift not found.", shifts: allShifts };
+  // Only this side cascades. Fixing who was on for Team 1 tells you nothing
+  // about who was on for Team 2.
+  const ordered = allShifts
+    .filter((s) => (s.side ?? "us") === (target.side ?? "us"))
+    .sort((a, b) => a.start_sequence - b.start_sequence);
+  const idx = ordered.findIndex((s) => s.id === shiftId);
+  if (idx < 0) return { error: "Shift not found.", shifts: allShifts };
 
-    for (const p of slice.possessions) {
-      if (opts.excludeGarbage && ctx.get(p.id)?.garbage) continue;
-      const shiftId = assigned.get(p.id);
-      if (!shiftId) continue;
-      const shift = shiftById.get(shiftId);
-      if (!shift) continue;
-      const on = [...key].every((id) => shift.player_ids.includes(id));
-      (on ? onPoss : offPoss).push(p);
-      const pts = p.points ?? 0;
-      if (p.team === "us") {
-        if (on) { onFor += pts; onOff++; } else { offFor += pts; offOff++; }
-      } else {
-        if (on) { onAgainst += pts; onDef++; } else { offAgainst += pts; offDef++; }
-      }
-    }
+  const before = ordered[idx].player_ids;
+  const removed = before.filter((p) => !playerIds.includes(p));
+  const added = playerIds.filter((p) => !before.includes(p));
+
+  const updates: { id: string; player_ids: string[] }[] = [{ id: shiftId, player_ids: playerIds }];
+
+  for (let i = idx + 1; i < ordered.length; i++) {
+    const five = ordered[i].player_ids;
+    // A later shift that already decided about either player wins.
+    const touched = [...removed, ...added].some((p) => {
+      const prev = ordered[i - 1].player_ids;
+      return five.includes(p) !== prev.includes(p);
+    });
+    if (touched) break;
+    let next = five;
+    removed.forEach((p) => { next = next.filter((x) => x !== p); });
+    added.forEach((p) => { if (!next.includes(p)) next = [...next, p]; });
+    if (next.length !== 5) break;
+    if (next.join(",") === five.join(",")) continue;
+    updates.push({ id: ordered[i].id, player_ids: next });
   }
 
-  const net = (f: number, fN: number, a: number, aN: number) =>
-    fN && aN ? Math.round((f / fN - a / aN) * 100) : null;
+  for (const u of updates) {
+    const { error } = await supabase.from("shifts").update({ player_ids: u.player_ids }).eq("id", u.id);
+    if (error) return { error: error.message, shifts: allShifts };
+  }
 
-  const onNet = net(onFor, onOff, onAgainst, onDef);
-  const offNet = net(offFor, offOff, offAgainst, offDef);
-
-  const onStats = statMap(onPoss, "us", goals);
-  const offStats = statMap(offPoss, "us", goals);
-  const FACTORS: { key: string; label: string; lowerBetter?: boolean }[] = [
-    { key: "efg_pct", label: "eFG%" },
-    { key: "tov_pct", label: "TOV%", lowerBetter: true },
-    { key: "oreb_pct", label: "OREB%" },
-    { key: "ft_rate", label: "FT rate" },
-    { key: "quality_shot_pct", label: "Quality shot %" },
-  ];
-  const factors = FACTORS.map((f) => {
-    const on = onPoss.length ? onStats[f.key] ?? null : null;
-    const off = offPoss.length ? offStats[f.key] ?? null : null;
-    return { ...f, on, off, diff: on != null && off != null ? Math.round((on - off) * 10) / 10 : null };
-  });
-
+  const byId = new Map(updates.map((u) => [u.id, u.player_ids]));
   return {
-    playerIds,
-    onPossessions: onOff + onDef,
-    offPossessions: offOff + offDef,
-    onNet,
-    offNet,
-    diff: onNet != null && offNet != null ? onNet - offNet : null,
-    factors,
+    error: null,
+    shifts: allShifts.map((s) => (byId.has(s.id) ? { ...s, player_ids: byId.get(s.id)! } : s)),
   };
 }
 
 /**
- * For a pair: together, each one without the other, and neither. The case
- * worth finding is when "both" is lower than either alone -- two good
- * players who don't fit, which raw combined numbers can never show.
+ * Assigns (or reassigns) which roster a game's players come from. Games
+ * created before migration 102 have no roster, so they offer every player
+ * until this is set.
  */
-export function computeTogetherApart(slices: GameSlice[], a: string, b: string, opts: { excludeGarbage?: boolean } = {}) {
-  const buckets = { both: [0, 0, 0, 0], aOnly: [0, 0, 0, 0], bOnly: [0, 0, 0, 0], neither: [0, 0, 0, 0] };
+export async function setGameRoster(gameId: string, rosterId: string | null): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("games").update({ roster_id: rosterId }).eq("id", gameId);
+  return { error: error?.message ?? null };
+}
 
-  for (const slice of slices) {
-    if (!slice.shifts.length) continue;
-    const ctx = possessionContexts(slice.possessions);
-    const assigned = assignPossessions(slice.possessions, slice.shifts);
-    const shiftById = new Map(slice.shifts.map((s) => [s.id, s]));
+export async function deleteShift(shiftId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("shifts").delete().eq("id", shiftId);
+  return { error: error?.message ?? null };
+}
 
-    for (const p of slice.possessions) {
-      if (opts.excludeGarbage && ctx.get(p.id)?.garbage) continue;
-      const shift = shiftById.get(assigned.get(p.id) ?? "");
-      if (!shift) continue;
-      const hasA = shift.player_ids.includes(a);
-      const hasB = shift.player_ids.includes(b);
-      const bucket = hasA && hasB ? buckets.both : hasA ? buckets.aOnly : hasB ? buckets.bOnly : buckets.neither;
-      const pts = p.points ?? 0;
-      if (p.team === "us") { bucket[0] += pts; bucket[1]++; } else { bucket[2] += pts; bucket[3]++; }
+export async function addFoulTrouble(
+  gameId: string,
+  quarter: number,
+  sequence: number,
+  playerId: string,
+  detail: FoulLevel,
+  userId: string,
+): Promise<{ error: string | null; event: LineupEvent | null }> {
+  const { data, error } = await supabase
+    .from("lineup_events")
+    .insert({ game_id: gameId, quarter, sequence, player_id: playerId, event_type: "foul_trouble", detail, created_by: userId })
+    .select()
+    .single();
+  return { error: error?.message ?? null, event: (data as LineupEvent) ?? null };
+}
+
+export async function deleteLineupEvent(id: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("lineup_events").delete().eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+// ── Deriving lineups from shifts ─────────────────────────────────
+
+/** The shift covering a given possession on one side -- the latest one starting at or before it. */
+export function shiftForSequence(shifts: Shift[], sequence: number, side: ShiftSide = "us"): Shift | null {
+  let found: Shift | null = null;
+  for (const s of shifts) {
+    if ((s.side ?? "us") !== side) continue;
+    if (s.start_sequence <= sequence) {
+      if (!found || s.start_sequence > found.start_sequence) found = s;
     }
   }
-
-  const toRow = (v: number[]) => ({
-    possessions: v[1] + v[3],
-    net: v[1] && v[3] ? Math.round((v[0] / v[1] - v[2] / v[3]) * 100) : null,
-  });
-  return { both: toRow(buckets.both), aOnly: toRow(buckets.aOnly), bOnly: toRow(buckets.bOnly), neither: toRow(buckets.neither) };
+  return found;
 }
-
-// ── Readiness ────────────────────────────────────────────────────
 
 /**
- * How many groups at each level clear their gate. Early season this points
- * you at individual and pairs, where the samples actually are, instead of
- * letting you draw conclusions from a 22-possession five.
+ * Possession id -> the shift on each end of it.
+ *
+ * One rule covers games and practices both: offence goes to the latest
+ * shift on the side that has the ball, defence to the latest shift on the
+ * other side. In a game only "us" shifts exist, so our own possessions find
+ * no defensive shift and theirs find no offensive one -- which is precisely
+ * the old single-shift behaviour, just expressed once.
  */
-export function readiness(slices: GameSlice[], goals: StatGoal[]): { level: ComboLevel; ready: number; total: number }[] {
-  return COMBO_LEVELS.map(({ value }) => {
-    const { rows } = computeComboRows(slices, value, goals, { excludeGarbage: true });
-    return { level: value, ready: rows.filter((r) => r.qualified).length, total: rows.length };
-  });
+export function assignPossessionSides(
+  possessions: Possession[],
+  shifts: Shift[],
+): Map<string, { off: string | null; def: string | null }> {
+  const sorted = [...shifts].sort((a, b) => a.start_sequence - b.start_sequence);
+  const out = new Map<string, { off: string | null; def: string | null }>();
+  for (const p of possessions) {
+    const ballSide: ShiftSide = p.team === "us" ? "us" : "opponent";
+    const otherSide: ShiftSide = ballSide === "us" ? "opponent" : "us";
+    out.set(p.id, {
+      off: shiftForSequence(sorted, p.sequence, ballSide)?.id ?? null,
+      def: shiftForSequence(sorted, p.sequence, otherSide)?.id ?? null,
+    });
+  }
+  return out;
 }
 
-function round2(n: number) { return Math.round(n * 100) / 100; }
+/** Possession id -> shift id for the "us" side only. Kept for the entry screen, which paints one side at a time. */
+export function assignPossessions(possessions: Possession[], shifts: Shift[], side: ShiftSide = "us"): Map<string, string> {
+  const sorted = [...shifts].sort((a, b) => a.start_sequence - b.start_sequence);
+  const out = new Map<string, string>();
+  for (const p of possessions) {
+    const s = shiftForSequence(sorted, p.sequence, side);
+    if (s) out.set(p.id, s.id);
+  }
+  return out;
+}
+
+/** A stable key for a set of five, so the same five in a different order groups together. */
+export function lineupKey(playerIds: string[]): string {
+  return [...playerIds].sort().join("|");
+}
+
+// ── Invariants ───────────────────────────────────────────────────
+
+/**
+ * Arithmetic checks that either pass or scream. With no type checker in
+ * the loop and shift entry being manual, these catch both entry mistakes
+ * and aggregation bugs -- a shift with six players, a shift covering zero
+ * possessions, possessions with no shift at all.
+ */
+export function validateShifts(possessions: Possession[], shifts: Shift[], sides: ShiftSide[] = ["us"]): string[] {
+  const problems: string[] = [];
+  const multi = sides.length > 1;
+  const tag = (side: ShiftSide) => (multi ? `${SIDE_LABEL[side]}: ` : "");
+
+  for (const side of sides) {
+    const sorted = shifts.filter((s) => (s.side ?? "us") === side).sort((a, b) => a.start_sequence - b.start_sequence);
+
+    sorted.forEach((s) => {
+      if (s.player_ids.length !== 5) {
+        problems.push(`${tag(side)}a shift starting at #${s.start_sequence} has ${s.player_ids.length} players, not 5.`);
+      }
+      if (new Set(s.player_ids).size !== s.player_ids.length) {
+        problems.push(`${tag(side)}a shift starting at #${s.start_sequence} lists the same player twice.`);
+      }
+    });
+
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i].start_sequence === sorted[i - 1].start_sequence) {
+        problems.push(`${tag(side)}two shifts both start at #${sorted[i].start_sequence}.`);
+      }
+    }
+
+    const assigned = assignPossessions(possessions, shifts, side);
+    const unassigned = possessions.filter((p) => !assigned.has(p.id));
+    if (unassigned.length) {
+      const first = unassigned.reduce((m, p) => (p.sequence < m ? p.sequence : m), Infinity);
+      problems.push(`${tag(side)}${unassigned.length} possession${unassigned.length === 1 ? "" : "s"} before the first shift (from #${first}).`);
+    }
+
+    const covered = new Set(assigned.values());
+    sorted.forEach((s) => {
+      if (!covered.has(s.id) && possessions.length) {
+        problems.push(`${tag(side)}the shift starting at #${s.start_sequence} covers no possessions.`);
+      }
+    });
+
+    // A shift is supposed to sit inside one period. If the possessions it
+    // covers span two, a period boundary was missed.
+    const byShift = new Map<string, Set<number>>();
+    possessions.forEach((p) => {
+      const id = assigned.get(p.id);
+      if (!id) return;
+      if (!byShift.has(id)) byShift.set(id, new Set());
+      byShift.get(id)!.add(p.quarter);
+    });
+    byShift.forEach((quarters, id) => {
+      if (quarters.size > 1) {
+        const s = sorted.find((x) => x.id === id);
+        problems.push(`${tag(side)}the shift starting at #${s?.start_sequence} spans more than one period — add a shift at the period change.`);
+      }
+    });
+  }
+
+  // Intrasquad only: nobody can be on both squads at once.
+  if (multi) {
+    const usShifts = shifts.filter((s) => (s.side ?? "us") === "us");
+    possessions.forEach((p) => {
+      const a = shiftForSequence(usShifts, p.sequence, "us");
+      const b = shiftForSequence(shifts, p.sequence, "opponent");
+      if (!a || !b) return;
+      const both = a.player_ids.filter((id) => b.player_ids.includes(id));
+      if (both.length) {
+        problems.push(`At #${p.sequence}, ${both.length} player${both.length === 1 ? " is" : "s are"} listed on both squads at once.`);
+      }
+    });
+  }
+
+  return [...new Set(problems)];
+}
