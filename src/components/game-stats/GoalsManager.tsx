@@ -36,6 +36,8 @@ export default function GoalsManager({ userId }: Props) {
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [loading, setLoading] = useState(true);
   const [savedKey, setSavedKey] = useState<string | null>(null);
+  // A save that quietly does nothing is worse than one that fails loudly.
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [goalTeam, setGoalTeam] = useState<Team>("us");
 
   const [order, setOrder] = useState<StatDef[]>(DEFAULT_STAT_ORDER);
@@ -52,7 +54,7 @@ export default function GoalsManager({ userId }: Props) {
     setGoals(byKey);
     const initDrafts: Record<string, Draft> = {};
     (["us", "opponent"] as Team[]).forEach((team) => {
-      GOAL_STATS.forEach((s) => {
+      [...GOAL_STATS, ...LINEUP_GOAL_STATS].forEach((s) => {
         const existing = byKey[`${team}:${s.key}`];
         initDrafts[`${team}:${s.key}`] = {
           value: existing ? String(existing.target_value) : "",
@@ -70,11 +72,17 @@ export default function GoalsManager({ userId }: Props) {
   async function save(team: Team, key: string) {
     const draftKey = `${team}:${key}`;
     const draft = drafts[draftKey];
+    if (!draft) { setSaveError(`Couldn't find the form state for ${key}. Reload and try again.`); return; }
     const num = Number(draft.value);
-    if (draft.value.trim() === "" || Number.isNaN(num)) return;
+    if (draft.value.trim() === "" || Number.isNaN(num)) {
+      setSaveError("Enter a number before saving.");
+      return;
+    }
+    setSaveError(null);
     const minSample = draft.minSampleSize.trim() === "" ? null : Number(draft.minSampleSize);
     const { error } = await upsertStatGoal(key, team, num, draft.direction, userId, minSample, draft.note.trim() || null);
-    if (!error) {
+    if (error) { setSaveError(typeof error === "string" ? error : (error as any).message ?? "Couldn't save that goal."); return; }
+    {
       setGoals((g) => ({ ...g, [draftKey]: { stat_key: key, team, target_value: num, direction: draft.direction, min_sample_size: minSample, note: draft.note.trim() || null } }));
       setSavedKey(draftKey);
       setTimeout(() => setSavedKey((k) => (k === draftKey ? null : k)), 1500);
@@ -147,6 +155,10 @@ export default function GoalsManager({ userId }: Props) {
           <button className={`role-tab ${goalTeam === "us" ? "active" : ""}`} onClick={() => setGoalTeam("us")}>Us</button>
           <button className={`role-tab ${goalTeam === "opponent" ? "active" : ""}`} onClick={() => setGoalTeam("opponent")}>Opponent</button>
         </div>
+
+        {saveError && (
+          <div style={{ fontSize: 12, color: "#c66", marginBottom: 8 }}>{saveError}</div>
+        )}
 
         {goalRows.map((s) => {
           const draftKey = `${goalTeam}:${s.key}`;
