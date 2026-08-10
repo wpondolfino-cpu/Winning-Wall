@@ -199,6 +199,7 @@ export const LINEUP_GOAL_STATS: StatDef[] = [
   { key: "lineup_off_ppp", label: "Offensive PPP", kind: "number", inGame: true, defaultDirection: "higher_better", usOnly: true },
   { key: "lineup_def_ppp", label: "Defensive PPP", kind: "number", inGame: true, defaultDirection: "lower_better", usOnly: true },
   { key: "lineup_net_rating", label: "Net rating (per 100)", kind: "number", inGame: true, defaultDirection: "higher_better", usOnly: true },
+  { key: "lineup_onoff_diff", label: "On/off differential (per 100)", kind: "number", inGame: true, defaultDirection: "higher_better", usOnly: true },
   { key: "lineup_oob_ppp", label: "BLOB / SLOB PPP", kind: "number", inGame: true, defaultDirection: "higher_better", usOnly: true },
 ];
 
