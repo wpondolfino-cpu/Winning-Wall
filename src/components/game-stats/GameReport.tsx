@@ -524,9 +524,9 @@ function PlayCallTable({ rows }: { rows: ReturnType<typeof computePlayCallEffect
  * Shot quality as a paired row, matching every other stat in the report:
  * our number on the left, theirs on the right, label between. Two stacked
  * full-width bars were nearly impossible to tell apart at a glance, and
- * worse, the bar's colours are category colours (great=green, tough=red) --
+ * worse, the bar's colors are category colors (great=green, tough=red) --
  * so a great defensive performance rendered as a solid red bar, the exact
- * opposite of what colour means everywhere else in this report.
+ * opposite of what color means everywhere else in this report.
  *
  * The breakdown is still one tap away; it just isn't the default view.
  */
@@ -589,7 +589,7 @@ function ShotQualityPair({ us, them, usStatus, oppStatus, usGoal, oppGoal, oppon
       )}
 
       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, fontStyle: "italic" }}>
-        Bar colours grade the shot itself, not who benefits — on the right, more red means better defence.
+        Bar colors grade the shot itself, not who benefits — on the right, more red means better defence.
       </div>
     </div>
   );
