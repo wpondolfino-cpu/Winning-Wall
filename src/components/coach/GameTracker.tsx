@@ -91,6 +91,8 @@ interface Props {
   quarter: number;
   /** Period structure, so the header reads H1 or S2 rather than always Q1. Optional so any older call site still works. */
   format?: GameFormat;
+  /** In an intrasquad practice both teams are ours, so "Us on defense" is wrong. */
+  intrasquad?: boolean;
 }
 
 type Step =
@@ -146,7 +148,7 @@ interface FlowSnapshot {
 const QUARTER_ACCENT: Record<number, string> = { 1: "#3b6fd6", 2: "#2f9e63", 3: "#c9932f", 4: "#c2402f" };
 const DEFENSE_ACCENT = "#c2703a";
 
-export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_GAME_FORMAT }: Props) {
+export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_GAME_FORMAT, intrasquad = false }: Props) {
   const [playCalls, setPlayCalls] = useState<PlayCall[]>([]);
   const [drawnPlays, setDrawnPlays] = useState<Record<PlayCallCategory, DrawnPlay[]>>({ set: [], motion: [], blob: [], slob: [] });
   const [unsynced, setUnsynced] = useState(0);
@@ -485,14 +487,14 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
 
       <div className="role-tabs">
         <button className={`role-tab ${team === "us" ? "active" : ""}`} onClick={() => setTeam("us")}>
-          Us on offense
+          {intrasquad ? "Team 1 on offense" : "Us on offense"}
         </button>
         <button
           className={`role-tab ${team === "opponent" ? "active" : ""}`}
           onClick={() => setTeam("opponent")}
           style={team === "opponent" ? { background: DEFENSE_ACCENT, borderColor: DEFENSE_ACCENT } : undefined}
         >
-          Us on defense
+          {intrasquad ? "Team 2 on offense" : "Us on defense"}
         </button>
       </div>
 
