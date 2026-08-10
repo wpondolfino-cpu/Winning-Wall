@@ -29,7 +29,7 @@ import { listGamePlayers, listLineupEvents, type Shift, type LineupPlayer } from
 import {
   computeComboRows, computeOnOff, computeTogetherApart, readiness,
   COMBO_LEVELS, SAMPLE_GATES,
-  type ComboLevel, type ComboRow, type GameSlice, type OnOffRow,
+  type ComboLevel, type ComboRow, type ComboResult, type GameSlice, type OnOffRow,
 } from "../../lib/lineupStats";
 
 interface Props {
@@ -81,6 +81,13 @@ function explainerFor(key: string, level: ComboLevel): { what: string; how: stri
  * exact five" is nearly the whole season) but play type matters most,
  * because you pick a five for a situation.
  */
+/** Nothing loaded yet -- kept as a constant so it always matches ComboResult. */
+const EMPTY_COMBO_RESULT: ComboResult = {
+  rows: [], k: 70, gamesCounted: 0,
+  teamOffPPP: 0, teamDefPPP: 0, teamNet: 0,
+  teamOffense: {}, teamDefense: {}, teamOffenseExtra: {}, teamDefenseExtra: {},
+};
+
 const GROUPS_FOR: Record<ComboLevel, Group[]> = {
   1: ["overview", "onoff"],
   2: ["overview", "onoff"],
@@ -204,7 +211,9 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
   const filters = { excludeGarbage, clutchOnly, foulsByPlayer: fouls };
 
   const { rows, k, gamesCounted, teamNet, teamOffPPP, teamDefPPP, teamOffense, teamDefense, teamOffenseExtra, teamDefenseExtra } = useMemo(
-    () => (slices.length ? computeComboRows(slices, level, goals, filters) : { rows: [], k: 70, gamesCounted: 0, teamOffPPP: 0, teamDefPPP: 0 }),
+    () => (slices.length
+      ? computeComboRows(slices, level, goals, filters)
+      : EMPTY_COMBO_RESULT),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [slices, level, goals, excludeGarbage, clutchOnly, fouls],
   );
