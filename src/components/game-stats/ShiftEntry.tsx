@@ -21,8 +21,8 @@ import {
   listShifts, listLineupEvents, listGamePlayers, lastStartingFive,
   createShift, updateShiftFive, deleteShift, addFoulTrouble, deleteLineupEvent, setGameRoster,
   listCallUpCandidates, addCallUp, removeCallUp,
-  assignPossessions, validateShifts, FOUL_LEVELS,
-  type Shift, type LineupEvent, type LineupPlayer, type FoulLevel,
+  assignPossessions, validateShifts, FOUL_LEVELS, SIDE_LABEL,
+  type Shift, type LineupEvent, type LineupPlayer, type FoulLevel, type ShiftSide,
 } from "../../lib/lineups";
 import { periodLabel, describePossession, DEFAULT_GAME_FORMAT, type GameFormat, type Possession } from "../../lib/gameStats";
 
@@ -31,6 +31,8 @@ interface Props {
   userId: string;
   rosterId: string | null;
   format?: GameFormat;
+  /** An intrasquad practice has two squads to track, not one. */
+  intrasquad?: boolean;
   /** Lets the screen tell the hub the roster changed, so it reloads too. */
   onRosterChange?: (rosterId: string | null) => void;
 }
@@ -38,7 +40,7 @@ interface Props {
 const BAND_BG = ["#12241f", "#191a2c", "#241a14", "#241521"];
 const BAND_LINE = ["#2f6e56", "#4a46a0", "#8a4b28", "#8a3a56"];
 
-export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_GAME_FORMAT, onRosterChange }: Props) {
+export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_GAME_FORMAT, intrasquad = false, onRosterChange }: Props) {
   const [possessions, setPossessions] = useState<Possession[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [events, setEvents] = useState<LineupEvent[]>([]);
@@ -63,6 +65,8 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
   // Call-ups are per game, so the picker is opened from here rather than
   // being set up in advance -- you find out you need someone at the exact
   // moment you go looking for them on the bench.
+  // Which squad is being painted. Games only ever have one.
+  const [side, setSide] = useState<ShiftSide>("us");
   const [callUpOpen, setCallUpOpen] = useState(false);
   const [candidates, setCandidates] = useState<(LineupPlayer & { fromRoster: string })[]>([]);
   const [activeRoster, setActiveRoster] = useState<string>(rosterId ?? "");
@@ -110,9 +114,24 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
   }
 
   const byId = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
-  const assigned = useMemo(() => assignPossessions(possessions, shifts), [possessions, shifts]);
-  const problems = useMemo(() => validateShifts(possessions, shifts), [possessions, shifts]);
-  const sortedShifts = useMemo(() => [...shifts].sort((a, b) => a.start_sequence - b.start_sequence), [shifts]);
+  const sides = useMemo<ShiftSide[]>(() => (intrasquad ? ["us", "opponent"] : ["us"]), [intrasquad]);
+  const assigned = useMemo(() => assignPossessions(possessions, shifts, side), [possessions, shifts, side]);
+  const problems = useMemo(() => validateShifts(possessions, shifts, sides), [possessions, shifts, sides]);
+  // The list paints one side at a time, so everything below is that side's.
+  const sortedShifts = useMemo(
+    () => shifts.filter((s) => (s.side ?? "us") === side).sort((a, b) => a.start_sequence - b.start_sequence),
+    [shifts, side],
+  );
+  /** The other squad's five at a moment -- nobody can be on both at once. */
+  function opposingFive(sequence: number): string[] {
+    if (!intrasquad) return [];
+    const other: ShiftSide = side === "us" ? "opponent" : "us";
+    let five: string[] = [];
+    shifts.filter((s) => (s.side ?? "us") === other)
+      .sort((a, b) => a.start_sequence - b.start_sequence)
+      .forEach((s) => { if (s.start_sequence <= sequence) five = s.player_ids; });
+    return five;
+  }
 
   function label(id: string) {
     const p = byId.get(id);
@@ -126,6 +145,9 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
     for (const s of sortedShifts) if (s.start_sequence <= sequence) five = s.player_ids;
     return five;
   }
+
+  const panelSequence = panel ? (panel.mode === "new" ? panel.sequence : panel.shift.start_sequence) : 0;
+  const unavailable = panel ? opposingFive(panelSequence) : [];
 
   async function openNew(sequence: number, quarter: number) {
     const carried = fiveBefore(sequence);
@@ -158,7 +180,7 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
   /** Jersey typing runs alongside chip tapping, never replaces it. Enter commits the single match. */
   function onJerseyKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== "Enter") return;
-    const matches = players.filter((p) => p.jersey != null && String(p.jersey).startsWith(jersey));
+    const matches = players.filter((p) => p.jersey != null && String(p.jersey).startsWith(jersey) && !unavailable.includes(p.id));
     if (jersey && matches.length === 1) { toggle(matches[0].id); setJersey(""); }
   }
 
@@ -180,7 +202,7 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
     if (!panel || !balanced) return;
     setBusy(true); setError(null);
     if (panel.mode === "new") {
-      const { error: err, shift } = await createShift(gameId, panel.quarter, panel.sequence, nextFive, userId);
+      const { error: err, shift } = await createShift(gameId, panel.quarter, panel.sequence, nextFive, userId, side);
       if (err) { setError(err); setBusy(false); return; }
       if (shift) setShifts((s) => [...s, shift]);
     } else {
@@ -254,6 +276,24 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
     <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
         <span style={{ fontSize: 14 }}>Shifts</span>
+        {intrasquad && (
+          <span style={{ display: "flex", gap: 4 }}>
+            {sides.map((sd) => (
+              <button
+                key={sd}
+                onClick={() => { setSide(sd); closePanel(); }}
+                style={{
+                  padding: "4px 10px", fontSize: 12, borderRadius: 999, cursor: "pointer",
+                  border: "1px solid " + (side === sd ? "var(--accent, #3a5fd0)" : "var(--border)"),
+                  background: side === sd ? "var(--accent, #3a5fd0)" : "var(--surface2)",
+                  color: side === sd ? "#fff" : "var(--muted)",
+                }}
+              >
+                {SIDE_LABEL[sd]}
+              </button>
+            ))}
+          </span>
+        )}
         <span style={{ fontSize: 12, color: "var(--muted)" }}>
           {sortedShifts.length} shift{sortedShifts.length === 1 ? "" : "s"} · {assignedCount} of {possessions.length} possessions assigned
         </span>
@@ -363,6 +403,8 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
                   balanced={balanced} changed={changed} busy={busy} count={nextFive.length}
                   rosterHint={rosterHint}
                   onFoul={recordFoul}
+                  unavailable={unavailable}
+                  otherSideLabel={intrasquad ? SIDE_LABEL[side === "us" ? "opponent" : "us"] : null}
                 />
               )}
               {panel?.mode === "edit" && panel.shift.start_sequence === p.sequence && (
@@ -375,6 +417,8 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
                   balanced={balanced} changed={changed} busy={busy} count={nextFive.length}
                   rosterHint={rosterHint}
                   onFoul={recordFoul}
+                  unavailable={unavailable}
+                  otherSideLabel={intrasquad ? SIDE_LABEL[side === "us" ? "opponent" : "us"] : null}
                 />
               )}
 
@@ -445,12 +489,16 @@ function SubPanel(props: {
   balanced: boolean; changed: boolean; busy: boolean; count: number;
   rosterHint: string | null;
   onFoul: (playerId: string, detail: FoulLevel) => void;
+  /** Players on the other squad right now — shown but not selectable. */
+  unavailable: string[];
+  otherSideLabel: string | null;
 }) {
   // Which on-floor player is having a foul recorded. Local to the panel --
   // it's a two-tap flourish (who, then which foul), not app state.
   const [foulPlayer, setFoulPlayer] = useState<string | null>(null);
   const { players, labelFor, on, inList, outList, jersey, setJersey, onJerseyKey, onToggle } = props;
-  const bench = players.filter((p) => !on.includes(p.id) && !inList.includes(p.id) && !outList.includes(p.id));
+  const bench = players.filter((p) => !on.includes(p.id) && !inList.includes(p.id) && !outList.includes(p.id) && !props.unavailable.includes(p.id));
+  const taken = players.filter((p) => props.unavailable.includes(p.id) && !on.includes(p.id));
   const anyJerseys = players.some((p) => p.jersey != null);
 
   return (
@@ -525,6 +573,19 @@ function SubPanel(props: {
           />
         ))}
       </div>
+
+      {taken.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>On {props.otherSideLabel} right now</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {taken.map((p) => (
+              <span key={p.id} style={{ fontSize: 13, padding: "5px 9px", borderRadius: 6, background: "var(--surface)", border: "1px dashed var(--border)", color: "var(--muted)", opacity: 0.6 }}>
+                {p.jersey != null ? `${p.jersey} ${p.name}` : p.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <button
