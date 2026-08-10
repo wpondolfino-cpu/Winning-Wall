@@ -43,7 +43,7 @@ type Group = "overview" | "factors" | "playtype" | "shots" | "onoff";
 const LINEUP_EXPLAINERS: Record<string, { what: string; how: string }> = {
   poss: { what: "Offensive possessions with {subject} on the floor, and what share of the team's total that is.", how: "count of our trips while they were on / all our trips" },
   min: { what: "Estimated minutes on the floor — estimated, not measured. Each period's known length is spread across the possessions actually played in it, then rounded to the nearest 15 seconds.", how: "possessions x that period's seconds-per-possession" },
-  net: { what: "Points scored minus points allowed, per 100 possessions, pulled toward the team average based on how little we've seen {subject}. The raw figure is in brackets.", how: "(n x raw + k x team) / (n + k), k estimated from the season" },
+  net: { what: "Points scored minus points allowed, per 100 possessions, pulled toward the team average based on how little we've seen {subject}. Expand a row for the raw figure.", how: "(n x raw + k x team) / (n + k), k estimated from the season" },
   offppp: { what: "Points we scored per offensive possession with {subject} on the floor.", how: "our points / our possessions" },
   defppp: { what: "Points allowed per defensive possession with {subject} on the floor.", how: "their points / their possessions" },
   on_net: { what: "Team net rating over the possessions {subject} was ON the floor.", how: "our points per 100 - their points per 100, while on" },
@@ -518,7 +518,7 @@ function columnsFor(group: Group, level: ComboLevel): { key: string; label: stri
     ...(level === 1 ? [{ key: "fouls", label: "Foul tr.", width: 56, explain: "fouls" }] : []),
     { key: "off", label: "Off", width: 52, explain: "offppp" },
     { key: "def", label: "Def", width: 52, explain: "defppp" },
-    { key: "net", label: "Net", width: 88, explain: "net" },
+    { key: "net", label: "Net", width: 56, explain: "net" },
   ];
   if (group === "factors") return [
     { key: "poss", label: "Poss", width: 56, explain: "poss" },
@@ -605,9 +605,6 @@ function Row({ row, group, side, level, name, open, onToggle, slices, excludeGar
           return (
           <span key={c.key} style={{ width: c.width, textAlign: "right", ...(tint ? { color: tint } : c.key === "net" || c.key === "onoff_diff" ? { color: row.qualified ? netColor : "var(--muted)" } : dim) }}>
             {cell(c.key)}
-            {c.key === "net" && row.rawNet != null && (
-              <span style={{ fontSize: 11, color: "var(--muted)" }}> ({row.rawNet > 0 ? "+" : ""}{row.rawNet})</span>
-            )}
           </span>
           );
         })}
@@ -619,6 +616,15 @@ function Row({ row, group, side, level, name, open, onToggle, slices, excludeGar
             {row.games} game{row.games === 1 ? "" : "s"} · {row.offPossessions} offensive and {row.defPossessions} defensive possessions ·
             {" "}{row.pointsFor} for, {row.pointsAgainst} against
           </div>
+          {row.rawNet != null && (
+            <div style={{ marginTop: 2 }}>
+              <span style={{ color: "var(--text)" }}>Raw net {row.rawNet > 0 ? "+" : ""}{row.rawNet}</span>
+              {" "}— what actually happened per 100 possessions, before adjusting for sample size.
+              {row.adjNet != null && Math.abs(row.rawNet - row.adjNet) >= 5 && (
+                <> The gap to {row.adjNet > 0 ? "+" : ""}{row.adjNet} is large, so most of the raw figure is sample rather than signal.</>
+              )}
+            </div>
+          )}
           {narrow && allCols.filter((c) => !cols.includes(c)).length > 0 && (
             <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "1fr auto", gap: "2px 12px" }}>
               {allCols.filter((c) => !cols.includes(c)).map((c) => (
