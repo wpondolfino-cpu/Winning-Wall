@@ -478,6 +478,8 @@ export interface SavedReport {
   game_count: "3" | "5" | "10" | "season";
   category: "all" | PossessionType;
   game_group: GameGroup;
+  /** Explicit game set for a hand-picked report. Null means it stays relative and re-resolves from game_count. */
+  game_ids?: string[] | null;
   created_by: string;
   created_at: string;
 }
