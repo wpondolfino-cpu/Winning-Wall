@@ -72,6 +72,9 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
         setFormat(fmt);
         setGameType((((data as any)?.game_type) as GameType) ?? "regular");
         setRosterId(((data as any)?.roster_id as string | null) ?? null);
+        // The full-game scope is hidden for practices, so a practice can't be
+        // left sitting on it with no pill selected.
+        if ((((data as any)?.game_type) as GameType) === "practice") setReportSel({ kind: "quarter", quarter: 1 });
         setQuarter(nextOpenQuarter(closed, periodCount(fmt)));
       });
   }, [activeGameId]);
@@ -355,7 +358,7 @@ function GamesTab({
           <button onClick={() => setView({ mode: "list" })} style={backBtn}>← Games</button>
           <button onClick={() => setView({ mode: "track", gameId: view.gameId })} style={backBtn}>← Back to tracker</button>
         </div>
-        <ShiftEntry gameId={view.gameId} userId={userId} rosterId={rosterId} format={format} onRosterChange={onRosterChange} />
+        <ShiftEntry gameId={view.gameId} userId={userId} rosterId={rosterId} format={format} intrasquad={gameType === "practice"} onRosterChange={onRosterChange} />
       </div>
     );
   }
@@ -429,7 +432,7 @@ function GamesTab({
             {periodLabel(format, quarter)} is closed to new tracking. Use "Reopen {periodLabel(format, quarter)}" above if that happened too early, or switch to another period tab.
           </div>
         ) : (
-          <GameTracker gameId={view.gameId} userId={userId} quarter={quarter} format={format} />
+          <GameTracker gameId={view.gameId} userId={userId} quarter={quarter} format={format} intrasquad={gameType === "practice"} />
         )}
       </div>
     );
@@ -466,7 +469,9 @@ function GamesTab({
             <button onClick={() => setReportSel({ kind: "half", half: 2 })} style={pillBtn(reportSel.kind === "half" && reportSel.half === 2)}>2nd half</button>
           </>
         )}
-        <button onClick={() => setReportSel({ kind: "game" })} style={pillBtn(reportSel.kind === "game")}>Full game</button>
+        {gameType !== "practice" && (
+          <button onClick={() => setReportSel({ kind: "game" })} style={pillBtn(reportSel.kind === "game")}>Full game</button>
+        )}
       </div>
       <GameReport scope={scope} title={title} variant={reportSel.kind === "game" ? "full" : "in_game"} canManage={true} />
     </div>
