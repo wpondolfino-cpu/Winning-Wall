@@ -11,7 +11,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { ReportBody } from "./GameReport";
-import { saveReport, getReportLayout, resolveStatOrder, GAME_GROUPS, gameTypesForGroup } from "../../lib/gameStats";
+import { saveReport, getReportLayout, resolveStatOrder, GAME_GROUPS, gameTypesForGroup, isGameFinal } from "../../lib/gameStats";
+import GameScopePicker, { type ScopeGame } from "./GameScopePicker";
 import type { Possession, PlayCall, StatGoal, PossessionType, SavedReport, StatDef, GameGroup } from "../../lib/gameStats";
 
 type GameCount = 3 | 5 | 10 | "season";
@@ -34,7 +35,9 @@ interface Props {
 }
 
 export default function ReportBuilder({ season, userId, initial, onSaved }: Props) {
-  const [gameCount, setGameCount] = useState<GameCount>(initial ? (initial.game_count === "season" ? "season" : (Number(initial.game_count) as GameCount)) : 5);
+  // Not state any more -- the pills became presets inside the picker. This
+  // only resolves what a relative saved report should open on.
+  const initialCount: GameCount = initial ? (initial.game_count === "season" ? "season" : (Number(initial.game_count) as GameCount)) : 5;
   const [category, setCategory] = useState<CategoryFilter>(initial?.category ?? "all");
   // Defaults to real games. Scrimmage and practice data is deliberately
   // a separate report rather than a filter you have to remember to set.
@@ -44,11 +47,40 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
   const [goals, setGoals] = useState<StatGoal[]>([]);
   const [statOrder, setStatOrder] = useState<StatDef[]>([]);
   const [gameLabel, setGameLabel] = useState("");
+  // The pool this season/type offers, and which of them are picked.
+  // A saved report with explicit ids reopens on exactly those games; one
+  // saved from a preset stays relative and re-resolves each time.
+  const [pool, setPool] = useState<ScopeGame[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>(initial?.game_ids ?? []);
+  const [pickedByHand, setPickedByHand] = useState<boolean>(!!initial?.game_ids?.length);
   const [loading, setLoading] = useState(false);
   const [savingLabel, setSavingLabel] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => { run(); setSaved(false); }, [gameCount, category, gameGroup]);
+  useEffect(() => { loadPool(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [season, gameGroup]);
+  useEffect(() => { run(); setSaved(false); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [category, selectedIds.join(",")]);
+
+  /** Every game this season/type could offer, newest first. */
+  async function loadPool() {
+    const { data } = await supabase
+      .from("games")
+      .select("id, opponent, game_date, final_score_us, final_score_them")
+      .eq("season", season)
+      .in("game_type", gameTypesForGroup(gameGroup))
+      .order("game_date", { ascending: false });
+    const rows = ((data ?? []) as any[]).map((g) => ({
+      id: g.id, opponent: g.opponent, game_date: g.game_date,
+      won: isGameFinal(g) ? g.final_score_us > g.final_score_them : null,
+    }));
+    setPool(rows);
+    // A hand-picked saved report keeps its games; anything else falls back to
+    // the count it was saved with.
+    if (pickedByHand && selectedIds.length) {
+      setSelectedIds(selectedIds.filter((id) => rows.some((r) => r.id === id)));
+    } else {
+      setSelectedIds(initialCount === "season" ? rows.map((r) => r.id) : rows.slice(0, initialCount).map((r) => r.id));
+    }
+  }
 
   async function run() {
     setLoading(true);
@@ -61,20 +93,15 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
     setPlayCalls((playRows as PlayCall[]) ?? []);
     setStatOrder(resolveStatOrder(savedOrder));
 
-    let gamesQuery = supabase
-      .from("games")
-      .select("id, opponent, game_date")
-      .eq("season", season)
-      .in("game_type", gameTypesForGroup(gameGroup))
-      .order("game_date", { ascending: false });
-    if (gameCount !== "season") gamesQuery = gamesQuery.limit(gameCount);
-    const { data: games } = await gamesQuery;
-    const ids = (games ?? []).map((g: any) => g.id);
+    const ids = selectedIds;
     const groupLabel = GAME_GROUPS.find((g) => g.value === gameGroup)?.label ?? "Games";
+    const chosen = pool.filter((g) => ids.includes(g.id));
+    const opps = [...new Set(chosen.map((g) => g.opponent))];
     setGameLabel(
-      gameCount === "season"
-        ? `${groupLabel} · Season ${season}`
-        : `${groupLabel} · Last ${Math.min(gameCount, games?.length ?? 0)}${games?.length ? ` (${games[games.length - 1].opponent} → ${games[0].opponent})` : ""}`
+      !chosen.length ? `${groupLabel} · nothing selected`
+      : chosen.length === pool.length ? `${groupLabel} · Season ${season}`
+      : opps.length <= 3 ? `${groupLabel} · ${opps.join(", ")} (${chosen.length})`
+      : `${groupLabel} · ${chosen.length} games`
     );
 
     if (!ids.length) {
@@ -91,13 +118,20 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
 
   async function confirmSave() {
     const groupLabel = GAME_GROUPS.find((g) => g.value === gameGroup)?.label ?? "Games";
-    const label = savingLabel?.trim() || `${groupLabel} · ${gameCount === "season" ? "Full season" : `Last ${gameCount}`} · ${CATEGORY_LABEL[category]}`;
+    const isWholeSeason = selectedIds.length === pool.length;
+    const label = savingLabel?.trim() || `${gameLabel} · ${CATEGORY_LABEL[category]}`;
     const { error } = await saveReport({
       label,
       season,
-      game_count: String(gameCount) as SavedReport["game_count"],
+      // Kept in step for reports that stay relative; a hand-picked one is
+      // pinned by game_ids and this is only a fallback if those games vanish.
+      game_count: String(isWholeSeason ? "season" : initialCount) as SavedReport["game_count"],
       category,
       game_group: gameGroup,
+      // Null keeps the report relative -- reopening it in March should pick
+      // up the games that are recent THEN, not the ones that were recent
+      // when it was saved. A hand-picked set is fixed and stores its ids.
+      game_ids: pickedByHand && !isWholeSeason ? selectedIds : null,
       created_by: userId,
     });
     if (!error) {
@@ -118,12 +152,13 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
             </button>
           ))}
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-          {([3, 5, 10, "season"] as GameCount[]).map((n) => (
-            <button key={n} onClick={() => setGameCount(n)} style={pillStyle(gameCount === n)}>
-              {n === "season" ? "Full season" : `Last ${n}`}
-            </button>
-          ))}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, alignItems: "center" }}>
+          <GameScopePicker
+            games={pool}
+            selected={selectedIds}
+            onChange={(ids) => { setSelectedIds(ids); setPickedByHand(true); }}
+            noun={(GAME_GROUPS.find((g) => g.value === gameGroup)?.label ?? "Games").toLowerCase()}
+          />
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
           {(Object.keys(CATEGORY_LABEL) as CategoryFilter[]).map((c) => (
