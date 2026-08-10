@@ -125,15 +125,15 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
   // null means the default order: qualified rows first, then adjusted net
   // descending. Clicking a heading overrides it.
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
-  // Off by default and remembered. Colour is most useful when you're
+  // Off by default and remembered. Color is most useful when you're
   // showing someone else the report; once you know the numbers it reads
   // as noise.
-  const [colour, setColour] = useState(() => {
-    try { return localStorage.getItem("ww.lineupColour") === "1"; } catch { return false; }
+  const [colorOn, setColorOn] = useState(() => {
+    try { return localStorage.getItem("ww.lineupColor") === "1"; } catch { return false; }
   });
   useEffect(() => {
-    try { localStorage.setItem("ww.lineupColour", colour ? "1" : "0"); } catch { /* private mode */ }
-  }, [colour]);
+    try { localStorage.setItem("ww.lineupColor", colorOn ? "1" : "0"); } catch { /* private mode */ }
+  }, [colorOn]);
   const [explain, setExplain] = useState<string | null>(null);
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [gameId, rosterId, season, gameGroup, opponent]);
@@ -247,7 +247,7 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
   /** Which stat_goals key backs a column, where one exists. */
   const GOAL_KEY: Record<string, string> = {
     off: "lineup_off_ppp", def: "lineup_def_ppp", net: "lineup_net_rating",
-    on_net: "lineup_net_rating", off_net: "lineup_net_rating", onoff_diff: "lineup_net_rating",
+    on_net: "lineup_net_rating", off_net: "lineup_net_rating", onoff_diff: "lineup_onoff_diff",
     oob_ppp: "lineup_oob_ppp",
     efg_pct: "efg_pct", tov_pct: "tov_pct", oreb_pct: "oreb_pct", ft_rate: "ft_rate",
     transition_pct: "transition_pct", transition_ppp: "transition_ppp",
@@ -255,7 +255,7 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
   };
   /**
    * Lower is better. Derived from LINEUP_GOAL_STATS rather than restated,
-   * so changing a goal's direction there can't leave the colouring stale.
+   * so changing a goal's direction there can't leave the coloring stale.
    * Defensive columns invert on top of this.
    */
   const LOWER_BETTER = new Set<string>([
@@ -283,10 +283,10 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
   /**
    * Green or red against the benchmark, with a dead band so a near-miss
    * isn't dressed up as a finding. Rows below the sample gate are never
-   * coloured -- painting a 22-possession lineup green would undo the gates.
+   * colored -- painting a 22-possession lineup green would undo the gates.
    */
-  function cellColour(r: ComboRow, key: string): string | null {
-    if (!colour || !r.qualified) return null;
+  function cellColor(r: ComboRow, key: string): string | null {
+    if (!colorOn || !r.qualified) return null;
     const v = sortValue(r, key);
     if (v == null) return null;
     const bench = goalFor(key) ?? teamValue(key);
@@ -403,9 +403,9 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
           <input type="checkbox" checked={perGame} onChange={(e) => setPerGame(e.target.checked)} />
           Per game
         </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} title="Green better than the benchmark, red worse. Rows below the sample gate are never coloured.">
-          <input type="checkbox" checked={colour} onChange={(e) => setColour(e.target.checked)} />
-          Colour
+        <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} title="Green better than the benchmark, red worse. Rows below the sample gate are never colored.">
+          <input type="checkbox" checked={colorOn} onChange={(e) => setColorOn(e.target.checked)} />
+          Color
         </label>
         {!gameId && (
           <select value={gameGroup} onChange={(e) => setGameGroup(e.target.value as GameGroup)} style={selectStyle}>
@@ -420,6 +420,14 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
         )}
         <span style={{ marginLeft: "auto", fontSize: 11 }}>k = {Math.round(k)}</span>
       </div>
+
+      {colorOn && !sorted.some((r) => r.qualified) && (
+        <div style={{ fontSize: 12, color: "#c9a227", marginBottom: 8, lineHeight: 1.6 }}>
+          Nothing is colored yet — no {COMBO_LEVELS.find((c) => c.value === level)?.label.toLowerCase()} group
+          has reached {SAMPLE_GATES[level].possessions} possessions across {SAMPLE_GATES[level].games} games.
+          Color is held back below that on purpose: marking a small sample green would undo the point of the threshold.
+        </div>
+      )}
 
       <div style={{ overflowX: "auto" }}>
         <div style={{ minWidth: narrow ? 0 : 620 }}>
@@ -439,7 +447,7 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
               perGame={perGame}
               narrow={narrow}
               onOff={onOffMap.get(r.key) ?? null}
-              colourFor={cellColour}
+              colorFor={cellColor}
             />
           ))}
         </div>
@@ -542,13 +550,13 @@ function columnsFor(group: Group, level: ComboLevel): { key: string; label: stri
   ];
 }
 
-function Row({ row, group, side, level, name, open, onToggle, slices, excludeGarbage, perGame, narrow, onOff, colourFor }: {
+function Row({ row, group, side, level, name, open, onToggle, slices, excludeGarbage, perGame, narrow, onOff, colorFor }: {
   row: ComboRow; group: Group; side: "offense" | "defense"; level: ComboLevel;
   name: (id: string) => string; open: boolean; onToggle: () => void;
   slices: GameSlice[]; excludeGarbage: boolean;
   perGame: boolean; narrow: boolean;
   onOff: OnOffRow | null;
-  colourFor: (r: ComboRow, key: string) => string | null;
+  colorFor: (r: ComboRow, key: string) => string | null;
 }) {
   const dim = row.qualified ? {} : { color: "var(--muted)" as const };
   const stats = side === "offense" ? row.offense : row.defense;
@@ -593,7 +601,7 @@ function Row({ row, group, side, level, name, open, onToggle, slices, excludeGar
           {row.playerIds.map(name).join(" · ")}
         </span>
         {cols.map((c) => {
-          const tint = colourFor(row, c.key);
+          const tint = colorFor(row, c.key);
           return (
           <span key={c.key} style={{ width: c.width, textAlign: "right", ...(tint ? { color: tint } : c.key === "net" || c.key === "onoff_diff" ? { color: row.qualified ? netColor : "var(--muted)" } : dim) }}>
             {cell(c.key)}
