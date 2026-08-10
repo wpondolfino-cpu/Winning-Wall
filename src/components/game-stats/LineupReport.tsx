@@ -22,7 +22,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import {
-  listStatGoals, gameFormat, gameTypesForGroup, GAME_GROUPS, STAT_EXPLAINERS,
+  listStatGoals, gameFormat, gameTypesForGroup, GAME_GROUPS, STAT_EXPLAINERS, LINEUP_GOAL_STATS,
   type GameFormat, type Possession, type StatGoal, type GameGroup,
 } from "../../lib/gameStats";
 import { listGamePlayers, listLineupEvents, type Shift, type LineupPlayer } from "../../lib/lineups";
@@ -118,6 +118,15 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
   // null means the default order: qualified rows first, then adjusted net
   // descending. Clicking a heading overrides it.
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
+  // Off by default and remembered. Colour is most useful when you're
+  // showing someone else the report; once you know the numbers it reads
+  // as noise.
+  const [colour, setColour] = useState(() => {
+    try { return localStorage.getItem("ww.lineupColour") === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("ww.lineupColour", colour ? "1" : "0"); } catch { /* private mode */ }
+  }, [colour]);
   const [explain, setExplain] = useState<string | null>(null);
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [gameId, rosterId, season, gameGroup, opponent]);
@@ -194,7 +203,7 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
 
   const filters = { excludeGarbage, clutchOnly, foulsByPlayer: fouls };
 
-  const { rows, k, gamesCounted } = useMemo(
+  const { rows, k, gamesCounted, teamNet, teamOffPPP, teamDefPPP, teamOffense, teamDefense, teamOffenseExtra, teamDefenseExtra } = useMemo(
     () => (slices.length ? computeComboRows(slices, level, goals, filters) : { rows: [], k: 70, gamesCounted: 0, teamOffPPP: 0, teamDefPPP: 0 }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [slices, level, goals, excludeGarbage, clutchOnly, fouls],
@@ -224,6 +233,78 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
         </div>
       </div>
     );
+  }
+
+  /** Which stat_goals key backs a column, where one exists. */
+  const GOAL_KEY: Record<string, string> = {
+    off: "lineup_off_ppp", def: "lineup_def_ppp", net: "lineup_net_rating",
+    on_net: "lineup_net_rating", off_net: "lineup_net_rating", onoff_diff: "lineup_net_rating",
+    oob_ppp: "lineup_oob_ppp",
+    efg_pct: "efg_pct", tov_pct: "tov_pct", oreb_pct: "oreb_pct", ft_rate: "ft_rate",
+    transition_pct: "transition_pct", transition_ppp: "transition_ppp",
+    halfcourt_ppp: "halfcourt_ppp", quality_shot_pct: "quality_shot_pct",
+  };
+  /**
+   * Lower is better. Derived from LINEUP_GOAL_STATS rather than restated,
+   * so changing a goal's direction there can't leave the colouring stale.
+   * Defensive columns invert on top of this.
+   */
+  const LOWER_BETTER = new Set<string>([
+    "def", "tov_pct",
+    ...LINEUP_GOAL_STATS.filter((g) => g.defaultDirection === "lower_better").map((g) => g.key),
+  ]);
+
+  function goalFor(key: string): number | null {
+    const gk = GOAL_KEY[key];
+    if (!gk) return null;
+    const g = goals.find((x) => x.stat_key === gk && x.team === "us");
+    return g?.target_value ?? null;
+  }
+
+  function teamValue(key: string): number | null {
+    if (key === "off") return teamOffPPP ? Math.round(teamOffPPP * 100) / 100 : null;
+    if (key === "def") return teamDefPPP ? Math.round(teamDefPPP * 100) / 100 : null;
+    if (key === "net" || key === "on_net" || key === "off_net" || key === "onoff_diff") return teamNet;
+    const extra = side === "offense" ? teamOffenseExtra : teamDefenseExtra;
+    if (key === "oob_ppp" || key === "three_rate") return (extra[key] as number | null) ?? null;
+    const stats = side === "offense" ? teamOffense : teamDefense;
+    return (stats[key] as number | undefined) ?? null;
+  }
+
+  /**
+   * Green or red against the benchmark, with a dead band so a near-miss
+   * isn't dressed up as a finding. Rows below the sample gate are never
+   * coloured -- painting a 22-possession lineup green would undo the gates.
+   */
+  function cellColour(r: ComboRow, key: string): string | null {
+    if (!colour || !r.qualified) return null;
+    const v = sortValue(r, key);
+    if (v == null) return null;
+    const bench = goalFor(key) ?? teamValue(key);
+    if (bench == null) return null;
+    const gk = GOAL_KEY[key];
+    let lower = LOWER_BETTER.has(key) || (gk != null && LOWER_BETTER.has(gk));
+    // On the defensive side of a rate stat the meaning flips: allowing a low
+    // quality-shot percentage is good.
+    if (side === "defense" && !["off", "def", "net", "on_net", "off_net", "onoff_diff"].includes(key)) lower = !lower;
+    const diff = Math.abs(v - bench);
+    const band = key === "off" || key === "def" || key === "oob_ppp" || key.endsWith("_ppp") ? 0.03 : ["net", "on_net", "off_net", "onoff_diff"].includes(key) ? 3 : 1;
+    if (diff < band) return null;
+    return (lower ? v < bench : v > bench) ? "#2f9e63" : "#b4544f";
+  }
+
+  /** One sentence saying what a column is measured against, shown in its explanation. */
+  function benchmarkLine(key: string): string | null {
+    const goal = goalFor(key);
+    const team = teamValue(key);
+    const fmt = (n: number) => (["net", "on_net", "off_net", "onoff_diff"].includes(key) ? `${n > 0 ? "+" : ""}${n}` : String(n));
+    if (goal != null) {
+      return `Measured against your goal of ${fmt(goal)}${team != null ? `. The team is at ${fmt(team)} across these games.` : "."}`;
+    }
+    if (team != null) {
+      return `No goal is set for this, so it's measured against the team's own ${fmt(team)} across these games. You can set one in the Goals tab.`;
+    }
+    return null;
   }
 
   function sortValue(r: ComboRow, key: string): number | null {
@@ -313,6 +394,10 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
           <input type="checkbox" checked={perGame} onChange={(e) => setPerGame(e.target.checked)} />
           Per game
         </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} title="Green better than the benchmark, red worse. Rows below the sample gate are never coloured.">
+          <input type="checkbox" checked={colour} onChange={(e) => setColour(e.target.checked)} />
+          Colour
+        </label>
         {!gameId && (
           <select value={gameGroup} onChange={(e) => setGameGroup(e.target.value as GameGroup)} style={selectStyle}>
             {GAME_GROUPS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
@@ -329,7 +414,7 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
 
       <div style={{ overflowX: "auto" }}>
         <div style={{ minWidth: narrow ? 0 : 620 }}>
-          <HeaderRow group={group} level={level} onExplain={setExplain} narrow={narrow} sort={sort} onSort={toggleSort} explain={explain} />
+          <HeaderRow group={group} level={level} onExplain={setExplain} narrow={narrow} sort={sort} onSort={toggleSort} explain={explain} benchmarkLine={benchmarkLine} />
           {sorted.map((r) => (
             <Row
               key={r.key}
@@ -345,6 +430,7 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
               perGame={perGame}
               narrow={narrow}
               onOff={onOffMap.get(r.key) ?? null}
+              colourFor={cellColour}
             />
           ))}
         </div>
@@ -363,9 +449,10 @@ export default function LineupReport({ gameId, rosterId, season }: Props) {
 
 // ── Rows ─────────────────────────────────────────────────────────
 
-function HeaderRow({ group, level, onExplain, narrow, sort, onSort, explain }: {
+function HeaderRow({ group, level, onExplain, narrow, sort, onSort, explain, benchmarkLine }: {
   group: Group; level: ComboLevel; onExplain: (k: string | null) => void; narrow: boolean;
   sort: { key: string; dir: 1 | -1 } | null; onSort: (key: string) => void; explain: string | null;
+  benchmarkLine: (key: string) => string | null;
 }) {
   const all = columnsFor(group, level);
   const cols = narrow ? all.filter((c) => ["poss", "net", "onoff_diff"].includes(c.key)) : all;
@@ -396,6 +483,9 @@ function HeaderRow({ group, level, onExplain, narrow, sort, onSort, explain }: {
       {active && explainerFor(active.explain!, level) && (
         <div style={{ padding: "8px 10px 10px", background: "var(--surface2)", borderTop: "1px solid var(--border)" }}>
           <div style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.6 }}>{explainerFor(active.explain!, level)!.what}</div>
+          {benchmarkLine(active.key) && (
+            <div style={{ fontSize: 12, color: "var(--accent, #6f8fe0)", marginTop: 5, lineHeight: 1.6 }}>{benchmarkLine(active.key)}</div>
+          )}
           <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 5, fontFamily: "monospace" }}>{explainerFor(active.explain!, level)!.how}</div>
         </div>
       )}
@@ -443,12 +533,13 @@ function columnsFor(group: Group, level: ComboLevel): { key: string; label: stri
   ];
 }
 
-function Row({ row, group, side, level, name, open, onToggle, slices, excludeGarbage, perGame, narrow, onOff }: {
+function Row({ row, group, side, level, name, open, onToggle, slices, excludeGarbage, perGame, narrow, onOff, colourFor }: {
   row: ComboRow; group: Group; side: "offense" | "defense"; level: ComboLevel;
   name: (id: string) => string; open: boolean; onToggle: () => void;
   slices: GameSlice[]; excludeGarbage: boolean;
   perGame: boolean; narrow: boolean;
   onOff: OnOffRow | null;
+  colourFor: (r: ComboRow, key: string) => string | null;
 }) {
   const dim = row.qualified ? {} : { color: "var(--muted)" as const };
   const stats = side === "offense" ? row.offense : row.defense;
@@ -492,14 +583,17 @@ function Row({ row, group, side, level, name, open, onToggle, slices, excludeGar
           {!row.qualified && <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: "#c9a227", marginRight: 6 }} />}
           {row.playerIds.map(name).join(" · ")}
         </span>
-        {cols.map((c) => (
-          <span key={c.key} style={{ width: c.width, textAlign: "right", ...(c.key === "net" || c.key === "onoff_diff" ? { color: row.qualified ? netColor : "var(--muted)" } : dim) }}>
+        {cols.map((c) => {
+          const tint = colourFor(row, c.key);
+          return (
+          <span key={c.key} style={{ width: c.width, textAlign: "right", ...(tint ? { color: tint } : c.key === "net" || c.key === "onoff_diff" ? { color: row.qualified ? netColor : "var(--muted)" } : dim) }}>
             {cell(c.key)}
             {c.key === "net" && row.rawNet != null && (
               <span style={{ fontSize: 11, color: "var(--muted)" }}> ({row.rawNet > 0 ? "+" : ""}{row.rawNet})</span>
             )}
           </span>
-        ))}
+          );
+        })}
       </div>
 
       {open && (
