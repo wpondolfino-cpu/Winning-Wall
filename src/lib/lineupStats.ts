@@ -276,6 +276,24 @@ function combinations(ids: string[], size: number): string[][] {
   return out;
 }
 
+/**
+ * Everything the report needs from one pass: the rows themselves, plus the
+ * team's own numbers over the SAME filtered possessions, which is what a
+ * stat with no goal set gets measured against.
+ */
+export interface ComboResult {
+  rows: ComboRow[];
+  teamOffPPP: number;
+  teamDefPPP: number;
+  teamNet: number;
+  teamOffense: Record<string, number>;
+  teamDefense: Record<string, number>;
+  teamOffenseExtra: Record<string, number | null>;
+  teamDefenseExtra: Record<string, number | null>;
+  k: number;
+  gamesCounted: number;
+}
+
 export interface GameSlice {
   gameId: string;
   possessions: Possession[];
@@ -297,7 +315,7 @@ export function computeComboRows(
   level: ComboLevel,
   goals: StatGoal[],
   opts: { excludeGarbage?: boolean; clutchOnly?: boolean; foulsByPlayer?: Map<string, number> } = {},
-): { rows: ComboRow[]; teamOffPPP: number; teamDefPPP: number; k: number; gamesCounted: number } {
+): ComboResult {
   type Bucket = {
     playerIds: string[];
     off: Possession[];
