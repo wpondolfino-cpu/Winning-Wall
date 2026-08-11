@@ -23,7 +23,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   STAT_EXPLAINERS, LINEUP_GOAL_STATS,
 } from "../../lib/gameStats";
-import { useLineupData, playerLabeller } from "./useLineupData";
+import { useLineupData, playerLabeller } from "../../lib/useLineupData";
 import {
   computeComboRows, computeOnOff, computeTogetherApart, readiness,
   COMBO_LEVELS, SAMPLE_GATES,
