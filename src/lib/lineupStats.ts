@@ -587,7 +587,34 @@ export function computeTogetherApart(slices: GameSlice[], a: string, b: string, 
  * A consequence worth surfacing in the UI: the denominators differ, so a
  * 4-of-4 individual and a 7-of-10 five aren't comparable.
  */
-export const LINEUP_GOAL_KEYS = ["lineup_off_ppp", "lineup_def_ppp", "lineup_net_rating", "lineup_onoff_diff"] as const;
+export const LINEUP_GOAL_KEYS = ["lineup_off_ppp", "lineup_def_ppp", "lineup_net_rating", "lineup_onoff_diff", "lineup_oob_ppp"] as const;
+
+/**
+ * Net rating is deliberately absent from the scorecard even though it's a
+ * settable goal: it's the metric the ranking sorts on, so counting it would
+ * mean a lineup partly explaining its own position. Its two components --
+ * offensive and defensive PPP -- carry the same information without the
+ * circularity.
+ */
+const SCORECARD_EXCLUDED = ["lineup_net_rating"] as const;
+
+/**
+ * Team goals that actually have a column at five-man.
+ *
+ * The same rule as everywhere else: goals mirror the columns. Seven of the
+ * fifteen goal-settable team stats -- 2PT%, 3PT%, FT%, both paint-touch
+ * splits, points off live turnovers, second-chance points -- have no column
+ * on any lineup view, so counting them meant "missed the FT% goal" against a
+ * number the report never shows. It also inflated the scorecard to seventeen
+ * entries, which is a wall rather than a summary.
+ */
+export const TEAM_GOAL_KEYS_AT_FIVE = [
+  "efg_pct", "tov_pct", "oreb_pct", "ft_rate",
+  // transition_pct is deliberately out: it's a frequency, not a quality. A
+  // lineup isn't better for running more often, and transition_ppp already
+  // says whether the running works.
+  "transition_ppp", "halfcourt_ppp", "quality_shot_pct",
+] as const;
 
 export interface ScorecardItem {
   key: string;
@@ -620,15 +647,24 @@ export function computeScorecard(
       case "lineup_net_rating": return row.adjNet;
       // On/off is meaningless at five-man, so that goal simply doesn't apply there.
       case "lineup_onoff_diff": return level === 5 ? null : onOffDiff;
+      // Lives in offenseExtra rather than the team stat map -- it's a
+      // lineup-only stat with no team report equivalent.
+      case "lineup_oob_ppp": return (row.offenseExtra.oob_ppp as number | null) ?? null;
       default: return row.offense[key] ?? null;
     }
   }
 
   const applicable = set.filter((g) => {
+    if ((SCORECARD_EXCLUDED as readonly string[]).includes(g.stat_key)) return false;
     const isLineupGoal = (LINEUP_GOAL_KEYS as readonly string[]).includes(g.stat_key);
-    if (isLineupGoal) return g.stat_key !== "lineup_onoff_diff" || level !== 5;
-    // Team goals only at five-man, where the raw values are actually shown.
-    return level === 5;
+    // On/off is meaningless at five; BLOB/SLOB PPP only has a column there.
+    if (isLineupGoal) {
+      if (g.stat_key === "lineup_onoff_diff") return level !== 5;
+      if (g.stat_key === "lineup_oob_ppp") return level === 5;
+      return true;
+    }
+    // Team goals only at five-man, and only those with a column there.
+    return level === 5 && (TEAM_GOAL_KEYS_AT_FIVE as readonly string[]).includes(g.stat_key);
   });
 
   const items: ScorecardItem[] = applicable.map((g) => {
