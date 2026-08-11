@@ -26,6 +26,7 @@ import {
   type ComboLevel, type ComboRow, type Scorecard,
 } from "../../lib/lineupStats";
 import { useLineupData, playerLabeller } from "../../lib/useLineupData";
+import { Reliability } from "./RotationPanel";
 
 type Side = "overall" | "offense" | "defense";
 
@@ -107,11 +108,22 @@ export default function RankingsPanel({ gameIds }: { gameIds: string[] }) {
         ))}
       </div>
 
+      <Reliability
+        state={qualified.length >= 7 ? "reliable" : qualified.length >= 3 ? "building" : "early"}
+        detail={`${qualified.length} of ${rows.length} ${levelName.toLowerCase()} groups have reached ${gate.possessions} possessions across ${gate.games} games.`}
+      />
+
       {qualified.length < 3 ? (
-        <div style={{ fontSize: 13, color: "#c9a227", lineHeight: 1.7, marginBottom: 14 }}>
-          Not enough yet to rank {levelName.toLowerCase()} groups — {qualified.length} of {rows.length} have reached{" "}
-          {gate.possessions} possessions across {gate.games} games. Ranking fewer than three would just be listing them.
-        </div>
+        // Everything is shown, dotted and sorted last, rather than hidden --
+        // the ordering guarantee is what keeps that honest.
+        <Section
+          title={`All ${levelName.toLowerCase()} groups by ${rankLabel}`}
+          rows={[...rows].sort((a, b) => {
+            if (a.qualified !== b.qualified) return a.qualified ? -1 : 1;
+            return (rankValue(b) ?? -1e9) - (rankValue(a) ?? -1e9);
+          })}
+          {...{ name, rankValue, side, level, scorecards, open, setOpen, onOff }}
+        />
       ) : qualified.length < 7 ? (
         // Top and bottom would overlap with this few, so it's one list.
         <Section
