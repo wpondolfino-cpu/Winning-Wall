@@ -20,12 +20,10 @@
 // at the top of a list that implies it is.
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { supabase } from "../../lib/supabase";
 import {
-  listStatGoals, gameFormat, STAT_EXPLAINERS, LINEUP_GOAL_STATS,
-  type GameFormat, type Possession, type StatGoal,
+  STAT_EXPLAINERS, LINEUP_GOAL_STATS,
 } from "../../lib/gameStats";
-import { listGamePlayers, listLineupEvents, type Shift, type LineupPlayer } from "../../lib/lineups";
+import { useLineupData, playerLabeller } from "./useLineupData";
 import {
   computeComboRows, computeOnOff, computeTogetherApart, readiness,
   COMBO_LEVELS, SAMPLE_GATES,
@@ -99,11 +97,7 @@ const GROUP_LABEL: Record<Group, string> = {
 };
 
 export default function LineupReport({ gameIds }: Props) {
-  const [slices, setSlices] = useState<GameSlice[]>([]);
-  const [goals, setGoals] = useState<StatGoal[]>([]);
-  const [players, setPlayers] = useState<LineupPlayer[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { slices, goals, players, fouls, loading, error } = useLineupData(gameIds);
 
   const [level, setLevel] = useState<ComboLevel>(1);
   const [group, setGroup] = useState<Group>("overview");
@@ -114,7 +108,6 @@ export default function LineupReport({ gameIds }: Props) {
   // Per-game applies to counting stats only. A per-game average of a RATE
   // would weight a 3-possession game the same as a 25-possession one.
   const [perGame, setPerGame] = useState(false);
-  const [fouls, setFouls] = useState<Map<string, number>>(new Map());
   const [narrow, setNarrow] = useState(false);
   // null means the default order: qualified rows first, then adjusted net
   // descending. Clicking a heading overrides it.
@@ -130,7 +123,6 @@ export default function LineupReport({ gameIds }: Props) {
   }, [colorOn]);
   const [explain, setExplain] = useState<string | null>(null);
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [gameIds.join(",")]);
   useEffect(() => { if (!GROUPS_FOR[level].includes(group)) setGroup("overview"); }, [level, group]);
 
   // Narrow screens get name + possessions + net only; the rest of the row
@@ -143,50 +135,7 @@ export default function LineupReport({ gameIds }: Props) {
     return () => mq.removeEventListener("change", sync);
   }, []);
 
-  async function load() {
-    setLoading(true);
-    if (!gameIds.length) { setSlices([]); setError(null); setLoading(false); return; }
-    try {
-      const formats = new Map<string, GameFormat>();
-      const { data: gameRows, error: gameErr } = await supabase.from("games").select("*").in("id", gameIds);
-      if (gameErr) throw new Error(gameErr.message);
-      ((gameRows ?? []) as any[]).forEach((g) => formats.set(g.id, gameFormat(g)));
-
-      const [{ data: poss }, { data: shiftRows }, { data: goalRows }] = await Promise.all([
-        supabase.from("possessions").select("*").in("game_id", gameIds).order("sequence", { ascending: true }),
-        supabase.from("shifts").select("*").in("game_id", gameIds).order("start_sequence", { ascending: true }),
-        listStatGoals(),
-      ]);
-
-      const allPoss = (poss ?? []) as Possession[];
-      const allShifts = (shiftRows ?? []) as Shift[];
-      setGoals((goalRows ?? []) as StatGoal[]);
-      // Sequence is unique per game, not across games, so each game has to
-      // be matched against its own shifts before anything is merged.
-      setSlices(gameIds.map((id) => ({
-        gameId: id,
-        possessions: allPoss.filter((p) => p.game_id === id),
-        shifts: allShifts.filter((s) => s.game_id === id),
-        format: formats.get(id) ?? gameFormat(null),
-      })));
-      setPlayers(await listGamePlayers(null));
-      const events = (await Promise.all(gameIds.map((id) => listLineupEvents(id)))).flat();
-      const counts = new Map<string, number>();
-      events.forEach((e) => counts.set(e.player_id, (counts.get(e.player_id) ?? 0) + 1));
-      setFouls(counts);
-      setError(null);
-    } catch (e: any) {
-      setError(e?.message ?? "Couldn't load lineup data.");
-    }
-    setLoading(false);
-  }
-
-  const byId = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
-  const name = (id: string) => {
-    const p = byId.get(id);
-    if (!p) return "?";
-    return p.jersey != null ? `${p.jersey} ${p.name.split(" ").slice(-1)[0]}` : (p.name || "?");
-  };
+  const name = useMemo(() => playerLabeller(players), [players]);
 
   const filters = { excludeGarbage, clutchOnly, foulsByPlayer: fouls };
 
