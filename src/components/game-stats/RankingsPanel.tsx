@@ -25,7 +25,7 @@ import {
   COMBO_LEVELS, SAMPLE_GATES,
   type ComboLevel, type ComboRow, type Scorecard,
 } from "../../lib/lineupStats";
-import { useLineupData, playerLabeller } from "./useLineupData";
+import { useLineupData, playerLabeller } from "../../lib/useLineupData";
 
 type Side = "overall" | "offense" | "defense";
 
