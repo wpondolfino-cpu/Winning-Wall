@@ -41,7 +41,10 @@ export default function RotationPanel({ gameIds }: { gameIds: string[] }) {
   }, [slices, closeOnly]);
 
   const heat = useMemo(() => computeRotationHeatmap(shown), [shown]);
-  const findings = useMemo(() => computeFindings(shown), [shown]);
+  // Split so a five-man observation and an individual one aren't interleaved
+  // -- they're different questions and you read them at different times.
+  const lineupFindings = useMemo(() => computeFindings(shown, "lineup"), [shown]);
+  const playerFindings = useMemo(() => computeFindings(shown, "individual"), [shown]);
 
   if (loading) return <div className="card">Loading rotation…</div>;
   if (error) return <div className="card" style={{ color: "#c66", fontSize: 13 }}>{error}</div>;
@@ -98,19 +101,29 @@ export default function RotationPanel({ gameIds }: { gameIds: string[] }) {
       </div>
 
       <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
-        <div style={{ fontSize: 14, marginBottom: 8 }}>Findings</div>
-        {!findings.length ? (
-          <div style={{ fontSize: 13, color: "var(--muted)" }}>
-            Nothing stands out yet — no stretch of the game differs from the rest by more than a rounding error.
-          </div>
-        ) : (
-          findings.map((f, i) => <FindingRow key={i} finding={f} name={name} />)
-        )}
+        <FindingSection title="Five-man findings" findings={lineupFindings} name={name} />
+        <FindingSection title="Individual findings" findings={playerFindings} name={name} />
         <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 10, lineHeight: 1.7 }}>
           These state what happened, not why. The personnel notes are the biggest differences in who was on the floor for
-          those possessions — chosen by size, not by whether they'd explain the result.
+          those possessions — chosen by size, not by whether they'd explain the result. Three at most per section, and
+          fewer when there isn't more worth pointing at.
         </div>
       </div>
+    </div>
+  );
+}
+
+function FindingSection({ title, findings, name }: { title: string; findings: Finding[]; name: (id: string) => string }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 14, marginBottom: 4 }}>{title}</div>
+      {!findings.length ? (
+        <div style={{ fontSize: 13, color: "var(--muted)" }}>
+          Nothing stands out yet — no stretch of the game differs from the rest by enough to be worth a line.
+        </div>
+      ) : (
+        findings.map((f, i) => <FindingRow key={i} finding={f} name={name} />)
+      )}
     </div>
   );
 }
