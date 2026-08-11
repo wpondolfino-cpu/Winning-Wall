@@ -32,6 +32,14 @@ type Side = "overall" | "offense" | "defense";
 
 const SIDE_LABEL: Record<Side, string> = { overall: "Overall", offense: "Offense", defense: "Defense" };
 
+/**
+ * How many to show at each end. Five-man gets five because the spread
+ * between fives is far wider than between individuals -- with ten players
+ * there are only ten individuals but dozens of possible fives, so three
+ * would be a thin slice of a long tail.
+ */
+const SHOW_PER_END: Record<ComboLevel, number> = { 1: 3, 2: 3, 3: 3, 5: 5 };
+
 export default function RankingsPanel({ gameIds }: { gameIds: string[] }) {
   const { slices, goals, players, loading, error } = useLineupData(gameIds);
   const [level, setLevel] = useState<ComboLevel>(1);
@@ -53,13 +61,19 @@ export default function RankingsPanel({ gameIds }: { gameIds: string[] }) {
 
   // On/off drives the individual ranking and one of the goals, so it's
   // computed once here rather than per row per list.
-  const onOff = useMemo(() => {
-    const m = new Map<string, number | null>();
+  const onOffFull = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof computeOnOff>>();
     if (!slices.length) return m;
-    rows.forEach((r) => m.set(r.key, computeOnOff(slices, r.playerIds, goals, { excludeGarbage: true }).diff));
+    rows.forEach((r) => m.set(r.key, computeOnOff(slices, r.playerIds, goals, { excludeGarbage: true })));
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, slices, goals]);
+
+  const onOff = useMemo(() => {
+    const m = new Map<string, number | null>();
+    onOffFull.forEach((v, k) => m.set(k, v.diff));
+    return m;
+  }, [onOffFull]);
 
   /** What this level and side ranks on. Individual uses on/off; the rest use adjusted net. */
   function rankValue(r: ComboRow): number | null {
@@ -95,6 +109,7 @@ export default function RankingsPanel({ gameIds }: { gameIds: string[] }) {
     .slice(0, 3);
 
   const gate = SAMPLE_GATES[level];
+  const perEnd = SHOW_PER_END[level];
   const levelName = COMBO_LEVELS.find((c) => c.value === level)?.label ?? "";
 
   if (loading) return <div className="card">Loading rankings…</div>;
@@ -114,7 +129,7 @@ export default function RankingsPanel({ gameIds }: { gameIds: string[] }) {
       </div>
 
       <Reliability
-        state={qualified.length >= 7 ? "reliable" : qualified.length >= 3 ? "building" : "early"}
+        state={qualified.length >= perEnd * 2 ? "reliable" : qualified.length >= 3 ? "building" : "early"}
         detail={`${qualified.length} of ${rows.length} ${levelName.toLowerCase()} groups have reached ${gate.possessions} possessions across ${gate.games} games.`}
       />
 
@@ -124,24 +139,26 @@ export default function RankingsPanel({ gameIds }: { gameIds: string[] }) {
           The confidence changes with sample; the format doesn't.
 
           Only when there are literally too few groups to have a distinct top
-          and bottom does it collapse to one list. */}
-      {ranked.length < 7 ? (
+          and bottom does it collapse to one list -- the floor is twice the
+          per-end count, since that's the point at which the two ends stop
+          overlapping. */}
+      {ranked.length < perEnd * 2 ? (
         <Section
           title={`All ${levelName.toLowerCase()} groups by ${rankLabel}`}
           rows={ranked}
-          {...{ name, rankValue, side, level, scorecards, open, setOpen, onOff }}
+          {...{ name, rankValue, side, level, scorecards, open, setOpen, onOff, onOffFull }}
         />
       ) : (
         <>
           <Section
-            title={`Top 3 by ${rankLabel}`}
-            rows={ranked.slice(0, 3)}
-            {...{ name, rankValue, side, level, scorecards, open, setOpen, onOff }}
+            title={`Top ${perEnd} by ${rankLabel}`}
+            rows={ranked.slice(0, perEnd)}
+            {...{ name, rankValue, side, level, scorecards, open, setOpen, onOff, onOffFull }}
           />
           <Section
-            title={`Bottom 3 by ${rankLabel}`}
-            rows={ranked.slice(-3).reverse()}
-            {...{ name, rankValue, side, level, scorecards, open, setOpen, onOff }}
+            title={`Bottom ${perEnd} by ${rankLabel}`}
+            rows={ranked.slice(-perEnd).reverse()}
+            {...{ name, rankValue, side, level, scorecards, open, setOpen, onOff, onOffFull }}
           />
         </>
       )}
@@ -175,7 +192,7 @@ export default function RankingsPanel({ gameIds }: { gameIds: string[] }) {
   );
 }
 
-function Section({ title, rows, name, rankValue, side, level, scorecards, open, setOpen, onOff }: {
+function Section({ title, rows, name, rankValue, side, level, scorecards, open, setOpen, onOff, onOffFull }: {
   title: string;
   rows: ComboRow[];
   name: (id: string) => string;
@@ -186,6 +203,7 @@ function Section({ title, rows, name, rankValue, side, level, scorecards, open, 
   open: string | null;
   setOpen: (k: string | null) => void;
   onOff: Map<string, number | null>;
+  onOffFull: Map<string, ReturnType<typeof computeOnOff>>;
 }) {
   if (!rows.length) return null;
   return (
@@ -210,6 +228,11 @@ function Section({ title, rows, name, rankValue, side, level, scorecards, open, 
                 {shown == null ? "—" : side === "overall" ? `${shown > 0 ? "+" : ""}${shown}` : shown.toFixed(2)}
               </span>
             </div>
+            {/* What actually changes with them on the floor. A sorted column
+                gives the same order; it can't give the reason. */}
+            {level !== 5 && side === "overall" && (
+              <DiffStrip factors={onOffFull.get(r.key)?.factors ?? []} />
+            )}
             {isOpen && (
               <div style={{ padding: "6px 10px 12px", background: "var(--surface2)", fontSize: 12, color: "var(--muted)", lineHeight: 1.7 }}>
                 <div>
@@ -234,6 +257,30 @@ function Section({ title, rows, name, rankValue, side, level, scorecards, open, 
               </div>
             )}
           </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The biggest on/off swings, worded so they read as sentences. */
+function DiffStrip({ factors }: { factors: { label: string; diff: number | null; lowerBetter?: boolean }[] }) {
+  const top = factors
+    .filter((f) => f.diff != null && Math.abs(f.diff) >= 1)
+    .sort((a, b) => Math.abs(b.diff!) - Math.abs(a.diff!))
+    .slice(0, 3);
+  if (!top.length) return null;
+  return (
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", padding: "0 10px 8px 26px", fontSize: 11, color: "var(--muted)" }}>
+      {top.map((f) => {
+        const good = f.lowerBetter ? f.diff! < 0 : f.diff! > 0;
+        return (
+          <span key={f.label}>
+            {f.label}{" "}
+            <span style={{ color: good ? "#5cb98b" : "#d98b8b" }}>
+              {f.diff! > 0 ? "+" : ""}{f.diff}
+            </span>
+          </span>
         );
       })}
     </div>
