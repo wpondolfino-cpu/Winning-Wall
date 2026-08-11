@@ -75,13 +75,20 @@ export interface PossessionContext {
  */
 export function possessionContexts(
   gamePossessions: Possession[],
-  opts: { garbageMargin?: number; garbageRemaining?: number; garbageExit?: number; clutchMargin?: number; clutchRemaining?: number } = {},
+  opts: { garbageMargin?: number; garbageRemaining?: number; garbageExit?: number; clutchMargin?: number; clutchRemaining?: number; secondsPerPossession?: number } = {},
 ): Map<string, PossessionContext> {
   const garbageMargin = opts.garbageMargin ?? 20;
-  const garbageRemaining = opts.garbageRemaining ?? 12;
+  // Exit sits 5 below the trigger so a single free throw can't flip the
+  // flag on and off across consecutive possessions.
   const garbageExit = opts.garbageExit ?? 15;
   const clutchMargin = opts.clutchMargin ?? 6;
-  const clutchRemaining = opts.clutchRemaining ?? 10;
+  // Minutes converted to possessions at this game's own pace -- a slow
+  // grind and a track meet fit very different numbers of trips into the
+  // last four minutes, so a fixed possession count would mean different
+  // things in different games.
+  const secsPerPoss = opts.secondsPerPossession ?? 16;
+  const garbageRemaining = opts.garbageRemaining ?? Math.round((3 * 60) / secsPerPoss);
+  const clutchRemaining = opts.clutchRemaining ?? Math.round((4 * 60) / secsPerPoss);
 
   const sorted = [...gamePossessions].sort((a, b) => a.sequence - b.sequence);
   const total = sorted.length;
