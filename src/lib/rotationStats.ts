@@ -244,8 +244,12 @@ export interface HeatmapRow { playerId: string; cells: HeatmapCell[]; games: num
 export function computeRotationHeatmap(slices: GameSlice[], blocksPerPeriod = 3): { rows: HeatmapRow[]; blocks: string[]; games: number } {
   const onFloor = new Map<string, Map<number, number>>();
   const blockTotals = new Map<number, number>();
+  // Possessions per period, averaged across games, so the label can say
+  // which stretch of the period a block actually covers.
+  const periodLengths = new Map<number, number[]>();
   const playerGames = new Map<string, Set<string>>();
   const labels = new Map<number, string>();
+  const blockWithin = new Map<number, number>();
   let counted = 0;
 
   for (const slice of slices) {
@@ -257,10 +261,13 @@ export function computeRotationHeatmap(slices: GameSlice[], blocksPerPeriod = 3)
 
     periods.forEach((period, pi) => {
       const list = slice.possessions.filter((p) => p.quarter === period).sort((a, b) => a.sequence - b.sequence);
+      if (!periodLengths.has(pi)) periodLengths.set(pi, []);
+      periodLengths.get(pi)!.push(list.length);
       list.forEach((p, i) => {
         const within = Math.min(blocksPerPeriod - 1, Math.floor((i / list.length) * blocksPerPeriod));
         const block = pi * blocksPerPeriod + within;
-        labels.set(block, `${periodLabel(slice.format, period)}${blocksPerPeriod > 1 ? ` ${within + 1}` : ""}`);
+        labels.set(block, periodLabel(slice.format, period));
+        blockWithin.set(block, within);
         blockTotals.set(block, (blockTotals.get(block) ?? 0) + 1);
 
         const ends = assigned.get(p.id);
@@ -290,7 +297,21 @@ export function computeRotationHeatmap(slices: GameSlice[], blocksPerPeriod = 3)
     // Most-used players first -- that's the rotation, top to bottom.
     .sort((a, b) => b.cells.reduce((s, c) => s + c.share, 0) - a.cells.reduce((s, c) => s + c.share, 0));
 
-  return { rows, blocks: blockIdx.map((b) => labels.get(b) ?? ""), games: counted };
+  // "H1 #1-20" rather than "H1 1" -- the number alone gave no sense of how
+  // long the stretch is, and these are possession ranges, not minutes.
+  const blocks = blockIdx.map((b) => {
+    const base = labels.get(b) ?? "";
+    const within = blockWithin.get(b) ?? 0;
+    const pi = Math.floor(b / blocksPerPeriod);
+    const lens = periodLengths.get(pi) ?? [];
+    if (!lens.length) return base;
+    const avg = Math.round(lens.reduce((x, y) => x + y, 0) / lens.length);
+    const from = Math.round((within / blocksPerPeriod) * avg) + 1;
+    const to = Math.round(((within + 1) / blocksPerPeriod) * avg);
+    return `${base} #${from}-${to}`;
+  });
+
+  return { rows, blocks, games: counted };
 }
 
 function round2(n: number) { return Math.round(n * 100) / 100; }
