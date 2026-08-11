@@ -52,6 +52,11 @@ export interface Finding {
   context: ContextFact[];
 }
 
+/** Three is a digest; ten is a wall you learn to scroll past. */
+export const MAX_FINDINGS_PER_SCOPE = 3;
+
+export type FindingScope = "lineup" | "individual";
+
 interface Bucket {
   label: string;
   kind: SegmentKind;
@@ -70,7 +75,7 @@ interface Bucket {
  * Out-of-halftime isn't separate because the start of the third period IS
  * out of halftime -- it would be the same possessions counted twice.
  */
-export function computeFindings(slices: GameSlice[]): Finding[] {
+export function computeFindings(slices: GameSlice[], scope: FindingScope = "lineup"): Finding[] {
   const buckets = new Map<string, Bucket>();
   const all: Possession[] = [];
 
@@ -142,16 +147,21 @@ export function computeFindings(slices: GameSlice[]): Finding[] {
       diff: round2(diff),
       possessions,
       confident: possessions >= SEGMENT_POSSESSION_FLOOR,
-      context: personnelContext(slices, b.ids),
+      context: personnelContext(slices, b.ids, scope),
     });
   });
 
   // Biggest effects first, but anything below the sample floor sorts after
-  // everything above it -- same rule the lineup rows follow.
-  return findings.sort((a, b) => {
-    if (a.confident !== b.confident) return a.confident ? -1 : 1;
-    return Math.abs(b.diff) - Math.abs(a.diff);
-  });
+  // everything above it -- same rule the lineup rows follow. Capped, and a
+  // finding with no context of this kind is dropped: an individual section
+  // showing a segment with nothing to say about individuals is noise.
+  return findings
+    .filter((f) => f.context.length > 0)
+    .sort((a, b) => {
+      if (a.confident !== b.confident) return a.confident ? -1 : 1;
+      return Math.abs(b.diff) - Math.abs(a.diff);
+    })
+    .slice(0, MAX_FINDINGS_PER_SCOPE);
 }
 
 /**
@@ -161,7 +171,7 @@ export function computeFindings(slices: GameSlice[]): Finding[] {
  * whether they'd explain the segment would be exactly the causal claim this
  * panel is meant to avoid.
  */
-function personnelContext(slices: GameSlice[], ids: Set<string>): ContextFact[] {
+function personnelContext(slices: GameSlice[], ids: Set<string>, scope: FindingScope): ContextFact[] {
   const inSeg = new Map<string, number>();
   const overall = new Map<string, number>();
   let segTotal = 0, allTotal = 0;
@@ -199,7 +209,7 @@ function personnelContext(slices: GameSlice[], ids: Set<string>): ContextFact[] 
 
   const facts: { text: string; size: number }[] = [];
 
-  overall.forEach((n, pid) => {
+  if (scope === "individual") overall.forEach((n, pid) => {
     const segShare = (inSeg.get(pid) ?? 0) / segTotal;
     const allShare = n / allTotal;
     const delta = segShare - allShare;
@@ -210,12 +220,21 @@ function personnelContext(slices: GameSlice[], ids: Set<string>): ContextFact[] 
     });
   });
 
-  const topLineup = [...lineupSeg.values()].sort((a, b) => b.n - a.n)[0];
+  const topLineup = scope === "lineup" ? [...lineupSeg.values()].sort((a, b) => b.n - a.n)[0] : null;
   if (topLineup && topLineup.n / segTotal >= 0.15) {
+    const net = topLineup.for / Math.max(1, topLineup.n) - topLineup.against / Math.max(1, topLineup.n);
     facts.push({
-      text: `The five here most often (${topLineup.players.map((p) => `__${p}__`).join(" · ")}) covers ${Math.round((topLineup.n / segTotal) * 100)}% of them.`,
+      text: `The five here most often (${topLineup.players.map((p) => `__${p}__`).join(" · ")}) covers ${Math.round((topLineup.n / segTotal) * 100)}% of them, at ${net > 0 ? "+" : ""}${Math.round(net * 100)} net.`,
       size: topLineup.n / segTotal,
     });
+    const second = [...lineupSeg.values()].sort((a, b) => b.n - a.n)[1];
+    if (second && second.n / segTotal >= 0.15) {
+      const n2 = second.for / Math.max(1, second.n) - second.against / Math.max(1, second.n);
+      facts.push({
+        text: `Next most used (${second.players.map((p) => `__${p}__`).join(" · ")}) covers ${Math.round((second.n / segTotal) * 100)}%, at ${n2 > 0 ? "+" : ""}${Math.round(n2 * 100)} net.`,
+        size: second.n / segTotal,
+      });
+    }
   }
 
   return facts
