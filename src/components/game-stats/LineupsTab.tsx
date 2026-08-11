@@ -22,6 +22,7 @@ import { listSeasons, gameTypesForGroup, GAME_GROUPS, isGameFinal, type GameGrou
 import { getRosters } from "../../lib/practicePlanner";
 import LineupReport from "./LineupReport";
 import GameScopePicker, { type ScopeGame } from "./GameScopePicker";
+import RankingsPanel from "./RankingsPanel";
 
 type Sub = "reports" | "rankings" | "rotation";
 interface GameLite {
@@ -108,6 +109,44 @@ export default function LineupsTab() {
 
   return (
     <div>
+      {/* Scope sits above the sub-tabs because it applies to both Reports and
+          Rankings. Ranking a three-game filter isn't a worry -- the sample
+          gates already refuse to rank that little. */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
+          {rosters.length > 1 && (
+            <label style={wrap}>
+              Roster
+              <select value={rosterId} onChange={(e) => setRosterId(e.target.value)} style={field}>
+                {rosters.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+            </label>
+          )}
+
+          <label style={wrap}>
+            Season
+            <select value={season} onChange={(e) => setSeason(e.target.value)} style={field}>
+              {seasons.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+
+          <label style={wrap}>
+            Type
+            <select value={gameGroup} onChange={(e) => setGameGroup(e.target.value as GameGroup)} style={field}>
+              {GAME_GROUPS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+            </select>
+          </label>
+
+          <label style={wrap}>
+            {groupLabel}
+            <GameScopePicker
+              games={pickable}
+              selected={selectedIds}
+              onChange={setSelectedIds}
+              noun={groupLabel.toLowerCase()}
+            />
+          </label>
+        </div>
+
       <div className="role-tabs" style={{ marginBottom: 12, width: "100%", maxWidth: 1400 }}>
         <button className={`role-tab ${sub === "reports" ? "active" : ""}`} onClick={() => setSub("reports")}>Reports</button>
         <button className={`role-tab ${sub === "rankings" ? "active" : ""}`} onClick={() => setSub("rankings")}>Rankings</button>
@@ -116,40 +155,6 @@ export default function LineupsTab() {
 
       {sub === "reports" && (
         <>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
-            {rosters.length > 1 && (
-              <label style={wrap}>
-                Roster
-                <select value={rosterId} onChange={(e) => setRosterId(e.target.value)} style={field}>
-                  {rosters.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                </select>
-              </label>
-            )}
-
-            <label style={wrap}>
-              Season
-              <select value={season} onChange={(e) => setSeason(e.target.value)} style={field}>
-                {seasons.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </label>
-
-            <label style={wrap}>
-              Type
-              <select value={gameGroup} onChange={(e) => setGameGroup(e.target.value as GameGroup)} style={field}>
-                {GAME_GROUPS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
-              </select>
-            </label>
-
-            <label style={wrap}>
-              {groupLabel}
-              <GameScopePicker
-                games={pickable}
-                selected={selectedIds}
-                onChange={setSelectedIds}
-                noun={groupLabel.toLowerCase()}
-              />
-            </label>
-          </div>
 
           {!loading && !tracked.length ? (
             <div className="card">
@@ -163,16 +168,7 @@ export default function LineupsTab() {
         </>
       )}
 
-      {sub === "rankings" && (
-        <Placeholder
-          title="Rankings"
-          blurb="Top 3, bottom 3, and a needs-more-data list for each of individual, 2-man, 3-man and 5-man groups — ranked on net rating adjusted for how little you've seen each one, with a goal scorecard alongside."
-          needs={[
-            "Roughly 8–10 games of shifts before the numbers say much at any level below 2-man",
-            "A decision on whether ranking is by adjusted net, goals hit, or both",
-          ]}
-        />
-      )}
+      {sub === "rankings" && <RankingsPanel gameIds={selectedIds} />}
 
       {sub === "rotation" && (
         <Placeholder
