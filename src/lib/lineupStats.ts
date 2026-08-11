@@ -566,6 +566,80 @@ export function computeTogetherApart(slices: GameSlice[], a: string, b: string, 
   return { both: toRow(buckets.both), aOnly: toRow(buckets.aOnly), bOnly: toRow(buckets.bOnly), neither: toRow(buckets.neither) };
 }
 
+// ── Goal scorecard ───────────────────────────────────────────────
+
+/**
+ * Which goals apply at each level.
+ *
+ * The rule is that goals mirror the columns. Below five-man the report
+ * shows four factors as on/off DIFFERENTIALS rather than raw values, so a
+ * team goal like eFG% would be judging a number that isn't on screen --
+ * "missed the eFG% goal" with no eFG% column to check. Five-man does show
+ * raw four factors, so team goals have something to point at there.
+ *
+ * A consequence worth surfacing in the UI: the denominators differ, so a
+ * 4-of-4 individual and a 7-of-10 five aren't comparable.
+ */
+export const LINEUP_GOAL_KEYS = ["lineup_off_ppp", "lineup_def_ppp", "lineup_net_rating", "lineup_onoff_diff"] as const;
+
+export interface ScorecardItem {
+  key: string;
+  label: string;
+  target: number;
+  value: number | null;
+  met: boolean;
+  lowerBetter: boolean;
+}
+
+export interface Scorecard {
+  met: number;
+  total: number;
+  items: ScorecardItem[];
+}
+
+export function computeScorecard(
+  row: ComboRow,
+  level: ComboLevel,
+  goals: StatGoal[],
+  statLabels: Record<string, string>,
+  onOffDiff: number | null,
+): Scorecard {
+  const set = goals.filter((g) => g.team === "us");
+
+  function valueFor(key: string): number | null {
+    switch (key) {
+      case "lineup_off_ppp": return row.offPPP;
+      case "lineup_def_ppp": return row.defPPP;
+      case "lineup_net_rating": return row.adjNet;
+      // On/off is meaningless at five-man, so that goal simply doesn't apply there.
+      case "lineup_onoff_diff": return level === 5 ? null : onOffDiff;
+      default: return row.offense[key] ?? null;
+    }
+  }
+
+  const applicable = set.filter((g) => {
+    const isLineupGoal = (LINEUP_GOAL_KEYS as readonly string[]).includes(g.stat_key);
+    if (isLineupGoal) return g.stat_key !== "lineup_onoff_diff" || level !== 5;
+    // Team goals only at five-man, where the raw values are actually shown.
+    return level === 5;
+  });
+
+  const items: ScorecardItem[] = applicable.map((g) => {
+    const value = valueFor(g.stat_key);
+    const lowerBetter = g.direction === "lower_better";
+    return {
+      key: g.stat_key,
+      label: statLabels[g.stat_key] ?? g.stat_key,
+      target: g.target_value,
+      value,
+      met: value != null && (lowerBetter ? value <= g.target_value : value >= g.target_value),
+      lowerBetter,
+    };
+  });
+
+  return { met: items.filter((i) => i.met).length, total: items.length, items };
+}
+
 // ── Readiness ────────────────────────────────────────────────────
 
 /**
