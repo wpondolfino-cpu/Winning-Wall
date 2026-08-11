@@ -81,10 +81,15 @@ export default function RankingsPanel({ gameIds }: { gameIds: string[] }) {
   }, [rows, level, goals, statLabels, onOff]);
 
   const qualified = rows.filter((r) => r.qualified && rankValue(r) != null);
-  const ranked = [...qualified].sort((a, b) => (rankValue(b) ?? -1e9) - (rankValue(a) ?? -1e9));
+  const rankable = qualified.length >= 3 ? qualified : rows.filter((r) => rankValue(r) != null);
+  const ranked = [...rankable].sort((a, b) => {
+    // Qualified always above unqualified, whatever the numbers say.
+    if (a.qualified !== b.qualified) return a.qualified ? -1 : 1;
+    return (rankValue(b) ?? -1e9) - (rankValue(a) ?? -1e9);
+  });
   // Closest to the threshold first -- sorting these by result would surface
   // the luckiest small samples and dress them up as promising.
-  const nearly = rows
+  const nearly = (qualified.length >= 3 ? rows : [])
     .filter((r) => !r.qualified)
     .sort((a, b) => b.offPossessions - a.offPossessions)
     .slice(0, 3);
@@ -113,19 +118,14 @@ export default function RankingsPanel({ gameIds }: { gameIds: string[] }) {
         detail={`${qualified.length} of ${rows.length} ${levelName.toLowerCase()} groups have reached ${gate.possessions} possessions across ${gate.games} games.`}
       />
 
-      {qualified.length < 3 ? (
-        // Everything is shown, dotted and sorted last, rather than hidden --
-        // the ordering guarantee is what keeps that honest.
-        <Section
-          title={`All ${levelName.toLowerCase()} groups by ${rankLabel}`}
-          rows={[...rows].sort((a, b) => {
-            if (a.qualified !== b.qualified) return a.qualified ? -1 : 1;
-            return (rankValue(b) ?? -1e9) - (rankValue(a) ?? -1e9);
-          })}
-          {...{ name, rankValue, side, level, scorecards, open, setOpen, onOff }}
-        />
-      ) : qualified.length < 7 ? (
-        // Top and bottom would overlap with this few, so it's one list.
+      {/* Always top 3 and bottom 3 -- that's what makes this a ranking
+          rather than a list. Removing the "not enough data" wall was right,
+          but showing every row instead turned 2-man into 45 rows of nothing.
+          The confidence changes with sample; the format doesn't.
+
+          Only when there are literally too few groups to have a distinct top
+          and bottom does it collapse to one list. */}
+      {ranked.length < 7 ? (
         <Section
           title={`All ${levelName.toLowerCase()} groups by ${rankLabel}`}
           rows={ranked}
