@@ -23,6 +23,7 @@ import { getRosters } from "../../lib/practicePlanner";
 import LineupReport from "./LineupReport";
 import GameScopePicker, { type ScopeGame } from "./GameScopePicker";
 import RankingsPanel from "./RankingsPanel";
+import RotationPanel from "./RotationPanel";
 
 type Sub = "reports" | "rankings" | "rotation";
 interface GameLite {
@@ -170,29 +171,7 @@ export default function LineupsTab() {
 
       {sub === "rankings" && <RankingsPanel gameIds={selectedIds} />}
 
-      {sub === "rotation" && (
-        <Placeholder
-          title="Rotation"
-          blurb="A heatmap of what your rotation actually looks like (all games, or close games only), findings drawn from the season, and a block-based planner for building the rotation you want."
-          needs={[
-            "Foul trouble across enough games to show where plans break",
-            "Enough games that an \u201Caverage rotation\u201D means something — roughly 10",
-          ]}
-        />
-      )}
-    </div>
-  );
-}
-
-function Placeholder({ title, blurb, needs }: { title: string; blurb: string; needs: string[] }) {
-  return (
-    <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
-      <div style={{ fontSize: 14, marginBottom: 6 }}>{title}</div>
-      <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.6, marginBottom: 12 }}>{blurb}</div>
-      <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>Not built yet. It needs:</div>
-      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--muted)", lineHeight: 1.8 }}>
-        {needs.map((n, i) => <li key={i}>{n}</li>)}
-      </ul>
+      {sub === "rotation" && <RotationPanel gameIds={selectedIds} />}
     </div>
   );
 }
