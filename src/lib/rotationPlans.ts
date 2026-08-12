@@ -190,6 +190,82 @@ export function buildProjectionModel(slices: GameSlice[], goals: StatGoal[]): Pr
   return { project, teamNet, totalPossessions };
 }
 
+// ── Diff-based suggestions ───────────────────────────────────────
+
+export interface SwapSuggestion {
+  block: number;
+  out: string;
+  in: string;
+  currentNet: number;
+  suggestedNet: number;
+  gain: number;
+  /** Weighted evidence behind the ALTERNATIVE five, not the current one. */
+  evidence: number;
+  confident: boolean;
+}
+
+/** Below this the alternative is mostly team-average and says nothing. */
+export const SUGGESTION_EVIDENCE_FLOOR = 400;
+/** A gain smaller than this isn't worth a line. */
+const MIN_GAIN = 5;
+
+/**
+ * Single-player swaps that would raise a block's projection.
+ *
+ * Deliberately one swap at a time. Re-optimising a whole rotation would
+ * produce a plan built mostly on fives nobody has played, and would read as
+ * an instruction rather than an observation. One swap against one block is
+ * checkable: you can look at the two numbers and disagree.
+ *
+ * It states the comparison and stops. "This block projects +2, this
+ * alternative projects +9" is a fact about your data; whether to make the
+ * change depends on things the app doesn't know.
+ */
+export function suggestSwaps(
+  plan: RotationPlan,
+  bench: string[],
+  model: ProjectionModel,
+  limit = 3,
+): SwapSuggestion[] {
+  const out: SwapSuggestion[] = [];
+
+  plan.blocks.forEach((five, block) => {
+    if (five.length !== 5) return;
+    const current = model.project(five);
+    if (current.net == null) return;
+
+    let best: SwapSuggestion | null = null;
+    five.forEach((outId) => {
+      bench.filter((b) => !five.includes(b)).forEach((inId) => {
+        const candidate = [...five.filter((x) => x !== outId), inId];
+        const proj = model.project(candidate);
+        if (proj.net == null) return;
+        const gain = proj.net - current.net!;
+        if (gain < MIN_GAIN) return;
+        if (!best || gain > best.gain) {
+          best = {
+            block, out: outId, in: inId,
+            currentNet: current.net!, suggestedNet: proj.net,
+            gain,
+            evidence: proj.evidence,
+            confident: proj.evidence >= SUGGESTION_EVIDENCE_FLOOR,
+          };
+        }
+      });
+    });
+    if (best) out.push(best);
+  });
+
+  // Biggest gains first, but anything under the evidence floor sorts after
+  // everything above it -- the same rule the lineup rows follow.
+  return out
+    .sort((a, b) => {
+      if (a.confident !== b.confident) return a.confident ? -1 : 1;
+      return b.gain - a.gain;
+    })
+    .slice(0, limit);
+}
+
 // ── Plan versus actual ───────────────────────────────────────────
 
 export interface PlanComparison {
