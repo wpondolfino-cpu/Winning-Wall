@@ -54,7 +54,14 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
   const [trackedCount, setTrackedCount] = useState<number | null>(null);
   const [reportSel, setReportSel] = useState<{ kind: "quarter"; quarter: number } | { kind: "half"; half: 1 | 2 } | { kind: "game" }>({ kind: "game" });
 
-  const activeGameId = gamesView.mode === "track" || gamesView.mode === "report" || gamesView.mode === "edit" ? gamesView.gameId : null;
+  // Every view that shows one game needs its row loaded. "shifts" was
+  // missing here, so opening shift entry straight from the games list left
+  // gameType/rosterId/format at their defaults -- which meant a practice
+  // never got its Team 1 / Team 2 switcher.
+  const activeGameId =
+    gamesView.mode === "track" || gamesView.mode === "report" || gamesView.mode === "edit" || gamesView.mode === "shifts"
+      ? gamesView.gameId
+      : null;
 
   useEffect(() => {
     if (!activeGameId) { setGameFinal(null); setActiveOpponent(""); setClosedQuarters([]); setFormat(DEFAULT_GAME_FORMAT); setGameType("regular"); setRosterId(null); return; }
@@ -211,7 +218,7 @@ export default function GameStatsHub({ currentUserRole, userId }: Props) {
         <ReportsTab userId={userId} view={reportsView} setView={setReportsView} />
       )}
 
-      {topTab === "lineups" && <LineupsTab />}
+      {topTab === "lineups" && <LineupsTab userId={userId} />}
 
       {topTab === "goals" && <GoalsManager userId={userId} />}
     </div>
