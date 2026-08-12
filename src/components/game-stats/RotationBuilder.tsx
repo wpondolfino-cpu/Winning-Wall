@@ -18,7 +18,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   loadPlan, savePlan, lastPlan, buildProjectionModel, comparePlanToActual,
-  actualBlocksFromSlice, DEFAULT_BLOCKS_PER_PERIOD,
+  actualBlocksFromSlice, suggestSwaps, DEFAULT_BLOCKS_PER_PERIOD, SUGGESTION_EVIDENCE_FLOOR,
   type RotationPlan, type ProjectionModel,
 } from "../../lib/rotationPlans";
 import { listGamePlayers, type LineupPlayer } from "../../lib/lineups";
@@ -135,6 +135,11 @@ export default function RotationBuilder({ gameId, userId, rosterId, historySlice
     setTimeout(() => setStatus(null), 3000);
   }
 
+  const suggestions = useMemo(
+    () => suggestSwaps(plan, players.map((p) => p.id), model),
+    [plan, players, model],
+  );
+
   const comparison = useMemo(
     () => (actualSlice && plan.blocks.some((b) => b.length) ? comparePlanToActual(plan, actualBlocksFromSlice(actualSlice)) : []),
     [actualSlice, plan],
@@ -209,6 +214,31 @@ export default function RotationBuilder({ gameId, userId, rosterId, historySlice
         })}
       </div>
 
+      {suggestions.length > 0 && (
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginBottom: 12 }}>
+          <div style={{ fontSize: 13, marginBottom: 4 }}>Worth comparing</div>
+          {suggestions.map((sg, i) => (
+            <div key={i} style={{ fontSize: 12, color: "var(--muted)", padding: "4px 0", lineHeight: 1.7 }}>
+              <span style={{ color: "var(--text)" }}>{blockLabels[sg.block]}</span> projects{" "}
+              {sg.currentNet > 0 ? "+" : ""}{sg.currentNet}. The same five with{" "}
+              <span style={{ color: "var(--text)" }}>{name(sg.in)}</span> in for{" "}
+              <span style={{ color: "var(--text)" }}>{name(sg.out)}</span> projects{" "}
+              <span style={{ color: "#5cb98b" }}>{sg.suggestedNet > 0 ? "+" : ""}{sg.suggestedNet}</span>.
+              {!sg.confident && (
+                <div style={{ color: "#c9a227", fontStyle: "italic", marginTop: 2 }}>
+                  ⚠ Thin evidence behind that alternative ({Math.round(sg.evidence)} of {SUGGESTION_EVIDENCE_FLOOR}) —
+                  not enough to say this with confidence yet. This caveat drops once those players have played together more.
+                </div>
+              )}
+            </div>
+          ))}
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, lineHeight: 1.7 }}>
+            One swap at a time, and a comparison rather than a recommendation — whether to make the change depends on
+            things this doesn't know. Nothing changes unless you change it.
+          </div>
+        </div>
+      )}
+
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Planned minutes</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
         {[...minutes.entries()].sort((a, b) => b[1] - a[1]).map(([id, mins]) => {
@@ -256,38 +286,55 @@ function FivePicker({ players, selected, onToggle, onCommit, onCancel, name }: {
   onToggle: (id: string) => void; onCommit: () => void; onCancel: () => void;
   name: (id: string) => string;
 }) {
+  const bench = players.filter((p) => !selected.includes(p.id));
+  const label = (p: LineupPlayer) => (p.jersey != null ? `${p.jersey} ${p.name}` : p.name);
+
   return (
-    <div style={{ background: "var(--surface2)", border: "1px solid var(--accent, #3a5fd0)", borderRadius: 8, padding: 10, margin: "6px 0" }}>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-        {players.map((p) => {
-          const on = selected.includes(p.id);
+    <div style={{ background: "var(--surface2)", border: "1px solid var(--accent, #3a5fd0)", borderRadius: 8, padding: 12, margin: "6px 0" }}>
+      <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>On floor</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+        {selected.map((id) => {
+          const p = players.find((x) => x.id === id);
           return (
-            <span
-              key={p.id}
-              onClick={() => onToggle(p.id)}
-              style={{
-                fontSize: 13, padding: "5px 9px", borderRadius: 6, cursor: "pointer",
-                background: on ? "#16305c" : "var(--surface)",
-                border: `1px solid ${on ? "#16305c" : "var(--border)"}`,
-                color: on ? "#cfe0ff" : "var(--muted)",
-              }}
-            >
-              {p.jersey != null ? `${p.jersey} ${p.name}` : p.name}
+            <span key={id} onClick={() => onToggle(id)} style={chip("on")}>
+              {p ? label(p) : name(id)}
             </span>
           );
         })}
+        {!selected.length && <span style={{ fontSize: 12, color: "var(--muted)" }}>nobody yet — tap five from the bench</span>}
       </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+
+      <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Bench</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+        {bench.map((p) => (
+          <span key={p.id} onClick={() => onToggle(p.id)} style={chip(p.called_up ? "callup" : "bench")}>
+            {label(p)}
+          </span>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <button onClick={onCommit} disabled={selected.length !== 5} className="btn-primary" style={{ ...btn, width: "auto", opacity: selected.length === 5 ? 1 : 0.45 }}>
           Confirm
         </button>
         <button onClick={onCancel} style={btn}>Cancel</button>
         <span style={{ fontSize: 12, color: "var(--muted)" }}>
-          {selected.length === 5 ? selected.map(name).join(" · ") : `${selected.length} of 5`}
+          {selected.length === 5 ? "Ready" : selected.length < 5 ? `Add ${5 - selected.length} more` : `Take ${selected.length - 5} off`}
         </span>
       </div>
     </div>
   );
+}
+
+/** Matching the shift entry chips, so the two pickers read the same. */
+function chip(kind: "on" | "bench" | "callup"): React.CSSProperties {
+  const base: React.CSSProperties = {
+    fontSize: 13, padding: "5px 9px", borderRadius: 6, cursor: "pointer",
+    userSelect: "none", border: "1px solid transparent",
+  };
+  if (kind === "on") return { ...base, background: "#16305c", color: "#cfe0ff" };
+  if (kind === "callup") return { ...base, background: "var(--surface)", borderColor: "#7a5a20", color: "#e0b464" };
+  return { ...base, background: "var(--surface)", borderColor: "var(--border)", color: "var(--muted)" };
 }
 
 /** Minutes as m:ss, matching the report. */
