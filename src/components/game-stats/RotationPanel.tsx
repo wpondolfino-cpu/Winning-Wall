@@ -11,7 +11,7 @@
 // sample floor keeps its caveat and sorts below everything that isn't. You
 // lose the wall, you don't lose the ordering.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   computeFindings, computeRotationHeatmap,
   CONTEXT_POSSESSION_FLOOR, SEGMENT_POSSESSION_FLOOR,
@@ -19,13 +19,35 @@ import {
 } from "../../lib/rotationStats";
 import { possessionContexts } from "../../lib/lineupStats";
 import { useLineupData, playerLabeller } from "../../lib/useLineupData";
+import RotationBuilder from "./RotationBuilder";
+import { supabase } from "../../lib/supabase";
 
 /** Roughly ten games before an "average rotation" means anything. */
 const HEATMAP_GAME_FLOOR = 10;
 
-export default function RotationPanel({ gameIds }: { gameIds: string[] }) {
-  const { slices, players, loading, error } = useLineupData(gameIds);
+export default function RotationPanel({ gameIds, userId, rosterId }: { gameIds: string[]; userId: string; rosterId: string | null }) {
+  const { slices, goals, players, loading, error } = useLineupData(gameIds);
   const [closeOnly, setCloseOnly] = useState(false);
+  const [view, setView] = useState<"season" | "plan">("season");
+  // Which game a plan is being built for. The season view spans many games;
+  // a plan belongs to exactly one.
+  const [planGame, setPlanGame] = useState<string>("");
+  const [planGames, setPlanGames] = useState<{ id: string; label: string }[]>([]);
+
+  useEffect(() => {
+    // Upcoming and recent games on this roster, newest first -- a plan is
+    // usually for the next one, occasionally a review of the last.
+    (async () => {
+      let q = supabase.from("games").select("id, opponent, game_date, game_type").order("game_date", { ascending: false }).limit(30);
+      if (rosterId) q = q.eq("roster_id", rosterId);
+      const { data } = await q;
+      const list = ((data ?? []) as any[])
+        .filter((g) => g.game_type !== "practice")
+        .map((g) => ({ id: g.id, label: `${g.opponent} · ${g.game_date}` }));
+      setPlanGames(list);
+      setPlanGame((cur) => cur || list[0]?.id || "");
+    })();
+  }, [rosterId]);
   const name = useMemo(() => playerLabeller(players), [players]);
 
   // A close game is the honest picture of your rotation -- blowouts in
@@ -51,6 +73,39 @@ export default function RotationPanel({ gameIds }: { gameIds: string[] }) {
 
   return (
     <div>
+      <div style={{ display: "flex", gap: 5, marginBottom: 12 }}>
+        <button onClick={() => setView("season")} style={tab(view === "season")}>What happened</button>
+        <button onClick={() => setView("plan")} style={tab(view === "plan")}>Plan</button>
+      </div>
+
+      {view === "plan" ? (
+        <>
+          {planGames.length > 1 && (
+            <div style={{ marginBottom: 10 }}>
+              <select
+                value={planGame}
+                onChange={(e) => setPlanGame(e.target.value)}
+                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontSize: 13 }}
+              >
+                {planGames.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
+              </select>
+            </div>
+          )}
+          {planGame ? (
+            <RotationBuilder
+              gameId={planGame}
+              userId={userId}
+              rosterId={rosterId}
+              historySlices={slices}
+              goals={goals}
+              name={name}
+            />
+          ) : (
+            <div className="card"><span style={{ fontSize: 13, color: "var(--muted)" }}>No games to plan for yet.</span></div>
+          )}
+        </>
+      ) : (
+      <>
       <div className="card" style={{ width: "100%", maxWidth: 1400, marginBottom: 12 }}>
         <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", marginBottom: 8 }}>
           <span style={{ fontSize: 14 }}>Rotation</span>
@@ -109,8 +164,19 @@ export default function RotationPanel({ gameIds }: { gameIds: string[] }) {
           fewer when there isn't more worth pointing at.
         </div>
       </div>
+      </>
+      )}
     </div>
   );
+}
+
+function tab(active: boolean): React.CSSProperties {
+  return {
+    padding: "5px 12px", fontSize: 13, borderRadius: 999, cursor: "pointer",
+    border: `1px solid ${active ? "var(--accent, #3a5fd0)" : "var(--border)"}`,
+    background: active ? "var(--accent, #3a5fd0)" : "var(--surface2)",
+    color: active ? "#fff" : "var(--muted)",
+  };
 }
 
 function FindingSection({ title, findings, name }: { title: string; findings: Finding[]; name: (id: string) => string }) {
