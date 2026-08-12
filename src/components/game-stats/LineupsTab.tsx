@@ -34,7 +34,7 @@ interface GameLite {
   hasShifts: boolean;
 }
 
-export default function LineupsTab() {
+export default function LineupsTab({ userId }: { userId: string }) {
   const [sub, setSub] = useState<Sub>("reports");
   const [rosters, setRosters] = useState<{ id: string; name: string }[]>([]);
   const [rosterId, setRosterId] = useState<string>("");
@@ -171,7 +171,7 @@ export default function LineupsTab() {
 
       {sub === "rankings" && <RankingsPanel gameIds={selectedIds} />}
 
-      {sub === "rotation" && <RotationPanel gameIds={selectedIds} />}
+      {sub === "rotation" && <RotationPanel gameIds={selectedIds} userId={userId} rosterId={rosterId || null} />}
     </div>
   );
 }
