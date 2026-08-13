@@ -42,6 +42,9 @@ import {
   type PossessionType,
   type HalfCourtType,
   type OobResult,
+  type OobDefense,
+  type PressBreakResult,
+  type FtAwardType,
   type Outcome,
   type ShotQuality,
   type TurnoverType,
@@ -55,9 +58,13 @@ interface Props {
 }
 
 const TEAMS: Team[] = ["us", "opponent"];
-const POSSESSION_TYPES: PossessionType[] = ["transition", "half_court", "blob", "slob"];
-const HALF_COURT_TYPES: HalfCourtType[] = ["set", "motion"];
+const POSSESSION_TYPES: PossessionType[] = ["transition", "half_court", "blob", "slob", "press", "press_break", "non_possession_ft"];
+const HALF_COURT_TYPES: HalfCourtType[] = ["set", "motion", "unscripted", "zone"];
+const HALF_COURT_LABELS: Record<HalfCourtType, string> = { set: "man set", motion: "motion", unscripted: "unscripted", zone: "zone set" };
 const OOB_RESULTS: OobResult[] = ["direct_shot", "flowed_half_court", "turnover"];
+const OOB_DEFENSES: OobDefense[] = ["man", "zone"];
+const PRESS_BREAK_RESULTS: PressBreakResult[] = ["transition", "half_court", "turnover", "oob", "ft_trip"];
+const FT_AWARD_TYPES: FtAwardType[] = ["eog", "technical", "flagrant"];
 const OUTCOMES: Outcome[] = ["fg_made", "fg_missed", "turnover", "ft_trip"];
 const QUALITIES: ShotQuality[] = ["great", "good", "live", "tough"];
 const TURNOVER_TYPES: TurnoverType[] = ["live", "dead", "charge"];
@@ -157,13 +164,16 @@ export default function PossessionEditor({ gameId, opponent, format = DEFAULT_GA
       {filtered.map((p) => {
         const isQueued = queuedIds.has(p.id);
         const err = syncErrors.find((e) => e.id === p.id)?.message;
+        // Structure names double as play-call categories, except
+        // "unscripted", which deliberately has no play list.
         const relevantPlayCalls = playCalls.filter((pc) =>
           p.possession_type === "blob" || p.possession_type === "slob"
             ? pc.category === p.possession_type
-            : p.half_court_type
+            : p.half_court_type && p.half_court_type !== "unscripted"
             ? pc.category === p.half_court_type
             : false
         );
+        const pressTypes = playCalls.filter((pc) => pc.category === "press_type");
 
         return (
           <div key={p.id} style={{ borderTop: "1px solid var(--border)", padding: "12px 0" }}>
@@ -198,11 +208,11 @@ export default function PossessionEditor({ gameId, opponent, format = DEFAULT_GA
                 </select>
               </Field>
 
-              {p.possession_type === "half_court" && (
-                <Field label="Set/Motion">
+              {(p.possession_type === "half_court" || p.half_court_type) && (
+                <Field label="Half-court type">
                   <select value={p.half_court_type ?? ""} onChange={(e) => save(p, { half_court_type: (e.target.value || null) as HalfCourtType | null })} style={selectStyle}>
                     <option value="">—</option>
-                    {HALF_COURT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                    {HALF_COURT_TYPES.map((t) => <option key={t} value={t}>{HALF_COURT_LABELS[t]}</option>)}
                   </select>
                 </Field>
               )}
@@ -221,6 +231,45 @@ export default function PossessionEditor({ gameId, opponent, format = DEFAULT_GA
                   <select value={p.oob_result ?? ""} onChange={(e) => save(p, { oob_result: (e.target.value || null) as OobResult | null })} style={selectStyle}>
                     <option value="">—</option>
                     {OOB_RESULTS.map((o) => <option key={o} value={o}>{o.replace("_", " ")}</option>)}
+                  </select>
+                </Field>
+              )}
+
+              {/* This is the field the report's "18 of 22 tagged" count points at. */}
+              {(p.possession_type === "blob" || p.possession_type === "slob") && p.team === "us" && (
+                <Field label="Defense on inbounds">
+                  <select value={p.oob_defense ?? ""} onChange={(e) => save(p, { oob_defense: (e.target.value || null) as OobDefense | null })} style={selectStyle}>
+                    <option value="">— untagged</option>
+                    {OOB_DEFENSES.map((d) => <option key={d} value={d}>vs {d}</option>)}
+                  </select>
+                </Field>
+              )}
+
+              {/* Shown for any trip that already carries a press type, not just
+                  one still typed press_break -- a broken press becomes
+                  transition or half court, and this is how it stays editable. */}
+              {(p.possession_type === "press_break" || p.press_break_type_id) && (
+                <>
+                  <Field label="Press faced">
+                    <select value={p.press_break_type_id ?? ""} onChange={(e) => save(p, { press_break_type_id: e.target.value || null })} style={selectStyle}>
+                      <option value="">—</option>
+                      {pressTypes.map((pc) => <option key={pc.id} value={pc.id}>{pc.name}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Press break result">
+                    <select value={p.press_break_result ?? ""} onChange={(e) => save(p, { press_break_result: (e.target.value || null) as PressBreakResult | null })} style={selectStyle}>
+                      <option value="">—</option>
+                      {PRESS_BREAK_RESULTS.map((r) => <option key={r} value={r}>{r.replace("_", " ")}</option>)}
+                    </select>
+                  </Field>
+                </>
+              )}
+
+              {(p.possession_type === "non_possession_ft" || p.ft_award_type) && (
+                <Field label="FTs awarded for">
+                  <select value={p.ft_award_type ?? ""} onChange={(e) => save(p, { ft_award_type: (e.target.value || null) as FtAwardType | null })} style={selectStyle}>
+                    <option value="">—</option>
+                    {FT_AWARD_TYPES.map((t) => <option key={t} value={t}>{t === "eog" ? "end of game" : t}</option>)}
                   </select>
                 </Field>
               )}
