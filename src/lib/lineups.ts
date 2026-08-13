@@ -290,6 +290,12 @@ export async function deleteShift(shiftId: string): Promise<{ error: string | nu
   return { error: error?.message ?? null };
 }
 
+/** Sets or clears the game-clock reading for when a shift came on. */
+export async function setShiftClock(shiftId: string, seconds: number | null): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("shifts").update({ start_clock_seconds: seconds }).eq("id", shiftId);
+  return { error: error?.message ?? null };
+}
+
 export async function addFoulTrouble(
   gameId: string,
   quarter: number,
@@ -339,23 +345,40 @@ export function assignPossessionSides(
   shifts: Shift[],
 ): Map<string, { off: string | null; def: string | null }> {
   const sorted = [...shifts].sort((a, b) => a.start_sequence - b.start_sequence);
+  const byId = new Map(sorted.map((s) => [s.id, s]));
   const out = new Map<string, { off: string | null; def: string | null }>();
   for (const p of possessions) {
     const ballSide: ShiftSide = p.team === "us" ? "us" : "opponent";
     const otherSide: ShiftSide = ballSide === "us" ? "opponent" : "us";
+
+    // An override wins outright, but only on the side it belongs to -- a
+    // second free throw reassigned to the five that earned it says nothing
+    // about who was defending.
+    const override = (p as any).shift_override_id ? byId.get((p as any).shift_override_id) : null;
+    const overrideSide = override ? (override.side ?? "us") : null;
+
     out.set(p.id, {
-      off: shiftForSequence(sorted, p.sequence, ballSide)?.id ?? null,
-      def: shiftForSequence(sorted, p.sequence, otherSide)?.id ?? null,
+      off: overrideSide === ballSide ? override!.id : shiftForSequence(sorted, p.sequence, ballSide)?.id ?? null,
+      def: overrideSide === otherSide ? override!.id : shiftForSequence(sorted, p.sequence, otherSide)?.id ?? null,
     });
   }
   return out;
 }
 
+/** Pins one possession to a specific shift, overriding the derived rule. Null clears it. */
+export async function setPossessionShift(possessionId: string, shiftId: string | null): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("possessions").update({ shift_override_id: shiftId }).eq("id", possessionId);
+  return { error: error?.message ?? null };
+}
+
 /** Possession id -> shift id for the "us" side only. Kept for the entry screen, which paints one side at a time. */
 export function assignPossessions(possessions: Possession[], shifts: Shift[], side: ShiftSide = "us"): Map<string, string> {
   const sorted = [...shifts].sort((a, b) => a.start_sequence - b.start_sequence);
+  const byId = new Map(sorted.map((x) => [x.id, x]));
   const out = new Map<string, string>();
   for (const p of possessions) {
+    const ov = (p as any).shift_override_id ? byId.get((p as any).shift_override_id) : null;
+    if (ov && (ov.side ?? "us") === side) { out.set(p.id, ov.id); continue; }
     const s = shiftForSequence(sorted, p.sequence, side);
     if (s) out.set(p.id, s.id);
   }
