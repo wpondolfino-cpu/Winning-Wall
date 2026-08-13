@@ -22,6 +22,7 @@
 import {
   computeShotQuality,
   computeTeamStats,
+  countedPossessions,
   periodLengthSeconds,
   type GameFormat,
   type Possession,
@@ -373,7 +374,7 @@ function statMap(possessions: Possession[], team: "us" | "opponent", goals: Stat
  * not points per trip, so this computes the trips directly.
  */
 function extraStats(possessions: Possession[], team: "us" | "opponent"): Record<string, number | null> {
-  const own = possessions.filter((p) => p.team === team);
+  const own = countedPossessions(possessions).filter((p) => p.team === team);
   const oob = own.filter((p) => p.possession_type === "blob" || p.possession_type === "slob");
   const fga = own.filter((p) => p.outcome === "fg_made" || p.outcome === "fg_missed");
   const fga3 = fga.filter((p) => p.shot_type === 3);
@@ -462,12 +463,20 @@ export function computeComboRows(
     if (!slice.shifts.length) continue;
     gamesCounted.add(slice.gameId);
 
+    // Margin needs every point on the scoreboard, so possessionContexts
+    // still sees the full log -- an end-of-game free throw absolutely
+    // changes whether the next trip is clutch or garbage time. Everything
+    // downstream of it works off counted trips only: pace (game minutes
+    // divided by possessions would otherwise shrink every player's
+    // estimated minutes in exactly the games with the most fouling),
+    // shift assignment, and the walk itself.
     const ctx = possessionContexts(slice.possessions);
-    const spp = secondsBySequence(slice.possessions, slice.format, slice.anchors ?? []);
-    const assigned = assignPossessionSides(slice.possessions, slice.shifts);
+    const counted = countedPossessions(slice.possessions);
+    const spp = secondsBySequence(counted, slice.format, slice.anchors ?? []);
+    const assigned = assignPossessionSides(counted, slice.shifts);
     const shiftById = new Map(slice.shifts.map((s) => [s.id, s]));
 
-    for (const p of slice.possessions) {
+    for (const p of counted) {
       const c = ctx.get(p.id);
       if (opts.excludeGarbage && c?.garbage) continue;
       if (opts.clutchOnly && !c?.clutch) continue;
@@ -600,10 +609,11 @@ export function computeOnOff(
   for (const slice of slices) {
     if (!appeared.has(slice.gameId) || !slice.shifts.length) continue;
     const ctx = possessionContexts(slice.possessions);
-    const assigned = assignPossessionSides(slice.possessions, slice.shifts);
+    const counted = countedPossessions(slice.possessions);
+    const assigned = assignPossessionSides(counted, slice.shifts);
     const shiftById = new Map(slice.shifts.map((s) => [s.id, s]));
 
-    for (const p of slice.possessions) {
+    for (const p of counted) {
       if (opts.excludeGarbage && ctx.get(p.id)?.garbage) continue;
       const ends = assigned.get(p.id);
       if (!ends) continue;
@@ -666,10 +676,11 @@ export function computeTogetherApart(slices: GameSlice[], a: string, b: string, 
   for (const slice of slices) {
     if (!slice.shifts.length) continue;
     const ctx = possessionContexts(slice.possessions);
-    const assigned = assignPossessionSides(slice.possessions, slice.shifts);
+    const counted = countedPossessions(slice.possessions);
+    const assigned = assignPossessionSides(counted, slice.shifts);
     const shiftById = new Map(slice.shifts.map((s) => [s.id, s]));
 
-    for (const p of slice.possessions) {
+    for (const p of counted) {
       if (opts.excludeGarbage && ctx.get(p.id)?.garbage) continue;
       const ends = assigned.get(p.id);
       if (!ends) continue;
