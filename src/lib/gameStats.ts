@@ -12,10 +12,28 @@ import { supabase } from "./supabase";
 
 // ── Types ────────────────────────────────────────────────────
 export type Team = "us" | "opponent";
-export type PossessionType = "transition" | "half_court" | "blob" | "slob" | "press";
+// press_break: a trip that started against a press and ended against it
+// (turnover / FT trip / and-1). Once a break flows into transition or a
+// half-court look the type BECOMES that, so those points land in the
+// existing transition and half-court numbers -- press_break_type_id is
+// what durably marks the trip as a press break either way.
+// non_possession_ft: free throws that didn't come from an offensive
+// possession (end-of-game fouling, technicals, flagrants). Excluded from
+// every rate stat both top and bottom; still on the scoreboard and in FT%.
+export type PossessionType = "transition" | "half_court" | "blob" | "slob" | "press" | "press_break" | "non_possession_ft";
 export type DefenseScheme = "man" | "zone";
 export type PressResult = "turnover" | "man" | "zone";
-export type HalfCourtType = "set" | "motion";
+// The half-court structure we ran. "zone" is a zone set, which doubles as
+// the record that we were playing against a zone -- there's no separate
+// defense_faced field, because it would be a second copy of the same fact.
+// "unscripted" is a trip with no called structure, so it has no play call.
+export type HalfCourtType = "set" | "motion" | "unscripted" | "zone";
+/** What a press break turned into. "oob" is a foul/jump/OOB that kept it our ball -- still broken. */
+export type PressBreakResult = "transition" | "half_court" | "turnover" | "oob" | "ft_trip";
+/** What they were in ON THE INBOUNDS. A separate question from half_court_type: a team can go zone on a BLOB and match up man after. */
+export type OobDefense = "man" | "zone";
+/** Why a non-possession free throw trip happened. Only "eog" is a live ball, so only "eog" can convert into a real possession off a rebound. */
+export type FtAwardType = "eog" | "technical" | "flagrant";
 // direct_shot: a shot was taken right off the action (OREB putback or
 // BLOB/SLOB inbound), no set called. flowed_half_court: it turned into a
 // traditional half-court possession (Set/Motion). turnover: lost the ball
@@ -24,7 +42,17 @@ export type OobResult = "direct_shot" | "flowed_half_court" | "turnover";
 export type Outcome = "fg_made" | "fg_missed" | "turnover" | "ft_trip";
 export type ShotQuality = "great" | "good" | "live" | "tough";
 export type TurnoverType = "live" | "dead" | "charge";
-export type PlayCallCategory = "set" | "motion" | "blob" | "slob";
+// "zone" is a real play list picked exactly like sets. "press_type" holds
+// the presses we attack (Trap, 2-2-1, ...) -- their alignment, not our
+// call, which is why a possession stores it in press_break_type_id and
+// leaves play_call_id free for whatever set the break flows into.
+export type PlayCallCategory = "set" | "motion" | "blob" | "slob" | "zone" | "press_type";
+
+/** Half-court structures that have a play list behind them. "unscripted" deliberately doesn't -- it skips the play-call step. */
+export const HALF_COURT_PLAY_CATEGORIES: HalfCourtType[] = ["set", "motion", "zone"];
+
+/** Seeded on first use so the press picker isn't empty on day one. Editable and extendable like any other play call. */
+export const DEFAULT_PRESS_TYPES = ["Trap", "2-2-1", "2-1-2", "1-2-1-1", "1-2-2"];
 
 export interface Possession {
   id: string;
@@ -38,6 +66,11 @@ export interface Possession {
   oob_result: OobResult | null;
   defense_scheme: DefenseScheme | null;
   press_result: PressResult | null;
+  /** Which press we were breaking. Non-null IS the definition of "this trip was a press break", and survives the type changing to transition/half_court/blob/slob. */
+  press_break_type_id: string | null;
+  press_break_result: PressBreakResult | null;
+  oob_defense: OobDefense | null;
+  ft_award_type: FtAwardType | null;
   paint_touch: boolean;
   paint_touch_both_sides: boolean;
   oreb_count: number;
@@ -119,7 +152,7 @@ export async function upsertStatGoal(
 // report (full game, season, custom report) -- not on a quarter/half
 // in-game report. A stat's `kind` decides how ReportBody renders that row;
 // `kind: "number"` rows are the only ones with goal-based coloring.
-export type StatKind = "number" | "shot_quality" | "set_plays" | "oob" | "streaks" | "defense_schemes";
+export type StatKind = "number" | "shot_quality" | "set_plays" | "oob" | "streaks" | "defense_schemes" | "press_break" | "half_court_structure";
 
 export interface StatDef {
   key: string;
@@ -153,8 +186,10 @@ export const DEFAULT_STAT_ORDER: StatDef[] = [
   // Shot quality block above. goalOnly keeps it out of the report rows and
   // out of the reorder list while still giving it a goal input.
   { key: "quality_shot_pct", label: "Quality shots % (Great + Good)", kind: "number", inGame: true, defaultDirection: "higher_better", goalOnly: true },
-  { key: "set_plays", label: "Set plays (Set / Motion)", kind: "set_plays", inGame: false },
+  { key: "set_plays", label: "Set plays (Set / Motion / Zone)", kind: "set_plays", inGame: false },
+  { key: "half_court_structure", label: "Half court (man / zone)", kind: "half_court_structure", inGame: false },
   { key: "oob_plays", label: "Set plays (BLOB / SLOB)", kind: "oob", inGame: false },
+  { key: "press_break", label: "Press break", kind: "press_break", inGame: false },
   { key: "streaks", label: "Streaks", kind: "streaks", inGame: true },
   { key: "defense_schemes", label: "Defense schemes (Man / Zone / Press)", kind: "defense_schemes", inGame: false },
 ];
@@ -168,13 +203,15 @@ export const STAT_EXPLAINERS: Record<string, { what: string; how: string }> = {
   efg_pct: { what: "Field goal percentage with threes counted as worth more, since they are.", how: "(FGM + 0.5 x 3PM) / FGA" },
   fg2_pct: { what: "Two-point field goal percentage.", how: "2PM / 2PA" },
   fg3_pct: { what: "Three-point field goal percentage.", how: "3PM / 3PA" },
-  ft_pct: { what: "Free throw percentage.", how: "FTM / FTA" },
-  ft_rate: { what: "How often we get to the line relative to how often we shoot. A proxy for attacking rather than settling.", how: "FTA / FGA" },
+  ft_pct: { what: "Free throw percentage. Includes intentional-foul and technical free throws, since a free throw is a free throw.", how: "FTM / FTA" },
+  ft_rate: { what: "How often we get to the line relative to how often we shoot. A proxy for attacking rather than settling. Intentional-foul and technical free throws are excluded, since the offense didn't earn them.", how: "earned FTA / FGA" },
   tov_pct: { what: "Share of possessions that ended in a turnover.", how: "turnovers / possessions" },
   oreb_pct: { what: "Share of available offensive rebounds collected.", how: "OREB / (OREB + their defensive rebound chances)" },
-  transition_pct: { what: "Share of possessions that were transition rather than half court.", how: "transition trips / all trips" },
-  transition_ppp: { what: "Points per possession in transition.", how: "transition points / transition trips" },
-  halfcourt_ppp: { what: "Points per possession in the half court. Includes BLOB and SLOB trips that flowed into a set.", how: "half-court points / half-court trips" },
+  transition_pct: { what: "Share of possessions that were transition rather than half court. A press break that got out and ran counts as transition.", how: "transition trips / all trips" },
+  transition_ppp: { what: "Points per possession in transition, including breaks against a press that pushed.", how: "transition points / transition trips" },
+  halfcourt_ppp: { what: "Points per possession in the half court. Includes BLOB and SLOB trips, and press breaks, that flowed into a set.", how: "half-court points / half-court trips" },
+  press_break: { what: "How we handled the press. Broken means we got out of it -- into transition, into a half-court look, to the line, or a foul that kept it our ball. Points off the break counts transition makes and free throws only: a break that becomes a half-court possession and scores is a half-court score.", how: "broken / press trips" },
+  half_court_structure: { what: "What we ran in the half court, and by extension what we ran it against. A zone set is also the record that they were in a zone, so man is everything else.", how: "points / trips, per structure" },
   quality_shot_pct: { what: "Share of shots graded great or good. On the defensive side this is the looks we allowed, so lower is better.", how: "(great + good) / graded shots" },
   extra_possessions: { what: "Net extra chances created, the possession-count version of winning the margins.", how: "(our OREB + their turnovers) - (their OREB + our turnovers)" },
   points_off_live_to: { what: "Points scored on possessions that followed a live-ball turnover.", how: "sum of points after live turnovers" },
@@ -562,6 +599,10 @@ function normalizeLegacyPossession(p: any): Possession {
     absorbed_ft_made: p.absorbed_ft_made ?? 0,
     defense_scheme: p.defense_scheme ?? null,
     press_result: p.press_result ?? null,
+    press_break_type_id: p.press_break_type_id ?? null,
+    press_break_result: p.press_break_result ?? null,
+    oob_defense: p.oob_defense ?? null,
+    ft_award_type: p.ft_award_type ?? null,
     oob_result: p.oob_result === "score" ? "direct_shot" : p.oob_result ?? null,
   };
 }
@@ -639,6 +680,40 @@ if (typeof window !== "undefined") {
 }
 
 // ── Stat calculations ──────────────────────────────────────────
+
+/**
+ * Whether a row is a real offensive trip.
+ *
+ * Everything in this file counted every row until now. Non-possession
+ * free throws (end-of-game fouling, technicals, flagrants) are the first
+ * exception: they're points without a trip, so leaving them in would
+ * inflate pace and deflate PPP in exactly the close games where those
+ * numbers matter most.
+ *
+ * The rule is applied at the TOP of each calculation rather than threaded
+ * through it, so there's one place to look and no filter to forget
+ * halfway down a function.
+ *
+ * Two things deliberately do NOT use this: computeFinalScore (the
+ * scoreboard is the scoreboard) and FT% (a free throw is a free throw).
+ *
+ * An end-of-game trip that gets offensive-rebounded has already had its
+ * possession_type flipped to half_court by then, so it passes here and
+ * counts fully -- which is the whole point of the conversion.
+ */
+export function isCountedPossession(p: Possession): boolean {
+  return p.possession_type !== "non_possession_ft";
+}
+
+export function countedPossessions(possessions: Possession[]): Possession[] {
+  return possessions.filter(isCountedPossession);
+}
+
+/** True once a trip is (or was) a press break, whatever it flowed into afterwards. */
+export function isPressBreak(p: Possession): boolean {
+  return p.press_break_type_id != null;
+}
+
 export interface StatRow {
   key: string;
   label: string;
@@ -694,7 +769,13 @@ export function scoreAgainstGoal(goals: StatGoal[], key: string, team: Team, val
  * versa) using our own target as a rough benchmark.
  */
 export function computeTeamStats(possessions: Possession[], team: Team, goals: StatGoal[]): StatRow[] {
-  const trips = possessions.filter((p) => p.team === team);
+  // allTrips includes non-possession free throws; trips doesn't. Only FT%
+  // reads allTrips -- an intentional-foul free throw is still a free
+  // throw, but it isn't a possession and it isn't the offense earning a
+  // trip to the line, so it stays out of FT rate along with everything
+  // else that has a possession-based denominator.
+  const allTrips = possessions.filter((p) => p.team === team);
+  const trips = allTrips.filter(isCountedPossession);
   const fga = trips.filter((p) => p.outcome === "fg_made" || p.outcome === "fg_missed");
   const fga2 = fga.filter((p) => p.shot_type === 2);
   const fga3 = fga.filter((p) => p.shot_type === 3);
@@ -711,21 +792,32 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   // got continued; the final row's own outcome catches the last one if
   // *that* was also a miss (i.e. no OREB followed it, trip just ended).
   const orebOpportunities = trips.reduce((s, p) => s + p.missed_fg_count + (p.outcome === "fg_missed" ? 1 : 0), 0);
-  const ftTripsWithAttempts = trips.filter((p) => p.outcome === "ft_trip" && p.ft_attempts != null);
   // FT makes/attempts from a trip that ended as an ft_trip itself, PLUS any
   // FT attempts that happened earlier in a trip but got absorbed into a
   // later, different final outcome (missed a FT, got the OREB, kept going)
   // -- otherwise those makes/attempts just vanish from FT% entirely.
-  const ftMade = ftTripsWithAttempts.reduce((s, p) => s + p.points, 0) + trips.reduce((s, p) => s + p.absorbed_ft_made, 0);
-  const ftAttempted = ftTripsWithAttempts.reduce((s, p) => s + (p.ft_attempts ?? 0), 0) + trips.reduce((s, p) => s + p.absorbed_ft_attempts, 0);
+  const ftTripsWithAttempts = allTrips.filter((p) => p.outcome === "ft_trip" && p.ft_attempts != null);
+  const ftMade = ftTripsWithAttempts.reduce((s, p) => s + p.points, 0) + allTrips.reduce((s, p) => s + p.absorbed_ft_made, 0);
+  const ftAttempted = ftTripsWithAttempts.reduce((s, p) => s + (p.ft_attempts ?? 0), 0) + allTrips.reduce((s, p) => s + p.absorbed_ft_attempts, 0);
+  // FT rate asks how often the OFFENSE got to the line, so it uses only
+  // free throws that came from a real trip.
+  const earnedFtTrips = trips.filter((p) => p.outcome === "ft_trip" && p.ft_attempts != null);
+  const ftAttemptedEarned =
+    earnedFtTrips.reduce((s, p) => s + (p.ft_attempts ?? 0), 0) + trips.reduce((s, p) => s + p.absorbed_ft_attempts, 0);
   const paintTouchSingle = trips.filter((p) => p.paint_touch).length;
   const paintTouchBoth = trips.filter((p) => p.paint_touch_both_sides).length;
+  // A press break that got out and ran has possession_type "transition"
+  // by the time it commits (press_break_type_id is what remembers it was
+  // a break), so it counts here without a special case -- breaking a
+  // press and pushing IS playing fast.
   const transitionTripsArr = trips.filter((p) => p.possession_type === "transition");
   // A blob/slob possession that flowed into a set/motion look (oob_result
   // === "flowed_half_court") keeps possession_type "blob"/"slob" for BLOB
   // effectiveness purposes -- but the actual shot came from a half-court
   // action, so it belongs in half-court efficiency too, not just possessions
-  // that started half-court outright.
+  // that started half-court outright. A press break that flowed into a
+  // half-court look is already possession_type "half_court" and needs no
+  // clause of its own.
   const halfCourtTripsArr = trips.filter((p) =>
     p.possession_type === "half_court" ||
     ((p.possession_type === "blob" || p.possession_type === "slob") && p.oob_result === "flowed_half_court")
@@ -737,7 +829,7 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   const ftPct = ftAttempted ? (ftMade / ftAttempted) * 100 : 0;
   const tovPct = trips.length ? (turnovers / trips.length) * 100 : 0;
   const orebPct = orebOpportunities ? (oreb / orebOpportunities) * 100 : 0;
-  const ftRate = fgaCount ? ftAttempted / fgaCount : 0;
+  const ftRate = fgaCount ? ftAttemptedEarned / fgaCount : 0;
   const paintTouchSinglePct = halfCourtTripsArr.length ? (paintTouchSingle / halfCourtTripsArr.length) * 100 : 0;
   const paintTouchBothPct = halfCourtTripsArr.length ? (paintTouchBoth / halfCourtTripsArr.length) * 100 : 0;
   const transitionPpp = transitionTripsArr.length ? transitionTripsArr.reduce((s, p) => s + p.points, 0) / transitionTripsArr.length : 0;
@@ -782,7 +874,8 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
  * OREB/TOV at once), unlike the rest of computeTeamStats which only looks
  * at one team's possessions -- so it's its own function.
  */
-export function computeExtraPossessions(possessions: Possession[]): { us: number; opponent: number } {
+export function computeExtraPossessions(all: Possession[]): { us: number; opponent: number } {
+  const possessions = countedPossessions(all);
   const orebFor = (team: Team) => possessions.filter((p) => p.team === team).reduce((s, p) => s + p.oreb_count, 0);
   const tovFor = (team: Team) => possessions.filter((p) => p.team === team && p.outcome === "turnover").length;
   const usTotal = orebFor("us") + tovFor("opponent");
@@ -799,7 +892,11 @@ export function computeExtraPossessions(possessions: Possession[]): { us: number
  * reason computeExtraPossessions and computeStreaks aren't per-team.
  */
 export function computePointsOffLiveTurnovers(possessions: Possession[]): { us: number; opponent: number } {
-  const ordered = [...possessions].sort((a, b) => a.sequence - b.sequence);
+  // Non-possession free throws are dropped BEFORE the adjacency walk, not
+  // skipped inside it -- a technical logged between a live turnover and
+  // the trip it led to would otherwise break the two rows apart and lose
+  // the points entirely.
+  const ordered = countedPossessions(possessions).sort((a, b) => a.sequence - b.sequence);
   let us = 0;
   let opponent = 0;
   for (let i = 1; i < ordered.length; i++) {
@@ -818,7 +915,7 @@ export function computePointsOffLiveTurnovers(possessions: Possession[]): { us: 
 /** Second chance points: made 2s/3s that happened on a possession that also had at least one OREB (oreb_count > 0) -- i.e. the score came after a rebound kept the trip alive. */
 export function computeSecondChancePoints(possessions: Possession[]): { us: number; opponent: number } {
   const scoredAfterOreb = (team: Team) =>
-    possessions
+    countedPossessions(possessions)
       .filter((p) => p.team === team && p.oreb_count > 0 && p.outcome === "fg_made")
       .reduce((s, p) => s + p.points, 0);
   return { us: scoredAfterOreb("us"), opponent: scoredAfterOreb("opponent") };
@@ -826,7 +923,7 @@ export function computeSecondChancePoints(possessions: Possession[]): { us: numb
 
 /** Weighted shot-quality score mapped back onto the great/good/live/tough label scale. Only meaningful for "us" -- we don't track the opponent's shot quality. */
 export function computeShotQuality(possessions: Possession[], team: Team = "us") {
-  const rated = possessions.filter((p) => p.team === team && p.shot_quality != null);
+  const rated = countedPossessions(possessions).filter((p) => p.team === team && p.shot_quality != null);
   const counts: Record<ShotQuality, number> = { great: 0, good: 0, live: 0, tough: 0 };
   rated.forEach((p) => counts[p.shot_quality as ShotQuality]++);
   const total = rated.length;
@@ -862,7 +959,7 @@ export function qualityShotStatus(qualityPct: number | null, goal: number | null
 
 /** Scoring runs (us) and stop runs (opponent held scoreless), 3+ consecutive trips, plus best run. */
 export function computeStreaks(possessions: Possession[]) {
-  const ordered = [...possessions].sort((a, b) => a.sequence - b.sequence);
+  const ordered = countedPossessions(possessions).sort((a, b) => a.sequence - b.sequence);
 
   const scoringRuns = countRuns(
     ordered.filter((p) => p.team === "us"),
@@ -895,8 +992,9 @@ function countRuns(trips: Possession[], hit: (p: Possession) => boolean) {
 
 /** Most-called / most-effective breakdown per named play, within one category. */
 export function computePlayCallEffectiveness(possessions: Possession[], playCalls: PlayCall[]) {
+  const counted = countedPossessions(possessions);
   return playCalls.map((call) => {
-    const trips = possessions.filter((p) => p.play_call_id === call.id);
+    const trips = counted.filter((p) => p.play_call_id === call.id);
     const scored = trips.filter((p) => p.points > 0).length;
     return {
       playCallId: call.id,
@@ -912,7 +1010,7 @@ export function computePlayCallEffectiveness(possessions: Possession[], playCall
 
 /** BLOB/SLOB breakdown: direct shot attempts (and makes), flowed into a half-court set (and how many of those still scored), or turned it over right off the action. */
 export function computeOobEffectiveness(possessions: Possession[], type: "blob" | "slob") {
-  const trips = possessions.filter((p) => p.team === "us" && p.possession_type === type);
+  const trips = countedPossessions(possessions).filter((p) => p.team === "us" && p.possession_type === type);
   const directShots = trips.filter((p) => p.oob_result === "direct_shot");
   const scored = directShots.filter((p) => p.points > 0).length;
   const flowedTrips = trips.filter((p) => p.oob_result === "flowed_half_court");
@@ -920,6 +1018,166 @@ export function computeOobEffectiveness(possessions: Possession[], type: "blob" 
   const scoredOnFlow = flowedTrips.filter((p) => p.points > 0).length;
   const turnovers = trips.filter((p) => p.oob_result === "turnover").length;
   return { total: trips.length, directAttempts: directShots.length, scored, flowed, scoredOnFlow, turnovers };
+}
+
+export interface PressTypeRow {
+  id: string;
+  name: string;
+  calls: number;
+  broken: number;
+  turnovers: number;
+  points: number;
+  ppp: number;
+}
+
+export interface PressBreakSummary {
+  total: number;
+  /** Everything that wasn't a turnover against the press -- got it into transition, into a half-court look, to the line, or drew a foul/jump/OOB that kept it our ball. */
+  broken: number;
+  brokenPct: number;
+  turnovers: number;
+  turnoverPct: number;
+  /** Transition makes plus free throws off the break. A break that turns into a half-court possession and scores is a half-court score -- the press had no hand in it. */
+  pointsOffBreak: number;
+  points: number;
+  ppp: number;
+  toTransition: number;
+  toHalfCourt: number;
+  toFtTrip: number;
+  toOob: number;
+  byType: PressTypeRow[];
+}
+
+/**
+ * How we handled the press.
+ *
+ * Keys off press_break_type_id rather than possession_type, because a
+ * broken press stops being possession_type "press_break" the moment it
+ * becomes transition or a half-court look -- which is deliberate, so
+ * those points land in the normal transition and half-court numbers.
+ * The id is what survives.
+ */
+export function computePressBreakEffectiveness(possessions: Possession[], playCalls: PlayCall[]): PressBreakSummary {
+  const trips = countedPossessions(possessions).filter((p) => p.team === "us" && isPressBreak(p));
+  const countBy = (r: PressBreakResult) => trips.filter((p) => p.press_break_result === r).length;
+  const turnovers = countBy("turnover");
+  const broken = trips.length - turnovers;
+  const points = trips.reduce((s, p) => s + p.points, 0);
+  const pointsOffBreak = trips.reduce((s, p) => {
+    if (p.possession_type === "transition" && p.outcome === "fg_made") return s + p.points;
+    if (p.press_break_result === "ft_trip") return s + p.points;
+    return s;
+  }, 0);
+
+  const byType: PressTypeRow[] = playCalls
+    .filter((c) => c.category === "press_type")
+    .map((call) => {
+      const own = trips.filter((p) => p.press_break_type_id === call.id);
+      const tovs = own.filter((p) => p.press_break_result === "turnover").length;
+      const pts = own.reduce((s, p) => s + p.points, 0);
+      return {
+        id: call.id,
+        name: call.name,
+        calls: own.length,
+        broken: own.length - tovs,
+        turnovers: tovs,
+        points: pts,
+        ppp: own.length ? round2(pts / own.length) : 0,
+      };
+    })
+    .filter((r) => r.calls > 0)
+    .sort((a, b) => b.calls - a.calls);
+
+  return {
+    total: trips.length,
+    broken,
+    brokenPct: trips.length ? round1((broken / trips.length) * 100) : 0,
+    turnovers,
+    turnoverPct: trips.length ? round1((turnovers / trips.length) * 100) : 0,
+    pointsOffBreak,
+    points,
+    ppp: trips.length ? round2(points / trips.length) : 0,
+    toTransition: countBy("transition"),
+    toHalfCourt: countBy("half_court"),
+    toFtTrip: countBy("ft_trip"),
+    toOob: countBy("oob"),
+    byType,
+  };
+}
+
+export interface SplitRow {
+  label: string;
+  trips: number;
+  points: number;
+  ppp: number;
+}
+
+function splitRow(trips: Possession[], label: string): SplitRow {
+  const points = trips.reduce((s, p) => s + p.points, 0);
+  return { label, trips: trips.length, points, ppp: trips.length ? round2(points / trips.length) : 0 };
+}
+
+/**
+ * What they were in on our inbounds plays, and how many trips we actually
+ * tagged.
+ *
+ * The coverage count is the point of the untagged figure: a number that
+ * silently drops the trips you forgot to tag looks the same as a number
+ * built on all of them, so the report says how many it's standing on and
+ * the untagged ones can be fixed in the possession editor.
+ */
+export function computeInboundsDefense(possessions: Possession[]) {
+  const trips = countedPossessions(possessions).filter(
+    (p) => p.team === "us" && (p.possession_type === "blob" || p.possession_type === "slob")
+  );
+  const tagged = trips.filter((p) => p.oob_defense != null);
+  return {
+    total: trips.length,
+    tagged: tagged.length,
+    untagged: trips.length - tagged.length,
+    man: splitRow(trips.filter((p) => p.oob_defense === "man"), "vs man"),
+    zone: splitRow(trips.filter((p) => p.oob_defense === "zone"), "vs zone"),
+  };
+}
+
+/**
+ * Half-court structure: what we ran, and by extension what we ran it
+ * against. A zone set IS the record that they were in a zone, which is
+ * why man is the sum of the other three rather than its own tag.
+ *
+ * Reads every trip carrying a half_court_type, so a BLOB that flowed into
+ * a set and a press break that flowed into one both count here.
+ */
+export function computeHalfCourtStructure(possessions: Possession[]) {
+  const trips = countedPossessions(possessions).filter((p) => p.team === "us" && p.half_court_type != null);
+  const of = (t: HalfCourtType) => trips.filter((p) => p.half_court_type === t);
+  return {
+    total: trips.length,
+    set: splitRow(of("set"), "Man set"),
+    motion: splitRow(of("motion"), "Motion"),
+    unscripted: splitRow(of("unscripted"), "Unscripted"),
+    zone: splitRow(of("zone"), "Zone set"),
+    vsMan: splitRow(trips.filter((p) => p.half_court_type !== "zone"), "vs man"),
+    vsZone: splitRow(of("zone"), "vs zone"),
+  };
+}
+
+/** Non-possession free throws, broken out by why they happened. An end-of-game trip that got rebounded isn't here -- it converted into a real possession, which is the point. */
+export function computeAwardedFts(possessions: Possession[]) {
+  const rows = possessions.filter((p) => p.possession_type === "non_possession_ft");
+  const forTeam = (team: Team) => {
+    const own = rows.filter((p) => p.team === team);
+    const by = (t: FtAwardType) => own.filter((p) => p.ft_award_type === t).length;
+    return {
+      total: own.length,
+      points: own.reduce((s, p) => s + p.points, 0),
+      attempts: own.reduce((s, p) => s + (p.ft_attempts ?? 0), 0),
+      eog: by("eog"),
+      technical: by("technical"),
+      flagrant: by("flagrant"),
+    };
+  };
+  return { us: forTeam("us"), opponent: forTeam("opponent") };
 }
 
 export interface DefenseSchemeSummary {
@@ -952,7 +1210,7 @@ function summarizeDefense(trips: Possession[], label: string): DefenseSchemeSumm
  * is tracked by possession_type, with a breakdown of what it turned into.
  */
 export function computeDefenseEffectiveness(possessions: Possession[]) {
-  const oppTrips = possessions.filter((p) => p.team === "opponent");
+  const oppTrips = countedPossessions(possessions).filter((p) => p.team === "opponent");
   const man = summarizeDefense(oppTrips.filter((p) => p.defense_scheme === "man"), "Man");
   const zone = summarizeDefense(oppTrips.filter((p) => p.defense_scheme === "zone"), "Zone");
   const pressTrips = oppTrips.filter((p) => p.possession_type === "press");
@@ -966,7 +1224,9 @@ export function computeDefenseEffectiveness(possessions: Possession[]) {
 /** Human-readable one-line summary of a possession, for the sync-issues viewer where a raw row isn't meaningful at a glance. */
 export function describePossession(p: Possession): string {
   const who = p.team === "us" ? "Us" : "Opponent";
-  const type = p.possession_type.replace("_", " ");
+  let type = p.possession_type.replace(/_/g, " ");
+  if (p.possession_type === "non_possession_ft") type = `${p.ft_award_type ?? "awarded"} FT`;
+  else if (isPressBreak(p)) type = `press break → ${type}`;
   let action = p.outcome.replace("_", " ");
   if (p.outcome === "fg_made" || p.outcome === "fg_missed") action = `${p.outcome === "fg_made" ? "made" : "missed"} ${p.shot_type ?? "?"}pt`;
   if (p.outcome === "ft_trip") action = `FT trip (${p.points}/${p.ft_attempts ?? "?"})`;
