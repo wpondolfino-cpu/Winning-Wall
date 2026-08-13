@@ -57,9 +57,46 @@
 // OREB, same as blob/slob, so it keeps counting toward press effectiveness
 // even if the trip continues.
 //
-// BLOB/SLOB/Set/Motion pickers also surface any play drawn in the Plays
-// feature and tagged with that category (case-insensitive), not just
+// BLOB/SLOB/Set/Motion/Zone pickers also surface any play drawn in the
+// Plays feature and tagged with that category (case-insensitive), not just
 // play_calls added inline here -- see gameStats.ts's fetchDrawnPlaysForCategory.
+//
+// Us on offense (migration 108):
+//
+// BLOB is no longer a STARTING possession type -- we never start a trip
+// with one. It's still reachable, and still real, via Foul/Jump/OOB
+// reclassifying a live trip, which is how a BLOB actually happens.
+//
+// Press break: pick which press (a play_calls row under 'press_type'),
+// then what it turned into. Transition and half-court REPLACE the
+// possession type, so those points land in transition PPP and half-court
+// PPP with no special case anywhere downstream -- press_break_type_id is
+// what durably marks the trip as a break. Only a trip that ended against
+// the press (turnover, FT trip) keeps possession_type 'press_break'.
+//
+// Half-court structure is four buttons rather than two: Man set, Motion,
+// Zone set, Unscripted. Zone set is also the record that we were playing
+// against a zone, which is why there's no separate defense_faced field --
+// it would be a second copy of the same fact. Unscripted has no play list
+// and skips the play-call step. All four appear at every entry point into
+// a half-court look (the half-court flow, post-OREB, BLOB/SLOB, press
+// break), via the shared HalfCourtButtons component.
+//
+// oob_defense tags what they were in ON THE INBOUNDS, which is a separate
+// question at a separate moment from half_court_type -- a team can go zone
+// on a BLOB and match up man after, so neither overrides the other. It's
+// optional; the report shows how many trips were tagged so the untagged
+// ones can be fixed in the editor rather than silently skewing a split.
+//
+// EOG FTs/Tech (both tabs): free throws that didn't come from an
+// offensive possession. Three subtypes -- end of game, technical,
+// flagrant -- all flagged possession_type 'non_possession_ft' and
+// excluded from every rate stat top and bottom, while still counting on
+// the scoreboard and in FT%. Only end-of-game is a live ball, so only it
+// asks the rebound question; saying yes flips possession_type to
+// half_court, which IS the conversion into a real possession. Technicals
+// and flagrants also don't flip the team toggle, since the ball can go
+// either way and guessing wrong misattributes the next trip.
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
@@ -82,7 +119,11 @@ import {
   type OobResult,
   type DefenseScheme,
   type PressResult,
+  type PressBreakResult,
+  type OobDefense,
+  type FtAwardType,
   type Outcome,
+  DEFAULT_PRESS_TYPES,
 } from "../../lib/gameStats";
 
 interface Props {
@@ -102,6 +143,9 @@ type Step =
   | "oob_result"
   | "oob_reclassify"
   | "press_result"
+  | "press_break_type"
+  | "press_break_result"
+  | "ft_award_type"
   | "action_branch"
   | "quick_shot"
   | "flags"
@@ -133,6 +177,10 @@ interface FlowSnapshot {
   oobResult: OobResult | null;
   defenseScheme: DefenseScheme | null;
   pressResult: PressResult | null;
+  pressBreakTypeId: string | null;
+  pressBreakResult: PressBreakResult | null;
+  oobDefense: OobDefense | null;
+  ftAwardType: FtAwardType | null;
   paintTouch: boolean;
   paintTouchBoth: boolean;
   orebCount: number;
@@ -150,7 +198,7 @@ const DEFENSE_ACCENT = "#c2703a";
 
 export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_GAME_FORMAT, intrasquad = false }: Props) {
   const [playCalls, setPlayCalls] = useState<PlayCall[]>([]);
-  const [drawnPlays, setDrawnPlays] = useState<Record<PlayCallCategory, DrawnPlay[]>>({ set: [], motion: [], blob: [], slob: [] });
+  const [drawnPlays, setDrawnPlays] = useState<Record<PlayCallCategory, DrawnPlay[]>>({ set: [], motion: [], blob: [], slob: [], zone: [], press_type: [] });
   const [unsynced, setUnsynced] = useState(0);
   const [syncErrorCount, setSyncErrorCount] = useState(0);
   const [sequence, setSequence] = useState(1);
@@ -164,6 +212,10 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
   const [oobResult, setOobResult] = useState<OobResult | null>(null);
   const [defenseScheme, setDefenseScheme] = useState<DefenseScheme | null>(null);
   const [pressResult, setPressResult] = useState<PressResult | null>(null);
+  const [pressBreakTypeId, setPressBreakTypeId] = useState<string | null>(null);
+  const [pressBreakResult, setPressBreakResult] = useState<PressBreakResult | null>(null);
+  const [oobDefense, setOobDefense] = useState<OobDefense | null>(null);
+  const [ftAwardType, setFtAwardType] = useState<FtAwardType | null>(null);
   const [paintTouch, setPaintTouch] = useState(false);
   const [paintTouchBoth, setPaintTouchBoth] = useState(false);
   const [orebCount, setOrebCount] = useState(0);
@@ -187,10 +239,34 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
 
   async function loadPlayCalls() {
     const { data } = await supabase.from("play_calls").select("*").eq("status", "active");
-    setPlayCalls((data as PlayCall[]) ?? []);
-    const categories: PlayCallCategory[] = ["set", "motion", "blob", "slob"];
+    let calls = (data as PlayCall[]) ?? [];
+    calls = await seedPressTypes(calls);
+    setPlayCalls(calls);
+    // Only categories a coach actually draws plays for. Press types are the
+    // opponent's alignment rather than our call, so there's nothing in the
+    // Plays feature to surface for them.
+    const categories: PlayCallCategory[] = ["set", "motion", "blob", "slob", "zone"];
     const results = await Promise.all(categories.map((c) => fetchDrawnPlaysForCategory(c)));
-    setDrawnPlays({ set: results[0], motion: results[1], blob: results[2], slob: results[3] });
+    // press_type is in the Record because it's a PlayCallCategory, but
+    // presses are the opponent's alignment -- there's nothing in the Plays
+    // feature to surface, so it stays empty rather than being fetched.
+    setDrawnPlays({ set: results[0], motion: results[1], blob: results[2], slob: results[3], zone: results[4], press_type: [] });
+  }
+
+  /**
+   * Seeds the five common presses the first time the tracker loads with
+   * none, so the press picker isn't an empty screen mid-game. They're
+   * ordinary play calls afterwards -- renameable, and "+ Add" takes any
+   * press this list doesn't have.
+   */
+  async function seedPressTypes(calls: PlayCall[]): Promise<PlayCall[]> {
+    if (calls.some((c) => c.category === "press_type")) return calls;
+    const { data, error } = await supabase
+      .from("play_calls")
+      .insert(DEFAULT_PRESS_TYPES.map((name) => ({ category: "press_type", name, created_by: userId })))
+      .select();
+    if (error || !data) return calls;
+    return [...calls, ...(data as PlayCall[])];
   }
 
   async function refreshUnsynced() {
@@ -212,6 +288,10 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
     setOobResult(null);
     setDefenseScheme(null);
     setPressResult(null);
+    setPressBreakTypeId(null);
+    setPressBreakResult(null);
+    setOobDefense(null);
+    setFtAwardType(null);
     setPaintTouch(false);
     setPaintTouchBoth(false);
     setOrebCount(0);
@@ -230,7 +310,8 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
     setHistory((h) => [
       ...h,
       {
-        step, possessionType, halfCourtType, playCallId, oobResult, defenseScheme, pressResult, paintTouch, paintTouchBoth,
+        step, possessionType, halfCourtType, playCallId, oobResult, defenseScheme, pressResult,
+        pressBreakTypeId, pressBreakResult, oobDefense, ftAwardType, paintTouch, paintTouchBoth,
         orebCount, missedFgCount, absorbedFtAttempts, absorbedFtMade, pendingShot, pendingCommit, orebOccurred, ftAttempts,
       },
     ]);
@@ -247,6 +328,10 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
       setOobResult(prev.oobResult);
       setDefenseScheme(prev.defenseScheme);
       setPressResult(prev.pressResult);
+      setPressBreakTypeId(prev.pressBreakTypeId);
+      setPressBreakResult(prev.pressBreakResult);
+      setOobDefense(prev.oobDefense);
+      setFtAwardType(prev.ftAwardType);
       setPaintTouch(prev.paintTouch);
       setPaintTouchBoth(prev.paintTouchBoth);
       setOrebCount(prev.orebCount);
@@ -274,6 +359,10 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
       oob_result: oobResult,
       defense_scheme: defenseScheme,
       press_result: pressResult,
+      press_break_type_id: pressBreakTypeId,
+      press_break_result: pressBreakResult,
+      oob_defense: oobDefense,
+      ft_award_type: ftAwardType,
       paint_touch: paintTouch,
       paint_touch_both_sides: paintTouchBoth,
       oreb_count: orebCount,
@@ -298,7 +387,15 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
     setLog((l) => [...l, possession]);
     setSequence((s) => s + 1);
     refreshUnsynced();
-    setTeam((t) => (t === "us" ? "opponent" : "us"));
+    // Possessions alternate, so committing one normally flips the toggle.
+    // A technical or flagrant doesn't: the ball can go either way
+    // depending on the rule set and the situation, and guessing wrong
+    // silently misattributes the next trip. End-of-game fouling DOES flip
+    // -- we shoot, they inbound. (A trip that converted off a rebound is
+    // no longer possession_type non_possession_ft by now, so it flips
+    // like any other possession.)
+    const dead = possession.possession_type === "non_possession_ft" && ftAwardType !== "eog";
+    if (!dead) setTeam((t) => (t === "us" ? "opponent" : "us"));
     resetForNextPossession();
   }
 
@@ -364,6 +461,11 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
       setAbsorbedFtAttempts((c) => c + ((pendingCommit.extra.ft_attempts as number) ?? 0));
       setAbsorbedFtMade((c) => c + ((pendingCommit.extra.points as number) ?? 0));
     }
+    // A press break or an end-of-game FT trip that gets rebounded becomes
+    // a genuine half-court possession here -- which is exactly how the
+    // end-of-game conversion works: once possession_type stops being
+    // "non_possession_ft" it counts everywhere, while ft_award_type still
+    // records that they hacked us to get there.
     if (possessionType !== "blob" && possessionType !== "slob" && possessionType !== "press") {
       setPossessionType("half_court");
       setHalfCourtType(null);
@@ -377,9 +479,12 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
   }
 
   function undo() {
+    const last = log[log.length - 1];
     setLog((l) => l.slice(0, -1));
     setSequence((s) => Math.max(1, s - 1));
-    setTeam((t) => (t === "us" ? "opponent" : "us"));
+    // Mirrors the commit rule: only un-flip if committing that row flipped.
+    const wasDead = last && last.possession_type === "non_possession_ft" && last.ft_award_type !== "eog";
+    if (!wasDead) setTeam((t) => (t === "us" ? "opponent" : "us"));
     // Local-log undo only -- once a possession has synced, correcting it
     // is an edit on the report screen, not a live undo.
   }
@@ -396,10 +501,11 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
     const existing = playCalls.find((p) => p.category === category && p.name.trim().toLowerCase() === trimmedName.toLowerCase());
     if (existing) {
       pushHistory();
-      setPlayCallId(existing.id);
+      if (category === "press_type") setPressBreakTypeId(existing.id);
+      else setPlayCallId(existing.id);
       setNewPlayName("");
       setAddingPlayFor(null);
-      setStep(possessionType === "half_court" ? "flags" : "oob_result");
+      setStep(afterPlayCallStep(category));
       return;
     }
     const { data, error } = await supabase
@@ -410,10 +516,11 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
     if (!error && data) {
       pushHistory();
       setPlayCalls((p) => [...p, data as PlayCall]);
-      setPlayCallId((data as PlayCall).id);
+      if (category === "press_type") setPressBreakTypeId((data as PlayCall).id);
+      else setPlayCallId((data as PlayCall).id);
       setNewPlayName("");
       setAddingPlayFor(null);
-      setStep(possessionType === "half_court" ? "flags" : "oob_result");
+      setStep(afterPlayCallStep(category));
     }
   }
 
@@ -441,12 +548,41 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
   const unlinkedDrawnFor = (cat: PlayCallCategory) =>
     drawnPlays[cat].filter((dp) => !playCalls.some((pc) => pc.linked_play_id === dp.id));
 
-  /** Set/Motion buttons shared by both action_branch (post-OREB / post-BLOB-SLOB) entry points. */
-  function chooseSetOrMotion(type: HalfCourtType) {
+  /**
+   * The four half-court structure buttons, shared by every entry point
+   * into a half-court look: the half-court flow itself, action_branch
+   * (post-OREB), the BLOB/SLOB flow, and a press break that got broken.
+   *
+   * "Unscripted" has no play list by design -- it's the trip with no
+   * called structure -- so it skips the play-call step entirely.
+   */
+  function chooseHalfCourtType(type: HalfCourtType) {
     pushHistory();
     if (possessionType === "blob" || possessionType === "slob") setOobResult("flowed_half_court");
     setHalfCourtType(type);
-    setStep("play_call");
+    setStep(type === "unscripted" ? "flags" : "play_call");
+  }
+
+  /** Where a play-call pick lands next, by the list it came from rather than by possession type -- a press break that flowed into a set is possession_type half_court by then. */
+  function afterPlayCallStep(category: PlayCallCategory): Step {
+    if (category === "press_type") return "press_break_result";
+    if (category === "blob" || category === "slob") return "oob_result";
+    return "flags";
+  }
+
+  /**
+   * Press break outcomes. Transition and half-court REPLACE the possession
+   * type rather than sitting alongside it -- press_break_type_id is what
+   * remembers this was a break, so the points land in transition PPP and
+   * half-court PPP where they belong instead of in a bucket of their own.
+   * Only a trip that ended against the press (turnover, FT trip) stays
+   * possession_type "press_break".
+   */
+  function choosePressBreakResult(result: PressBreakResult, nextStep: Step, becomes?: PossessionType) {
+    pushHistory();
+    setPressBreakResult(result);
+    if (becomes) setPossessionType(becomes);
+    setStep(nextStep);
   }
 
   function chooseShot() {
@@ -460,6 +596,18 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
     if (possessionType === "blob" || possessionType === "slob") setOobResult("turnover");
     setStep("turnover_type");
   }
+
+  /**
+   * The play list behind the chosen structure. Null for "unscripted",
+   * which has none -- so the play_call step can't render for it.
+   *
+   * Written as an explicit comparison rather than a cast: HalfCourtType
+   * and PlayCallCategory overlap but neither contains the other, so a cast
+   * would be asserting something the compiler can't check. This narrows to
+   * the three values that genuinely are categories.
+   */
+  const halfCourtCategory: PlayCallCategory | null =
+    halfCourtType === "set" || halfCourtType === "motion" || halfCourtType === "zone" ? halfCourtType : null;
 
   const teamAccent = team === "us" ? "var(--royal)" : DEFENSE_ACCENT;
   const quarterAccent = QUARTER_ACCENT[quarter] ?? "#8a4fbe";
@@ -509,7 +657,7 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
 
       {step === "type" && team === "us" && (
         <Section label="Possession type">
-          <Grid cols={4}>
+          <Grid cols={3}>
             <Btn onClick={() => { pushHistory(); setPossessionType("transition"); setStep("flags"); }}>Transition</Btn>
             <Btn
               onClick={() => {
@@ -521,8 +669,15 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
             >
               Half-court
             </Btn>
-            <Btn onClick={() => { pushHistory(); setPossessionType("blob"); setStep("oob_result"); }}>BLOB</Btn>
             <Btn onClick={() => { pushHistory(); setPossessionType("slob"); setStep("oob_result"); }}>SLOB</Btn>
+          </Grid>
+          <Grid cols={2} style={{ marginTop: 8 }}>
+            <Btn onClick={() => { pushHistory(); setPossessionType("press_break"); setStep("press_break_type"); }}>
+              Press break
+            </Btn>
+            <Btn subtitle="Not a possession" onClick={() => { pushHistory(); setStep("ft_award_type"); }}>
+              EOG FTs/Tech
+            </Btn>
           </Grid>
         </Section>
       )}
@@ -557,6 +712,73 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
             <Btn onClick={() => { pushHistory(); setPossessionType("blob"); setStep("oob_result"); }}>BLOB</Btn>
             <Btn onClick={() => { pushHistory(); setPossessionType("slob"); setStep("oob_result"); }}>SLOB</Btn>
           </Grid>
+          <Grid cols={1} style={{ marginTop: 8 }}>
+            {/* A technical on our bench means they shoot -- without this their FT totals come up short. */}
+            <Btn subtitle="Not a possession" onClick={() => { pushHistory(); setStep("ft_award_type"); }}>
+              EOG FTs/Tech
+            </Btn>
+          </Grid>
+        </Section>
+      )}
+
+      {step === "ft_award_type" && (
+        <Section label="Why the free throws" accent>
+          <Grid cols={3}>
+            <Btn
+              subtitle="Live ball"
+              onClick={() => { pushHistory(); setPossessionType("non_possession_ft"); setFtAwardType("eog"); setStep("ft_attempts"); }}
+            >
+              End of game
+            </Btn>
+            <Btn
+              subtitle="Dead ball"
+              onClick={() => { pushHistory(); setPossessionType("non_possession_ft"); setFtAwardType("technical"); setStep("ft_attempts"); }}
+            >
+              Technical
+            </Btn>
+            <Btn
+              subtitle="Dead ball"
+              onClick={() => { pushHistory(); setPossessionType("non_possession_ft"); setFtAwardType("flagrant"); setStep("ft_attempts"); }}
+            >
+              Flagrant
+            </Btn>
+          </Grid>
+        </Section>
+      )}
+
+      {step === "press_break_type" && (
+        <Section label="Which press" accent>
+          <PlayCallPicker
+            plays={playsForCategory("press_type")}
+            drawn={[]}
+            selectedId={pressBreakTypeId}
+            onPick={(id) => { pushHistory(); setPressBreakTypeId(id); setStep("press_break_result"); }}
+            onPickDrawn={() => {}}
+            onRename={renamePlayCall}
+            adding={addingPlayFor === "press_type"}
+            onStartAdd={() => setAddingPlayFor("press_type")}
+            newName={newPlayName}
+            onNewName={setNewPlayName}
+            onSaveNew={() => addPlayCall("press_type")}
+          />
+        </Section>
+      )}
+
+      {step === "press_break_result" && (
+        <Section label="What happened" accent>
+          <Grid cols={3}>
+            <Btn onClick={() => choosePressBreakResult("transition", "flags", "transition")}>Transition</Btn>
+            <Btn onClick={() => choosePressBreakResult("half_court", "halfcourt_type", "half_court")}>Half-court</Btn>
+            <Btn onClick={() => choosePressBreakResult("turnover", "turnover_type")}>Turnover</Btn>
+          </Grid>
+          <Grid cols={3} style={{ marginTop: 8 }}>
+            <Btn subtitle="Still our ball" onClick={() => choosePressBreakResult("oob", "oob_reclassify")}>
+              Foul/Jump/OOB
+            </Btn>
+            <Btn onClick={() => choosePressBreakResult("ft_trip", "ft_attempts")}>FT trip</Btn>
+            {/* Fouled finishing the break, so it's scored as a transition bucket rather than orphaned from both splits. */}
+            <Btn onClick={() => choosePressBreakResult("transition", "and1_shot", "transition")}>And-1</Btn>
+          </Grid>
         </Section>
       )}
 
@@ -590,27 +812,24 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
 
       {step === "halfcourt_type" && (
         <Section label="Half-court type" accent>
-          <Grid cols={2}>
-            <Btn onClick={() => { pushHistory(); setHalfCourtType("set"); setStep("play_call"); }}>Set</Btn>
-            <Btn onClick={() => { pushHistory(); setHalfCourtType("motion"); setStep("play_call"); }}>Motion</Btn>
-          </Grid>
+          <HalfCourtButtons onChoose={chooseHalfCourtType} />
         </Section>
       )}
 
-      {step === "play_call" && halfCourtType && (
-        <Section label={`Which ${halfCourtType}`} accent>
+      {step === "play_call" && halfCourtCategory && (
+        <Section label={halfCourtCategory === "zone" ? "Which zone set" : `Which ${halfCourtCategory}`} accent>
           <PlayCallPicker
-            plays={playsForCategory(halfCourtType)}
-            drawn={unlinkedDrawnFor(halfCourtType)}
+            plays={playsForCategory(halfCourtCategory)}
+            drawn={unlinkedDrawnFor(halfCourtCategory)}
             selectedId={playCallId}
             onPick={(id) => { pushHistory(); setPlayCallId(id); setStep("flags"); }}
-            onPickDrawn={(dp) => pickDrawnPlay(dp, halfCourtType, "flags")}
+            onPickDrawn={(dp) => pickDrawnPlay(dp, halfCourtCategory, "flags")}
             onRename={renamePlayCall}
-            adding={addingPlayFor === halfCourtType}
-            onStartAdd={() => setAddingPlayFor(halfCourtType)}
+            adding={addingPlayFor === halfCourtCategory}
+            onStartAdd={() => setAddingPlayFor(halfCourtCategory)}
             newName={newPlayName}
             onNewName={setNewPlayName}
-            onSaveNew={() => addPlayCall(halfCourtType)}
+            onSaveNew={() => addPlayCall(halfCourtCategory)}
           />
         </Section>
       )}
@@ -634,6 +853,18 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
               />
             </Section>
           )}
+          {team === "us" && (
+            <Section label="Defense on the inbounds" accent>
+              <Grid cols={2}>
+                <Btn active={oobDefense === "man"} onClick={() => setOobDefense((v) => (v === "man" ? null : "man"))}>
+                  vs man
+                </Btn>
+                <Btn active={oobDefense === "zone"} onClick={() => setOobDefense((v) => (v === "zone" ? null : "zone"))}>
+                  vs zone
+                </Btn>
+              </Grid>
+            </Section>
+          )}
           <Section label="What happened" accent>
             <Grid cols={3}>
               <Btn onClick={chooseShot}>Shot</Btn>
@@ -646,10 +877,9 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
               </Btn>
             </Grid>
             {team === "us" && (
-              <Grid cols={2} style={{ marginTop: 8 }}>
-                <Btn onClick={() => chooseSetOrMotion("set")}>Set</Btn>
-                <Btn onClick={() => chooseSetOrMotion("motion")}>Motion</Btn>
-              </Grid>
+              <div style={{ marginTop: 8 }}>
+                <HalfCourtButtons onChoose={chooseHalfCourtType} />
+              </div>
             )}
           </Section>
         </>
@@ -668,10 +898,9 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
             </Btn>
           </Grid>
           {team === "us" && (
-            <Grid cols={2} style={{ marginTop: 8 }}>
-              <Btn onClick={() => chooseSetOrMotion("set")}>Set</Btn>
-              <Btn onClick={() => chooseSetOrMotion("motion")}>Motion</Btn>
-            </Grid>
+            <div style={{ marginTop: 8 }}>
+              <HalfCourtButtons onChoose={chooseHalfCourtType} />
+            </div>
           )}
         </Section>
       )}
@@ -855,7 +1084,12 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
                 <Btn
                   key={n}
                   onClick={() => {
-                    if (!missed) {
+                    // A technical or flagrant free throw is a dead ball --
+                    // nobody rebounds it, the ball is awarded. Only an
+                    // end-of-game trip can stay alive and convert into a
+                    // real possession off the glass.
+                    const deadBall = ftAwardType === "technical" || ftAwardType === "flagrant";
+                    if (!missed || deadBall) {
                       commit("ft_trip", extra);
                     } else {
                       pushHistory();
@@ -872,6 +1106,26 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
         </Section>
       )}
     </div>
+  );
+}
+
+/**
+ * The four half-court structures, rendered identically wherever a trip can
+ * turn into a half-court look -- one component so the BLOB/SLOB flow, the
+ * post-rebound flow and the press break flow can't drift apart.
+ *
+ * "Man set" and "Zone set" both pick from their own play list; the choice
+ * is also what records which defense we were attacking. "Unscripted" is
+ * the trip with no called structure and skips the play list.
+ */
+function HalfCourtButtons({ onChoose }: { onChoose: (type: HalfCourtType) => void }) {
+  return (
+    <Grid cols={4}>
+      <Btn onClick={() => onChoose("set")}>Man set</Btn>
+      <Btn onClick={() => onChoose("motion")}>Motion</Btn>
+      <Btn onClick={() => onChoose("zone")}>Zone set</Btn>
+      <Btn subtitle="No call" onClick={() => onChoose("unscripted")}>Unscripted</Btn>
+    </Grid>
   );
 }
 
