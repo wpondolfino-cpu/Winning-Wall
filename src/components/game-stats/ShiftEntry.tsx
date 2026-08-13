@@ -20,11 +20,12 @@ import { getRosters } from "../../lib/practicePlanner";
 import {
   listShifts, listLineupEvents, listGamePlayers, lastStartingFive,
   createShift, updateShiftFive, deleteShift, addFoulTrouble, deleteLineupEvent, setGameRoster,
-  listCallUpCandidates, addCallUp, removeCallUp,
+  listCallUpCandidates, addCallUp, removeCallUp, setShiftClock, setPossessionShift,
   assignPossessions, validateShifts, FOUL_LEVELS, SIDE_LABEL,
   type Shift, type LineupEvent, type LineupPlayer, type FoulLevel, type ShiftSide,
 } from "../../lib/lineups";
 import { periodLabel, describePossession, DEFAULT_GAME_FORMAT, type GameFormat, type Possession } from "../../lib/gameStats";
+import { validateAnchor, formatClock, parseClock } from "../../lib/lineupStats";
 
 interface Props {
   gameId: string;
@@ -240,6 +241,58 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
 
   // Position comes from whichever panel is open -- foul trouble is recorded
   // at the moment you're already looking at, with the five in front of you.
+  // A clock reading is optional everywhere. Where one exists the minutes
+  // estimate uses the real elapsed time between anchors instead of spreading
+  // the period evenly; where none does, nothing changes.
+  async function editClock(shift: Shift) {
+    const current = shift.start_clock_seconds;
+    const answer = window.prompt(
+      `Game clock when this five came on, as m:ss. Leave blank to clear.`,
+      current != null ? formatClock(current) : "",
+    );
+    if (answer === null) return;
+    if (!answer.trim()) {
+      const { error: err } = await setShiftClock(shift.id, null);
+      if (err) { setError(err); return; }
+      setShifts((list) => list.map((x) => (x.id === shift.id ? { ...x, start_clock_seconds: null } : x)));
+      return;
+    }
+    const secs = parseClock(answer);
+    if (secs == null) { setError("Enter the clock as m:ss, like 4:32."); return; }
+    const others = shifts
+      .filter((x) => x.id !== shift.id && x.quarter === shift.quarter && x.start_clock_seconds != null)
+      .map((x) => ({ sequence: x.start_sequence, seconds: x.start_clock_seconds! }));
+    const problem = validateAnchor(secs, shift.quarter, format, others, shift.start_sequence);
+    if (problem) { setError(problem); return; }
+    const { error: err } = await setShiftClock(shift.id, secs);
+    if (err) { setError(err); return; }
+    setError(null);
+    setShifts((list) => list.map((x) => (x.id === shift.id ? { ...x, start_clock_seconds: secs } : x)));
+  }
+
+  /**
+   * Pins a possession to the previous shift. The case this exists for: a
+   * player is fouled, a sub happens between the free throws, and the second
+   * shot belongs to the five that earned it rather than the one that came on.
+   */
+  async function pinToPrevious(p: Possession, currentShiftId: string | null) {
+    const already = (p as any).shift_override_id;
+    if (already) {
+      const { error: err } = await setPossessionShift(p.id, null);
+      if (err) { setError(err); return; }
+      setPossessions((list) => list.map((x) => (x.id === p.id ? ({ ...x, shift_override_id: null } as any) : x)));
+      return;
+    }
+    const ordered = sortedShifts.filter((sh) => sh.start_sequence <= p.sequence);
+    const prev = ordered[ordered.length - 2];
+    if (!prev) { setError("No earlier shift to move it to."); return; }
+    void currentShiftId;
+    const { error: err } = await setPossessionShift(p.id, prev.id);
+    if (err) { setError(err); return; }
+    setError(null);
+    setPossessions((list) => list.map((x) => (x.id === p.id ? ({ ...x, shift_override_id: prev.id } as any) : x)));
+  }
+
   async function recordFoul(playerId: string, detail: FoulLevel) {
     if (!panel) return;
     const sequence = panel.mode === "new" ? panel.sequence : panel.shift.start_sequence;
@@ -389,6 +442,7 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
                   line={BAND_LINE[(shiftIndex.get(shift.id) ?? 0) % 4]}
                   labelFor={label}
                   onEdit={() => openEdit(shift)}
+                  onClock={() => editClock(shift)}
                   onRemove={sortedShifts[0]?.id === shift.id ? undefined : () => removeShift(shift)}
                 />
               )}
@@ -441,6 +495,15 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
                 >
                   ⇄
                 </button>
+                {sortedShifts.length > 1 && (
+                  <button
+                    onClick={() => pinToPrevious(p, covering ?? null)}
+                    title={(p as any).shift_override_id ? "Back to the five on the floor" : "Credit this to the previous five — for a free throw after a substitution"}
+                    style={{ ...iconBtn, color: (p as any).shift_override_id ? "#e0b464" : "var(--muted)" }}
+                  >
+                    ↰
+                  </button>
+                )}
               </div>
 
               {foulsHere.map((e) => (
@@ -460,10 +523,10 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
 
 // ── Sub-components ───────────────────────────────────────────────
 
-function ShiftBand({ shift, color, line, labelFor, onEdit, onRemove }: {
+function ShiftBand({ shift, color, line, labelFor, onEdit, onRemove, onClock }: {
   shift: Shift; color: string; line: string;
   labelFor: (id: string) => string;
-  onEdit: () => void; onRemove?: () => void;
+  onEdit: () => void; onRemove?: () => void; onClock: () => void;
 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: color, borderLeft: `3px solid ${line}`, marginTop: 6, flexWrap: "wrap" }}>
@@ -471,6 +534,9 @@ function ShiftBand({ shift, color, line, labelFor, onEdit, onRemove }: {
       <span style={{ fontSize: 12, color: "var(--muted)", flex: 1, minWidth: 0 }}>
         {shift.player_ids.map(labelFor).join(" · ")}
       </span>
+      <button onClick={onClock} style={iconBtn} title="Game clock when this five came on — optional, tightens the minutes estimate">
+        {shift.start_clock_seconds != null ? formatClock(shift.start_clock_seconds) : "clock"}
+      </button>
       <button onClick={onEdit} style={iconBtn}>edit</button>
       {onRemove && <button onClick={onRemove} style={iconBtn}>remove</button>}
     </div>
