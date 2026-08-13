@@ -18,7 +18,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   loadPlan, savePlan, lastPlan, buildProjectionModel, comparePlanToActual,
-  actualBlocksFromSlice, suggestSwaps, DEFAULT_BLOCKS_PER_PERIOD, SUGGESTION_EVIDENCE_FLOOR,
+  actualBlocksFromSlice, suggestSwaps, SUGGESTION_EVIDENCE_FLOOR,
+  getBlocksPerPeriod, setBlocksPerPeriod, remapBlocks, BLOCK_OPTIONS,
   type RotationPlan, type ProjectionModel,
 } from "../../lib/rotationPlans";
 import { listGamePlayers, type LineupPlayer } from "../../lib/lineups";
@@ -45,6 +46,7 @@ export default function RotationBuilder({ gameId, userId, rosterId, historySlice
   const [draft, setDraft] = useState<string[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [perPeriod, setPerPeriod] = useState(getBlocksPerPeriod());
 
   const model: ProjectionModel = useMemo(() => buildProjectionModel(historySlices, goals), [historySlices, goals]);
 
@@ -57,7 +59,7 @@ export default function RotationBuilder({ gameId, userId, rosterId, historySlice
     setFormat(fmt);
 
     const existing = await loadPlan(gameId);
-    const blockCount = regulationPeriods(fmt).length * DEFAULT_BLOCKS_PER_PERIOD;
+    const blockCount = regulationPeriods(fmt).length * perPeriod;
     setPlan(existing ?? { game_id: gameId, blocks: Array.from({ length: blockCount }, () => []), minute_targets: {}, notes: null });
     setPlayers(await listGamePlayers(rosterId, gameId));
 
@@ -75,16 +77,16 @@ export default function RotationBuilder({ gameId, userId, rosterId, historySlice
   const blockLabels = useMemo(() => {
     const out: string[] = [];
     regulationPeriods(format).forEach((period) => {
-      for (let b = 0; b < DEFAULT_BLOCKS_PER_PERIOD; b++) out.push(`${periodLabel(format, period)} ${b + 1}`);
+      for (let b = 0; b < perPeriod; b++) out.push(`${periodLabel(format, period)} ${b + 1}`);
     });
     return out;
-  }, [format]);
+  }, [format, perPeriod]);
 
   /** Estimated minutes per block, from the period length rather than a guess. */
   const blockMinutes = useMemo(() => {
     const per = format.period_lengths[0] ?? 8;
-    return per / DEFAULT_BLOCKS_PER_PERIOD;
-  }, [format]);
+    return per / perPeriod;
+  }, [format, perPeriod]);
 
   const minutes = useMemo(() => {
     const m = new Map<string, number>();
@@ -141,7 +143,7 @@ export default function RotationBuilder({ gameId, userId, rosterId, historySlice
   );
 
   const comparison = useMemo(
-    () => (actualSlice && plan.blocks.some((b) => b.length) ? comparePlanToActual(plan, actualBlocksFromSlice(actualSlice)) : []),
+    () => (actualSlice && plan.blocks.some((b) => b.length) ? comparePlanToActual(plan, actualBlocksFromSlice(actualSlice, perPeriod)) : []),
     [actualSlice, plan],
   );
 
@@ -152,6 +154,22 @@ export default function RotationBuilder({ gameId, userId, rosterId, historySlice
       <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap", marginBottom: 10 }}>
         <span style={{ fontSize: 14 }}>Rotation plan</span>
         <span style={{ fontSize: 12, color: "var(--muted)" }}>{blockLabels.length} blocks · about {fmt(blockMinutes)} each</span>
+        <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--muted)" }}>
+          Blocks per period
+          <select
+            value={perPeriod}
+            onChange={(e) => {
+              const next = Number(e.target.value);
+              // Existing work is re-spread rather than discarded.
+              setPlan({ ...plan, blocks: remapBlocks(plan.blocks, perPeriod, next, regulationPeriods(format).length) });
+              setPerPeriod(next);
+              setBlocksPerPeriod(next);
+            }}
+            style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontSize: 12 }}
+          >
+            {BLOCK_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
         <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
           <button onClick={copyForward} style={btn}>Copy last plan</button>
           <button onClick={persist} className="btn-primary" style={{ ...btn, width: "auto" }}>Save</button>
