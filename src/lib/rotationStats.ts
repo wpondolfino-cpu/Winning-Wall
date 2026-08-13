@@ -22,7 +22,7 @@
 
 import { periodLabel, type Possession } from "./gameStats";
 import { assignPossessionSides, lineupKey, type Shift } from "./lineups";
-import { possessionContexts, secondsPerPossession, type GameSlice } from "./lineupStats";
+import { possessionContexts, secondsBySequence, averageSeconds, type GameSlice } from "./lineupStats";
 
 /** Personnel context needs its own sample before it means anything. */
 export const CONTEXT_POSSESSION_FLOOR = 40;
@@ -88,9 +88,9 @@ export function computeFindings(slices: GameSlice[], scope: FindingScope = "line
 
   for (const slice of slices) {
     if (!slice.possessions.length) continue;
-    const spp = secondsPerPossession(slice.possessions, slice.format);
+    const spp = secondsBySequence(slice.possessions, slice.format, slice.anchors ?? []);
     const ctx = possessionContexts(slice.possessions, {
-      secondsPerPossession: [...spp.values()].reduce((a, b) => a + b, 0) / Math.max(1, spp.size),
+      secondsPerPossession: averageSeconds(spp, slice.possessions),
     });
 
     const byPeriod = new Map<number, Possession[]>();
@@ -103,7 +103,7 @@ export function computeFindings(slices: GameSlice[], scope: FindingScope = "line
       const sorted = [...list].sort((a, b) => a.sequence - b.sequence);
       const label = periodLabel(slice.format, period);
       // Roughly the first and last 90 seconds of a period, at this game's pace.
-      const edge = Math.max(3, Math.round(90 / (spp.get(period) ?? 16)));
+      const edge = Math.max(3, Math.round(90 / averageSeconds(spp, slice.possessions, period)));
 
       sorted.forEach((p, i) => {
         all.push(p);
