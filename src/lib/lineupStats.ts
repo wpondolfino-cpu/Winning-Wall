@@ -124,12 +124,91 @@ export function possessionContexts(
  * Each period's known length is spread across the possessions actually
  * played in it, so a foul-heavy fourth quarter (short possessions, lots of
  * stopped clock) doesn't distort a fast-paced first. Error can't compound
- * across the game because every period is anchored independently.
+ * across the game because every period is bounded independently.
  *
  * A period with almost no possessions falls back to the game average --
  * an 8-possession overtime would otherwise produce a wild number.
  */
-export function secondsPerPossession(gamePossessions: Possession[], fmt: GameFormat): Map<number, number> {
+export function secondsBySequence(
+  gamePossessions: Possession[],
+  fmt: GameFormat,
+  /** Clock readings taken from film, as { sequence, secondsRemaining }. Optional and sparse. */
+  anchors: { sequence: number; seconds: number }[] = [],
+): Map<number, number> {
+  // Where anchors exist, the elapsed time between two of them is KNOWN, so
+  // the possessions between them get their real duration instead of the
+  // period average. Everything outside an anchored span still falls back to
+  // even distribution, so a game with two anchors is tighter than one with
+  // none and neither is wrong.
+  const even = evenSeconds(gamePossessions, fmt);
+  const out = new Map<number, number>();
+  const spans = anchors.length ? anchoredSpans(gamePossessions, fmt, anchors) : new Map<number, number>();
+  gamePossessions.forEach((p) => {
+    out.set(p.sequence, spans.get(p.sequence) ?? even.get(p.quarter) ?? 16);
+  });
+  return out;
+}
+
+/** Average seconds per possession in a period, for anything that needs a period-level figure. */
+export function averageSeconds(bySequence: Map<number, number>, possessions: Possession[], period?: number): number {
+  const list = possessions.filter((p) => period == null || p.quarter === period);
+  if (!list.length) return 16;
+  return list.reduce((s, p) => s + (bySequence.get(p.sequence) ?? 16), 0) / list.length;
+}
+
+/**
+ * Per-period seconds-per-possession refined by clock anchors.
+ *
+ * Anchors are validated by the caller before they get here -- a reading
+ * outside its period, or one that goes backwards, would distort the
+ * possessions around it worse than having no anchor at all.
+ */
+function anchoredSpans(
+  gamePossessions: Possession[],
+  fmt: GameFormat,
+  anchors: { sequence: number; seconds: number }[],
+): Map<number, number> {
+  const out = new Map<number, number>();
+
+  const byPeriod = new Map<number, Possession[]>();
+  gamePossessions.forEach((p) => {
+    if (!byPeriod.has(p.quarter)) byPeriod.set(p.quarter, []);
+    byPeriod.get(p.quarter)!.push(p);
+  });
+
+  byPeriod.forEach((list, period) => {
+    const sorted = [...list].sort((a, b) => a.sequence - b.sequence);
+    const inPeriod = anchors
+      .filter((a) => sorted.some((p) => p.sequence === a.sequence))
+      .sort((a, b) => a.sequence - b.sequence);
+    if (!inPeriod.length) return;
+
+    // Bracket the period with its known endpoints: full length at the first
+    // possession, zero at the end.
+    const points = [
+      { sequence: sorted[0].sequence, seconds: periodLengthSeconds(fmt, period) },
+      ...inPeriod,
+      { sequence: sorted[sorted.length - 1].sequence + 1, seconds: 0 },
+    ].sort((a, b) => a.sequence - b.sequence);
+
+    // Each span between two known clock readings gets its own pace, which
+    // is the entire point -- a period-wide figure would average them back
+    // together and the anchor would change nothing.
+    for (let i = 1; i < points.length; i++) {
+      const span = points[i].sequence - points[i - 1].sequence;
+      const elapsed = points[i - 1].seconds - points[i].seconds;
+      if (span <= 0 || elapsed <= 0) continue;
+      const rate = elapsed / span;
+      sorted
+        .filter((p) => p.sequence >= points[i - 1].sequence && p.sequence < points[i].sequence)
+        .forEach((p) => out.set(p.sequence, rate));
+    }
+  });
+
+  return out;
+}
+
+function evenSeconds(gamePossessions: Possession[], fmt: GameFormat): Map<number, number> {
   const byPeriod = new Map<number, number>();
   gamePossessions.forEach((p) => byPeriod.set(p.quarter, (byPeriod.get(p.quarter) ?? 0) + 1));
 
@@ -146,6 +225,45 @@ export function secondsPerPossession(gamePossessions: Possession[], fmt: GameFor
     out.set(period, count >= 10 ? periodLengthSeconds(fmt, period) / count : gameAverage);
   });
   return out;
+}
+
+/**
+ * Why a clock reading can't be trusted, or null when it's fine.
+ *
+ * A mistyped anchor is worse than no anchor -- it silently distorts every
+ * shift around it, where the even-distribution fallback can only ever be
+ * mildly wrong. So they're checked rather than absorbed.
+ */
+export function validateAnchor(
+  seconds: number,
+  period: number,
+  fmt: GameFormat,
+  neighbours: { sequence: number; seconds: number }[],
+  sequence: number,
+): string | null {
+  const length = periodLengthSeconds(fmt, period);
+  if (seconds < 0 || seconds > length) {
+    return `A ${Math.round(length / 60)}-minute period can't show ${formatClock(seconds)}.`;
+  }
+  const before = neighbours.filter((n) => n.sequence < sequence).sort((a, b) => b.sequence - a.sequence)[0];
+  const after = neighbours.filter((n) => n.sequence > sequence).sort((a, b) => a.sequence - b.sequence)[0];
+  // The clock counts down, so a later possession must show less time.
+  if (before && seconds >= before.seconds) return `The clock has to be below ${formatClock(before.seconds)} by here.`;
+  if (after && seconds <= after.seconds) return `The clock has to be above ${formatClock(after.seconds)} by here.`;
+  return null;
+}
+
+export function formatClock(seconds: number): string {
+  const m = Math.floor(Math.max(0, seconds) / 60);
+  const s = Math.round(Math.max(0, seconds) % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+export function parseClock(text: string): number | null {
+  const m = text.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (m) return Number(m[1]) * 60 + Number(m[2]);
+  const plain = Number(text.trim());
+  return Number.isFinite(plain) && plain >= 0 ? Math.round(plain) : null;
 }
 
 // ── Shrinkage ────────────────────────────────────────────────────
@@ -306,6 +424,8 @@ export interface GameSlice {
   possessions: Possession[];
   shifts: Shift[];
   format: GameFormat;
+  /** Clock readings from shifts that have one, for the minutes estimate. Sparse and optional. */
+  anchors?: { sequence: number; seconds: number }[];
 }
 
 /**
@@ -343,7 +463,7 @@ export function computeComboRows(
     gamesCounted.add(slice.gameId);
 
     const ctx = possessionContexts(slice.possessions);
-    const spp = secondsPerPossession(slice.possessions, slice.format);
+    const spp = secondsBySequence(slice.possessions, slice.format, slice.anchors ?? []);
     const assigned = assignPossessionSides(slice.possessions, slice.shifts);
     const shiftById = new Map(slice.shifts.map((s) => [s.id, s]));
 
@@ -378,7 +498,7 @@ export function computeComboRows(
           b.shifts.add(shiftId);
           // Only count the clock once per possession per group, or a
           // practice lineup on the floor for both ends would double.
-          if (end === "off") b.seconds += spp.get(p.quarter) ?? 16;
+          if (end === "off") b.seconds += spp.get(p.sequence) ?? 16;
         }
       }
     }
