@@ -21,6 +21,9 @@ import {
   computeStreaks,
   computePlayCallEffectiveness,
   computeOobEffectiveness,
+  computePressBreakEffectiveness,
+  computeInboundsDefense,
+  computeHalfCourtStructure,
   computeExtraPossessions,
   computePointsOffLiveTurnovers,
   computeSecondChancePoints,
@@ -210,6 +213,10 @@ export function ReportBody({
   const slob = computeOobEffectiveness(possessions, "slob");
   const setPlays = computePlayCallEffectiveness(possessions, playCalls.filter((p) => p.category === "set"));
   const motionPlays = computePlayCallEffectiveness(possessions, playCalls.filter((p) => p.category === "motion"));
+  const zonePlays = computePlayCallEffectiveness(possessions, playCalls.filter((p) => p.category === "zone"));
+  const pressBreak = computePressBreakEffectiveness(possessions, playCalls);
+  const inbounds = computeInboundsDefense(possessions);
+  const halfCourt = computeHalfCourtStructure(possessions);
   const blobPlays = computePlayCallEffectiveness(possessions, playCalls.filter((p) => p.category === "blob"));
   const slobPlays = computePlayCallEffectiveness(possessions, playCalls.filter((p) => p.category === "slob"));
 
@@ -279,6 +286,84 @@ export function ReportBody({
               <PlayCallTable rows={setPlays} />
               <div style={{ height: 8 }} />
               <PlayCallTable rows={motionPlays} />
+              <div style={{ height: 8 }} />
+              <PlayCallTable rows={zonePlays} />
+            </div>
+          );
+        }
+
+        if (s.kind === "half_court_structure") {
+          if (!halfCourt.total) return null;
+          return (
+            <div key={s.key}>
+              <SectionDivider label="Half court (man / zone)" />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <SplitCard label="vs man" row={halfCourt.vsMan} />
+                <SplitCard label="vs zone" row={halfCourt.vsZone} />
+              </div>
+              <div style={{ height: 8 }} />
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
+                <SplitCard label="Man set" row={halfCourt.set} />
+                <SplitCard label="Motion" row={halfCourt.motion} />
+                <SplitCard label="Zone set" row={halfCourt.zone} />
+                <SplitCard label="Unscripted" row={halfCourt.unscripted} />
+              </div>
+              {inbounds.total > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <SplitCard label="Inbounds vs man" row={inbounds.man} />
+                    <SplitCard label="Inbounds vs zone" row={inbounds.zone} />
+                  </div>
+                  <div style={{ fontSize: 12, color: inbounds.untagged ? "#8a6512" : "var(--muted)", marginTop: 4 }}>
+                    {inbounds.tagged} of {inbounds.total} inbounds trips tagged
+                    {inbounds.untagged > 0 && " - the rest can be tagged in the possession editor"}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        if (s.kind === "press_break") {
+          if (!pressBreak.total) return null;
+          return (
+            <div key={s.key}>
+              <SectionDivider label="Press break" />
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
+                <div className="stat-card">
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Press possessions</div>
+                  <div style={{ fontSize: 20, fontWeight: 500 }}>{pressBreak.total}</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>{pressBreak.ppp} ppp</div>
+                </div>
+                <div className="stat-card">
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Press broken</div>
+                  <div style={{ fontSize: 20, fontWeight: 500 }}>{pressBreak.broken}</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>{pressBreak.brokenPct}%</div>
+                </div>
+                <div className="stat-card">
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Press turnovers</div>
+                  <div style={{ fontSize: 20, fontWeight: 500 }}>{pressBreak.turnovers}</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>{pressBreak.turnoverPct}%</div>
+                </div>
+                <div className="stat-card">
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Points off the break</div>
+                  <div style={{ fontSize: 20, fontWeight: 500 }}>{pressBreak.pointsOffBreak}</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>transition + FTs</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+                Broke into transition {pressBreak.toTransition}x, half court {pressBreak.toHalfCourt}x, to the line {pressBreak.toFtTrip}x, foul/jump/OOB {pressBreak.toOob}x
+              </div>
+              {pressBreak.byType.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  {pressBreak.byType.map((r) => (
+                    <div key={r.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0", borderTop: "1px solid var(--border)" }}>
+                      <span>{r.name}</span>
+                      <span style={{ color: "var(--muted)" }}>{r.calls} faced · {r.broken} broken · {r.turnovers} TO · {r.ppp} ppp</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         }
@@ -348,6 +433,16 @@ export function ReportBody({
       })}
 
       {suggestions && <PracticeSuggestionsPanel suggestions={suggestions} canManage={canManage} />}
+    </div>
+  );
+}
+
+function SplitCard({ label, row }: { label: string; row: { trips: number; points: number; ppp: number } }) {
+  return (
+    <div className="stat-card">
+      <div style={{ fontSize: 12, color: "var(--muted)" }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 500 }}>{row.ppp}</div>
+      <div style={{ fontSize: 12, color: "var(--muted)" }}>{row.trips} trips · {row.points} pts</div>
     </div>
   );
 }
