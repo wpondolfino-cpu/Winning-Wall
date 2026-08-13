@@ -25,6 +25,11 @@ const CATEGORY_LABEL: Record<CategoryFilter, string> = {
   blob: "BLOB",
   slob: "SLOB",
   press: "Press",
+  // A broken press has already become transition or half-court by the time
+  // it commits, so this filter catches the trips that ended against the
+  // press. Press break as a whole is a report block, not a filter.
+  press_break: "Press break (unbroken)",
+  non_possession_ft: "Awarded FTs",
 };
 
 interface Props {
