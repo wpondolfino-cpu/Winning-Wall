@@ -34,6 +34,41 @@ export interface RotationPlan {
 }
 
 export const DEFAULT_BLOCKS_PER_PERIOD = 3;
+export const BLOCK_OPTIONS = [2, 3, 4] as const;
+
+/**
+ * Blocks per period, shared by the planner and the heatmap.
+ *
+ * Stored as a preference rather than a column because the heatmap spans
+ * many games at once -- there'd be no single game's setting to read. Kept
+ * here so both surfaces resolve it the same way.
+ */
+export function getBlocksPerPeriod(): number {
+  try {
+    const v = Number(localStorage.getItem("ww.blocksPerPeriod"));
+    return BLOCK_OPTIONS.includes(v as any) ? v : DEFAULT_BLOCKS_PER_PERIOD;
+  } catch { return DEFAULT_BLOCKS_PER_PERIOD; }
+}
+
+export function setBlocksPerPeriod(n: number) {
+  try { localStorage.setItem("ww.blocksPerPeriod", String(n)); } catch { /* private mode */ }
+}
+
+/**
+ * Re-spreads an existing plan across a different number of blocks, so
+ * changing the setting doesn't throw away work already done.
+ */
+export function remapBlocks(blocks: string[][], fromPer: number, toPer: number, periods: number): string[][] {
+  if (fromPer === toPer) return blocks;
+  const out: string[][] = [];
+  for (let p = 0; p < periods; p++) {
+    for (let b = 0; b < toPer; b++) {
+      const source = Math.min(fromPer - 1, Math.floor((b / toPer) * fromPer));
+      out.push(blocks[p * fromPer + source] ?? []);
+    }
+  }
+  return out;
+}
 
 // ── Storage ──────────────────────────────────────────────────────
 
