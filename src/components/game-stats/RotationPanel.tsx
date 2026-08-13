@@ -20,6 +20,7 @@ import {
 import { possessionContexts } from "../../lib/lineupStats";
 import { useLineupData, playerLabeller } from "../../lib/useLineupData";
 import RotationBuilder from "./RotationBuilder";
+import { getBlocksPerPeriod } from "../../lib/rotationPlans";
 import { supabase } from "../../lib/supabase";
 
 /** Roughly ten games before an "average rotation" means anything. */
@@ -62,7 +63,9 @@ export default function RotationPanel({ gameIds, userId, rosterId }: { gameIds: 
     });
   }, [slices, closeOnly]);
 
-  const heat = useMemo(() => computeRotationHeatmap(shown), [shown]);
+  // Same grid as the planner, so what you did and what you're planning
+  // are read on the same axis.
+  const heat = useMemo(() => computeRotationHeatmap(shown, getBlocksPerPeriod()), [shown, view]);
   // Split so a five-man observation and an individual one aren't interleaved
   // -- they're different questions and you read them at different times.
   const lineupFindings = useMemo(() => computeFindings(shown, "lineup"), [shown]);
