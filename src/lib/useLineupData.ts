@@ -52,12 +52,20 @@ export function useLineupData(gameIds: string[]): LineupData {
       setGoals((goalRows ?? []) as StatGoal[]);
       // Sequence is unique per game, not across games, so each game has to be
       // matched against its own shifts before anything is merged.
-      setSlices(gameIds.map((id) => ({
-        gameId: id,
-        possessions: allPoss.filter((p) => p.game_id === id),
-        shifts: allShifts.filter((s) => s.game_id === id),
-        format: formats.get(id) ?? gameFormat(null),
-      })));
+      setSlices(gameIds.map((id) => {
+        const shifts = allShifts.filter((s) => s.game_id === id);
+        return {
+          gameId: id,
+          possessions: allPoss.filter((p) => p.game_id === id),
+          shifts,
+          format: formats.get(id) ?? gameFormat(null),
+          // Only shifts where a clock reading was actually entered. Sparse by
+          // design -- the estimate falls back to even distribution elsewhere.
+          anchors: shifts
+            .filter((s) => s.start_clock_seconds != null)
+            .map((s) => ({ sequence: s.start_sequence, seconds: s.start_clock_seconds! })),
+        };
+      }));
       setPlayers(await listGamePlayers(null));
 
       const events = (await Promise.all(gameIds.map((id) => listLineupEvents(id)))).flat();
