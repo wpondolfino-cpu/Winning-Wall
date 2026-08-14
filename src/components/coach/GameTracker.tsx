@@ -771,13 +771,16 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
             <Btn onClick={() => choosePressBreakResult("half_court", "halfcourt_type", "half_court")}>Half-court</Btn>
             <Btn onClick={() => choosePressBreakResult("turnover", "turnover_type")}>Turnover</Btn>
           </Grid>
-          <Grid cols={3} style={{ marginTop: 8 }}>
+          <Grid cols={2} style={{ marginTop: 8 }}>
             <Btn subtitle="Still our ball" onClick={() => choosePressBreakResult("oob", "oob_reclassify")}>
               Foul/Jump/OOB
             </Btn>
+            {/* No And-1 here: a shot only happens after this screen has already
+                routed to transition or half court, so the And-1 button on those
+                screens covers it. FT trip stays -- fouled in the backcourt while
+                they're over the limit is a trip to the line straight off the
+                break, with no transition or half-court phase in between. */}
             <Btn onClick={() => choosePressBreakResult("ft_trip", "ft_attempts")}>FT trip</Btn>
-            {/* Fouled finishing the break, so it's scored as a transition bucket rather than orphaned from both splits. */}
-            <Btn onClick={() => choosePressBreakResult("transition", "and1_shot", "transition")}>And-1</Btn>
           </Grid>
         </Section>
       )}
