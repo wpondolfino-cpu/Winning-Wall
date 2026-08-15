@@ -24,6 +24,11 @@ import {
   computePressBreakEffectiveness,
   computeInboundsDefense,
   computeHalfCourtStructure,
+  computePaintImpact,
+  computeQualityConversion,
+  computeTurnoverBreakdown,
+  computePeriodSplits,
+  computePrevPossession,
   computeExtraPossessions,
   computePointsOffLiveTurnovers,
   computeSecondChancePoints,
@@ -52,7 +57,11 @@ export type ReportScope =
   | { kind: "game"; gameId: string }
   | { kind: "season"; season: string; result?: "win" | "loss"; gameGroup?: GameGroup };
 
-export type ReportVariant = "in_game" | "full";
+// Three tiers, not two. "full" is the end-of-game / season report;
+// "custom" is a report built in the report tab, which additionally shows
+// everything flagged builderOnly -- the deeper cuts that would bury the
+// end-of-game report but are the whole reason to build a report yourself.
+export type ReportVariant = "in_game" | "full" | "custom";
 
 interface Props {
   scope: ReportScope;
@@ -162,7 +171,10 @@ export function ReportBody({
   isPractice?: boolean;
   canManage?: boolean;
 }) {
-  const visible = statOrder.filter((s) => variant === "full" || s.inGame);
+  const visible = statOrder.filter((s) => {
+    if (s.builderOnly) return variant === "custom";
+    return variant === "in_game" ? s.inGame : true;
+  });
   const numberStats = visible.filter((s) => s.kind === "number" && !s.goalOnly);
   const specialStats = visible.filter((s) => s.kind !== "number");
 
@@ -175,7 +187,7 @@ export function ReportBody({
   // behind them to rank -- not the quick in-game quarter/half view.
   const [suggestions, setSuggestions] = useState<PracticeSuggestions | null>(null);
   useEffect(() => {
-    if (variant !== "full" || !possessions.length) { setSuggestions(null); return; }
+    if (variant === "in_game" || !possessions.length) { setSuggestions(null); return; }
     computePracticeSuggestions(usStatsAll, oppStatsAll, goals).then(setSuggestions).catch(console.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [possessions, goals, variant]);
@@ -217,6 +229,12 @@ export function ReportBody({
   const pressBreak = computePressBreakEffectiveness(possessions, playCalls);
   const inbounds = computeInboundsDefense(possessions);
   const halfCourt = computeHalfCourtStructure(possessions);
+  const paint = computePaintImpact(possessions);
+  const qualityUs = computeQualityConversion(possessions, "us");
+  const qualityThem = computeQualityConversion(possessions, "opponent");
+  const tovBreak = computeTurnoverBreakdown(possessions);
+  const periods = computePeriodSplits(possessions);
+  const prev = computePrevPossession(possessions);
   const blobPlays = computePlayCallEffectiveness(possessions, playCalls.filter((p) => p.category === "blob"));
   const slobPlays = computePlayCallEffectiveness(possessions, playCalls.filter((p) => p.category === "slob"));
 
@@ -320,6 +338,95 @@ export function ReportBody({
                   </div>
                 </div>
               )}
+            </div>
+          );
+        }
+
+        if (s.kind === "paint_impact") {
+          if (!paint.total) return null;
+          return (
+            <div key={s.key}>
+              <SectionDivider label="Paint touch impact" />
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
+                <SplitCard label="With paint touch" row={paint.withTouch} />
+                <SplitCard label="No paint touch" row={paint.withoutTouch} />
+                <SplitCard label="Both sides" row={paint.bothSides} />
+                <SplitCard label="One side only" row={paint.oneSide} />
+              </div>
+            </div>
+          );
+        }
+
+        if (s.kind === "quality_conversion") {
+          if (!qualityUs.some((q) => q.attempts)) return null;
+          return (
+            <div key={s.key}>
+              <SectionDivider label="Shot quality conversion" />
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--muted)", padding: "4px 0" }}>
+                <span>Grade</span><span>Us (eFG%)</span><span>Them (eFG%)</span>
+              </div>
+              {qualityUs.map((q, i) => (
+                <div key={q.grade} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0", borderTop: "1px solid var(--border)" }}>
+                  <span style={{ textTransform: "capitalize" }}>{q.grade}</span>
+                  <span>{q.efg}% <span style={{ color: "var(--muted)" }}>({q.made}/{q.attempts})</span></span>
+                  <span>{qualityThem[i].efg}% <span style={{ color: "var(--muted)" }}>({qualityThem[i].made}/{qualityThem[i].attempts})</span></span>
+                </div>
+              ))}
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+                Shots that ended a possession. A rebounded miss isn't graded, so it isn't counted here.
+              </div>
+            </div>
+          );
+        }
+
+        if (s.kind === "turnover_breakdown") {
+          if (!tovBreak.us.total && !tovBreak.opponent.total) return null;
+          return (
+            <div key={s.key}>
+              <SectionDivider label="Turnover breakdown" />
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--muted)", padding: "4px 0" }}>
+                <span /><span>Live</span><span>Dead</span><span>Charge</span><span>Live %</span>
+              </div>
+              {([["Us", tovBreak.us], ["Them", tovBreak.opponent]] as const).map(([label, t]) => (
+                <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0", borderTop: "1px solid var(--border)" }}>
+                  <span>{label}</span><span>{t.live}</span><span>{t.dead}</span><span>{t.charge}</span><span>{t.livePct}%</span>
+                </div>
+              ))}
+            </div>
+          );
+        }
+
+        if (s.kind === "period_splits") {
+          if (periods.length < 2) return null;
+          return (
+            <div key={s.key}>
+              <SectionDivider label="By period" />
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--muted)", padding: "4px 0" }}>
+                <span>Period</span><span>Poss</span><span>Our PPP</span><span>Their PPP</span><span>Margin</span>
+              </div>
+              {periods.map((p) => (
+                <div key={p.period} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0", borderTop: "1px solid var(--border)" }}>
+                  <span>{p.period}</span><span>{p.possessions}</span><span>{p.ourPpp}</span><span>{p.theirPpp}</span>
+                  <span style={{ color: p.margin > 0 ? "#2f9e63" : p.margin < 0 ? "#8a2f2f" : undefined }}>
+                    {p.margin > 0 ? "+" : ""}{p.margin}
+                  </span>
+                </div>
+              ))}
+            </div>
+          );
+        }
+
+        if (s.kind === "prev_possession") {
+          const any = prev.afterScore.trips + prev.afterMiss.trips + prev.afterTurnover.trips;
+          if (!any) return null;
+          return (
+            <div key={s.key}>
+              <SectionDivider label="After their possession" />
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
+                <SplitCard label="After they score" row={prev.afterScore} />
+                <SplitCard label="After they miss" row={prev.afterMiss} />
+                <SplitCard label="After their turnover" row={prev.afterTurnover} />
+              </div>
             </div>
           );
         }
