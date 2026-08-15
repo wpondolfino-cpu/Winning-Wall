@@ -1314,15 +1314,17 @@ export interface PeriodSplit {
 /** Where the game was actually won or lost. The number behind a habit like slow third quarters. */
 export function computePeriodSplits(possessions: Possession[]): PeriodSplit[] {
   const counted = countedPossessions(possessions);
-  const periods = [...new Set(counted.map((p) => p.period))].sort((a, b) => a - b);
+  // The column is `quarter` even when the game format is halves -- the
+  // PeriodSplit field is named `period` because that's what it means.
+  const periods = [...new Set(counted.map((p) => p.quarter))].sort((a, b) => a - b);
   return periods.map((period) => {
-    const inPeriod = counted.filter((p) => p.period === period);
+    const inPeriod = counted.filter((p) => p.quarter === period);
     const ours = inPeriod.filter((p) => p.team === "us");
     const theirs = inPeriod.filter((p) => p.team === "opponent");
     const ourPts = ours.reduce((s, p) => s + p.points, 0);
     // Scoreboard margin uses every row, including awarded free throws --
     // they're points on the board even though they aren't possessions.
-    const allInPeriod = possessions.filter((p) => p.period === period);
+    const allInPeriod = possessions.filter((p) => p.quarter === period);
     const margin =
       allInPeriod.filter((p) => p.team === "us").reduce((s, p) => s + p.points, 0) -
       allInPeriod.filter((p) => p.team === "opponent").reduce((s, p) => s + p.points, 0);
