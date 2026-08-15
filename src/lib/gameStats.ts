@@ -75,6 +75,9 @@ export interface Possession {
   paint_touch_both_sides: boolean;
   oreb_count: number;
   missed_fg_count: number;
+  /** Rebounded misses split by shot type, so they can enter the SHOOTING denominators (missed_fg_count stays the total and still feeds OREB%). */
+  missed_fg2_count: number;
+  missed_fg3_count: number;
   outcome: Outcome;
   shot_type: 2 | 3 | null;
   shot_quality: ShotQuality | null;
@@ -152,13 +155,22 @@ export async function upsertStatGoal(
 // report (full game, season, custom report) -- not on a quarter/half
 // in-game report. A stat's `kind` decides how ReportBody renders that row;
 // `kind: "number"` rows are the only ones with goal-based coloring.
-export type StatKind = "number" | "shot_quality" | "set_plays" | "oob" | "streaks" | "defense_schemes" | "press_break" | "half_court_structure";
+export type StatKind = "number" | "shot_quality" | "set_plays" | "oob" | "streaks" | "defense_schemes" | "press_break" | "half_court_structure" | "paint_impact" | "quality_conversion" | "turnover_breakdown" | "period_splits" | "prev_possession";
 
 export interface StatDef {
   key: string;
   label: string;
   kind: StatKind;
   inGame: boolean;
+  /**
+   * Report-builder only. There are three tiers, not two:
+   *   inGame: true                  -> quarter/half, full game, and builder
+   *   inGame: false                 -> full game and builder
+   *   inGame: false, builderOnly    -> builder only
+   * Used for the deeper cuts that would bury the end-of-game report but
+   * are the whole point of a report you build yourself.
+   */
+  builderOnly?: boolean;
   defaultDirection?: "higher_better" | "lower_better";
   selfColored?: boolean; // true for stats colored by their own sign (+/-), not against a goal target
   goalOnly?: boolean;    // settable as a goal, but not its own report row and not in the reorder list -- it's the headline of another block
@@ -192,6 +204,22 @@ export const DEFAULT_STAT_ORDER: StatDef[] = [
   { key: "press_break", label: "Press break", kind: "press_break", inGame: false },
   { key: "streaks", label: "Streaks", kind: "streaks", inGame: true },
   { key: "defense_schemes", label: "Defense schemes (Man / Zone / Press)", kind: "defense_schemes", inGame: false },
+
+  // ── Report-builder only ────────────────────────────────────────
+  // Everything below is computed from possessions already being tracked
+  // -- no extra taps. They're kept off the end-of-game report to stop it
+  // becoming a wall, and off quarter reports where the samples are far
+  // too small for any of them to mean anything.
+  { key: "ts_pct", label: "True shooting %", kind: "number", inGame: false, builderOnly: true, defaultDirection: "higher_better" },
+  { key: "three_rate", label: "3PT rate %", kind: "number", inGame: false, builderOnly: true },
+  { key: "ppp", label: "PPP", kind: "number", inGame: false, builderOnly: true, defaultDirection: "higher_better" },
+  { key: "second_chance_ppp", label: "Second chance PPP", kind: "number", inGame: false, builderOnly: true, defaultDirection: "higher_better" },
+  { key: "possessions", label: "Possessions", kind: "number", inGame: false, builderOnly: true },
+  { key: "paint_impact", label: "Paint touch impact", kind: "paint_impact", inGame: false, builderOnly: true },
+  { key: "quality_conversion", label: "Shot quality conversion", kind: "quality_conversion", inGame: false, builderOnly: true },
+  { key: "turnover_breakdown", label: "Turnover breakdown", kind: "turnover_breakdown", inGame: false, builderOnly: true },
+  { key: "period_splits", label: "By period", kind: "period_splits", inGame: false, builderOnly: true },
+  { key: "prev_possession", label: "After their possession", kind: "prev_possession", inGame: false, builderOnly: true },
 ];
 
 /**
@@ -211,6 +239,16 @@ export const STAT_EXPLAINERS: Record<string, { what: string; how: string }> = {
   transition_ppp: { what: "Points per possession in transition, including breaks against a press that pushed.", how: "transition points / transition trips" },
   halfcourt_ppp: { what: "Points per possession in the half court. Includes BLOB and SLOB trips, and press breaks, that flowed into a set.", how: "half-court points / half-court trips" },
   press_break: { what: "How we handled the press. Broken means we got out of it -- into transition, into a half-court look, to the line, or a foul that kept it our ball. Points off the break counts transition makes and free throws only: a break that becomes a half-court possession and scores is a half-court score.", how: "broken / press trips" },
+  ts_pct: { what: "True shooting. One number for scoring efficiency that values a three above a two and gives credit for getting to the line, so it compares a volume three-point shooter and a post scorer fairly.", how: "points / (2 x (FGA + 0.44 x FTA))" },
+  three_rate: { what: "Share of field goal attempts that were threes. A shot-diet number, not a quality one -- read it next to 3PT%.", how: "3PA / FGA" },
+  ppp: { what: "Points per possession overall. Every other PPP row on this report is a slice of this one.", how: "points / possessions" },
+  second_chance_ppp: { what: "Points per offensive rebound. Says whether the boards you win actually turn into points, which the raw second-chance points total can't.", how: "points on trips with an OREB / offensive rebounds" },
+  possessions: { what: "Trips counted. Excludes intentional-foul, technical and flagrant free throws, since those aren't possessions.", how: "count" },
+  paint_impact: { what: "What a paint touch is worth, rather than just how often you get one. The gap between the two PPP figures is the argument for demanding it.", how: "PPP on half-court trips with a paint touch vs without" },
+  quality_conversion: { what: "How each grade of look actually converted. Two readings: whether the team finishes the shots it generates, and whether the grading itself is calibrated -- if great looks come back below your good looks, the grading is drifting.", how: "eFG% within each shot quality grade" },
+  turnover_breakdown: { what: "Turnovers split by type. Live-ball giveaways are the expensive ones because they run the other way; dead balls and charges don't.", how: "count by turnover type" },
+  period_splits: { what: "PPP for and against, and possessions, by period. Where a game was actually won or lost, and the number behind a habit like slow third quarters.", how: "points / possessions, per period" },
+  prev_possession: { what: "How the offense responds to what just happened at the other end. Whether a bucket against you turns into two.", how: "PPP on trips following their score, their miss, or their turnover" },
   half_court_structure: { what: "What we ran in the half court, and by extension what we ran it against. A zone set is also the record that they were in a zone, so man is everything else.", how: "points / trips, per structure" },
   quality_shot_pct: { what: "Share of shots graded great or good. On the defensive side this is the looks we allowed, so lower is better.", how: "(great + good) / graded shots" },
   extra_possessions: { what: "Net extra chances created, the possession-count version of winning the margins.", how: "(our OREB + their turnovers) - (their OREB + our turnovers)" },
@@ -595,6 +633,8 @@ function normalizeLegacyPossession(p: any): Possession {
     paint_touch: paintTouch ?? false,
     paint_touch_both_sides: paintTouchBoth ?? false,
     missed_fg_count: p.missed_fg_count ?? 0,
+    missed_fg2_count: p.missed_fg2_count ?? 0,
+    missed_fg3_count: p.missed_fg3_count ?? 0,
     absorbed_ft_attempts: p.absorbed_ft_attempts ?? 0,
     absorbed_ft_made: p.absorbed_ft_made ?? 0,
     defense_scheme: p.defense_scheme ?? null,
@@ -776,12 +816,21 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   // else that has a possession-based denominator.
   const allTrips = possessions.filter((p) => p.team === team);
   const trips = allTrips.filter(isCountedPossession);
+  // A trip only stores its FINAL outcome, so a miss that was rebounded and
+  // followed by another shot isn't in `fga` at all. Those rebounded misses
+  // are real attempts and they all missed, so they go into the denominators
+  // and nowhere else -- without them every shooting percentage runs high by
+  // roughly the offensive rebound rate.
   const fga = trips.filter((p) => p.outcome === "fg_made" || p.outcome === "fg_missed");
   const fga2 = fga.filter((p) => p.shot_type === 2);
   const fga3 = fga.filter((p) => p.shot_type === 3);
   const made2 = fga2.filter((p) => p.outcome === "fg_made").length;
   const made3 = fga3.filter((p) => p.outcome === "fg_made").length;
-  const fgaCount = fga.length;
+  const reboundedMissed2 = trips.reduce((s, p) => s + p.missed_fg2_count, 0);
+  const reboundedMissed3 = trips.reduce((s, p) => s + p.missed_fg3_count, 0);
+  const fga2Count = fga2.length + reboundedMissed2;
+  const fga3Count = fga3.length + reboundedMissed3;
+  const fgaCount = fga2Count + fga3Count;
   const turnovers = trips.filter((p) => p.outcome === "turnover").length;
   const liveTov = trips.filter((p) => p.outcome === "turnover" && p.turnover_type === "live").length;
   const deadTov = trips.filter((p) => p.outcome === "turnover" && p.turnover_type === "dead").length;
@@ -824,8 +873,17 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   );
 
   const efg = fgaCount ? ((made2 + made3) + 0.5 * made3) / fgaCount * 100 : 0;
-  const fg2Pct = fga2.length ? (made2 / fga2.length) * 100 : 0;
-  const fg3Pct = fga3.length ? (made3 / fga3.length) * 100 : 0;
+  const fg2Pct = fga2Count ? (made2 / fga2Count) * 100 : 0;
+  const fg3Pct = fga3Count ? (made3 / fga3Count) * 100 : 0;
+  // True shooting charges free throws at the standard 0.44 trips-per-attempt
+  // estimate. Uses earned FTs only -- an intentional-foul trip isn't the
+  // offense generating a shooting possession.
+  const totalPoints = trips.reduce((s, p) => s + p.points, 0);
+  const tsAttempts = fgaCount + 0.44 * ftAttemptedEarned;
+  const tsPct = tsAttempts ? (totalPoints / (2 * tsAttempts)) * 100 : 0;
+  const threeRate = fgaCount ? (fga3Count / fgaCount) * 100 : 0;
+  const ppp = trips.length ? totalPoints / trips.length : 0;
+  const secondChancePpp = oreb ? trips.filter((p) => p.oreb_count > 0).reduce((s, p) => s + p.points, 0) / oreb : 0;
   const ftPct = ftAttempted ? (ftMade / ftAttempted) * 100 : 0;
   const tovPct = trips.length ? (turnovers / trips.length) * 100 : 0;
   const orebPct = orebOpportunities ? (oreb / orebOpportunities) * 100 : 0;
@@ -838,8 +896,13 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
 
   const rows: { key: string; label: string; value: number; raw?: string; display?: string }[] = [
     { key: "efg_pct", label: "eFG%", value: round1(efg) },
-    { key: "fg2_pct", label: "2PT FG%", value: round1(fg2Pct), raw: `${made2}/${fga2.length}` },
-    { key: "fg3_pct", label: "3PT FG%", value: round1(fg3Pct), raw: `${made3}/${fga3.length}` },
+    { key: "fg2_pct", label: "2PT FG%", value: round1(fg2Pct), raw: `${made2}/${fga2Count}` },
+    { key: "fg3_pct", label: "3PT FG%", value: round1(fg3Pct), raw: `${made3}/${fga3Count}` },
+    { key: "ts_pct", label: "True shooting %", value: round1(tsPct) },
+    { key: "three_rate", label: "3PT rate %", value: round1(threeRate), raw: `${fga3Count}/${fgaCount}` },
+    { key: "ppp", label: "PPP", value: round2(ppp), display: ppp.toFixed(2) },
+    { key: "second_chance_ppp", label: "Second chance PPP", value: round2(secondChancePpp), display: secondChancePpp.toFixed(2) },
+    { key: "possessions", label: "Possessions", value: trips.length },
     { key: "ft_pct", label: "FT%", value: round1(ftPct), raw: `${ftMade}/${ftAttempted}` },
     { key: "transition_pct", label: "Transition %", value: round1(transitionPct), raw: `${transitionTripsArr.length}/${trips.length}` },
     { key: "oreb_pct", label: "OREB%", value: round1(orebPct), raw: `${oreb}` },
@@ -1178,6 +1241,125 @@ export function computeAwardedFts(possessions: Possession[]) {
     };
   };
   return { us: forTeam("us"), opponent: forTeam("opponent") };
+}
+
+/** What a paint touch is actually worth, not just how often it happens. Half-court trips only, since the flag is only asked there. */
+export function computePaintImpact(possessions: Possession[]) {
+  const trips = countedPossessions(possessions).filter(
+    (p) => p.team === "us" && (p.possession_type === "half_court" || p.oob_result === "flowed_half_court")
+  );
+  return {
+    total: trips.length,
+    withTouch: splitRow(trips.filter((p) => p.paint_touch), "With paint touch"),
+    withoutTouch: splitRow(trips.filter((p) => !p.paint_touch), "No paint touch"),
+    bothSides: splitRow(trips.filter((p) => p.paint_touch_both_sides), "Both sides"),
+    oneSide: splitRow(trips.filter((p) => p.paint_touch && !p.paint_touch_both_sides), "One side only"),
+  };
+}
+
+/**
+ * Whether each grade of look actually went in.
+ *
+ * Reads two ways: how well the team finishes what it generates, and
+ * whether the grading itself is calibrated -- if "great" converts below
+ * "good", the grades are drifting rather than the shooters failing.
+ *
+ * Rebounded misses can't be included: missed_fg2/3_count records that a
+ * miss happened but not what it was graded, so this is attempts that
+ * ENDED a trip. Stated in the report rather than papered over.
+ */
+export function computeQualityConversion(possessions: Possession[], team: Team) {
+  const shots = countedPossessions(possessions).filter(
+    (p) => p.team === team && p.shot_quality != null && (p.outcome === "fg_made" || p.outcome === "fg_missed")
+  );
+  const grades: ShotQuality[] = ["great", "good", "live", "tough"];
+  return grades.map((g) => {
+    const own = shots.filter((p) => p.shot_quality === g);
+    const made = own.filter((p) => p.outcome === "fg_made");
+    const made3 = made.filter((p) => p.shot_type === 3).length;
+    return {
+      grade: g,
+      attempts: own.length,
+      made: made.length,
+      efg: own.length ? round1(((made.length + 0.5 * made3) / own.length) * 100) : 0,
+    };
+  });
+}
+
+/** Turnovers by type, both directions. Live-ball giveaways are the ones that run the other way. */
+export function computeTurnoverBreakdown(possessions: Possession[]) {
+  const counted = countedPossessions(possessions);
+  const forTeam = (team: Team) => {
+    const tovs = counted.filter((p) => p.team === team && p.outcome === "turnover");
+    const by = (t: string) => tovs.filter((p) => p.turnover_type === t).length;
+    return {
+      total: tovs.length,
+      live: by("live"),
+      dead: by("dead"),
+      charge: by("charge"),
+      livePct: tovs.length ? round1((by("live") / tovs.length) * 100) : 0,
+    };
+  };
+  return { us: forTeam("us"), opponent: forTeam("opponent") };
+}
+
+export interface PeriodSplit {
+  period: number;
+  possessions: number;
+  ourPpp: number;
+  theirPpp: number;
+  margin: number;
+}
+
+/** Where the game was actually won or lost. The number behind a habit like slow third quarters. */
+export function computePeriodSplits(possessions: Possession[]): PeriodSplit[] {
+  const counted = countedPossessions(possessions);
+  const periods = [...new Set(counted.map((p) => p.period))].sort((a, b) => a - b);
+  return periods.map((period) => {
+    const inPeriod = counted.filter((p) => p.period === period);
+    const ours = inPeriod.filter((p) => p.team === "us");
+    const theirs = inPeriod.filter((p) => p.team === "opponent");
+    const ourPts = ours.reduce((s, p) => s + p.points, 0);
+    // Scoreboard margin uses every row, including awarded free throws --
+    // they're points on the board even though they aren't possessions.
+    const allInPeriod = possessions.filter((p) => p.period === period);
+    const margin =
+      allInPeriod.filter((p) => p.team === "us").reduce((s, p) => s + p.points, 0) -
+      allInPeriod.filter((p) => p.team === "opponent").reduce((s, p) => s + p.points, 0);
+    return {
+      period,
+      possessions: ours.length,
+      ourPpp: ours.length ? round2(ourPts / ours.length) : 0,
+      theirPpp: theirs.length ? round2(theirs.reduce((s, p) => s + p.points, 0) / theirs.length) : 0,
+      margin,
+    };
+  });
+}
+
+/**
+ * How the offense responds to what just happened at the other end.
+ *
+ * Walks counted trips in sequence order and looks at the row before each
+ * of ours. Awarded free throws are dropped BEFORE the walk rather than
+ * skipped inside it, so a technical logged between their bucket and our
+ * answer doesn't break the pair apart.
+ */
+export function computePrevPossession(possessions: Possession[]) {
+  const ordered = countedPossessions(possessions).sort((a, b) => a.sequence - b.sequence);
+  const buckets = { afterScore: [] as Possession[], afterMiss: [] as Possession[], afterTurnover: [] as Possession[] };
+  for (let i = 1; i < ordered.length; i++) {
+    const cur = ordered[i];
+    const prev = ordered[i - 1];
+    if (cur.team !== "us" || prev.team !== "opponent") continue;
+    if (prev.outcome === "turnover") buckets.afterTurnover.push(cur);
+    else if (prev.points > 0) buckets.afterScore.push(cur);
+    else buckets.afterMiss.push(cur);
+  }
+  return {
+    afterScore: splitRow(buckets.afterScore, "After they score"),
+    afterMiss: splitRow(buckets.afterMiss, "After they miss"),
+    afterTurnover: splitRow(buckets.afterTurnover, "After their turnover"),
+  };
 }
 
 export interface DefenseSchemeSummary {
