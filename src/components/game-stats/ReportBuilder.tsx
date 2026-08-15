@@ -200,7 +200,7 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
           playCalls={playCalls}
           goals={goals}
           statOrder={statOrder}
-          variant="full"
+          variant="custom"
           title={`${gameLabel} · ${CATEGORY_LABEL[category]}`}
           canManage={true}
         />
