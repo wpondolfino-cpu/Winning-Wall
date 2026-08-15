@@ -185,6 +185,8 @@ interface FlowSnapshot {
   paintTouchBoth: boolean;
   orebCount: number;
   missedFgCount: number;
+  missedFg2Count: number;
+  missedFg3Count: number;
   absorbedFtAttempts: number;
   absorbedFtMade: number;
   pendingShot: PendingShot | null;
@@ -220,6 +222,11 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
   const [paintTouchBoth, setPaintTouchBoth] = useState(false);
   const [orebCount, setOrebCount] = useState(0);
   const [missedFgCount, setMissedFgCount] = useState(0);
+  // Split by shot type so rebounded misses can enter the SHOOTING
+  // denominators, not just OREB%. Zero extra taps -- the type was already
+  // tapped, it just used to be thrown away at this point.
+  const [missedFg2Count, setMissedFg2Count] = useState(0);
+  const [missedFg3Count, setMissedFg3Count] = useState(0);
   const [absorbedFtAttempts, setAbsorbedFtAttempts] = useState(0);
   const [absorbedFtMade, setAbsorbedFtMade] = useState(0);
   const [pendingShot, setPendingShot] = useState<PendingShot | null>(null);
@@ -296,6 +303,8 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
     setPaintTouchBoth(false);
     setOrebCount(0);
     setMissedFgCount(0);
+    setMissedFg2Count(0);
+    setMissedFg3Count(0);
     setAbsorbedFtAttempts(0);
     setAbsorbedFtMade(0);
     setPendingShot(null);
@@ -312,7 +321,7 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
       {
         step, possessionType, halfCourtType, playCallId, oobResult, defenseScheme, pressResult,
         pressBreakTypeId, pressBreakResult, oobDefense, ftAwardType, paintTouch, paintTouchBoth,
-        orebCount, missedFgCount, absorbedFtAttempts, absorbedFtMade, pendingShot, pendingCommit, orebOccurred, ftAttempts,
+        orebCount, missedFgCount, missedFg2Count, missedFg3Count, absorbedFtAttempts, absorbedFtMade, pendingShot, pendingCommit, orebOccurred, ftAttempts,
       },
     ]);
   }
@@ -336,6 +345,8 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
       setPaintTouchBoth(prev.paintTouchBoth);
       setOrebCount(prev.orebCount);
       setMissedFgCount(prev.missedFgCount);
+      setMissedFg2Count(prev.missedFg2Count);
+      setMissedFg3Count(prev.missedFg3Count);
       setAbsorbedFtAttempts(prev.absorbedFtAttempts);
       setAbsorbedFtMade(prev.absorbedFtMade);
       setPendingShot(prev.pendingShot);
@@ -367,6 +378,8 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
       paint_touch_both_sides: paintTouchBoth,
       oreb_count: orebCount,
       missed_fg_count: missedFgCount,
+      missed_fg2_count: missedFg2Count,
+      missed_fg3_count: missedFg3Count,
       absorbed_ft_attempts: absorbedFtAttempts,
       absorbed_ft_made: absorbedFtMade,
       outcome,
@@ -456,7 +469,13 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
   function confirmOreb() {
     pushHistory();
     setOrebCount((c) => c + 1);
-    if (pendingCommit?.isFgMiss) setMissedFgCount((c) => c + 1);
+    if (pendingCommit?.isFgMiss) {
+      setMissedFgCount((c) => c + 1);
+      // The pending commit is still holding the shot type from the
+      // make/miss screen, so nothing extra needs asking here.
+      if (pendingCommit.extra.shot_type === 3) setMissedFg3Count((c) => c + 1);
+      else setMissedFg2Count((c) => c + 1);
+    }
     if (pendingCommit && pendingCommit.outcome === "ft_trip") {
       setAbsorbedFtAttempts((c) => c + ((pendingCommit.extra.ft_attempts as number) ?? 0));
       setAbsorbedFtMade((c) => c + ((pendingCommit.extra.points as number) ?? 0));
