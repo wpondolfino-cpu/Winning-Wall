@@ -197,16 +197,67 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
   const activeGroup = selectedGroup ?? (groups[0] ?? null);
   const visibleWorkouts = activeGroup ? workouts.filter(w => w.group_name === activeGroup) : workouts.filter(w => !w.group_name);
 
+  /**
+   * Orders a board the same way rerank_workout does.
+   *
+   * The board used to sort on raw score descending, full stop. That
+   * ignored lower_is_better -- added in migration 084 to the ranking
+   * function but never to this client-side sort -- so a fewest-wins drill
+   * displayed backwards while the DB awarded its points correctly. The
+   * points were right and the order they appeared in was wrong.
+   *
+   * Tiebreak direction mirrors the SQL exactly: fastest time always
+   * lower-wins, free throws always higher-wins, a starred spot follows the
+   * drill. Having a value beats not having one.
+   */
+  function boardComparator(workout: any) {
+    const dir = workout?.lower_is_better ? -1 : 1;
+    const mode = workout?.tiebreak_mode as string | null | undefined;
+    const tieDir = mode === "fastest_time" ? -1 : mode === "spot" ? dir : 1;
+    return (a: any, b: any) => {
+      const byScore = (b.rawScore - a.rawScore) * dir;
+      if (byScore !== 0) return byScore;
+      if (!mode) return 0;
+      const at = a.tiebreak, bt = b.tiebreak;
+      if (at == null && bt == null) return 0;
+      if (at == null) return 1;
+      if (bt == null) return -1;
+      return (bt - at) * tieDir;
+    };
+  }
+
+  /** Label for the tiebreak figure, shown only on rows that were actually tied. */
+  function tiebreakLabel(workout: any, value: number | null): string | null {
+    if (value == null || !workout?.tiebreak_mode) return null;
+    if (workout.tiebreak_mode === "fastest_time") return `tiebreak ${formatDuration(value)}`;
+    if (workout.tiebreak_mode === "spot") {
+      const name = (workout.spot_config ?? [])[workout.tiebreak_spot_index ?? -1];
+      return name ? `tiebreak ${name} ${value}` : `tiebreak ${value}`;
+    }
+    return `tiebreak ${value} FT`;
+  }
+
+  /** Flags every row whose raw score matches another row's, so the tiebreak figure only appears where it decided something. */
+  // Deliberately any[]: a generic here infers down to the constraint rather
+  // than the caller's row shape, which hides `points` and `tiebreak` from
+  // everything downstream. The rest of this file's board rows are already
+  // any[] (see renderWorkoutTable), so this matches rather than fights it.
+  function markTied(rows: any[]): any[] {
+    const counts = new Map<number, number>();
+    rows.forEach(r => counts.set(r.rawScore, (counts.get(r.rawScore) ?? 0) + 1));
+    return rows.map(r => ({ ...r, tied: (counts.get(r.rawScore) ?? 0) > 1 }));
+  }
+
   function getWorkoutBoard(workoutId: string) {
     const workout = workouts.find(w => w.id === workoutId);
     const wScores = allScores.filter(s => s.workout_id === workoutId);
     const gf = gradeTab === ALL ? wScores : wScores.filter(s => profiles.find(p => p.id === s.player_id)?.grade_category === gradeTab);
-    return gf.map(s => {
+    return markTied(gf.map(s => {
       const p = profiles.find(pr => pr.id === s.player_id);
       const raw = s.self_points > 0 ? s.self_points : (s.made + s.reps);
       const display = s.sprint_secs > 0 && s.made === 0 && s.reps === 0 ? formatDuration(s.sprint_secs) : raw.toString();
-      return { playerId: s.player_id, name: p?.name ?? "Unknown", rawScore: s.sprint_secs > 0 && s.made === 0 ? -s.sprint_secs : raw, display, points: s.points ?? 0 };
-    }).sort((a, b) => b.rawScore - a.rawScore).map((r, i) => {
+      return { playerId: s.player_id, name: p?.name ?? "Unknown", rawScore: s.sprint_secs > 0 && s.made === 0 ? -s.sprint_secs : raw, display, points: s.points ?? 0, tiebreak: (s as any).tiebreak_value ?? null };
+    })).sort(boardComparator(workout)).map((r, i) => {
       let pts = r.points;
       if (workout?.scoring_type === "competitive") {
         if (i === 0) pts = workout.first_place_pts ?? 5;
@@ -214,7 +265,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
         else if (i === 2) pts = workout.third_place_pts ?? 1;
         else pts = 0;
       }
-      return { ...r, points: pts, rank: i + 1 };
+      return { ...r, points: pts, rank: i + 1, tiebreakLabel: r.tied ? tiebreakLabel(workout, r.tiebreak) : null };
     });
   }
 
@@ -224,12 +275,12 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
     const gf = gradeTab === ALL ? wAttempts : wAttempts.filter((s: any) => profiles.find(p => p.id === s.player_id)?.grade_category === gradeTab);
     const bestMap: Record<string, any> = {};
     for (const a of gf) { if (!(bestMap as any)[a.player_id] || (a as any).raw_score > (bestMap as any)[a.player_id].raw_score) (bestMap as any)[a.player_id] = a; }
-    return Object.values(bestMap).map((s: any) => {
+    return markTied(Object.values(bestMap).map((s: any) => {
       const p = profiles.find(pr => pr.id === s.player_id);
       const rawScore = s.raw_score ?? 0;
       const display = rawScore < 0 ? formatDuration(-rawScore) : rawScore.toString();
-      return { playerId: s.player_id, name: p?.name ?? "Unknown", rawScore, display };
-    }).sort((a, b) => b.rawScore - a.rawScore).map((r, i) => {
+      return { playerId: s.player_id, name: p?.name ?? "Unknown", rawScore, display, tiebreak: s.tiebreak_value ?? null };
+    })).sort(boardComparator(workout)).map((r, i) => {
       let pts = 0;
       if (workout?.scoring_type === "competitive" || workout?.scoring_type === "multi_spot") {
         if (i === 0) pts = workout.first_place_pts ?? 3;
@@ -237,7 +288,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
         else if (i === 2) pts = workout.third_place_pts ?? 1;
         else pts = 0;
       }
-      return { ...r, points: pts, rank: i + 1 };
+      return { ...r, points: pts, rank: i + 1, tiebreakLabel: r.tied ? tiebreakLabel(workout, r.tiebreak) : null };
     });
   }
 
@@ -621,7 +672,15 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
         {board.map(row => (
           <div key={row.playerId} style={{ display: "grid", gridTemplateColumns: "44px 1fr 100px 80px", padding: "11px 16px", alignItems: "center", borderBottom: "1px solid rgba(176,184,200,0.05)", background: row.playerId === currentUserId ? "rgba(26,63,168,0.15)" : undefined }}>
             <div className={`lb-rank ${rankClass(row.rank)}`}>{row.rank}</div>
-            <div className="lb-name">{row.name}{row.playerId === currentUserId && <span style={{ fontSize: 11, color: "#93b4ff", marginLeft: 6 }}>(you)</span>}</div>
+            <div className="lb-name">
+              {row.name}{row.playerId === currentUserId && <span style={{ fontSize: 11, color: "#93b4ff", marginLeft: 6 }}>(you)</span>}
+              {/* Only on rows that actually tied on raw score -- otherwise
+                  it's noise on every line. Without this a player who lost a
+                  tie has nothing on screen explaining why. */}
+              {row.tiebreakLabel && (
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{row.tiebreakLabel}</div>
+              )}
+            </div>
             <div style={{ textAlign: "center", fontWeight: 600, color: "var(--silver-light)", fontSize: 14 }}>{row.display}</div>
             <div style={{ textAlign: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)" }}>{row.points}</div>
           </div>
