@@ -556,6 +556,7 @@ export async function autoSplitSegmentDrillDurations(segmentId: string, blockDur
 // ── Saved groupings (coach-only, e.g. "Varsity Starters") ────
 
 export interface SavedGrouping {
+  group_labels?: (string | null)[] | null;
   id: string;
   name: string;
   roster_id: string;
@@ -568,10 +569,64 @@ export async function getSavedGroupings(rosterId: string): Promise<SavedGrouping
   return data ?? [];
 }
 
+/**
+ * Members of a saved grouping as an ARRANGEMENT -- an array of groups.
+ *
+ * A saved grouping used to be one named group, which fits "Starters" and
+ * not "3 on 3 groups, week 1". group_index (migration 111) turns it into
+ * a list of groups; anything saved before this lands at index 0, so an
+ * old one-group grouping comes back as a single-element array and every
+ * existing caller behaves exactly as before.
+ */
+export async function getSavedGroupingArrangement(groupingId: string): Promise<string[][]> {
+  const { data, error } = await supabase.from("saved_grouping_members")
+    .select("player_id, group_index").eq("grouping_id", groupingId).order("group_index");
+  if (error || !data) return [];
+  const groups: string[][] = [];
+  for (const row of data as any[]) {
+    const idx = row.group_index ?? 0;
+    while (groups.length <= idx) groups.push([]);
+    groups[idx].push(row.player_id);
+  }
+  return groups;
+}
+
 export async function getSavedGroupingMembers(groupingId: string): Promise<string[]> {
   const { data, error } = await supabase.from("saved_grouping_members").select("player_id").eq("grouping_id", groupingId);
   if (error) return [];
   return (data ?? []).map((r: any) => r.player_id);
+}
+
+/** Saves a whole arrangement -- the shape the group generator produces. Labels are index-aligned; leave them out and the UI derives Group 1, 2, 3. */
+export async function createSavedArrangement(
+  name: string, rosterId: string, groups: string[][], labels?: (string | null)[]
+): Promise<{ id: string | null; error: string | null }> {
+  const clean = groups.filter(g => g.length > 0);
+  if (!clean.length) return { id: null, error: "Nothing to save." };
+  const { data, error } = await supabase.from("saved_groupings")
+    .insert({ name: name.trim(), roster_id: rosterId, group_labels: labels ?? null })
+    .select("id").single();
+  if (error || !data) return { id: null, error: error?.message ?? "Could not save." };
+  const rows = clean.flatMap((g, gi) => g.map(pid => ({ grouping_id: data.id, player_id: pid, group_index: gi })));
+  const { error: memberErr } = await supabase.from("saved_grouping_members").insert(rows);
+  if (memberErr) return { id: data.id, error: memberErr.message };
+  return { id: data.id, error: null };
+}
+
+export async function updateSavedArrangement(
+  groupingId: string, groups: string[][], labels?: (string | null)[]
+): Promise<{ error: string | null }> {
+  await supabase.from("saved_grouping_members").delete().eq("grouping_id", groupingId);
+  const clean = groups.filter(g => g.length > 0);
+  if (clean.length) {
+    const rows = clean.flatMap((g, gi) => g.map(pid => ({ grouping_id: groupingId, player_id: pid, group_index: gi })));
+    const { error } = await supabase.from("saved_grouping_members").insert(rows);
+    if (error) return { error: error.message };
+  }
+  await supabase.from("saved_groupings")
+    .update({ group_labels: labels ?? null, updated_at: new Date().toISOString() })
+    .eq("id", groupingId);
+  return { error: null };
 }
 
 export async function createSavedGrouping(name: string, rosterId: string, memberIds: string[]): Promise<{ id: string | null; error: string | null }> {
@@ -656,6 +711,33 @@ export async function saveGeneratedGroups(segmentDrillId: string, groups: string
 
 // Drops a saved grouping (e.g. "Varsity Starters") into a segment_drill
 // as one snapshotted group, alongside whatever else is already there.
+/**
+ * Loads every group in an arrangement into a drill at once.
+ *
+ * The single-group version below stays for the callers that want one
+ * group appended. This one is what a saved "3s Week 1" needs -- it would
+ * otherwise have to be loaded a group at a time.
+ */
+export async function assignSavedArrangementToSegmentDrill(
+  segmentDrillId: string, grouping: SavedGrouping, startOrderIndex: number
+): Promise<{ error: string | null; groupsAdded: number }> {
+  const arrangement = await getSavedGroupingArrangement(grouping.id);
+  if (!arrangement.length) return { error: "That saved grouping has no players in it.", groupsAdded: 0 };
+  const labels = (grouping as any).group_labels as (string | null)[] | null;
+  for (let gi = 0; gi < arrangement.length; gi++) {
+    const label = labels?.[gi] || (arrangement.length === 1 ? grouping.name : `${grouping.name} — ${gi + 1}`);
+    const { data, error } = await supabase.from("segment_drill_groups")
+      .insert({ segment_drill_id: segmentDrillId, group_label: label, source_saved_grouping_id: grouping.id, order_index: startOrderIndex + gi })
+      .select("id").single();
+    if (error || !data) return { error: error?.message ?? "Could not load grouping.", groupsAdded: gi };
+    if (arrangement[gi].length) {
+      await supabase.from("segment_drill_group_members")
+        .insert(arrangement[gi].map(pid => ({ group_id: data.id, player_id: pid })));
+    }
+  }
+  return { error: null, groupsAdded: arrangement.length };
+}
+
 export async function assignSavedGroupingToSegmentDrill(segmentDrillId: string, grouping: SavedGrouping, orderIndex: number): Promise<{ error: string | null }> {
   const memberIds = await getSavedGroupingMembers(grouping.id);
   const { data, error } = await supabase.from("segment_drill_groups")
