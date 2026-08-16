@@ -57,7 +57,9 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
   const [flatPoints, setFlatPoints]     = useState("50");
   const [timerDuration, setTimerDuration] = useState<number | null>(null);
   const [allowNegative, setAllowNegative] = useState(false);
-  const [tiebreakMode, setTiebreakMode]   = useState<"free_throw" | "fastest_time" | null>(null);
+  const [tiebreakMode, setTiebreakMode]   = useState<"free_throw" | "fastest_time" | "spot" | null>(null);
+  const [tiebreakSpotIndex, setTiebreakSpotIndex] = useState<number | null>(null);
+  const [tiebreakInstructions, setTiebreakInstructions] = useState("");
   const [publishDate, setPublishDate]   = useState("");
   const [groupName, setGroupName]       = useState("");
   const [groupId, setGroupId]           = useState<string | null>(null);
@@ -94,6 +96,8 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
       setTimerDuration((editWorkout as any).timer_duration ?? null);
       setAllowNegative((editWorkout as any).allow_negative ?? false);
       setTiebreakMode((editWorkout as any).tiebreak_mode ?? null);
+      setTiebreakSpotIndex((editWorkout as any).tiebreak_spot_index ?? null);
+      setTiebreakInstructions((editWorkout as any).tiebreak_instructions ?? "");
       setPublishDate((editWorkout as any).publish_date ?? "");
       setGroupName(editWorkout.group_name ?? "");
       setGroupId((editWorkout as any).group_id ?? null);
@@ -194,6 +198,8 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
         deadline: deadline ? new Date(deadline + "T23:59:59").toISOString() : undefined,
         allow_negative: (scoringType === "competitive" || scoringType === "multi_spot") ? allowNegative : false,
         tiebreak_mode: (scoringType === "competitive" || scoringType === "multi_spot") ? tiebreakMode : null,
+        tiebreak_spot_index: tiebreakMode === "spot" ? tiebreakSpotIndex : null,
+        tiebreak_instructions: tiebreakMode ? (tiebreakInstructions.trim() || null) : null,
         ...(scoringType === "multi_spot" ? { spot_config: spotNames.filter(s => s.trim()) } : {}),
         ...(resourceUrl.trim() ? { resource_url: resourceUrl.trim() } : {}),
       } as any;
@@ -217,8 +223,35 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
           publish_date: publishDate || null,
           allow_negative: (scoringType === "competitive" || scoringType === "multi_spot") ? allowNegative : false,
           tiebreak_mode: (scoringType === "competitive" || scoringType === "multi_spot") ? tiebreakMode : null,
+          tiebreak_spot_index: tiebreakMode === "spot" ? tiebreakSpotIndex : null,
+          tiebreak_instructions: tiebreakMode ? (tiebreakInstructions.trim() || null) : null,
         }).eq("id", editWorkout.id);
         if (err) throw err;
+
+        // Existing scores carry a tiebreak_value that was captured under the
+        // OLD setup. Leaving it alone is the dangerous option: switching
+        // free_throw -> fastest_time would compare free throw makes as
+        // seconds, with the direction reversed, and silently reorder the
+        // board with nothing on screen to explain it.
+        //
+        // A starred spot re-derives from the per-spot scores now stored on
+        // every submission. The other two clear -- a free throw count or a
+        // stopwatch reading nobody was asked for can't be reconstructed, and
+        // an empty tiebreak beats a wrong one.
+        const prevMode = (editWorkout as any).tiebreak_mode ?? null;
+        const prevSpot = (editWorkout as any).tiebreak_spot_index ?? null;
+        const newMode = (scoringType === "competitive" || scoringType === "multi_spot") ? tiebreakMode : null;
+        const newSpot = newMode === "spot" ? tiebreakSpotIndex : null;
+        if (prevMode !== newMode || prevSpot !== newSpot) {
+          try {
+            if (newMode === "spot" || newMode === null) {
+              await supabase.rpc("resync_workout_tiebreaks", { p_workout_id: editWorkout.id });
+            } else if (prevMode !== newMode) {
+              await supabase.rpc("clear_workout_tiebreak_values", { p_workout_id: editWorkout.id });
+            }
+            await supabase.rpc("rerank_workout", { p_workout_id: editWorkout.id });
+          } catch (e) { console.error("Tiebreak resync failed:", e); }
+        }
       } else {
         await createWorkout(base);
       }
@@ -507,11 +540,15 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
           <div>
             <label>Tiebreaker <span style={{ fontWeight: 400, color: "var(--muted)" }}>(optional)</span></label>
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>If players tie on score, break the tie with a second metric. Still tied after this = a true tie. A player with no tiebreaker on file always loses the tiebreak to a player who has one.</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: scoringType === "multi_spot" ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 8 }}>
               {([
                 { mode: null,             label: "None" },
                 { mode: "free_throw",     label: "🎯 Free Throw Score" },
                 { mode: "fastest_time",   label: "⏱ Fastest Time" },
+                // Only a multi-spot drill has spots to star. It's the one
+                // tiebreak that costs nothing at entry -- the number is
+                // already being typed in.
+                ...(scoringType === "multi_spot" ? [{ mode: "spot" as const, label: "⭐ Starred Spot" }] : []),
               ] as const).map(opt => (
                 <div key={opt.label} onClick={() => setTiebreakMode(opt.mode)} style={{ padding: 10, borderRadius: 8, cursor: "pointer", textAlign: "center", border: `2px solid ${tiebreakMode === opt.mode ? "var(--royal-light)" : "var(--border)"}`, background: tiebreakMode === opt.mode ? "rgba(26,63,168,0.15)" : "var(--surface2)", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
                   {opt.label}
@@ -519,7 +556,31 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
               ))}
             </div>
             {tiebreakMode === "fastest_time" && (
-              <div style={{ marginTop: 8, fontSize: 12, color: "#93b4ff" }}>Players will see the stopwatch (screen-lock friendly) when logging their score.</div>
+              <div style={{ marginTop: 8, fontSize: 12, color: "#93b4ff" }}>The stopwatch appears at the TOP of the drill, before players start — a time nobody started can't be recovered afterwards.</div>
+            )}
+            {tiebreakMode === "spot" && (
+              <div style={{ marginTop: 10 }}>
+                <label style={{ fontSize: 13 }}>Which spot breaks the tie?</label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+                  {spotNames.filter(n => n.trim()).map((name, i) => (
+                    <div key={i} onClick={() => setTiebreakSpotIndex(i)}
+                      style={{ padding: "8px 12px", borderRadius: 8, cursor: "pointer", border: `2px solid ${tiebreakSpotIndex === i ? "var(--royal-light)" : "var(--border)"}`, background: tiebreakSpotIndex === i ? "rgba(26,63,168,0.15)" : "var(--surface2)", fontSize: 12, fontWeight: 600, color: "var(--text)" }}>
+                      {tiebreakSpotIndex === i ? "⭐ " : ""}{name}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ marginTop: 8, fontSize: 12, color: "#93b4ff" }}>
+                  Costs players nothing extra — the score at that spot is already being entered. Follows this drill's ranking direction, so {lowerIsBetter ? "the LOWEST" : "the HIGHEST"} score at that spot wins the tie.
+                </div>
+              </div>
+            )}
+            {tiebreakMode && (
+              <div style={{ marginTop: 10 }}>
+                <label style={{ fontSize: 13 }}>Tiebreaker instructions <span style={{ fontWeight: 400, color: "var(--muted)" }}>(optional)</span></label>
+                <input value={tiebreakInstructions} onChange={e => setTiebreakInstructions(e.target.value)}
+                  placeholder={tiebreakMode === "free_throw" ? "Shoot 10 FTs. Makes +1, Swishes +2. Best score." : tiebreakMode === "fastest_time" ? "Time yourself through the full drill." : "Highest score at the starred spot."} />
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Shown to players with the tiebreaker so they know exactly what to do.</div>
+              </div>
             )}
           </div>
         )}
