@@ -692,6 +692,12 @@ export function generateBalancedGroups<P extends { id: string; home_roster_id: s
 
 const GROUP_LABELS = ["Group A", "Group B", "Group C", "Group D", "Group E", "Group F", "Group G", "Group H"];
 
+/** Removes every group on a drill. Used before loading a saved arrangement, which replaces rather than appends. */
+export async function clearSegmentDrillGroups(segmentDrillId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("segment_drill_groups").delete().eq("segment_drill_id", segmentDrillId);
+  return { error: error?.message ?? null };
+}
+
 // Replaces whatever groups currently exist on a segment_drill with a
 // freshly generated set. This is the "snapshot" moment — editing a
 // saved grouping later never touches what gets written here.
