@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   SavedGrouping, SegmentDrillGroup, SegmentDrill, getSegmentDrillGroups,
   generateBalancedGroups, saveGeneratedGroups, assignSavedArrangementToSegmentDrill, createSavedArrangement,
+  getSavedGroupingArrangement, deleteSavedGrouping, clearSegmentDrillGroups,
   movePlayerBetweenGroups, removeGroupMember, addGroupMember, updateSegmentDrill,
 } from "../../lib/practicePlanner";
 
@@ -20,12 +21,13 @@ interface Props {
   attendees: PlayerLite[];       // effective attendees available to this segment
   excusedIds: Set<string>;       // excused for this practice — drives the yellow flag
   rosterId: string | null;       // where a newly saved arrangement is filed
+  onGroupingsChanged?: () => void; // the saved list changed — parent refetches
   savedGroupings: SavedGrouping[]; // relevant to the roster(s) in this segment
   onClose: () => void;
   onChanged: () => void;
 }
 
-export default function GroupingEditor({ drill, attendees, excusedIds, rosterId, savedGroupings, onClose, onChanged }: Props) {
+export default function GroupingEditor({ drill, attendees, excusedIds, rosterId, savedGroupings, onGroupingsChanged, onClose, onChanged }: Props) {
   const [groups, setGroups]     = useState<SegmentDrillGroup[]>([]);
   const [loading, setLoading]   = useState(true);
   const [groupSize, setGroupSize] = useState(drill.group_size ?? 5);
@@ -37,6 +39,8 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
   const [newArrangementName, setNewArrangementName] = useState("");
   const [savingArrangement, setSavingArrangement] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
+  const [previews, setPreviews] = useState<Record<string, string[][]>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,15 +66,41 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     await load(); onChanged();
   }
 
+  /**
+   * Loads a saved arrangement over whatever is currently on screen.
+   *
+   * Replaces rather than appends. Picking "3s Week 1" means you want those
+   * threes, not those threes bolted onto the groups already there -- and
+   * appending silently produced 6 groups from a 3-group pick, which looked
+   * like a bug. Everything stays draggable afterwards, so a swap or two on
+   * top of a loaded arrangement works exactly as before.
+   */
   async function handleAssignSaved(groupingId: string) {
     const grouping = savedGroupings.find(g => g.id === groupingId);
     if (!grouping) return;
-    // Loads every group in the arrangement, not just one -- a saved
-    // "3s Week 1" is several groups and used to have to be loaded
-    // one at a time.
-    const { error } = await assignSavedArrangementToSegmentDrill(drill.id, grouping, groups.length);
+    if (groups.length > 0 && !window.confirm(`Load "${grouping.name}"? It replaces the groups currently on screen.`)) return;
+    await clearSegmentDrillGroups(drill.id);
+    const { error } = await assignSavedArrangementToSegmentDrill(drill.id, grouping, 0);
     if (error) { setSaveMsg(error); return; }
+    setShowPicker(false);
     await load(); onChanged();
+  }
+
+  /** Loads a preview of each saved arrangement so the picker can show what's inside rather than just a name. */
+  async function openPicker() {
+    setShowPicker(true);
+    setSaveMsg(null);
+    const entries = await Promise.all(
+      savedGroupings.map(async g => [g.id, await getSavedGroupingArrangement(g.id)] as const)
+    );
+    setPreviews(Object.fromEntries(entries));
+  }
+
+  async function handleDeleteSaved(g: SavedGrouping) {
+    if (!window.confirm(`Delete "${g.name}"? Practices that already used it keep their groups.`)) return;
+    await deleteSavedGrouping(g.id);
+    setPreviews(prev => { const next = { ...prev }; delete next[g.id]; return next; });
+    onGroupingsChanged?.();
   }
 
   /**
@@ -90,8 +120,8 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     setSavingArrangement(true);
     const { error } = await createSavedArrangement(name, rosterId, payload, labels);
     setSavingArrangement(false);
-    setSaveMsg(error ?? `Saved "${name}" — ${payload.length} group${payload.length === 1 ? "" : "s"}.`);
-    if (!error) { setNewArrangementName(""); setShowSaveBox(false); onChanged(); }
+    setSaveMsg(error ?? `Saved "${name}" — ${payload.length} group${payload.length === 1 ? "" : "s"}. Find it under "Pick saved group".`);
+    if (!error) { setNewArrangementName(""); setShowSaveBox(false); onChanged(); onGroupingsChanged?.(); }
   }
 
   function handleDragStart(playerId: string, from: string | null) { setDragPlayer({ id: playerId, from }); }
@@ -142,18 +172,56 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
             {groupSize}v{Array(numGroups).fill(groupSize).join("v")}
           </div>
           <button onClick={handleGenerate} style={primaryBtn}>Generate</button>
-          {savedGroupings.length > 0 && (
-            <select onChange={e => { if (e.target.value) handleAssignSaved(e.target.value); e.target.value = ""; }} defaultValue="" style={inputStyle}>
-              <option value="">+ Load saved grouping…</option>
-              {savedGroupings.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-            </select>
-          )}
+          {/* Always shown, even with nothing saved yet -- a button that
+              vanishes when the list is empty is how you end up saving a
+              grouping and then being unable to find it. */}
+          <button onClick={openPicker} style={inputStyle}>📂 Pick saved group</button>
           {groups.length > 0 && rosterId && (
             <button onClick={() => { setShowSaveBox(v => !v); setSaveMsg(null); }} style={inputStyle}>
               💾 Save these groups
             </button>
           )}
         </div>
+
+        {showPicker && (
+          <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 12, marginBottom: 12, background: "var(--surface2)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Saved groups</div>
+              <button onClick={() => setShowPicker(false)} style={{ ...inputStyle, padding: "4px 10px" }}>Close</button>
+            </div>
+            {savedGroupings.length === 0 ? (
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                Nothing saved for this roster yet. Build some groups and hit "Save these groups".
+              </div>
+            ) : (
+              savedGroupings.map(g => {
+                const preview = previews[g.id] ?? [];
+                const labels = (g as any).group_labels as (string | null)[] | null;
+                return (
+                  <div key={g.id} style={{ borderTop: "1px solid var(--border)", padding: "8px 0" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <button onClick={() => handleAssignSaved(g.id)} style={{ ...primaryBtn, padding: "6px 12px" }}>Use</button>
+                      <div style={{ flex: 1, fontSize: 13, color: "var(--text)", fontWeight: 600 }}>{g.name}</div>
+                      <button onClick={() => handleDeleteSaved(g)} title="Delete this saved group" style={{ ...inputStyle, padding: "4px 9px", color: "var(--muted)" }}>✕</button>
+                    </div>
+                    {/* Names, not just a count -- "3s Week 1" and "3s Week 2"
+                        are indistinguishable otherwise. */}
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, lineHeight: 1.6 }}>
+                      {preview.length === 0 ? "…" : preview.map((ids, gi) => (
+                        <div key={gi}>
+                          <strong>{labels?.[gi] || `Group ${gi + 1}`}:</strong> {ids.map(nameOf).join(", ")}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>
+              Loading one replaces the groups on screen. You can still drag players afterwards.
+            </div>
+          </div>
+        )}
 
         {showSaveBox && (
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
