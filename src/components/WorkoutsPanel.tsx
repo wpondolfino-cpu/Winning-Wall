@@ -212,8 +212,19 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
         return;
       }
 
-      const finalTiebreakValue = ((activeWorkout as any).tiebreak_mode && tiebreakValue.trim() !== "") ? parseFloat(tiebreakValue) : null;
-      const result = await _submitScore({ player_id: playerId, workout_id: activeWorkout.id, made: finalMade, attempts: 0, sprint_secs: finalSprints, reps: finalReps, self_points: finalSelfPoints, tiebreak_value: finalTiebreakValue, local_date: localDate } as any);
+      // Per-spot values are stored on the submission itself now. They used
+      // to be discarded -- only the total reached the score row, and
+      // spot_personal_bests keeps a best rather than a submission -- which
+      // meant a starred spot could never be re-derived if the coach moved
+      // the star. Costs no extra taps; the numbers are already typed in.
+      const spotArray = currentSpotScores(activeWorkout);
+      const tbMode = (activeWorkout as any).tiebreak_mode as string | null;
+      const starIndex = (activeWorkout as any).tiebreak_spot_index as number | null;
+      const finalTiebreakValue =
+        tbMode === "spot"
+          ? (spotArray && starIndex != null ? spotArray[starIndex] ?? null : null)
+          : (tbMode && tiebreakValue.trim() !== "" ? parseFloat(tiebreakValue) : null);
+      const result = await _submitScore({ player_id: playerId, workout_id: activeWorkout.id, made: finalMade, attempts: 0, sprint_secs: finalSprints, reps: finalReps, self_points: finalSelfPoints, tiebreak_value: finalTiebreakValue, spot_scores: spotArray, local_date: localDate } as any);
 
       // Save per-spot personal bests for multi-spot workouts
       if (activeWorkout.scoring_type === "multi_spot") {
@@ -264,28 +275,59 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
 
   const TAG_COLORS: Record<string, string> = { Shooting: "tag-blue", Conditioning: "tag-red", Strength: "tag-green", Skills: "tag-gold" };
 
-  function renderTiebreakField(w: Workout) {
-    const mode = (w as any).tiebreak_mode as "free_throw" | "fastest_time";
+  /**
+   * An up-front notice that a tiebreak exists, rendered ABOVE the score
+   * inputs. The fastest-time tiebreak used to appear only at the bottom of
+   * score entry, labelled optional -- by which point the drill was over and
+   * a time nobody started could never be recovered. Free throws are
+   * different: they can be shot afterwards, so that entry stays at the end
+   * where it doesn't interrupt.
+   */
+  function renderTiebreakNotice(w: Workout) {
+    const mode = (w as any).tiebreak_mode as string;
+    const instructions = (w as any).tiebreak_instructions as string | null;
+    const spots: string[] = (w as any).spot_config ?? [];
+    const spotName = spots[(w as any).tiebreak_spot_index ?? -1];
+    const line =
+      mode === "fastest_time" ? "Tiebreak: fastest time — start the timer before you begin."
+      : mode === "spot" ? `Tiebreak: your score at ${spotName ?? "the starred spot"} breaks a tie.`
+      : "Tiebreak: free throws at the end.";
     return (
-      <div style={{ marginTop: 14, padding: "12px 14px", background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", borderRadius: 10 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-          {mode === "free_throw" ? "🎯 Tiebreaker — Free Throws Made" : "⏱ Tiebreaker — Fastest Time"}
-        </div>
-        {mode === "free_throw" ? (
-          <input type="number" inputMode="numeric" value={tiebreakValue} onChange={e => setTiebreakValue(e.target.value)} placeholder="e.g. 8" min="0"
-            style={{ width: "100%", fontSize: 18, textAlign: "center", fontWeight: 600 }} />
-        ) : (
-          <>
+      <div style={{ marginBottom: 12, padding: "10px 12px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.25)", borderRadius: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>{line}</div>
+        {instructions && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4, lineHeight: 1.5 }}>{instructions}</div>}
+        {mode === "fastest_time" && (
+          <div style={{ marginTop: 8 }}>
             <button type="button" onClick={() => setShowTiebreakStopwatch(v => !v)}
               style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 8, padding: "9px 10px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", marginBottom: showTiebreakStopwatch ? 8 : 0 }}>
-              {tiebreakValue ? `⏱ Time recorded: ${formatDuration(parseFloat(tiebreakValue))} (tap to redo)` : "⏱ Use Stopwatch"}
+              {tiebreakValue ? `⏱ Time recorded: ${formatDuration(parseFloat(tiebreakValue))} (tap to redo)` : "⏱ Start Stopwatch"}
             </button>
             {showTiebreakStopwatch && (
               <Stopwatch onUseTime={secs => { setTiebreakValue(secs.toString()); setShowTiebreakStopwatch(false); }} />
             )}
-          </>
+          </div>
         )}
-        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, lineHeight: 1.5 }}>Only used to break a tie on the main score. Optional if you're not tied.</div>
+      </div>
+    );
+  }
+
+  function renderTiebreakField(w: Workout) {
+    const mode = (w as any).tiebreak_mode as string;
+    // fastest_time now lives in the notice at the top, and a starred spot is
+    // read from the spot scores rather than entered, so neither has anything
+    // to collect down here.
+    if (mode !== "free_throw") return null;
+    return (
+      <div style={{ marginTop: 14, padding: "12px 14px", background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", borderRadius: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+          🎯 Tiebreaker — Free Throws
+        </div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8, lineHeight: 1.5 }}>
+          {(w as any).tiebreak_instructions || "Free throws made."}
+        </div>
+        <input type="number" inputMode="numeric" value={tiebreakValue} onChange={e => setTiebreakValue(e.target.value)} placeholder="e.g. 13" min="0"
+          style={{ width: "100%", fontSize: 18, textAlign: "center", fontWeight: 600 }} />
+        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, lineHeight: 1.5 }}>Only used to break a tie on the main score.</div>
       </div>
     );
   }
@@ -316,8 +358,10 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
       const spots: string[] = (w as any).spot_config ?? [];
       const total = multiSpotTotal();
       const isTime = isMultiSpotTime(w);
+      const starIdx = (w as any).tiebreak_mode === "spot" ? ((w as any).tiebreak_spot_index ?? -1) : -1;
       return (
         <>
+          {(w as any).tiebreak_mode && renderTiebreakNotice(w)}
           <div style={{ padding: "10px 14px", background: "rgba(26,63,168,0.1)", border: "1px solid rgba(26,63,168,0.25)", borderRadius: 8, fontSize: 12, color: "var(--silver-light)", marginBottom: 14, lineHeight: 1.6 }}>
             🎯 <strong style={{ color: "#93b4ff" }}>Multi-Spot</strong> — enter your {isTime ? "time" : "score"} at each spot. Total is ranked in your grade group{isTime ? " — fastest total wins" : ""}.
             <br />
@@ -329,7 +373,12 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
             {spots.map((spotName, i) => (
               <div key={i}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ flex: 1, fontSize: 14, color: "var(--text)", fontWeight: 500 }}>{spotName}</div>
+                  <div style={{ flex: 1, fontSize: 14, color: "var(--text)", fontWeight: 500 }}>
+                    {spotName}
+                    {i === starIdx && (
+                      <span style={{ fontSize: 11, color: "var(--gold)", marginLeft: 6, fontWeight: 700 }}>⭐ breaks ties</span>
+                    )}
+                  </div>
                   {isTime ? (
                     <>
                       <button onClick={() => setActiveStopwatchSpot(prev => prev === i ? null : i)}
@@ -382,6 +431,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
     }
     return (
       <>
+        {(w as any).tiebreak_mode && renderTiebreakNotice(w)}
         <div style={{ padding: "10px 14px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, fontSize: 12, color: "var(--silver-light)", marginBottom: 14, lineHeight: 1.6 }}>
           🏆 <strong style={{ color: "var(--gold)" }}>Competitive</strong> — ranked within your grade group.
           <br />
@@ -414,6 +464,14 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
         {(w.scoring_type === "competitive" || w.scoring_type === "multi_spot") && (w as any).tiebreak_mode && renderTiebreakField(w)}
       </>
     );
+  }
+
+  /** Per-spot values for the current entry, in spot order, so the array stored on the score row lines up with spot_config. */
+  function currentSpotScores(w: Workout | null): number[] | null {
+    if (!w || w.scoring_type !== "multi_spot") return null;
+    const spots: string[] = (w as any).spot_config ?? [];
+    const isTime = isMultiSpotTime(w);
+    return spots.map((_, i) => (isTime ? parseFloat(spotScores[i] ?? "") : parseInt(spotScores[i] ?? "")) || 0);
   }
 
   return (
