@@ -826,6 +826,11 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
               : effectiveAttendees
           }
           excusedIds={excusedIds}
+          rosterId={
+            groupingTarget.segment.scope_type === "roster" && groupingTarget.segment.roster_id
+              ? groupingTarget.segment.roster_id
+              : rosterIds[0] ?? null
+          }
           savedGroupings={
             groupingTarget.segment.scope_type === "roster" && groupingTarget.segment.roster_id
               ? savedGroupingsCache[groupingTarget.segment.roster_id] ?? []
