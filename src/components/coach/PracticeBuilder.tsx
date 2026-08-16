@@ -409,12 +409,24 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
 
   async function openGroupingEditor(drill: SegmentDrill, segment: BlockSegment) {
     const relevantRosterIds = segment.scope_type === "roster" && segment.roster_id ? [segment.roster_id] : rosterIds;
-    const missing = relevantRosterIds.filter(id => !savedGroupingsCache[id]);
-    if (missing.length > 0) {
-      const fetched = await Promise.all(missing.map(async id => [id, await getSavedGroupings(id)] as const));
-      setSavedGroupingsCache(prev => ({ ...prev, ...Object.fromEntries(fetched) }));
-    }
+    await refreshSavedGroupings(relevantRosterIds);
     setGroupingTarget({ drill, segment });
+  }
+
+  /**
+   * Always refetches rather than filling gaps.
+   *
+   * This used to skip any roster already in the cache -- including one
+   * cached as an empty array before anything was saved. So saving a
+   * grouping from inside the editor never made it appear in the picker,
+   * and if you'd opened the editor once before saving anything, the picker
+   * stayed hidden entirely. Saving something you then can't find is worse
+   * than one extra query.
+   */
+  async function refreshSavedGroupings(ids: string[]) {
+    if (!ids.length) return;
+    const fetched = await Promise.all(ids.map(async id => [id, await getSavedGroupings(id)] as const));
+    setSavedGroupingsCache(prev => ({ ...prev, ...Object.fromEntries(fetched) }));
   }
 
   // ── Attendance ───────────────────────────────────────────────
@@ -831,6 +843,11 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
               ? groupingTarget.segment.roster_id
               : rosterIds[0] ?? null
           }
+          onGroupingsChanged={() => refreshSavedGroupings(
+            groupingTarget.segment.scope_type === "roster" && groupingTarget.segment.roster_id
+              ? [groupingTarget.segment.roster_id]
+              : rosterIds
+          )}
           savedGroupings={
             groupingTarget.segment.scope_type === "roster" && groupingTarget.segment.roster_id
               ? savedGroupingsCache[groupingTarget.segment.roster_id] ?? []
