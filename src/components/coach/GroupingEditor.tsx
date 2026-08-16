@@ -9,7 +9,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   SavedGrouping, SegmentDrillGroup, SegmentDrill, getSegmentDrillGroups,
-  generateBalancedGroups, saveGeneratedGroups, assignSavedGroupingToSegmentDrill,
+  generateBalancedGroups, saveGeneratedGroups, assignSavedArrangementToSegmentDrill, createSavedArrangement,
   movePlayerBetweenGroups, removeGroupMember, addGroupMember, updateSegmentDrill,
 } from "../../lib/practicePlanner";
 
@@ -19,12 +19,13 @@ interface Props {
   drill: SegmentDrill;
   attendees: PlayerLite[];       // effective attendees available to this segment
   excusedIds: Set<string>;       // excused for this practice — drives the yellow flag
+  rosterId: string | null;       // where a newly saved arrangement is filed
   savedGroupings: SavedGrouping[]; // relevant to the roster(s) in this segment
   onClose: () => void;
   onChanged: () => void;
 }
 
-export default function GroupingEditor({ drill, attendees, excusedIds, savedGroupings, onClose, onChanged }: Props) {
+export default function GroupingEditor({ drill, attendees, excusedIds, rosterId, savedGroupings, onClose, onChanged }: Props) {
   const [groups, setGroups]     = useState<SegmentDrillGroup[]>([]);
   const [loading, setLoading]   = useState(true);
   const [groupSize, setGroupSize] = useState(drill.group_size ?? 5);
@@ -32,6 +33,10 @@ export default function GroupingEditor({ drill, attendees, excusedIds, savedGrou
   const [groupSizeDraft, setGroupSizeDraft] = useState<string | null>(null);
   const [numGroupsDraft, setNumGroupsDraft] = useState<string | null>(null);
   const [dragPlayer, setDragPlayer] = useState<{ id: string; from: string | null } | null>(null);
+  const [showSaveBox, setShowSaveBox] = useState(false);
+  const [newArrangementName, setNewArrangementName] = useState("");
+  const [savingArrangement, setSavingArrangement] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -43,6 +48,11 @@ export default function GroupingEditor({ drill, attendees, excusedIds, savedGrou
 
   const assignedIds = new Set(groups.flatMap(g => g.member_ids));
   const bench = attendees.filter(p => !assignedIds.has(p.id));
+  // Assigned players who aren't among today's attendees. Covers a saved
+  // arrangement loaded with someone out sick and one loaded with someone
+  // who left the team -- the cause doesn't change what the coach does next,
+  // so one count covers both.
+  const unavailableCount = [...assignedIds].filter(id => !attendees.some(p => p.id === id)).length;
   const nameOf = (id: string) => attendees.find(p => p.id === id)?.name ?? "Unknown";
 
   async function handleGenerate() {
@@ -55,8 +65,33 @@ export default function GroupingEditor({ drill, attendees, excusedIds, savedGrou
   async function handleAssignSaved(groupingId: string) {
     const grouping = savedGroupings.find(g => g.id === groupingId);
     if (!grouping) return;
-    await assignSavedGroupingToSegmentDrill(drill.id, grouping, groups.length);
+    // Loads every group in the arrangement, not just one -- a saved
+    // "3s Week 1" is several groups and used to have to be loaded
+    // one at a time.
+    const { error } = await assignSavedArrangementToSegmentDrill(drill.id, grouping, groups.length);
+    if (error) { setSaveMsg(error); return; }
     await load(); onChanged();
+  }
+
+  /**
+   * Saves the split currently on screen so it can be reused.
+   *
+   * This is what was missing: the generator wrote straight to this
+   * practice and stopped, so a good set of threes couldn't survive to next
+   * week. Saves the whole arrangement rather than one group at a time.
+   */
+  async function handleSaveArrangement() {
+    const name = newArrangementName.trim();
+    if (!name) { setSaveMsg("Give it a name first."); return; }
+    if (!rosterId) { setSaveMsg("This drill has no roster to save against."); return; }
+    const payload = groups.filter(g => g.member_ids.length > 0).map(g => g.member_ids);
+    if (!payload.length) { setSaveMsg("Nothing to save — build some groups first."); return; }
+    const labels = groups.filter(g => g.member_ids.length > 0).map(g => g.group_label || null);
+    setSavingArrangement(true);
+    const { error } = await createSavedArrangement(name, rosterId, payload, labels);
+    setSavingArrangement(false);
+    setSaveMsg(error ?? `Saved "${name}" — ${payload.length} group${payload.length === 1 ? "" : "s"}.`);
+    if (!error) { setNewArrangementName(""); setShowSaveBox(false); onChanged(); }
   }
 
   function handleDragStart(playerId: string, from: string | null) { setDragPlayer({ id: playerId, from }); }
@@ -113,7 +148,34 @@ export default function GroupingEditor({ drill, attendees, excusedIds, savedGrou
               {savedGroupings.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
           )}
+          {groups.length > 0 && rosterId && (
+            <button onClick={() => { setShowSaveBox(v => !v); setSaveMsg(null); }} style={inputStyle}>
+              💾 Save these groups
+            </button>
+          )}
         </div>
+
+        {showSaveBox && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+            <input
+              value={newArrangementName}
+              onChange={e => setNewArrangementName(e.target.value)}
+              placeholder="Name it — e.g. 3s Week 1, or Starters"
+              style={{ ...inputStyle, flex: 1 }}
+            />
+            <button onClick={handleSaveArrangement} disabled={savingArrangement} style={primaryBtn}>
+              {savingArrangement ? "Saving…" : "Save"}
+            </button>
+          </div>
+        )}
+
+        {saveMsg && <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>{saveMsg}</div>}
+
+        {unavailableCount > 0 && (
+          <div style={{ fontSize: 12, color: "#c9a227", marginBottom: 10 }}>
+            ⚠ {unavailableCount} assigned {unavailableCount === 1 ? "player isn't" : "players aren't"} available today — swap or move them to the bench.
+          </div>
+        )}
 
         {loading ? (
           <div style={{ color: "var(--muted)", fontSize: 13, padding: "20px 0" }}>Loading…</div>
