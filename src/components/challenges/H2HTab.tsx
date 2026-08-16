@@ -17,6 +17,50 @@ interface Props {
 // Exported so the coach/admin Oversight view can show the exact same
 // eligible-drill list players see in their own "choose drill" dropdown
 // — one source of truth instead of a second copy that could drift.
+/**
+ * Who won a challenge.
+ *
+ * Until now this was a bare `mine > theirs`, which had two bugs. It
+ * ignored lower_is_better entirely -- so a "fewest attempts to make 7"
+ * challenge awarded the win to whoever shot WORSE -- and it had no
+ * tiebreak, so a tie on raw score was simply a tie even when the workout
+ * defines how to break one.
+ *
+ * Tiebreak direction matches the leaderboard exactly (rerank_workout in
+ * migration 110): fastest time is always lower-wins, free throws always
+ * higher-wins, and a starred spot follows the drill because it's a slice
+ * of the drill's own score. A player with no tiebreak value on file
+ * loses to one who has it, and never drops below a plain tie.
+ */
+export function decideChallengeWinner(
+  workout: Workout | undefined,
+  challengerId: string,
+  opponentId: string,
+  challengerScore: number,
+  opponentScore: number,
+  challengerTiebreak: number | null,
+  opponentTiebreak: number | null
+): string | null {
+  const lowerWins = Boolean((workout as any)?.lower_is_better);
+  const better = (a: number, b: number) => (lowerWins ? a < b : a > b);
+  if (better(challengerScore, opponentScore)) return challengerId;
+  if (better(opponentScore, challengerScore)) return opponentId;
+
+  const mode = (workout as any)?.tiebreak_mode as string | null | undefined;
+  if (!mode) return null;
+
+  // Having a value beats not having one, whichever way the mode points.
+  if (challengerTiebreak != null && opponentTiebreak == null) return challengerId;
+  if (opponentTiebreak != null && challengerTiebreak == null) return opponentId;
+  if (challengerTiebreak == null || opponentTiebreak == null) return null;
+
+  const tieLowerWins = mode === "fastest_time" ? true : mode === "spot" ? lowerWins : false;
+  const tieBetter = (a: number, b: number) => (tieLowerWins ? a < b : a > b);
+  if (tieBetter(challengerTiebreak, opponentTiebreak)) return challengerId;
+  if (tieBetter(opponentTiebreak, challengerTiebreak)) return opponentId;
+  return null;
+}
+
 export function getH2HEligibleWorkouts(workouts: Workout[]): Workout[] {
   return workouts.filter(w => w.is_active !== false && (w.scoring_type === "competitive" || w.scoring_type === "multi_spot"));
 }
@@ -49,6 +93,8 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
   const [challengeScore, setChallengeScore]   = useState("");
   const [responding, setResponding]           = useState<string | null>(null);
   const [myResponse, setMyResponse]           = useState("");
+  const [responseTiebreak, setResponseTiebreak] = useState("");
+  const [challengeTiebreak, setChallengeTiebreak] = useState("");
   const [submittingResponse, setSubmittingResponse] = useState(false);
   const [toast, setToast]                     = useState("");
   const [xpPerks, setXpPerks]                 = useState<any[]>([]);
@@ -118,7 +164,9 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
         return score > bestScore ? s : best;
       }, null);
       const challengerScore = best24h ? (best24h.self_points > 0 ? best24h.self_points : (best24h.made + best24h.reps)) : 0;
-      await createChallenge(selectedOpponent, opponent?.name ?? "Unknown", selectedWorkout, workout?.title ?? "Unknown", challengerScore);
+      // The score already on file carries its own tiebreak, so a challenge
+      // built from it inherits one without asking again.
+      await createChallenge(selectedOpponent, opponent?.name ?? "Unknown", selectedWorkout, workout?.title ?? "Unknown", challengerScore, (best24h as any)?.tiebreak_value ?? null);
     } finally { setSending(false); }
   }
 
@@ -130,19 +178,21 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
     try {
       const workout  = workouts.find(w => w.id === selectedWorkout);
       const opponent = leaderboard.find((e: any) => e.id === selectedOpponent);
-      await submitScore({ player_id: currentUserId, workout_id: selectedWorkout, made: score, attempts: 0, sprint_secs: 0, reps: 0, self_points: 0 }).catch(console.warn);
+      const myTb = (workout as any)?.tiebreak_mode && (workout as any)?.tiebreak_mode !== "spot" && challengeTiebreak.trim() !== "" ? parseFloat(challengeTiebreak) : null;
+      await submitScore({ player_id: currentUserId, workout_id: selectedWorkout, made: score, attempts: 0, sprint_secs: 0, reps: 0, self_points: 0, tiebreak_value: myTb } as any).catch(console.warn);
       await updateStreak(currentUserId).catch(console.error);
-      await createChallenge(selectedOpponent, opponent?.name ?? "Unknown", selectedWorkout, workout?.title ?? "Unknown", score);
-      setNeedsScore(false); setChallengeScore(""); onScoreLogged?.();
+      await createChallenge(selectedOpponent, opponent?.name ?? "Unknown", selectedWorkout, workout?.title ?? "Unknown", score, myTb);
+      setNeedsScore(false); setChallengeScore(""); setChallengeTiebreak(""); onScoreLogged?.();
     } finally { setSending(false); }
   }
 
-  async function createChallenge(opponentId: string, opponentName: string, workoutId: string, workoutTitle: string, challengerScore: number) {
+  async function createChallenge(opponentId: string, opponentName: string, workoutId: string, workoutTitle: string, challengerScore: number, challengerTiebreak: number | null = null) {
     const { error } = await supabase.from("challenges").insert({
       challenger_id: currentUserId, challenger_name: currentUserName,
       opponent_id: opponentId, opponent_name: opponentName,
       workout_id: workoutId, workout_title: workoutTitle,
       challenger_score: challengerScore, opponent_score: null,
+      challenger_tiebreak: challengerTiebreak,
       status: "pending", opponent_seen: false, winner_id: null,
     });
     if (!error) {
@@ -171,6 +221,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
       const { data: recentAttempts } = await supabase.from("score_attempts").select("*")
         .eq("player_id", currentUserId).eq("workout_id", c.workout_id).gte("attempted_at", since24h);
       let rematchScore = 0;
+      let bestAttempt: any = null;
       if (recentAttempts && recentAttempts.length > 0) {
         const best = recentAttempts.reduce((b: any, s: any) => {
           const score = s.self_points > 0 ? s.self_points : (s.made + s.reps);
@@ -178,6 +229,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
           return score > bScore ? s : b;
         }, null);
         rematchScore = best ? (best.self_points > 0 ? best.self_points : (best.made + best.reps)) : 0;
+        bestAttempt = best;
       }
       if (rematchScore === 0) { showToast("Log this drill in the last 24 hours before rematching! 🏀"); return; }
       const { error } = await supabase.from("challenges").insert({
@@ -185,6 +237,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
         opponent_id: rivalId, opponent_name: rivalName,
         workout_id: c.workout_id, workout_title: c.workout_title,
         challenger_score: rematchScore, opponent_score: null,
+        challenger_tiebreak: bestAttempt?.tiebreak_value ?? null,
         status: "pending", opponent_seen: false, winner_id: null,
       });
       if (!error) {
@@ -226,12 +279,27 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
     setSubmittingResponse(true);
     try {
       const finalScore = parseInt(myResponse) || 0;
-      const winnerId = finalScore > challenge.challenger_score ? currentUserId : challenge.challenger_score > finalScore ? challenge.challenger_id : null;
-      await supabase.from("challenges").update({ opponent_score: finalScore, status: "completed", winner_id: winnerId }).eq("id", challenge.id);
+      const respWorkout = workouts.find(w => w.id === challenge.workout_id);
+      const myTiebreak = (respWorkout as any)?.tiebreak_mode && responseTiebreak.trim() !== "" ? parseFloat(responseTiebreak) : null;
+      // decideChallengeWinner, not `finalScore > challenger_score` -- the
+      // old comparison handed a fewest-wins drill to the higher score.
+      const winnerId = decideChallengeWinner(
+        respWorkout, challenge.challenger_id, currentUserId,
+        challenge.challenger_score, finalScore,
+        (challenge as any).challenger_tiebreak ?? null, myTiebreak
+      );
+      await supabase.from("challenges").update({
+        opponent_score: finalScore, opponent_tiebreak: myTiebreak,
+        status: "completed", winner_id: winnerId,
+      }).eq("id", challenge.id);
       if (winnerId) await awardChallengeWinBonus(winnerId, challenge.id).catch(console.error);
       try { const { data } = await supabase.from("xp_settings").select("xp_required").eq("perk_key","_xp_challenge_done").single(); await awardXp(currentUserId, data?.xp_required ?? XP_CHALLENGE_DONE, "challenge_completed"); } catch(e) { console.error(e); }
       if (finalScore > 0) {
-        try { await submitScore({ player_id: currentUserId, workout_id: challenge.workout_id, made: finalScore, attempts: 0, sprint_secs: 0, reps: 0, self_points: 0 }); await updateStreak(currentUserId).catch(console.error); onScoreLogged?.(); } catch(e) { console.warn(e); }
+        // Passes the tiebreak through: without it a score logged via a
+        // challenge landed on the leaderboard with a null tiebreak and
+        // could never win one, quietly penalising anyone who did the
+        // drill as a challenge rather than on their own.
+        try { await submitScore({ player_id: currentUserId, workout_id: challenge.workout_id, made: finalScore, attempts: 0, sprint_secs: 0, reps: 0, self_points: 0, tiebreak_value: myTiebreak } as any); await updateStreak(currentUserId).catch(console.error); onScoreLogged?.(); } catch(e) { console.warn(e); }
       }
       try {
         const resultMsg = winnerId === challenge.challenger_id
@@ -247,7 +315,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
           },
         });
       } catch (e) { console.error("Push notification failed to send:", e); }
-      setResponding(null); setMyResponse("");
+      setResponding(null); setMyResponse(""); setResponseTiebreak("");
       showToast(winnerId === currentUserId ? "🏆 You won!" : "Response submitted! 🏀");
       loadChallenges();
     } finally {
@@ -320,6 +388,23 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
                 <button onClick={() => submitResponse(c)} disabled={submittingResponse} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{submittingResponse ? "Submitting…" : "Submit"}</button>
                 <button onClick={() => setResponding(null)} style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>Cancel</button>
               </div>
+              {(() => {
+                const rw = workouts.find(w => w.id === c.workout_id);
+                const mode = (rw as any)?.tiebreak_mode as string | null | undefined;
+                // 'spot' needs no input here -- it's read from the drill's
+                // own per-spot scores, which a challenge doesn't collect.
+                if (!mode || mode === "spot") return null;
+                return (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>
+                      {(rw as any)?.tiebreak_instructions ||
+                        (mode === "fastest_time" ? "Tiebreaker — fastest time, in seconds" : "Tiebreaker — free throws made")}
+                    </div>
+                    <input type="number" value={responseTiebreak} onChange={e => setResponseTiebreak(e.target.value)} placeholder="Tiebreaker (only used if you tie)" min="0"
+                      style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                  </div>
+                );
+              })()}
             </div>
           ) : (
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
@@ -363,6 +448,16 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
                 <div style={{ padding: "10px 12px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, fontSize: 12, color: "var(--silver-light)", marginBottom: 10 }}>⚠️ You haven't logged this drill in the last 24 hours. Enter your score to send the challenge:</div>
                 <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
                   <input type="number" value={challengeScore} onChange={e => setChallengeScore(e.target.value)} placeholder="Your score" min="0" style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 14, fontFamily: "inherit", outline: "none" }} />
+                  {(() => {
+                    const cw = workouts.find(w => w.id === selectedWorkout);
+                    const m = (cw as any)?.tiebreak_mode as string | null | undefined;
+                    if (!m || m === "spot") return null;
+                    return (
+                      <input type="number" value={challengeTiebreak} onChange={e => setChallengeTiebreak(e.target.value)}
+                        placeholder={(cw as any)?.tiebreak_instructions || (m === "fastest_time" ? "Tiebreak time (secs)" : "Tiebreak FTs")} min="0"
+                        style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+                    );
+                  })()}
                   <button onClick={sendChallengeWithScore} disabled={sending} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{sending ? "Sending…" : "⚔️ Send"}</button>
                   <button onClick={() => { setNeedsScore(false); setChallengeScore(""); }} style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "9px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>Cancel</button>
                 </div>
