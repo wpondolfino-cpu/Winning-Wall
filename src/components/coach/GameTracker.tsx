@@ -554,6 +554,25 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
     if (!error) setPlayCalls((list) => list.map((p) => (p.id === pc.id ? { ...p, name: next.trim() } : p)));
   }
 
+  /**
+   * Archives a play call rather than deleting it.
+   *
+   * Past possessions link to this id, so a hard delete would either orphan
+   * them or wipe the history behind a season's numbers. Archiving takes it
+   * out of the picker and leaves every possession that used it intact --
+   * the tracker already filters on status = 'active', so nothing else
+   * needed changing.
+   */
+  async function archivePlayCall(pc: PlayCall) {
+    const inUse = log.some((p) => p.play_call_id === pc.id || p.press_break_type_id === pc.id);
+    const msg = inUse
+      ? `Archive "${pc.name}"? It's been used in this game — those possessions keep it, it just won't show in the picker any more.`
+      : `Archive "${pc.name}"? It disappears from the picker. Past games that used it are unaffected.`;
+    if (!window.confirm(msg)) return;
+    const { error } = await supabase.from("play_calls").update({ status: "archived" }).eq("id", pc.id);
+    if (!error) setPlayCalls((list) => list.filter((p) => p.id !== pc.id));
+  }
+
   async function pickDrawnPlay(dp: DrawnPlay, category: PlayCallCategory, nextStep: Step) {
     const pc = await ensurePlayCallForPlay(dp, category, userId);
     if (!pc) return;
@@ -774,6 +793,7 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
             onPick={(id) => { pushHistory(); setPressBreakTypeId(id); setStep("press_break_result"); }}
             onPickDrawn={() => {}}
             onRename={renamePlayCall}
+            onArchive={archivePlayCall}
             adding={addingPlayFor === "press_type"}
             onStartAdd={() => setAddingPlayFor("press_type")}
             newName={newPlayName}
@@ -847,6 +867,7 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
             onPick={(id) => { pushHistory(); setPlayCallId(id); setStep("flags"); }}
             onPickDrawn={(dp) => pickDrawnPlay(dp, halfCourtCategory, "flags")}
             onRename={renamePlayCall}
+            onArchive={archivePlayCall}
             adding={addingPlayFor === halfCourtCategory}
             onStartAdd={() => setAddingPlayFor(halfCourtCategory)}
             newName={newPlayName}
@@ -867,6 +888,7 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
                 onPick={(id) => { pushHistory(); setPlayCallId(id); }}
                 onPickDrawn={(dp) => pickDrawnPlay(dp, possessionType, "oob_result")}
                 onRename={renamePlayCall}
+                onArchive={archivePlayCall}
                 adding={addingPlayFor === possessionType}
                 onStartAdd={() => setAddingPlayFor(possessionType)}
                 newName={newPlayName}
@@ -1231,6 +1253,7 @@ function PlayCallPicker({
   onPick,
   onPickDrawn,
   onRename,
+  onArchive,
   adding,
   onStartAdd,
   newName,
@@ -1243,6 +1266,7 @@ function PlayCallPicker({
   onPick: (id: string) => void;
   onPickDrawn: (play: DrawnPlay) => void;
   onRename?: (pc: PlayCall) => void;
+  onArchive?: (pc: PlayCall) => void;
   adding: boolean;
   onStartAdd: () => void;
   newName: string;
@@ -1272,6 +1296,15 @@ function PlayCallPicker({
                 style={{ padding: "10px 10px", fontSize: 13, border: "none", borderLeft: "1px solid var(--border)", cursor: "pointer", background: active ? "rgba(240,192,64,0.15)" : "var(--surface2)", color: "var(--muted)" }}
               >
                 ✎
+              </button>
+            )}
+            {onArchive && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onArchive(p); }}
+                title="Archive this play (hides it from the picker; past games keep it)"
+                style={{ padding: "10px 10px", fontSize: 13, border: "none", borderLeft: "1px solid var(--border)", cursor: "pointer", background: active ? "rgba(240,192,64,0.15)" : "var(--surface2)", color: "var(--muted)" }}
+              >
+                ✕
               </button>
             )}
           </div>
