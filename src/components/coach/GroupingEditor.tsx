@@ -19,6 +19,11 @@ interface PlayerLite { id: string; name: string; home_roster_id: string | null; 
 interface Props {
   drill: SegmentDrill;
   attendees: PlayerLite[];       // effective attendees available to this segment
+  // On a tryout practice the parent supplies pool names here in PlayerLite
+  // shape, and lists their ids below. Keeping them in one flat list means
+  // none of the drag-and-drop or naming logic needs to know the difference
+  // — only the writes do, because they go to a different column.
+  tryoutIds?: Set<string>;
   excusedIds: Set<string>;       // excused for this practice — drives the yellow flag
   rosterId: string | null;       // where a newly saved arrangement is filed
   onGroupingsChanged?: () => void; // the saved list changed — parent refetches
@@ -27,7 +32,7 @@ interface Props {
   onChanged: () => void;
 }
 
-export default function GroupingEditor({ drill, attendees, excusedIds, rosterId, savedGroupings, onGroupingsChanged, onClose, onChanged }: Props) {
+export default function GroupingEditor({ drill, attendees, excusedIds, rosterId, tryoutIds, savedGroupings, onGroupingsChanged, onClose, onChanged }: Props) {
   const [groups, setGroups]     = useState<SegmentDrillGroup[]>([]);
   const [loading, setLoading]   = useState(true);
   const [groupSize, setGroupSize] = useState(drill.group_size ?? 5);
@@ -61,7 +66,7 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
 
   async function handleGenerate() {
     const { groups: generated } = generateBalancedGroups(attendees, groupSize, numGroups);
-    await saveGeneratedGroups(drill.id, generated);
+    await saveGeneratedGroups(drill.id, generated, tryoutIds);
     await updateSegmentDrill(drill.id, { group_size: groupSize, num_groups: numGroups });
     await load(); onChanged();
   }
@@ -80,7 +85,7 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     if (!grouping) return;
     if (groups.length > 0 && !window.confirm(`Load "${grouping.name}"? It replaces the groups currently on screen.`)) return;
     await clearSegmentDrillGroups(drill.id);
-    const { error } = await assignSavedArrangementToSegmentDrill(drill.id, grouping, 0);
+    const { error } = await assignSavedArrangementToSegmentDrill(drill.id, grouping, 0, tryoutIds);
     if (error) { setSaveMsg(error); return; }
     setShowPicker(false);
     await load(); onChanged();
@@ -118,7 +123,7 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     if (!payload.length) { setSaveMsg("Nothing to save — build some groups first."); return; }
     const labels = groups.filter(g => g.member_ids.length > 0).map(g => g.group_label || null);
     setSavingArrangement(true);
-    const { error } = await createSavedArrangement(name, rosterId, payload, labels);
+    const { error } = await createSavedArrangement(name, rosterId, payload, labels, tryoutIds);
     setSavingArrangement(false);
     setSaveMsg(error ?? `Saved "${name}" — ${payload.length} group${payload.length === 1 ? "" : "s"}. Find it under "Pick saved group".`);
     if (!error) { setNewArrangementName(""); setShowSaveBox(false); onChanged(); onGroupingsChanged?.(); }
@@ -130,15 +135,16 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     if (!dragPlayer) return;
     const { id: playerId, from } = dragPlayer;
     if (from === to) { setDragPlayer(null); return; }
-    if (from) await removeGroupMember(from, playerId);
-    if (to) await addGroupMember(to, playerId);
+    const isTryout = Boolean(tryoutIds?.has(playerId));
+    if (from) await removeGroupMember(from, playerId, isTryout);
+    if (to) await addGroupMember(to, playerId, isTryout);
     setDragPlayer(null);
     await load(); onChanged();
   }
 
   async function handleQuickSwap(groupId: string, excusedPlayerId: string, replacementId: string) {
-    await removeGroupMember(groupId, excusedPlayerId);
-    await addGroupMember(groupId, replacementId);
+    await removeGroupMember(groupId, excusedPlayerId, Boolean(tryoutIds?.has(excusedPlayerId)));
+    await addGroupMember(groupId, replacementId, Boolean(tryoutIds?.has(replacementId)));
     await load(); onChanged();
   }
 
