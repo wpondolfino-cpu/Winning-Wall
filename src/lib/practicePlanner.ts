@@ -49,6 +49,8 @@ export interface PracticeWeek {
 }
 
 export interface Practice {
+  /** Tryout practices draw from the tryout pool instead of the roster; regular practices never see the pool. */
+  is_tryout?: boolean;
   id: string;
   week_id: string | null;
   practice_date: string;
@@ -288,6 +290,85 @@ export function columnTotals(
   return totals;
 }
 
+// ── Tryouts ──────────────────────────────────────────────────
+//
+// A tryout player is NOT a profile. profiles.id references auth.users, so
+// no account means no profile -- and that's the right outcome anyway: a
+// flagged profile would surface in leaderboards, rankings, roster counts,
+// H2H opponents, badges and push targets, each needing a filter forever.
+// Nothing outside this section joins to tryout_players.
+
+export interface TryoutPlayer {
+  id: string;
+  season_id: string | null;
+  name: string;
+  jersey: number | null;
+  notes: string | null;
+  status: "active" | "cut";
+  created_at: string;
+}
+
+/** The pool for a season. Pass includeCut when reviewing decisions; group building wants active only. */
+export async function getTryoutPlayers(seasonId: string | null, includeCut = false): Promise<TryoutPlayer[]> {
+  let q = supabase.from("tryout_players").select("*");
+  q = seasonId ? q.eq("season_id", seasonId) : q.is("season_id", null);
+  if (!includeCut) q = q.eq("status", "active");
+  const { data, error } = await q.order("name", { ascending: true });
+  if (error) { console.error("Failed to load tryout players:", error); return []; }
+  return data ?? [];
+}
+
+export async function addTryoutPlayer(seasonId: string | null, name: string, jersey?: number | null): Promise<{ id: string | null; error: string | null }> {
+  const trimmed = name.trim();
+  if (!trimmed) return { id: null, error: "Name can't be blank." };
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase.from("tryout_players")
+    .insert({ season_id: seasonId, name: trimmed, jersey: jersey ?? null, created_by: user?.id })
+    .select("id").single();
+  return { id: data?.id ?? null, error: error?.message ?? null };
+}
+
+/** Bulk add from a pasted list — one name per line. Forty kids at a tryout is a lot of typing one at a time. */
+export async function addTryoutPlayersBulk(seasonId: string | null, block: string): Promise<{ added: number; error: string | null }> {
+  const names = block.split("\n").map(n => n.trim()).filter(Boolean);
+  if (!names.length) return { added: 0, error: "Nothing to add." };
+  const { data: { user } } = await supabase.auth.getUser();
+  const { error } = await supabase.from("tryout_players")
+    .insert(names.map(name => ({ season_id: seasonId, name, created_by: user?.id })));
+  return { added: error ? 0 : names.length, error: error?.message ?? null };
+}
+
+export async function updateTryoutPlayer(id: string, patch: Partial<Pick<TryoutPlayer, "name" | "jersey" | "notes" | "status">>): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("tryout_players").update(patch).eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+export async function deleteTryoutPlayer(id: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("tryout_players").delete().eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+/** Wipes the pool once cuts are made. Cascades take group memberships and attendance with it — tryout data is disposable by design. */
+export async function clearTryoutPool(seasonId: string | null): Promise<{ error: string | null }> {
+  const { error } = await supabase.rpc("clear_tryout_pool", { p_season_id: seasonId });
+  return { error: error?.message ?? null };
+}
+
+// Presence-based, unlike practice_attendance_overrides. That table assumes
+// every rostered player is there and records only the exceptions; a tryout
+// has no roster to assume from, so a row here means they showed up.
+export async function getTryoutAttendance(practiceId: string): Promise<Set<string>> {
+  const { data, error } = await supabase.from("tryout_attendance").select("tryout_player_id,present").eq("practice_id", practiceId);
+  if (error || !data) return new Set();
+  return new Set((data as any[]).filter(r => r.present).map(r => r.tryout_player_id));
+}
+
+export async function setTryoutAttendance(practiceId: string, tryoutPlayerId: string, present: boolean): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("tryout_attendance")
+    .upsert({ practice_id: practiceId, tryout_player_id: tryoutPlayerId, present }, { onConflict: "practice_id,tryout_player_id" });
+  return { error: error?.message ?? null };
+}
+
 // ── Practice weeks ───────────────────────────────────────────
 
 export async function getPracticeWeeks(): Promise<PracticeWeek[]> {
@@ -363,15 +444,28 @@ export async function createPractice(input: {
   start_time: string;
   roster_ids: string[];
   week_id?: string | null;
+  is_tryout?: boolean;
 }): Promise<{ id: string | null; error: string | null }> {
   const { data: { user } } = await supabase.auth.getUser();
+  // A practice with no week used to be invisible: getPracticesInWeek is
+  // the only listing path, so a null week_id meant the practice existed
+  // in the database with nowhere in the UI to appear. Falling back to the
+  // most recent week (they're ordered newest-first) means the default
+  // path can't strand one. getUnscheduledPractices below recovers any
+  // that were stranded before this.
+  let weekId = input.week_id ?? null;
+  if (!weekId) {
+    const weeks = await getPracticeWeeks();
+    weekId = weeks[0]?.id ?? null;
+  }
   const { data, error } = await supabase
     .from("practices")
     .insert({
       practice_date: input.practice_date,
       start_time: input.start_time,
       roster_ids: input.roster_ids,
-      week_id: input.week_id ?? null,
+      week_id: weekId,
+      is_tryout: input.is_tryout ?? false,
       status: "draft",
       created_by: user?.id,
     })
@@ -414,6 +508,18 @@ export async function getCurrentPublishedPracticeForRoster(rosterId: string): Pr
     .maybeSingle();
   if (error) { console.error("Failed to load current practice:", error); return null; }
   return data;
+}
+
+/** Practices with no week — invisible everywhere else, since every other listing path filters by week. */
+export async function getUnscheduledPractices(): Promise<Practice[]> {
+  const { data, error } = await supabase.from("practices").select("*").is("week_id", null).order("practice_date", { ascending: true });
+  if (error) { console.error("Failed to load unscheduled practices:", error); return []; }
+  return data ?? [];
+}
+
+export async function assignPracticeToWeek(practiceId: string, weekId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("practices").update({ week_id: weekId, updated_at: new Date().toISOString() }).eq("id", practiceId);
+  return { error: error?.message ?? null };
 }
 
 export async function getPracticesInWeek(weekId: string): Promise<Practice[]> {
@@ -580,13 +686,13 @@ export async function getSavedGroupings(rosterId: string): Promise<SavedGrouping
  */
 export async function getSavedGroupingArrangement(groupingId: string): Promise<string[][]> {
   const { data, error } = await supabase.from("saved_grouping_members")
-    .select("player_id, group_index").eq("grouping_id", groupingId).order("group_index");
+    .select("player_id, tryout_player_id, group_index").eq("grouping_id", groupingId).order("group_index");
   if (error || !data) return [];
   const groups: string[][] = [];
   for (const row of data as any[]) {
     const idx = row.group_index ?? 0;
     while (groups.length <= idx) groups.push([]);
-    groups[idx].push(row.player_id);
+    groups[idx].push(row.player_id ?? row.tryout_player_id);
   }
   return groups;
 }
@@ -599,7 +705,7 @@ export async function getSavedGroupingMembers(groupingId: string): Promise<strin
 
 /** Saves a whole arrangement -- the shape the group generator produces. Labels are index-aligned; leave them out and the UI derives Group 1, 2, 3. */
 export async function createSavedArrangement(
-  name: string, rosterId: string, groups: string[][], labels?: (string | null)[]
+  name: string, rosterId: string, groups: string[][], labels?: (string | null)[], tryoutIds?: Set<string>
 ): Promise<{ id: string | null; error: string | null }> {
   const clean = groups.filter(g => g.length > 0);
   if (!clean.length) return { id: null, error: "Nothing to save." };
@@ -607,19 +713,19 @@ export async function createSavedArrangement(
     .insert({ name: name.trim(), roster_id: rosterId, group_labels: labels ?? null })
     .select("id").single();
   if (error || !data) return { id: null, error: error?.message ?? "Could not save." };
-  const rows = clean.flatMap((g, gi) => g.map(pid => ({ grouping_id: data.id, player_id: pid, group_index: gi })));
+  const rows = clean.flatMap((g, gi) => g.map(pid => memberRow({ grouping_id: data.id, group_index: gi }, pid, tryoutIds)));
   const { error: memberErr } = await supabase.from("saved_grouping_members").insert(rows);
   if (memberErr) return { id: data.id, error: memberErr.message };
   return { id: data.id, error: null };
 }
 
 export async function updateSavedArrangement(
-  groupingId: string, groups: string[][], labels?: (string | null)[]
+  groupingId: string, groups: string[][], labels?: (string | null)[], tryoutIds?: Set<string>
 ): Promise<{ error: string | null }> {
   await supabase.from("saved_grouping_members").delete().eq("grouping_id", groupingId);
   const clean = groups.filter(g => g.length > 0);
   if (clean.length) {
-    const rows = clean.flatMap((g, gi) => g.map(pid => ({ grouping_id: groupingId, player_id: pid, group_index: gi })));
+    const rows = clean.flatMap((g, gi) => g.map(pid => memberRow({ grouping_id: groupingId, group_index: gi }, pid, tryoutIds)));
     const { error } = await supabase.from("saved_grouping_members").insert(rows);
     if (error) return { error: error.message };
   }
@@ -701,7 +807,7 @@ export async function clearSegmentDrillGroups(segmentDrillId: string): Promise<{
 // Replaces whatever groups currently exist on a segment_drill with a
 // freshly generated set. This is the "snapshot" moment — editing a
 // saved grouping later never touches what gets written here.
-export async function saveGeneratedGroups(segmentDrillId: string, groups: string[][]): Promise<{ error: string | null }> {
+export async function saveGeneratedGroups(segmentDrillId: string, groups: string[][], tryoutIds?: Set<string>): Promise<{ error: string | null }> {
   await supabase.from("segment_drill_groups").delete().eq("segment_drill_id", segmentDrillId);
   for (let i = 0; i < groups.length; i++) {
     const { data, error } = await supabase.from("segment_drill_groups")
@@ -709,7 +815,7 @@ export async function saveGeneratedGroups(segmentDrillId: string, groups: string
       .select("id").single();
     if (error || !data?.id) return { error: error?.message ?? "Failed to create group" };
     if (groups[i].length > 0) {
-      await supabase.from("segment_drill_group_members").insert(groups[i].map(pid => ({ group_id: data.id, player_id: pid })));
+      await supabase.from("segment_drill_group_members").insert(groups[i].map(pid => memberRow({ group_id: data.id }, pid, tryoutIds)));
     }
   }
   return { error: null };
@@ -725,7 +831,7 @@ export async function saveGeneratedGroups(segmentDrillId: string, groups: string
  * otherwise have to be loaded a group at a time.
  */
 export async function assignSavedArrangementToSegmentDrill(
-  segmentDrillId: string, grouping: SavedGrouping, startOrderIndex: number
+  segmentDrillId: string, grouping: SavedGrouping, startOrderIndex: number, tryoutIds?: Set<string>
 ): Promise<{ error: string | null; groupsAdded: number }> {
   const arrangement = await getSavedGroupingArrangement(grouping.id);
   if (!arrangement.length) return { error: "That saved grouping has no players in it.", groupsAdded: 0 };
@@ -738,20 +844,20 @@ export async function assignSavedArrangementToSegmentDrill(
     if (error || !data) return { error: error?.message ?? "Could not load grouping.", groupsAdded: gi };
     if (arrangement[gi].length) {
       await supabase.from("segment_drill_group_members")
-        .insert(arrangement[gi].map(pid => ({ group_id: data.id, player_id: pid })));
+        .insert(arrangement[gi].map(pid => memberRow({ group_id: data.id }, pid, tryoutIds)));
     }
   }
   return { error: null, groupsAdded: arrangement.length };
 }
 
-export async function assignSavedGroupingToSegmentDrill(segmentDrillId: string, grouping: SavedGrouping, orderIndex: number): Promise<{ error: string | null }> {
+export async function assignSavedGroupingToSegmentDrill(segmentDrillId: string, grouping: SavedGrouping, orderIndex: number, tryoutIds?: Set<string>): Promise<{ error: string | null }> {
   const memberIds = await getSavedGroupingMembers(grouping.id);
   const { data, error } = await supabase.from("segment_drill_groups")
     .insert({ segment_drill_id: segmentDrillId, group_label: grouping.name, source_saved_grouping_id: grouping.id, order_index: orderIndex })
     .select("id").single();
   if (error || !data?.id) return { error: error?.message ?? "Failed to assign grouping" };
   if (memberIds.length > 0) {
-    await supabase.from("segment_drill_group_members").insert(memberIds.map(pid => ({ group_id: data.id, player_id: pid })));
+    await supabase.from("segment_drill_group_members").insert(memberIds.map(pid => memberRow({ group_id: data.id }, pid, tryoutIds)));
   }
   return { error: null };
 }
@@ -762,32 +868,55 @@ export interface SegmentDrillGroup {
   group_label: string | null;
   source_saved_grouping_id: string | null;
   order_index: number;
+  /** Participant ids — profile ids and tryout ids mixed, since neither can collide with the other. */
   member_ids: string[];
+  /** The subset of member_ids that are tryout-pool names, so callers know which column to write and which list to resolve names from. */
+  tryout_member_ids?: string[];
+}
+
+/**
+ * A group member is either a real profile or a tryout-pool name.
+ *
+ * member_ids stays a FLAT list of participant ids either way, because
+ * profile ids and tryout ids are both uuids and can never collide. That
+ * keeps every drag-and-drop path in the grouping editor unchanged --
+ * only the write layer needs to know which column an id belongs in, and
+ * only name lookup needs to know which list to resolve against.
+ */
+function memberColumn(isTryout: boolean): "player_id" | "tryout_player_id" {
+  return isTryout ? "tryout_player_id" : "player_id";
+}
+
+/** Routes a participant id into the right column. tryoutIds is the caller's set of pool ids; anything not in it is a real profile. */
+function memberRow(base: Record<string, any>, id: string, tryoutIds?: Set<string>) {
+  return { ...base, [memberColumn(Boolean(tryoutIds?.has(id)))]: id };
 }
 
 export async function getSegmentDrillGroups(segmentDrillId: string): Promise<SegmentDrillGroup[]> {
   const { data: groups, error } = await supabase.from("segment_drill_groups").select("*").eq("segment_drill_id", segmentDrillId).order("order_index", { ascending: true });
   if (error || !groups) return [];
-  const { data: members } = await supabase.from("segment_drill_group_members").select("group_id,player_id").in("group_id", groups.map((g: any) => g.id));
+  const { data: members } = await supabase.from("segment_drill_group_members").select("group_id,player_id,tryout_player_id").in("group_id", groups.map((g: any) => g.id));
   return groups.map((g: any) => ({
     ...g,
-    member_ids: (members ?? []).filter((m: any) => m.group_id === g.id).map((m: any) => m.player_id),
+    member_ids: (members ?? []).filter((m: any) => m.group_id === g.id).map((m: any) => m.player_id ?? m.tryout_player_id),
+    tryout_member_ids: (members ?? []).filter((m: any) => m.group_id === g.id && m.tryout_player_id).map((m: any) => m.tryout_player_id),
   }));
 }
 
-export async function movePlayerBetweenGroups(fromGroupId: string, toGroupId: string, playerId: string): Promise<{ error: string | null }> {
-  await supabase.from("segment_drill_group_members").delete().eq("group_id", fromGroupId).eq("player_id", playerId);
-  const { error } = await supabase.from("segment_drill_group_members").insert({ group_id: toGroupId, player_id: playerId });
+export async function movePlayerBetweenGroups(fromGroupId: string, toGroupId: string, playerId: string, isTryout = false): Promise<{ error: string | null }> {
+  const col = memberColumn(isTryout);
+  await supabase.from("segment_drill_group_members").delete().eq("group_id", fromGroupId).eq(col, playerId);
+  const { error } = await supabase.from("segment_drill_group_members").insert({ group_id: toGroupId, [col]: playerId });
   return { error: error?.message ?? null };
 }
 
-export async function removeGroupMember(groupId: string, playerId: string): Promise<{ error: string | null }> {
-  const { error } = await supabase.from("segment_drill_group_members").delete().eq("group_id", groupId).eq("player_id", playerId);
+export async function removeGroupMember(groupId: string, playerId: string, isTryout = false): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("segment_drill_group_members").delete().eq("group_id", groupId).eq(memberColumn(isTryout), playerId);
   return { error: error?.message ?? null };
 }
 
-export async function addGroupMember(groupId: string, playerId: string): Promise<{ error: string | null }> {
-  const { error } = await supabase.from("segment_drill_group_members").insert({ group_id: groupId, player_id: playerId });
+export async function addGroupMember(groupId: string, playerId: string, isTryout = false): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("segment_drill_group_members").insert({ group_id: groupId, [memberColumn(isTryout)]: playerId });
   return { error: error?.message ?? null };
 }
 
