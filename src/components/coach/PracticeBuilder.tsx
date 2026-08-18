@@ -22,8 +22,10 @@ import {
   getAttendanceOverrides, setAttendanceOverride, clearAttendanceOverride,
   computeEffectiveAttendees, computeBlockTimes, totalDurationMinutes,
   formatDuration, columnTotals, getSavedGroupings, getAssignableCoaches, CoachLite, getGroupCountsForDrills,
+  TryoutPlayer, getTryoutPlayers, getTryoutAttendance, setTryoutAttendance, getCurrentSeason,
 } from "../../lib/practicePlanner";
 import GroupingEditor from "./GroupingEditor";
+import TryoutPoolManager from "./TryoutPoolManager";
 import PracticeDrillLibrary from "./PracticeDrillLibrary";
 import PracticePrintView from "./PracticePrintView";
 import type { PracticeDrillLibraryDrill } from "../../lib/practicePlanner";
@@ -53,6 +55,10 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   const [dragBlockId, setDragBlockId] = useState<string | null>(null);
   const [groupingTarget, setGroupingTarget] = useState<{ drill: SegmentDrill; segment: BlockSegment } | null>(null);
   const [savedGroupingsCache, setSavedGroupingsCache] = useState<Record<string, SavedGrouping[]>>({});
+  const [tryoutPool, setTryoutPool] = useState<TryoutPlayer[]>([]);
+  const [showTryoutPool, setShowTryoutPool] = useState(false);
+  const [tryoutPresent, setTryoutPresent] = useState<Set<string>>(new Set());
+  const [tryoutSeasonId, setTryoutSeasonId] = useState<string | null>(null);
   const [drillPickerTarget, setDrillPickerTarget] = useState<{ segment: BlockSegment; block: PracticeBlock; replacing?: SegmentDrill } | null>(null);
   const [showPrint, setShowPrint] = useState(false);
   const [drillsById, setDrillsById] = useState<Record<string, PracticeDrillLibraryDrill>>({});
@@ -423,6 +429,16 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
    * stayed hidden entirely. Saving something you then can't find is worse
    * than one extra query.
    */
+  async function refreshTryoutPool() {
+    if (!practice?.is_tryout) { setTryoutPool([]); return; }
+    const season = await getCurrentSeason();
+    setTryoutSeasonId(season?.id ?? null);
+    setTryoutPool(await getTryoutPlayers(season?.id ?? null));
+    setTryoutPresent(await getTryoutAttendance(practice.id));
+  }
+
+  useEffect(() => { refreshTryoutPool(); }, [practice?.id, practice?.is_tryout]);
+
   async function refreshSavedGroupings(ids: string[]) {
     if (!ids.length) return;
     const fetched = await Promise.all(ids.map(async id => [id, await getSavedGroupings(id)] as const));
@@ -432,7 +448,17 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   // ── Attendance ───────────────────────────────────────────────
 
   const relevantPlayers = players.filter(p => p.home_roster_id && rosterIds.includes(p.home_roster_id));
-  const effectiveAttendees = practice ? computeEffectiveAttendees(players, rosterIds, overrides) : relevantPlayers;
+  const rosterAttendees = practice ? computeEffectiveAttendees(players, rosterIds, overrides) : relevantPlayers;
+  const isTryout = Boolean(practice?.is_tryout);
+  const tryoutIds = new Set<string>(tryoutPool.map(t => t.id));
+  // A tryout practice swaps the roster out entirely rather than adding to
+  // it: the point is that these are people who aren't on the team yet.
+  // Shaped as PlayerLite so every grouping path downstream is unchanged.
+  const effectiveAttendees = isTryout
+    ? tryoutPool
+        .filter(t => tryoutPresent.size === 0 || tryoutPresent.has(t.id))
+        .map(t => ({ id: t.id, name: t.name, home_roster_id: null } as any))
+    : rosterAttendees;
   const excusedIds = new Set(overrides.filter(o => o.override_type === "excused").map(o => o.player_id));
   const calledUpIds = new Set(overrides.filter(o => o.override_type === "call_up").map(o => o.player_id));
 
@@ -528,7 +554,11 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
           {!showNewWeek ? (
             <div style={{ display: "flex", gap: 6 }}>
               <select value={weekId ?? ""} onChange={e => { const v = e.target.value || null; setWeekId(v); autosaveMeta({ week_id: v }); }} style={inputStyle}>
-                <option value="">— No week —</option>
+                {/* A practice with no week is unreachable: every listing
+                    path filters by week. New practices now default to the
+                    most recent week, and this option warns rather than
+                    reading like a neutral choice. */}
+                <option value="">— No week (won't appear in lists) —</option>
                 {weeks.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
               <button onClick={() => setShowNewWeek(true)} style={smallBtn}>+ New</button>
@@ -541,6 +571,25 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
           )}
         </div>
         <div style={{ alignSelf: "flex-end" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", marginBottom: 6, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={isTryout}
+              onChange={async e => {
+                const v = e.target.checked;
+                if (!practice) return;
+                await updatePractice(practice.id, { is_tryout: v } as any);
+                setPractice({ ...practice, is_tryout: v });
+              }}
+              disabled={!practice}
+            />
+            Tryout practice
+          </label>
+          {isTryout && (
+            <button onClick={() => setShowTryoutPool(true)} style={{ ...smallBtn, marginBottom: 6 }}>
+              Tryout pool ({tryoutPool.length})
+            </button>
+          )}
           <button onClick={handleSaveMeta} disabled={saving} style={primaryBtn}>{saving ? "Saving…" : practice ? "Save changes" : "Create practice"}</button>
           {practice && <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4 }}>Changes above save automatically</div>}
         </div>
@@ -829,6 +878,14 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
         <PracticeDrillLibrary canManage={true} onPick={handlePickDrill} onClose={() => setDrillPickerTarget(null)} />
       )}
 
+      {showTryoutPool && (
+        <TryoutPoolManager
+          seasonId={tryoutSeasonId}
+          onClose={() => setShowTryoutPool(false)}
+          onChanged={refreshTryoutPool}
+        />
+      )}
+
       {groupingTarget && (
         <GroupingEditor
           drill={groupingTarget.drill}
@@ -843,6 +900,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
               ? groupingTarget.segment.roster_id
               : rosterIds[0] ?? null
           }
+          tryoutIds={isTryout ? tryoutIds : undefined}
           onGroupingsChanged={() => refreshSavedGroupings(
             groupingTarget.segment.scope_type === "roster" && groupingTarget.segment.roster_id
               ? [groupingTarget.segment.roster_id]
