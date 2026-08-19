@@ -59,6 +59,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   const [showTryoutPool, setShowTryoutPool] = useState(false);
   const [tryoutPresent, setTryoutPresent] = useState<Set<string>>(new Set());
   const [tryoutSeasonId, setTryoutSeasonId] = useState<string | null>(null);
+  // Held locally because on the New Practice screen there's no practice row
+  // to update yet -- the flag has to survive until "Create practice" runs.
+  const [tryoutDraft, setTryoutDraft] = useState(false);
   const [drillPickerTarget, setDrillPickerTarget] = useState<{ segment: BlockSegment; block: PracticeBlock; replacing?: SegmentDrill } | null>(null);
   const [showPrint, setShowPrint] = useState(false);
   const [drillsById, setDrillsById] = useState<Record<string, PracticeDrillLibraryDrill>>({});
@@ -112,6 +115,10 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
     setLoading(true);
     const [r, w, c] = await Promise.all([getRosters(), getPracticeWeeks(), getAssignableCoaches()]);
     setRosters(r); setWeeks(w); setCoaches(c);
+    // Preselect the most recent week on a NEW practice. createPractice
+    // already falls back to this server-side, but leaving the dropdown
+    // showing "No week" made the safe default look like the risky one.
+    if (!practiceId && w.length > 0) setWeekId(prev => prev ?? w[0].id);
 
     const { data: p } = await supabase.from("profiles").select("id,name,home_roster_id").eq("role", "player");
     setPlayers(p ?? []);
@@ -120,6 +127,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
       const pr = await getPractice(practiceId);
       if (pr) {
         setPractice(pr);
+        setTryoutDraft(Boolean((pr as any)?.is_tryout));
         setDate(pr.practice_date); setStartTime(pr.start_time.slice(0, 5));
         setRosterIds(pr.roster_ids); setWeekId(pr.week_id);
         const [ov, bl] = await Promise.all([getAttendanceOverrides(pr.id), getPracticeBlocks(pr.id)]);
@@ -167,7 +175,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
       const { id } = await createPracticeWeek(newWeekName);
       finalWeekId = id;
     }
-    const { id, error } = await createPractice({ practice_date: date, start_time: startTime, roster_ids: rosterIds, week_id: finalWeekId });
+    const { id, error } = await createPractice({ practice_date: date, start_time: startTime, roster_ids: rosterIds, week_id: finalWeekId, is_tryout: tryoutDraft });
     if (error || !id) { alert("Couldn't create practice: " + error); return null; }
     const pr = await getPractice(id);
     setPractice(pr); setWeekId(finalWeekId);
@@ -574,14 +582,17 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
           <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", marginBottom: 6, cursor: "pointer" }}>
             <input
               type="checkbox"
-              checked={isTryout}
+              checked={practice ? isTryout : tryoutDraft}
               onChange={async e => {
                 const v = e.target.checked;
+                // Before the practice exists this just sets the draft flag,
+                // which createPractice picks up. Afterwards it saves straight
+                // away, like every other field in this builder.
+                setTryoutDraft(v);
                 if (!practice) return;
                 await updatePractice(practice.id, { is_tryout: v } as any);
                 setPractice({ ...practice, is_tryout: v });
               }}
-              disabled={!practice}
             />
             Tryout practice
           </label>
