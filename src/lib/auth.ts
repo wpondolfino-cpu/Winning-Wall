@@ -21,6 +21,10 @@ export async function signUp(
         name: profile.name,
         role: pendingRole,
         grade_category: profile.grade_category,
+        // Picked up by the trigger in migration 114. Stored as a
+        // graduation year rather than a grade so it advances by itself
+        // each August instead of needing a bulk update every summer.
+        graduation_year: profile.graduation_year ?? null,
       },
     },
   });
