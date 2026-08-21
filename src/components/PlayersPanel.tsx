@@ -5,6 +5,7 @@ import { useLeaderboard } from "../hooks/useLeaderboard";
 import { Roster, getRosters } from "../lib/practicePlanner";
 import RosterManager from "./coach/RosterManager";
 import TeamDesigner from "./coach/TeamDesigner";
+import { gradYearFromGrade, gradeFromGradYear, gradeCategoryFromGradYear } from "../lib/teamDesigner";
 
 interface Props {
   allScores: Score[];
@@ -15,6 +16,8 @@ interface EditPlayer {
   id: string;
   name: string;
   grade_category: string;
+  /** Stored instead of a grade so it advances on its own each August. Grade and alumni status derive from it. */
+  graduation_year: number | null;
   home_roster_id: string | null;
   /** Coach-assigned, and only once a player is on a roster -- somebody who
    *  doesn't make the team never needs a number. Deliberately not part of
@@ -387,7 +390,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
 
   async function loadPending() {
     const { data } = await supabase.from("profiles")
-      .select("id,name,role,grade_category,created_at,email")
+      .select("id,name,role,grade_category,graduation_year,created_at,email")
       .in("role", ["pending_player", "pending_coach"])
       .order("created_at", { ascending: true });
     const all = data ?? [];
@@ -440,10 +443,12 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     setTakenJerseys(((taken ?? []) as any[]).map((r) => ({ id: r.id, jersey: r.jersey, roster: r.home_roster_id, name: r.name ?? "" })));
     // Fetch fresh rather than trusting the leaderboard row, which may not carry this field.
     const { data } = await supabase.from("profiles").select("home_roster_id, jersey").eq("id", p.id).single();
+    const { data: gy } = await supabase.from("profiles").select("graduation_year").eq("id", p.id).single();
     setEditPlayer({
       id: p.id,
       name: p.name,
       grade_category: p.grade_category ?? GRADE_CATEGORIES[0],
+      graduation_year: gy?.graduation_year ?? null,
       home_roster_id: data?.home_roster_id ?? null,
       jersey: data?.jersey ?? null,
     });
@@ -464,9 +469,15 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       // Dropping a player off a roster clears their number too -- leaving a
       // stale jersey on an unrostered player would let two people show the
       // same number once someone else inherits it.
+      // Setting a school year also refreshes the leaderboard category, so
+      // the two can't drift apart. grade_category stays the ranking key
+      // because it's snapshotted as text into hall_of_fame and
+      // season_history -- changing its VALUES would relabel past seasons.
+      const derived = gradeCategoryFromGradYear(editPlayer.graduation_year);
       await supabase.from("profiles").update({
         name: editPlayer.name,
-        grade_category: editPlayer.grade_category,
+        grade_category: derived ?? editPlayer.grade_category,
+        graduation_year: editPlayer.graduation_year,
         home_roster_id: editPlayer.home_roster_id,
         jersey: editPlayer.home_roster_id ? editPlayer.jersey : null,
       }).eq("id", editPlayer.id);
@@ -846,7 +857,26 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
           <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(400px, 96vw)", padding: 24 }} onClick={e => e.stopPropagation()}>
             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", marginBottom: 16 }}>✏️ Edit Player</div>
             <div style={{ marginBottom: 12 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label><input value={editPlayer.name} onChange={e => setEditPlayer({ ...editPlayer, name: e.target.value })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" as const }} /></div>
-            <div style={{ marginBottom: 16 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Grade</label><select value={editPlayer.grade_category} onChange={e => setEditPlayer({ ...editPlayer, grade_category: e.target.value })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }}>{GRADE_CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>School year</label>
+              <select
+                value={gradeFromGradYear(editPlayer.graduation_year) ?? ""}
+                onChange={e => setEditPlayer({ ...editPlayer, graduation_year: e.target.value ? gradYearFromGrade(parseInt(e.target.value, 10)) : null })}
+                style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }}
+              >
+                <option value="">— not set —</option>
+                {[9, 10, 11, 12].map(g => <option key={g} value={g}>{g}th grade</option>)}
+                <option value="13">Alumni</option>
+              </select>
+              {/* Stored as a graduation year, so it advances on its own every
+                  August instead of needing a bulk update each summer. */}
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
+                {editPlayer.graduation_year
+                  ? `Class of ${editPlayer.graduation_year} — rolls forward automatically each year.`
+                  : "Needed for the Team Designer's grade colours and senior filter."}
+              </div>
+            </div>
+            <div style={{ marginBottom: 16 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Leaderboard group</label><select value={editPlayer.grade_category} onChange={e => setEditPlayer({ ...editPlayer, grade_category: e.target.value })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }}>{GRADE_CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
             <div style={{ marginBottom: 12 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Roster</label><select value={editPlayer.home_roster_id ?? ""} onChange={e => setEditPlayer({ ...editPlayer, home_roster_id: e.target.value || null })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }}><option value="">— No roster —</option>{rosters.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
 
             {/* Only once they're on a roster -- a player who doesn't make
