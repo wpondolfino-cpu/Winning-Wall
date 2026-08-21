@@ -4,6 +4,7 @@ import { supabase, Score, Workout, ScoreAttempt, GRADE_CATEGORIES, GradeCategory
 import { useLeaderboard } from "../hooks/useLeaderboard";
 import { Roster, getRosters } from "../lib/practicePlanner";
 import RosterManager from "./coach/RosterManager";
+import TeamDesigner from "./coach/TeamDesigner";
 
 interface Props {
   allScores: Score[];
@@ -244,7 +245,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const [addGrade, setAddGrade]       = useState<GradeCategory>(GRADE_CATEGORIES[0]);
   const [addSaving, setAddSaving]     = useState(false);
   const [addError, setAddError]       = useState("");
-  const [activeTab, setActiveTab]     = useState<"players"|"coaches"|"rosters">("players");
+  const [activeTab, setActiveTab]     = useState<"players"|"coaches"|"rosters"|"teams">("players");
   const [rosters, setRosters]         = useState<Roster[]>([]);
   const [showInvite, setShowInvite]   = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -612,6 +613,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
         <button onClick={() => setActiveTab("players")} style={{ padding: "7px 18px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "players" ? "var(--royal)" : "transparent", color: activeTab === "players" ? "#fff" : "var(--muted)" }}>👥 Players</button>
         <button onClick={() => setActiveTab("coaches")} style={{ padding: "7px 18px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "coaches" ? "var(--royal)" : "transparent", color: activeTab === "coaches" ? "#fff" : "var(--muted)" }}>🏀 Coaches</button>
         <button onClick={() => setActiveTab("rosters")} style={{ padding: "7px 18px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "rosters" ? "var(--royal)" : "transparent", color: activeTab === "rosters" ? "#fff" : "var(--muted)" }}>🗂️ Rosters</button>
+        <button onClick={() => setActiveTab("teams")} style={{ padding: "7px 18px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: activeTab === "teams" ? "var(--royal)" : "transparent", color: activeTab === "teams" ? "#fff" : "var(--muted)" }}>🧩 Team Designer</button>
       </div>
 
       {/* ══ PLAYERS TAB ══ */}
@@ -832,6 +834,8 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       )}
 
       {/* ══ ROSTERS TAB ══ */}
+      {activeTab === "teams" && <TeamDesigner />}
+
       {activeTab === "rosters" && (
         <RosterManager onChanged={() => getRosters().then(setRosters)} />
       )}
