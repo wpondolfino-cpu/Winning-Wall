@@ -10,8 +10,9 @@ import {
   PracticeDrillCategory, PracticeDrillLibraryDrill, getPracticeDrillCategories,
   createPracticeDrillCategory, getPracticeDrillTags, getPracticeDrillLibrary,
   createPracticeDrill, updatePracticeDrill, deletePracticeDrill, toggleDrillStar,
-  getRecentlyUsedDrills, getPlaysForLinking,
+  getRecentlyUsedDrills, getPlaysForLinking, importWorkoutAsPracticeDrill,
 } from "../../lib/practicePlanner";
+import { Workout, getWorkouts } from "../../lib/supabase";
 
 interface Props {
   canManage?: boolean;
@@ -34,6 +35,12 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
   const [tagFilter, setTagFilter]   = useState<string[]>([]);
   const [starredOnly, setStarredOnly] = useState(false);
   const [search, setSearch]         = useState("");
+  // Which library the picker is showing. Player drills are the scored
+  // offseason ones -- a shooting or dribbling drill you'd also want to run
+  // at practice. Picking one copies it into the practice library rather
+  // than making this component handle two shapes of drill.
+  const [source, setSource]         = useState<"practice" | "player">("practice");
+  const [playerDrills, setPlayerDrills] = useState<Workout[]>([]);
 
   const [viewDrill, setViewDrill]   = useState<PracticeDrillLibraryDrill | null>(null);
   const [editDrill, setEditDrill]   = useState<Partial<PracticeDrillLibraryDrill> & { tags?: string[] } | null>(null);
@@ -55,6 +62,14 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
   }, [categoryFilter, tagFilter, starredOnly, search]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (source === "player" && playerDrills.length === 0) getWorkouts().then(setPlayerDrills).catch(console.error);
+  }, [source]);
+
+  async function pickPlayerDrill(w: Workout) {
+    const imported = await importWorkoutAsPracticeDrill(w as any);
+    if (imported && onPick) onPick(imported);
+  }
 
   async function handleToggleStar(d: PracticeDrillLibraryDrill, e: React.MouseEvent) {
     e.stopPropagation();
@@ -159,9 +174,16 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
         </div>
       </div>
 
+      {isPicker && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+          <button onClick={() => setSource("practice")} style={source === "practice" ? chipActive : chip}>Team drills</button>
+          <button onClick={() => setSource("player")} style={source === "player" ? chipActive : chip}>Player drills</button>
+        </div>
+      )}
+
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search drills…" style={{ ...inputStyle, width: "100%", marginBottom: 10, boxSizing: "border-box" }} />
 
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+      <div style={{ display: source === "player" ? "none" : "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
         <button onClick={() => setCategoryFilter(null)} style={categoryFilter === null ? chipActive : chip}>All</button>
         {categories.map(c => (
           <button key={c.name} onClick={() => setCategoryFilter(c.name)} style={categoryFilter === c.name ? chipActive : chip}>{c.name}</button>
@@ -176,7 +198,7 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
         ))}
       </div>
 
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
+      <div style={{ display: source === "player" ? "none" : "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
         <button onClick={() => setStarredOnly(s => !s)} style={starredOnly ? chipActive : chip}>★ Starred</button>
         {allTags.map(t => (
           <button key={t} onClick={() => setTagFilter(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])}
@@ -193,7 +215,24 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
         </div>
       )}
 
-      {loading ? (
+      {source === "player" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 2 }}>
+            From your Drill Library. Adding one copies it here as a team drill — the scored version players log against is untouched.
+          </div>
+          {playerDrills
+            .filter(w => (w as any).library_archived !== true)
+            .filter(w => !search || w.title.toLowerCase().includes(search.toLowerCase()))
+            .map(w => (
+              <button key={w.id} onClick={() => pickPlayerDrill(w)} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
+                <span style={{ fontSize: 18 }}>🏀</span>
+                <span style={{ flex: 1, fontSize: 14, color: "var(--text)" }}>{w.title}</span>
+                {w.category && <span style={{ fontSize: 11, color: "var(--muted)" }}>{w.category}</span>}
+              </button>
+            ))}
+          {playerDrills.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>Loading…</div>}
+        </div>
+      ) : loading ? (
         <div style={{ color: "var(--muted)", fontSize: 13, padding: "20px 0" }}>Loading…</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
