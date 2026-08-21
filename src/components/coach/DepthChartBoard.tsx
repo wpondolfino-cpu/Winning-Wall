@@ -18,6 +18,7 @@ import { useState } from "react";
 import {
   BoardCard, TeamPlanLane, TeamPosition, SlotZone,
   moveSlot, reorderColumn, removeSlot, gradeColor, gradeFromGradYear, isAlumni,
+  GRADE_COLORS, GRADE_LABELS,
 } from "../../lib/teamDesigner";
 
 interface Props {
@@ -88,8 +89,8 @@ export default function DepthChartBoard({ lanes, positions, cards, hideGraduatin
       >
         {ranked != null && <span style={{ fontSize: 11, color: "var(--muted)", minWidth: 12 }}>{ranked + 1}</span>}
         <span style={{ flex: 1 }}>{card.display_name}</span>
-        {grade != null && grade <= 12 && (
-          <span style={{ fontSize: 10, color: "var(--muted)" }}>{grade}</span>
+        {grade != null && grade >= 9 && grade <= 12 && (
+          <span style={{ fontSize: 10, fontWeight: 700, color: GRADE_COLORS[grade] }}>{GRADE_LABELS[grade]}</span>
         )}
         {/* A hollow dot means a name with no account behind it yet — the
             thing you'd click once that kid signs up. */}
@@ -136,6 +137,26 @@ export default function DepthChartBoard({ lanes, positions, cards, hideGraduatin
 
   return (
     <div>
+      {/* Without a key, four stripe colours are decoration rather than
+          information. */}
+      <div style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 10, fontSize: 12, color: "var(--muted)" }}>
+        {[9, 10, 11, 12].map(g => (
+          <span key={g} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: GRADE_COLORS[g], display: "inline-block" }} />
+            {GRADE_LABELS[g]}
+          </span>
+        ))}
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 2, background: "#6b7280", display: "inline-block" }} />
+          no year set
+        </span>
+        {/* The dot was unexplained, so it read as decoration. */}
+        <span style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: "auto" }}>
+          <span style={{ color: "#2f9e63" }}>●</span> has an account
+          <span style={{ marginLeft: 8 }}>○</span> name only — tap to link
+        </span>
+      </div>
+
       {/* Teams across the top, positions down the side. Three teams fit on
           screen; five positions don't -- so the axis that grows is the one
           that scrolls vertically with the page, and each team reads as a
@@ -152,7 +173,22 @@ export default function DepthChartBoard({ lanes, positions, cards, hideGraduatin
 
           {positions.map(pos => (
             <div key={pos.id} style={{ display: "grid", gridTemplateColumns: `120px repeat(${lanes.length}, minmax(160px, 1fr))`, gap: 8, marginBottom: 8 }}>
-              <div style={{ fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center" }}>{pos.name}</div>
+              <div style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                <div style={{ fontSize: 13, color: "var(--muted)" }}>{pos.name}</div>
+                {/* The whole point of colouring by grade: how many of each
+                    class you have at this spot, across every team. */}
+                <div style={{ display: "flex", gap: 5, marginTop: 3 }}>
+                  {[9, 10, 11, 12].map(g => {
+                    const n = visible.filter(c => c.zone === "lane" && c.position_id === pos.id && gradeFromGradYear(c.graduation_year) === g).length;
+                    if (!n) return null;
+                    return (
+                      <span key={g} style={{ fontSize: 10, fontWeight: 700, color: GRADE_COLORS[g] }}>
+                        {n}{GRADE_LABELS[g]}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
               {lanes.map(lane => {
                 const column = inCell(lane.id, pos.id);
                 return (
