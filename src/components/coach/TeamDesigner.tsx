@@ -154,9 +154,15 @@ export default function TeamDesigner() {
 
           {showAdd && (
             <div style={panel}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Add to this board</div>
+              {/* The panel needs its own Close: the toggle that opened it
+                  scrolls out of view as soon as the list is long, leaving
+                  no way back out from where you're actually looking. */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>Add to this board</div>
+                <button onClick={() => setShowAdd(false)} style={btn}>Done</button>
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                <div>
+                <div style={listCol}>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Tryout pool ({pool.length})</div>
                   {pool.filter(t => !onBoard.has(t.id)).map(t => (
                     <button key={t.id} onClick={async () => {
@@ -168,8 +174,8 @@ export default function TeamDesigner() {
                   ))}
                   {pool.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>Empty — add names in the tryout pool.</div>}
                 </div>
-                <div>
-                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Players with accounts</div>
+                <div style={listCol}>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Players with accounts ({players.filter(p => !onBoard.has(p.id)).length})</div>
                   {players.filter(p => !onBoard.has(p.id)).map(p => {
                     const g = gradeFromGradYear(p.graduation_year);
                     return (
@@ -188,26 +194,30 @@ export default function TeamDesigner() {
 
           {showSettings && (
             <div style={panel}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>Lanes &amp; positions</div>
+                <button onClick={() => setShowSettings(false)} style={btn}>Done</button>
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Team rows</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Teams</div>
                   {lanes.map(l => (
                     <div key={l.id} style={{ display: "flex", gap: 6, marginBottom: 4 }}>
                       <span style={{ flex: 1, fontSize: 13 }}>{l.name}</span>
                       <button onClick={async () => {
-                        const n = window.prompt("Rename row:", l.name);
+                        const n = window.prompt("Rename team:", l.name);
                         if (n?.trim()) { await renameLane(l.id, n); refresh(); setLanes(await getLanes(plan.id)); }
                       }} style={btn}>✎</button>
                       <button onClick={async () => {
-                        if (!window.confirm(`Delete "${l.name}"? Anyone in that row is removed from this board.`)) return;
+                        if (!window.confirm(`Delete "${l.name}"? Anyone in that team is removed from this board.`)) return;
                         await deleteLane(l.id); setLanes(await getLanes(plan.id)); refresh();
                       }} style={btn}>✕</button>
                     </div>
                   ))}
                   <button onClick={async () => {
-                    const n = window.prompt("New team row name:");
+                    const n = window.prompt("New team name:");
                     if (n?.trim()) { await addLane(plan.id, n, lanes.length); setLanes(await getLanes(plan.id)); }
-                  }} style={{ ...btn, marginTop: 6 }}>+ Add row</button>
+                  }} style={{ ...btn, marginTop: 6 }}>+ Add team</button>
                 </div>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Positions</div>
@@ -288,5 +298,7 @@ const btn: React.CSSProperties = { background: "var(--surface2)", border: "1px s
 const primary: React.CSSProperties = { background: "var(--royal)", border: "none", color: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" };
 const input: React.CSSProperties = { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", color: "var(--text)", fontSize: 13, fontFamily: "inherit" };
 const panel: React.CSSProperties = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 14, marginBottom: 12 };
+// Capped so a 30-player roster can't push the board off the bottom of the page.
+const listCol: React.CSSProperties = { maxHeight: 320, overflowY: "auto", paddingRight: 4 };
 const rowBtn: React.CSSProperties = { display: "block", width: "100%", textAlign: "left", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 10px", fontSize: 13, color: "var(--text)", fontFamily: "inherit", cursor: "pointer", marginBottom: 4 };
 const overlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 };
