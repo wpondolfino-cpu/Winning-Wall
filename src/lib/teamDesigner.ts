@@ -77,11 +77,34 @@ export function gradYearFromGrade(grade: number, now = new Date()): number {
   return currentAcademicYear(now) + (12 - grade);
 }
 
-/** Distinct colour per graduating class. Stable per year rather than per grade, so a class keeps its colour as it ages. */
+/**
+ * Colour by GRADE, not by graduating class.
+ *
+ * Keying on the class year meant a colour drifted every August, so
+ * "freshmen are blue" was only true for one season. Keyed on grade,
+ * 9th is always blue and seniors are always red, which is what you're
+ * actually reading off the board.
+ */
+// Four hues chosen to stay apart on a dark background: azure, green,
+// yellow-amber, violet. An earlier pass used amber for juniors and pink
+// for seniors, which read as two shades of the same warm colour on dark
+// -- exactly the pair you most need to tell apart when scanning who's
+// graduating.
+export const GRADE_COLORS: Record<number, string> = {
+  9: "#378ADD",
+  10: "#1D9E75",
+  11: "#EF9F27",
+  12: "#8A7FE8",
+};
+
+export const GRADE_LABELS: Record<number, string> = {
+  9: "Fr", 10: "So", 11: "Jr", 12: "Sr",
+};
+
 export function gradeColor(gradYear: number | null): string {
-  if (!gradYear) return "#6b7280";
-  const palette = ["#2f6fd0", "#2f9e63", "#c48a1f", "#8a4fbf", "#b8342e"];
-  return palette[gradYear % palette.length];
+  const g = gradeFromGradYear(gradYear);
+  if (g == null || g < 9 || g > 12) return "#6b7280";
+  return GRADE_COLORS[g];
 }
 
 // ── Positions ─────────────────────────────────────────────────
@@ -176,18 +199,49 @@ export async function deleteLane(id: string) {
 
 export async function getSlots(planId: string): Promise<BoardCard[]> {
   const { data, error } = await supabase
-    .from("team_plan_slots")
-    .select("*, profiles:profile_id (graduation_year), tryout_players:tryout_player_id (grade, linked_profile_id)")
-    .eq("plan_id", planId)
-    .order("rank");
+    .from("team_plan_slots").select("*").eq("plan_id", planId).order("rank");
   if (error) { console.error("Failed to load slots:", error); return []; }
-  return (data ?? []).map((row: any) => {
-    // A tryout record that's been linked resolves through to the profile,
-    // so linking once covers every plan the person appears in.
-    const linkedId = row.profile_id ?? row.tryout_players?.linked_profile_id ?? null;
-    const gradYear = row.profiles?.graduation_year
-      ?? (row.tryout_players?.grade ? gradYearFromGrade(row.tryout_players.grade) : null);
-    return { ...row, graduation_year: gradYear ?? null, linked: Boolean(linkedId) };
+  const rows = (data ?? []) as any[];
+  if (!rows.length) return [];
+
+  // Deliberately two extra queries rather than a PostgREST embed. Embedding
+  // through a specific FK column depends on the relationship being detected,
+  // and when it isn't the join silently returns null instead of erroring --
+  // which showed up as every card having no grade and no colour, with
+  // nothing in the console to explain it.
+  const tryoutIds = [...new Set(rows.map(r => r.tryout_player_id).filter(Boolean))] as string[];
+  const tryRes = tryoutIds.length
+    ? await supabase.from("tryout_players").select("id, grade, linked_profile_id").in("id", tryoutIds)
+    : { data: [] as any[] };
+
+  // Sequential, not parallel: a linked tryout record points at a profile
+  // whose id we only learn from the query above, and that profile is where
+  // the grade lives. Fetching profiles first would miss every linked card.
+  const profileIds = [...new Set([
+    ...rows.map(r => r.profile_id),
+    ...((tryRes.data ?? []) as any[]).map(t => t.linked_profile_id),
+  ].filter(Boolean))] as string[];
+
+  const profRes = profileIds.length
+    ? await supabase.from("profiles").select("id, graduation_year").in("id", profileIds)
+    : { data: [] as any[] };
+
+  const profByGrad = new Map<string, number | null>(
+    ((profRes.data ?? []) as any[]).map(p => [p.id, p.graduation_year ?? null])
+  );
+  const tryoutById = new Map<string, any>(((tryRes.data ?? []) as any[]).map(t => [t.id, t]));
+
+  return rows.map(row => {
+    const tryout = row.tryout_player_id ? tryoutById.get(row.tryout_player_id) : null;
+    // A linked tryout record resolves through to the profile, so linking
+    // once covers every plan the person appears in.
+    const linkedId = row.profile_id ?? tryout?.linked_profile_id ?? null;
+    const gradYear =
+      (row.profile_id ? profByGrad.get(row.profile_id) : null)
+      ?? (linkedId ? profByGrad.get(linkedId) : null)
+      ?? (tryout?.grade ? gradYearFromGrade(tryout.grade) : null)
+      ?? null;
+    return { ...row, graduation_year: gradYear, linked: Boolean(linkedId) };
   });
 }
 
