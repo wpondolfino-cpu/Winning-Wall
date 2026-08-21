@@ -30,7 +30,6 @@ import PracticeWeeksList from "./components/coach/PracticeWeeksList";
 import PracticeDrillLibrary from "./components/coach/PracticeDrillLibrary";
 import DrillLibrary from "./components/DrillLibrary";
 import PlaysHub from "./components/plays/PlaysHub";
-import PlaybookManager from "./components/coach/PlaybookManager";
 import GameStatsHub from "./components/game-stats/GameStatsHub";
 import ScoutSheetsHub from "./components/scouting/ScoutSheetsHub";
 import PracticeSchedulePlayerView from "./components/PracticeSchedulePlayerView";
@@ -38,20 +37,28 @@ import NavModeChangePopup from "./components/NavModeChangePopup";
 import GameDaySheetsList from "./components/gameday/GameDaySheetsList";
 
 type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "scoutsheets" | "practiceschedule" | "more";
+// "playbooks" stays in these unions deliberately: a coach who reordered
+// their nav has "playbooks" saved in nav_order, and resolveNavOrder reads
+// those strings back. Dropping it from the type would break that read for
+// anyone who customised their nav before Playbooks moved into Plays.
 type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "gameday" | "practices" | "practicelibrary" | "settings" | "profile";
 type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "gameday" | "practices" | "practicelibrary" | "profile";
 
+// "Drill Library" and "Practice Drills" both sounded like a place drills
+// live, so which held what was a guess. They're genuinely different things:
+// a player drill is scored and ranks on a leaderboard, a team drill has a
+// duration and group size and goes into a practice. The labels now say who
+// each is for rather than describing the container.
 const COACH_NAV_CONFIG: NavItemConfig[] = [
   { key: "workouts",      icon: "➕", label: "Manage Workouts",   section: "offseason" },
   { key: "leaderboard",   icon: "🏆", label: "Leaderboard",       section: "offseason" },
   { key: "lifting",       icon: "💪", label: "Lifting Programs",  section: "offseason" },
   { key: "challenges",    icon: "⚔️", label: "Challenges",        section: "offseason" },
-  { key: "library",       icon: "📚", label: "Drill Library",     section: "offseason" },
+  { key: "library",       icon: "📚", label: "Player Drills",     section: "offseason" },
   { key: "hof",           icon: "👑", label: "Hall of Fame",      section: "offseason" },
   { key: "plays",         icon: "🏀", label: "Plays",             section: "inseason" },
-  { key: "playbooks",     icon: "📋", label: "Playbooks",         section: "inseason" },
   { key: "practices",     icon: "🗓️", label: "Practices",         section: "inseason" },
-  { key: "practicelibrary", icon: "📒", label: "Practice Drills", section: "inseason" },
+  { key: "practicelibrary", icon: "📒", label: "Team Drills",     section: "inseason" },
   { key: "gamestats",     icon: "📊", label: "Analytics",         section: "inseason" },
   { key: "scoutsheets",   icon: "🔎", label: "Scout Sheets",      section: "inseason" },
   { key: "gameday",       icon: "📋", label: "Game Day",          section: "inseason" },
@@ -67,13 +74,12 @@ const ADMIN_NAV_CONFIG: NavItemConfig[] = [
   { key: "leaderboard",   icon: "🏆", label: "Leaderboard",       section: "offseason" },
   { key: "lifting",       icon: "💪", label: "Lifting Programs",  section: "offseason" },
   { key: "challenges",    icon: "⚔️", label: "Challenges",        section: "offseason" },
-  { key: "library",       icon: "📚", label: "Drill Library",     section: "offseason" },
+  { key: "library",       icon: "📚", label: "Player Drills",     section: "offseason" },
   { key: "hof",           icon: "👑", label: "Hall of Fame",      section: "offseason" },
   { key: "admin",         icon: "👑", label: "Admin",             section: "offseason" },
   { key: "plays",         icon: "🏀", label: "Plays",             section: "inseason" },
-  { key: "playbooks",     icon: "📋", label: "Playbooks",         section: "inseason" },
   { key: "practices",     icon: "🗓️", label: "Practices",         section: "inseason" },
-  { key: "practicelibrary", icon: "📒", label: "Practice Drills", section: "inseason" },
+  { key: "practicelibrary", icon: "📒", label: "Team Drills",     section: "inseason" },
   { key: "gamestats",     icon: "📊", label: "Analytics",         section: "inseason" },
   { key: "scoutsheets",   icon: "🔎", label: "Scout Sheets",      section: "inseason" },
   { key: "gameday",       icon: "📋", label: "Game Day",          section: "inseason" },
@@ -481,7 +487,7 @@ export default function App() {
                   <span style={{ color: "var(--muted)" }}>›</span>
                 </div>
                 <div onClick={() => setPlayerTab("library")} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>📚</span><span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>Drill Library</span></div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>📚</span><span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>Player Drills</span></div>
                   <span style={{ color: "var(--muted)" }}>›</span>
                 </div>
                 <div onClick={() => setPlayerTab("plays")} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
@@ -509,7 +515,6 @@ export default function App() {
           {isCoach && coachTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={false} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
           {isCoach && coachTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} onChallenge={() => setCoachTab("challenges")} />}
           {isCoach && coachTab === "plays" && <PlaysHub currentUserRole="coach" />}
-          {isCoach && coachTab === "playbooks" && <PlaybookManager />}
           {isCoach && coachTab === "practices" && <PracticeWeeksList />}
           {isCoach && coachTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
           {isCoach && coachTab === "gamestats" && <GameStatsHub currentUserRole="coach" userId={user.id} />}
@@ -547,7 +552,6 @@ export default function App() {
           {isAdmin && adminTab === "gamestats" && <GameStatsHub currentUserRole="admin" userId={user.id} />}
           {isAdmin && adminTab === "scoutsheets" && <ScoutSheetsHub canManage={true} />}
           {isAdmin && adminTab === "gameday" && <GameDaySheetsList />}
-          {isAdmin && adminTab === "playbooks" && <PlaybookManager />}
           {isAdmin && adminTab === "practices" && <PracticeWeeksList />}
           {isAdmin && adminTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
           {isAdmin && adminTab === "leaderboard" && <LeaderboardHub canManage={true} profile={displayProfile} />}
