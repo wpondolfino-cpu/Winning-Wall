@@ -136,27 +136,31 @@ export default function DepthChartBoard({ lanes, positions, cards, hideGraduatin
 
   return (
     <div>
+      {/* Teams across the top, positions down the side. Three teams fit on
+          screen; five positions don't -- so the axis that grows is the one
+          that scrolls vertically with the page, and each team reads as a
+          column you scan top to bottom, which is how a depth chart is
+          talked about anyway. */}
       <div style={{ overflowX: "auto" }}>
-        <div style={{ minWidth: positions.length * 170 + 110 }}>
-          {/* Position header row */}
-          <div style={{ display: "grid", gridTemplateColumns: `110px repeat(${positions.length}, minmax(160px, 1fr))`, gap: 8, marginBottom: 6 }}>
+        <div style={{ minWidth: lanes.length * 170 + 120 }}>
+          <div style={{ display: "grid", gridTemplateColumns: `120px repeat(${lanes.length}, minmax(160px, 1fr))`, gap: 8, marginBottom: 6 }}>
             <div />
-            {positions.map(p => (
-              <div key={p.id} style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textAlign: "center" }}>{p.name}</div>
+            {lanes.map(l => (
+              <div key={l.id} style={{ fontSize: 13, fontWeight: 700, textAlign: "center" }}>{l.name}</div>
             ))}
           </div>
 
-          {lanes.map(lane => (
-            <div key={lane.id} style={{ display: "grid", gridTemplateColumns: `110px repeat(${positions.length}, minmax(160px, 1fr))`, gap: 8, marginBottom: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center" }}>{lane.name}</div>
-              {positions.map(pos => {
+          {positions.map(pos => (
+            <div key={pos.id} style={{ display: "grid", gridTemplateColumns: `120px repeat(${lanes.length}, minmax(160px, 1fr))`, gap: 8, marginBottom: 8 }}>
+              <div style={{ fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center" }}>{pos.name}</div>
+              {lanes.map(lane => {
                 const column = inCell(lane.id, pos.id);
                 return (
                   <div
-                    key={pos.id}
+                    key={lane.id}
                     onDragOver={e => e.preventDefault()}
                     onDrop={() => drop("lane", lane.id, pos.id)}
-                    style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: 8, minHeight: 70 }}
+                    style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: 8, minHeight: 60 }}
                   >
                     {column.map((c, i) => <Card key={c.id} card={c} ranked={i} />)}
                   </div>
