@@ -290,6 +290,41 @@ export function columnTotals(
   return totals;
 }
 
+/**
+ * Brings a Drill Library entry (a scored `workouts` row) into the practice
+ * library so it can be used in a practice.
+ *
+ * The two libraries are deliberately NOT one table -- a workout carries
+ * scoring type, personal bests and leaderboard ranking, a practice drill
+ * carries duration, group size and a linked play. Merging them would mean
+ * a row where half the columns are null depending on which kind it is.
+ *
+ * So instead of making the picker polymorphic, a player drill is COPIED in
+ * on first use. Everything downstream keeps dealing with one kind of drill,
+ * and the copy is a normal practice drill afterwards -- editable, with its
+ * own duration and group defaults, without touching the workout players are
+ * being scored on.
+ *
+ * Reuses an existing copy with the same title rather than making a second
+ * one, so pulling the same shooting drill into three practices doesn't
+ * leave three entries in the library.
+ */
+export async function importWorkoutAsPracticeDrill(w: { id: string; title: string; description?: string | null; video_url?: string | null; }): Promise<PracticeDrillLibraryDrill | null> {
+  const { data: existing } = await supabase
+    .from("practice_drills_library").select("*").ilike("title", w.title).limit(1);
+  if (existing && existing.length) return existing[0] as PracticeDrillLibraryDrill;
+
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase.from("practice_drills_library").insert({
+    title: w.title,
+    description: w.description ?? null,
+    video_url: w.video_url ?? null,
+    created_by: user?.id,
+  }).select().single();
+  if (error) { console.error("Could not import drill:", error); return null; }
+  return data as PracticeDrillLibraryDrill;
+}
+
 // ── Tryouts ──────────────────────────────────────────────────
 //
 // A tryout player is NOT a profile. profiles.id references auth.users, so
