@@ -459,13 +459,20 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   const rosterAttendees = practice ? computeEffectiveAttendees(players, rosterIds, overrides) : relevantPlayers;
   const isTryout = Boolean(practice?.is_tryout);
   const tryoutIds = new Set<string>(tryoutPool.map(t => t.id));
-  // A tryout practice swaps the roster out entirely rather than adding to
-  // it: the point is that these are people who aren't on the team yet.
-  // Shaped as PlayerLite so every grouping path downstream is unchanged.
+  // A tryout practice shows the pool ALONGSIDE the roster, not instead of
+  // it. Returning players attend tryouts too -- swapping the roster out
+  // meant the kids already on the team had no way to appear, which would
+  // have forced typing their names into the pool and creating exactly the
+  // duplicate that linking exists to avoid.
+  // Pool names are shaped as PlayerLite so every grouping path downstream
+  // is unchanged.
   const effectiveAttendees = isTryout
-    ? tryoutPool
-        .filter(t => tryoutPresent.size === 0 || tryoutPresent.has(t.id))
-        .map(t => ({ id: t.id, name: t.name, home_roster_id: null } as any))
+    ? [
+        ...rosterAttendees,
+        ...tryoutPool
+          .filter(t => tryoutPresent.size === 0 || tryoutPresent.has(t.id))
+          .map(t => ({ id: t.id, name: t.name, home_roster_id: null } as any)),
+      ]
     : rosterAttendees;
   const excusedIds = new Set(overrides.filter(o => o.override_type === "excused").map(o => o.player_id));
   const calledUpIds = new Set(overrides.filter(o => o.override_type === "call_up").map(o => o.player_id));
