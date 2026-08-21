@@ -303,6 +303,10 @@ export interface TryoutPlayer {
   season_id: string | null;
   name: string;
   jersey: number | null;
+  grade: number | null;
+  /** Which tryout they attended. Derived from grade on entry but stored, because the case that matters is a freshman pulled up to the varsity tryout. */
+  tryout_group: "upper" | "freshman" | null;
+  linked_profile_id: string | null;
   notes: string | null;
   status: "active" | "cut";
   created_at: string;
@@ -318,27 +322,39 @@ export async function getTryoutPlayers(seasonId: string | null, includeCut = fal
   return data ?? [];
 }
 
-export async function addTryoutPlayer(seasonId: string | null, name: string, jersey?: number | null): Promise<{ id: string | null; error: string | null }> {
+/** Freshmen try out separately, so the group defaults from grade — but it's stored, not derived at read time, so a freshman at the varsity tryout can be moved. */
+export function groupForGrade(grade: number | null): "upper" | "freshman" | null {
+  if (grade == null) return null;
+  return grade <= 9 ? "freshman" : "upper";
+}
+
+export async function addTryoutPlayer(seasonId: string | null, name: string, grade?: number | null, jersey?: number | null): Promise<{ id: string | null; error: string | null }> {
   const trimmed = name.trim();
   if (!trimmed) return { id: null, error: "Name can't be blank." };
   const { data: { user } } = await supabase.auth.getUser();
   const { data, error } = await supabase.from("tryout_players")
-    .insert({ season_id: seasonId, name: trimmed, jersey: jersey ?? null, created_by: user?.id })
+    .insert({ season_id: seasonId, name: trimmed, grade: grade ?? null, tryout_group: groupForGrade(grade ?? null), jersey: jersey ?? null, created_by: user?.id })
     .select("id").single();
   return { id: data?.id ?? null, error: error?.message ?? null };
 }
 
 /** Bulk add from a pasted list — one name per line. Forty kids at a tryout is a lot of typing one at a time. */
 export async function addTryoutPlayersBulk(seasonId: string | null, block: string): Promise<{ added: number; error: string | null }> {
-  const names = block.split("\n").map(n => n.trim()).filter(Boolean);
-  if (!names.length) return { added: 0, error: "Nothing to add." };
+  // "Name, grade" per line — paste straight off the sign-in sheet. A line
+  // with no grade still works; the grade can be filled in afterwards.
+  const rows = block.split("\n").map(l => l.trim()).filter(Boolean).map(line => {
+    const [rawName, rawGrade] = line.split(/[,\t]/);
+    const grade = rawGrade ? parseInt(rawGrade.replace(/\D/g, ""), 10) : NaN;
+    return { name: (rawName ?? "").trim(), grade: Number.isFinite(grade) ? grade : null };
+  }).filter(r => r.name);
+  if (!rows.length) return { added: 0, error: "Nothing to add." };
   const { data: { user } } = await supabase.auth.getUser();
   const { error } = await supabase.from("tryout_players")
-    .insert(names.map(name => ({ season_id: seasonId, name, created_by: user?.id })));
-  return { added: error ? 0 : names.length, error: error?.message ?? null };
+    .insert(rows.map(r => ({ season_id: seasonId, name: r.name, grade: r.grade, tryout_group: groupForGrade(r.grade), created_by: user?.id })));
+  return { added: error ? 0 : rows.length, error: error?.message ?? null };
 }
 
-export async function updateTryoutPlayer(id: string, patch: Partial<Pick<TryoutPlayer, "name" | "jersey" | "notes" | "status">>): Promise<{ error: string | null }> {
+export async function updateTryoutPlayer(id: string, patch: Partial<Pick<TryoutPlayer, "name" | "jersey" | "grade" | "tryout_group" | "notes" | "status" | "linked_profile_id">>): Promise<{ error: string | null }> {
   const { error } = await supabase.from("tryout_players").update(patch).eq("id", id);
   return { error: error?.message ?? null };
 }
