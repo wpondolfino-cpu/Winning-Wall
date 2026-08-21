@@ -56,6 +56,8 @@ export interface Profile {
   position?: string;
   jersey?: number;
   grade_category?: GradeCategory;
+  /** School year, stored as the year they graduate. Grade and alumni status are derived from it. */
+  graduation_year?: number | null;
   avatar_url?: string;
   is_period_champion?: boolean;
   champion_since?: string;
@@ -135,6 +137,8 @@ export interface BiweeklyChampion {
   player_id: string;
   player_name: string;
   grade_category: GradeCategory;
+  /** School year, stored as the year they graduate. Grade and alumni status are derived from it. */
+  graduation_year?: number | null;
   points: number;
   period_start: string;
   period_end: string;
