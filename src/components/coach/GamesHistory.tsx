@@ -16,6 +16,7 @@
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { supabase } from "../../lib/supabase";
+import { resolveWeek } from "../../lib/schedule";
 import NumberField from "../game-stats/NumberField";
 import { getRosters } from "../../lib/practicePlanner";
 import { finishGame, isGameFinal, computeFinalScore, syncQueue, listSeasons, GAME_STRUCTURES, buildGameFormat, structuresForGameType, defaultStructureForGameType, GAME_TYPES, GAME_GROUPS, gameTypesForGroup, type Game, type GameType, type GameGroup, type PeriodFormat, type Possession } from "../../lib/gameStats";
@@ -42,6 +43,15 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
   // Which roster this game's players come from. Shift entry needs it to
   // know whether to offer varsity, JV, or everyone.
   const [rosters, setRosters] = useState<{ id: string; name: string }[]>([]);
+  // Scheduling fields: a game created here now shows on the Schedule with a
+  // real time and place, and exists before it's tracked -- so nothing has to
+  // be created on game night.
+  // Weeks a coach has expanded by hand. The current week is always open,
+  // so landing here shows what's imminent without any clicking.
+  const [openWeeks, setOpenWeeks] = useState<Set<string>>(new Set());
+  const [tipTime, setTipTime]     = useState("");
+  const [location, setLocation]   = useState("");
+  const [homeAway, setHomeAway]   = useState("home");
   const [rosterId, setRosterId] = useState<string>("");
   const [gamesWithShifts, setGamesWithShifts] = useState<Set<string>>(new Set());
 
@@ -130,13 +140,17 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
         ot_minutes: fmt.ot_minutes,
         game_type: gameType,
         roster_id: rosterId || null,
+        tip_time: tipTime || null,
+        location: location.trim() || null,
+        home_away: homeAway,
+        week_id: await resolveWeek(gameDate, null),
       })
       .select()
       .single();
     if (!error && data) {
       setGames((g) => [data as Game, ...g]);
       setCreating(false);
-      setOpponent("");
+      setOpponent(""); setTipTime(""); setLocation("");
       onOpenGame((data as Game).id);
     }
   }
@@ -186,12 +200,55 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
 
   if (loading) return <div className="card">Loading games…</div>;
 
+  /**
+   * Games grouped by the week their DATE falls in, mirroring how practices
+   * already read.
+   *
+   * Once a season's schedule is imported this list holds thirty-odd games,
+   * most of them months away — a flat list buries the one you're about to
+   * track. Grouping by week means future weeks collapse out of the way and
+   * the current week is what you land on.
+   *
+   * Grouped on date rather than the stored week_id so a game imported
+   * before its week existed still lands correctly, and a mis-filed one
+   * self-corrects.
+   */
+  /** Monday of the ISO week containing a date — the grouping key. */
+  function weekKeyFor(dateStr: string): string {
+    const d = new Date(dateStr + "T12:00:00");
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return monday.toISOString().slice(0, 10);
+  }
+  function weekLabelFor(key: string): string {
+    const start = new Date(key + "T12:00:00");
+    const end = new Date(start); end.setDate(start.getDate() + 6);
+    const f = (x: Date) => x.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return `${f(start)} – ${f(end)}`;
+  }
+
   const filteredGames = games.filter((g) => {
     if (seasonFilter !== "all" && g.season !== seasonFilter) return false;
     if (groupFilter !== "all" && !gameTypesForGroup(groupFilter).includes((g.game_type ?? "regular") as GameType)) return false;
     if (search.trim() && !g.opponent.toLowerCase().includes(search.trim().toLowerCase())) return false;
     return true;
   });
+
+  const currentWeekKey = weekKeyFor(new Date().toISOString().slice(0, 10));
+
+  // Grouped on date rather than the stored week_id, so a game imported
+  // before its week existed still lands correctly and a mis-filed one
+  // self-corrects. Newest week first, matching how the list already read.
+  type GameWeek = { key: string; label: string; games: typeof filteredGames };
+  const gameWeekMap = filteredGames.reduce((acc, g) => {
+    const key = weekKeyFor(g.game_date);
+    (acc[key] ??= { key, label: weekLabelFor(key), games: [] }).games.push(g);
+    return acc;
+  }, {} as Record<string, GameWeek>);
+  // Annotated rather than inferred: Object.values widens to unknown[] here.
+  const gameWeeks: GameWeek[] = Object.keys(gameWeekMap)
+    .sort((a, b) => b.localeCompare(a))
+    .map(k => gameWeekMap[k]);
 
   return (
     <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
@@ -250,6 +307,28 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
             <input type="date" value={gameDate} onChange={(e) => setGameDate(e.target.value)} style={newGameField} />
           </Field>
 
+          {/* Optional: a tournament date is often known before its tip time,
+              and the Schedule shows an unknown time as unknown rather than
+              guessing midnight. */}
+          <Field label="Tip time">
+            <input type="time" value={tipTime} onChange={(e) => setTipTime(e.target.value)} style={newGameField} />
+          </Field>
+
+          {gameType !== "practice" && (
+            <>
+              <Field label="Home / Away">
+                <select value={homeAway} onChange={(e) => setHomeAway(e.target.value)} style={newGameField}>
+                  <option value="home">Home</option>
+                  <option value="away">Away</option>
+                  <option value="neutral">Neutral</option>
+                </select>
+              </Field>
+              <Field label="Location">
+                <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Gym" style={{ ...newGameField, minWidth: 140 }} />
+              </Field>
+            </>
+          )}
+
           {rosters.length > 1 && (
             <Field label="Roster">
               <select value={rosterId} onChange={(e) => setRosterId(e.target.value)} style={newGameField}>
@@ -290,7 +369,21 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
 
       {filteredGames.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)", padding: "10px 0" }}>No games match.</div>}
 
-      {filteredGames.map((g) => {
+      {gameWeeks.map((wk) => {
+        const collapsed = !openWeeks.has(wk.key) && wk.key !== currentWeekKey;
+        return (
+          <div key={wk.key}>
+            <div
+              onClick={() => setOpenWeeks((o) => { const n = new Set(o); n.has(wk.key) ? n.delete(wk.key) : n.add(wk.key); return n; })}
+              style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "10px 0 6px", borderTop: "1px solid var(--border)" }}
+            >
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>{collapsed ? "▸" : "▾"}</span>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>{wk.label}</span>
+              <span style={{ fontSize: 11, color: "var(--muted)", marginLeft: "auto" }}>
+                {wk.games.length} game{wk.games.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            {!collapsed && wk.games.map((g) => {
         const final = isGameFinal(g);
         return (
           <div key={g.id} style={{ padding: "10px 0", borderTop: "1px solid var(--border)" }}>
@@ -381,6 +474,9 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
                 )}
               </div>
             )}
+          </div>
+        );
+            })}
           </div>
         );
       })}
