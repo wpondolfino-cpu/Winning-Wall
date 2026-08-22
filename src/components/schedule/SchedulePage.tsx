@@ -17,6 +17,7 @@ import {
 import { getCurrentSeason, getRosters } from "../../lib/practicePlanner";
 import { supabase } from "../../lib/supabase";
 import EventEditor from "./EventEditor";
+import PracticeSchedulePlayerView from "../PracticeSchedulePlayerView";
 import ScheduleImport from "./ScheduleImport";
 
 interface Props {
@@ -47,6 +48,8 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
   const [userId, setUserId] = useState<string>("");
   const [showEvent, setShowEvent] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  // Players have no practices tab to route to, so the plan opens here.
+  const [openPractice, setOpenPractice] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => { load(); }, [role]);
@@ -132,7 +135,11 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
     if (item.kind === "event") return;              // nothing behind it
     // A practice has one destination, so expanding would cost a wasted tap.
     if (!isCoach && !item.published) return;        // dimmed and inert
-    onOpenTab?.("practices", { practiceId: item.id });
+    // Coaches go to Practice Builder, which is the editable thing. Players
+    // have no practices tab at all, so the plan opens in place rather than
+    // routing to a tab that doesn't exist for them.
+    if (isCoach) onOpenTab?.("practices", { practiceId: item.id });
+    else setOpenPractice(item.id);
   }
 
   async function saveEdit() {
@@ -215,6 +222,17 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
       {visible.length === 0 && (
         <div style={{ fontSize: 13, color: "var(--muted)", padding: "20px 0" }}>
           Nothing on the schedule.
+        </div>
+      )}
+
+      {openPractice && (
+        <div style={overlayStyle}>
+          <div style={sheetStyle}>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+              <button onClick={() => setOpenPractice(null)} style={chip}>Close</button>
+            </div>
+            <PracticeSchedulePlayerView practiceId={openPractice} homeRosterId={homeRosterId ?? null} />
+          </div>
         </div>
       )}
 
@@ -338,6 +356,8 @@ function fmtTime(t: string | null) {
   return `${hr}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
+const overlayStyle: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 200, padding: 16, overflowY: "auto" };
+const sheetStyle: React.CSSProperties = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 14, width: "100%", maxWidth: 760, marginTop: 20 };
 const chip: React.CSSProperties = { background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 10, padding: "6px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" };
 const chipActive: React.CSSProperties = { ...chip, background: "var(--royal)", color: "#fff", border: "none" };
 const primary: React.CSSProperties = { background: "var(--royal)", border: "none", color: "#fff", borderRadius: 10, padding: "6px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" };
