@@ -1,6 +1,7 @@
 // src/components/scouting/ScoutSheetsHub.tsx
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../../lib/supabase";
+import { formatDateOnly } from "../../lib/schedule";
 import { deleteScoutSheet,
   Opponent, getOpponents, createOpponent, uploadOpponentLogo,
   getOpponentLastGames, getScoutSheetsForOpponent,
@@ -12,10 +13,13 @@ import ScoutSheetBuilder from "./ScoutSheetBuilder";
 import { inputStyle } from "../../lib/inputStyle";
 
 interface Props {
+  /** Opens straight to this game's scout sheet — what tapping a Schedule row means. */
+  initialGameId?: string | null;
   canManage: boolean; // coach/admin = true, player = false (read-only, published only)
 }
 
-export default function ScoutSheetsHub({ canManage }: Props) {
+export default function ScoutSheetsHub(props: Props) {
+  const { canManage } = props;
   const [opponents, setOpponents] = useState<Opponent[]>([]);
   const [newOpponentName, setNewOpponentName] = useState("");
   const [activeOpponent, setActiveOpponent] = useState<Opponent | null>(null);
@@ -82,6 +86,32 @@ export default function ScoutSheetsHub({ canManage }: Props) {
     setLastGames(games);
     setAllSheets(sheets);
   }
+
+  /**
+   * Opens the sheet for a specific game.
+   *
+   * Routing to this tab alone landed on the opponents list, which is a
+   * different screen from the sheet you tapped. Resolves the game to its
+   * opponent, opens that opponent, then opens the sheet — or leaves you on
+   * the opponent with the New sheet box ready if none exists yet.
+   */
+  async function openForGame(gameId: string) {
+    const { data: game } = await supabase
+      .from("games").select("id, opponent_id, game_date").eq("id", gameId).single();
+    if (!game?.opponent_id) return;                 // typed-name game, no opponent page to open
+    const { data: opp } = await supabase
+      .from("opponents").select("*").eq("id", game.opponent_id).single();
+    if (!opp) return;
+    await openOpponent(opp as Opponent);
+    const { data: sheet } = await supabase
+      .from("scout_sheets").select("id").eq("game_id", gameId).maybeSingle();
+    if (sheet?.id) setOpenSheetId(sheet.id);
+    else setNewGameDate(game.game_date);            // pre-fills the date so New sheet is one tap
+  }
+
+  useEffect(() => {
+    if (props.initialGameId) openForGame(props.initialGameId);
+  }, [props.initialGameId]);
 
   async function addOpponent() {
     if (!newOpponentName.trim()) return;
@@ -226,14 +256,14 @@ export default function ScoutSheetsHub({ canManage }: Props) {
                   ? `${g.final_score_us > g.final_score_them ? "W" : "L"} ${g.final_score_us}–${g.final_score_them}`
                   : "Not final"}
               </div>
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>{new Date(g.game_date).toLocaleDateString()}</div>
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>{formatDateOnly(g.game_date)}</div>
             </div>
             {g.scout_sheet
               ? (
                 <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <button type="button" onClick={() => setOpenSheetId(g.scout_sheet.id)} style={{ background: "none", border: "none", color: "var(--royal-light)", cursor: "pointer", fontSize: 12 }}>View scout sheet →</button>
                   {canManage && (
-                    <button type="button" title="Delete this scout sheet" onClick={() => handleDeleteSheet(g.scout_sheet.id, new Date(g.game_date).toLocaleDateString())} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 7px", fontSize: 11, cursor: "pointer" }}>✕</button>
+                    <button type="button" title="Delete this scout sheet" onClick={() => handleDeleteSheet(g.scout_sheet.id, formatDateOnly(g.game_date))} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 7px", fontSize: 11, cursor: "pointer" }}>✕</button>
                   )}
                 </span>
               )
@@ -248,11 +278,11 @@ export default function ScoutSheetsHub({ canManage }: Props) {
           <div style={{ marginTop: 10 }}>
             {allSheets.map(s => (
               <div key={s.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid var(--border)", fontSize: 12 }}>
-                <span onClick={() => setOpenSheetId(s.id)} style={{ cursor: "pointer", flex: 1 }}>{s.games?.game_date ? new Date(s.games.game_date).toLocaleDateString() : "—"}</span>
+                <span onClick={() => setOpenSheetId(s.id)} style={{ cursor: "pointer", flex: 1 }}>{s.games?.game_date ? formatDateOnly(s.games.game_date) : "—"}</span>
                 <span style={{ color: "var(--muted)", marginRight: 8 }}>{s.status}</span>
                 <button type="button" title="Export (re-importable)" onClick={(e) => { e.stopPropagation(); handleExportSheet(s.id); }} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 7px", fontSize: 11, cursor: "pointer" }}>💾</button>
                 {canManage && (
-                  <button type="button" title="Delete this scout sheet" onClick={(e) => { e.stopPropagation(); handleDeleteSheet(s.id, s.games?.game_date ? new Date(s.games.game_date).toLocaleDateString() : "this game"); }} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 7px", fontSize: 11, cursor: "pointer", marginLeft: 6 }}>✕</button>
+                  <button type="button" title="Delete this scout sheet" onClick={(e) => { e.stopPropagation(); handleDeleteSheet(s.id, s.games?.game_date ? formatDateOnly(s.games.game_date) : "this game"); }} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 7px", fontSize: 11, cursor: "pointer", marginLeft: 6 }}>✕</button>
                 )}
               </div>
             ))}
