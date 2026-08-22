@@ -32,17 +32,17 @@ import DrillLibrary from "./components/DrillLibrary";
 import PlaysHub from "./components/plays/PlaysHub";
 import GameStatsHub from "./components/game-stats/GameStatsHub";
 import ScoutSheetsHub from "./components/scouting/ScoutSheetsHub";
-import PracticeSchedulePlayerView from "./components/PracticeSchedulePlayerView";
+import SchedulePage from "./components/schedule/SchedulePage";
 import NavModeChangePopup from "./components/NavModeChangePopup";
 import GameDaySheetsList from "./components/gameday/GameDaySheetsList";
 
-type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "scoutsheets" | "practiceschedule" | "more";
+type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "scoutsheets" | "schedule" | "practiceschedule" | "more";
 // "playbooks" stays in these unions deliberately: a coach who reordered
 // their nav has "playbooks" saved in nav_order, and resolveNavOrder reads
 // those strings back. Dropping it from the type would break that read for
 // anyone who customised their nav before Playbooks moved into Plays.
-type CoachTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "gameday" | "practices" | "practicelibrary" | "settings" | "profile";
-type AdminTab  = "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "gameday" | "practices" | "practicelibrary" | "profile";
+type CoachTab  = "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "gameday" | "practices" | "practicelibrary" | "settings" | "profile";
+type AdminTab  = "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "gameday" | "practices" | "practicelibrary" | "profile";
 
 // "Drill Library" and "Practice Drills" both sounded like a place drills
 // live, so which held what was a guess. They're genuinely different things:
@@ -57,6 +57,7 @@ const COACH_NAV_CONFIG: NavItemConfig[] = [
   { key: "library",       icon: "📚", label: "Player Drills",     section: "offseason" },
   { key: "hof",           icon: "👑", label: "Hall of Fame",      section: "offseason" },
   { key: "plays",         icon: "🏀", label: "Plays",             section: "inseason" },
+  { key: "schedule",      icon: "📆", label: "Schedule",          section: "always" },
   { key: "practices",     icon: "🗓️", label: "Practices",         section: "inseason" },
   { key: "practicelibrary", icon: "📒", label: "Team Drills",     section: "inseason" },
   { key: "gamestats",     icon: "📊", label: "Analytics",         section: "inseason" },
@@ -78,6 +79,7 @@ const ADMIN_NAV_CONFIG: NavItemConfig[] = [
   { key: "hof",           icon: "👑", label: "Hall of Fame",      section: "offseason" },
   { key: "admin",         icon: "👑", label: "Admin",             section: "offseason" },
   { key: "plays",         icon: "🏀", label: "Plays",             section: "inseason" },
+  { key: "schedule",      icon: "📆", label: "Schedule",          section: "always" },
   { key: "practices",     icon: "🗓️", label: "Practices",         section: "inseason" },
   { key: "practicelibrary", icon: "📒", label: "Team Drills",     section: "inseason" },
   { key: "gamestats",     icon: "📊", label: "Analytics",         section: "inseason" },
@@ -363,23 +365,64 @@ export default function App() {
 
   // Bottom nav always stays 4 feature tabs + More in both modes — just
   // swapping which 4 playerTab values populate those slots.
+  // ── Player navigation — ONE source of truth ──────────────────
+  //
+  // The bottom bar and the sidebar used to be independent: the bar came
+  // from a config with "More" correctly filtering it, while the sidebar
+  // was a hardcoded flat list of every tab that ignored season mode
+  // entirely. That's why Plays showed up in both places at once, and it
+  // meant every nav change had to be made twice.
+  //
+  // Both now derive from PLAYER_NAV. `bar` lists the keys in the bottom
+  // bar for that mode; everything else falls through to More, and the
+  // sidebar renders the bar first then the rest, in the same order.
   type BottomTabConfig = { key: PlayerTab; label: string; icon: ReactNode };
-  const OFFSEASON_TABS: BottomTabConfig[] = [
-    { key: "workouts", label: "Workouts", icon: <><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93c4.25 4.25 4.25 9.9 0 14.14"/><path d="M19.07 4.93c-4.25 4.25-4.25 9.9 0 14.14"/><line x1="2" y1="12" x2="22" y2="12"/></> },
-    { key: "leaderboard", label: "Leaderboard", icon: <><path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M10 22v-4"/><path d="M14 22v-4"/><path d="M6 4h12v9a6 6 0 01-12 0V4z"/></> },
-    { key: "h2h", label: "Challenges", icon: <><path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z"/><path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/><path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z"/><path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z"/><path d="M14 14.5V19a2 2 0 01-2 2H6a2 2 0 01-2-2v-5"/><path d="M10 9.5V5a2 2 0 012-2h6a2 2 0 012 2v5"/></> },
-    { key: "lifting", label: "Lifting", icon: <><path d="M6.5 6.5h11"/><path d="M6.5 17.5h11"/><path d="M3 9.5v5"/><path d="M21 9.5v5"/><path d="M2 11h2"/><path d="M20 11h2"/><rect x="5" y="8" width="14" height="8" rx="1"/></> },
+  type SidebarItem = { key: PlayerTab; label: string; emoji: string };
+
+  const PLAYER_NAV: Record<"offseason" | "inseason", { bar: PlayerTab[] }> = {
+    // Offseason has few games, so Workouts stays in the bar and Schedule
+    // sits alongside it rather than replacing it.
+    offseason: { bar: ["schedule", "leaderboard", "workouts", "h2h"] },
+    // In-season, Analytics drops to More: Schedule opens any single game's
+    // report directly, and Analytics is only needed for season aggregates.
+    // Scout drops too, since a scout sheet is now reached from the game it
+    // belongs to rather than from a flat list.
+    inseason: { bar: ["schedule", "leaderboard", "plays"] },
+  };
+
+  const PLAYER_TAB_META: Record<string, { label: string; emoji: string; icon?: ReactNode }> = {
+    schedule:    { label: "Schedule",    emoji: "🗓️", icon: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/></> },
+    workouts:    { label: "Workouts",    emoji: "🏋️", icon: <><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93c4.25 4.25 4.25 9.9 0 14.14"/><path d="M19.07 4.93c-4.25 4.25-4.25 9.9 0 14.14"/><line x1="2" y1="12" x2="22" y2="12"/></> },
+    leaderboard: { label: "Leaderboard", emoji: "🏆", icon: <><path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M10 22v-4"/><path d="M14 22v-4"/><path d="M6 4h12v9a6 6 0 01-12 0V4z"/></> },
+    h2h:         { label: "Challenges",  emoji: "⚔️", icon: <><path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z"/><path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/><path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z"/><path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z"/><path d="M14 14.5V19a2 2 0 01-2 2H6a2 2 0 01-2-2v-5"/><path d="M10 9.5V5a2 2 0 012-2h6a2 2 0 012 2v5"/></> },
+    lifting:     { label: "Lifting",     emoji: "💪", icon: <><path d="M6.5 6.5h11"/><path d="M6.5 17.5h11"/><path d="M3 9.5v5"/><path d="M21 9.5v5"/><path d="M2 11h2"/><path d="M20 11h2"/><rect x="5" y="8" width="14" height="8" rx="1"/></> },
+    plays:       { label: "Plays",       emoji: "🏀", icon: <><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="12" cy="11" r="2.5"/><path d="M3 8h18"/></> },
+    gamestats:   { label: "Analytics",   emoji: "📊", icon: <><line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="12" width="3" height="8"/><rect x="14" y="8" width="3" height="12"/><rect x="10" y="15" width="3" height="5"/></> },
+    scoutsheets: { label: "Scout",       emoji: "🔎", icon: <><circle cx="10" cy="10" r="6.5"/><line x1="15" y1="15" x2="20.5" y2="20.5"/></> },
+    progress:    { label: "My Progress", emoji: "📈" },
+    hof:         { label: "Hall of Fame", emoji: "👑" },
+    profile:     { label: "My Profile",  emoji: "👤" },
+  };
+
+  // Order the sidebar and More both follow. Anything not in the bar for
+  // the current mode lands in More, in this order.
+  const PLAYER_TAB_ORDER: PlayerTab[] = [
+    "schedule", "workouts", "leaderboard", "h2h", "plays",
+    "gamestats", "scoutsheets", "lifting", "progress", "hof", "profile",
   ];
-  const INSEASON_TABS: BottomTabConfig[] = [
-    { key: "leaderboard", label: "Leaderboard", icon: <><path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M10 22v-4"/><path d="M14 22v-4"/><path d="M6 4h12v9a6 6 0 01-12 0V4z"/></> },
-    { key: "plays", label: "Plays", icon: <><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="12" cy="11" r="2.5"/><path d="M3 8h18"/></> },
-    { key: "gamestats", label: "Analytics", icon: <><line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="12" width="3" height="8"/><rect x="14" y="8" width="3" height="12"/><rect x="10" y="15" width="3" height="5"/></> },
-    { key: "scoutsheets", label: "Scout", icon: <><circle cx="10" cy="10" r="6.5"/><line x1="15" y1="15" x2="20.5" y2="20.5"/></> },
-  ];
-  const bottomTabs = effectiveMode === "inseason" ? INSEASON_TABS : OFFSEASON_TABS;
+
+  const barKeys = PLAYER_NAV[effectiveMode === "inseason" ? "inseason" : "offseason"].bar;
+  const bottomTabs: BottomTabConfig[] = barKeys.map(k => ({
+    key: k,
+    label: PLAYER_TAB_META[k].label,
+    icon: PLAYER_TAB_META[k].icon,
+  }));
   const bottomTabKeys = bottomTabs.map(t => t.key);
-  const moreGroupTabs: PlayerTab[] = (["hof", "profile", "progress", "practiceschedule", "more"] as PlayerTab[])
-    .concat((["workouts", "leaderboard", "h2h", "lifting", "plays", "gamestats", "scoutsheets"] as PlayerTab[]).filter(k => !bottomTabKeys.includes(k)));
+  const sidebarItems: SidebarItem[] = PLAYER_TAB_ORDER
+    .map(k => ({ key: k, label: PLAYER_TAB_META[k].label, emoji: PLAYER_TAB_META[k].emoji }));
+  const moreGroupTabs: PlayerTab[] = (PLAYER_TAB_ORDER.filter(k => !bottomTabKeys.includes(k)) as PlayerTab[])
+    .concat(["more"] as PlayerTab[]);
+
 
   return (
     <div id="app-screen" className={`screen active${isPlayer ? " has-bottom-tabs" : ""}`}>
@@ -397,20 +440,26 @@ export default function App() {
         <div className={`sidebar${sidebarOpen ? "" : " sidebar-collapsed"}`}>
           {isPlayer && (
             <>
-              <div className={`nav-item ${playerTab==="workouts"?"active":""}`} onClick={()=>{setPlayerTab("workouts");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏋️</span> Workouts</div>
-              <div className={`nav-item ${playerTab==="leaderboard"?"active":""}`} onClick={()=>{setPlayerTab("leaderboard");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏆</span> Leaderboard</div>
-              <div className={`nav-item ${playerTab==="lifting"?"active":""}`} onClick={()=>{setPlayerTab("lifting");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">💪</span> Lifting</div>
-              <div className={`nav-item ${playerTab==="progress"?"active":""}`} onClick={()=>{setPlayerTab("progress");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">📈</span> My Progress</div>
-              <div className={`nav-item ${playerTab==="hof"?"active":""}`} onClick={()=>{setPlayerTab("hof");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">👑</span> Hall of Fame</div>
-              <div className={`nav-item ${playerTab==="plays"?"active":""}`} onClick={()=>{setPlayerTab("plays");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🏀</span> Plays</div>
-              <div className={`nav-item ${playerTab==="gamestats"?"active":""}`} onClick={()=>{setPlayerTab("gamestats");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">📊</span> Analytics</div>
-              <div className={`nav-item ${playerTab==="scoutsheets"?"active":""}`} onClick={()=>{setPlayerTab("scoutsheets");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">🔎</span> Scout Sheets</div>
-              <div className={`nav-item ${playerTab==="practiceschedule"?"active":""}`} onClick={()=>{setPlayerTab("practiceschedule");if(window.innerWidth<768)setSidebarOpen(false);}}><span className="nav-icon">📋</span> Practice</div>
-              <div className={`nav-item ${playerTab==="profile"?"active":""}`} onClick={()=>{ setPlayerTab("profile"); setNewPerkCount(0); if(window.innerWidth<768)setSidebarOpen(false); }}><span className="nav-icon">👤</span> My Profile</div>
-              <div className={`nav-item ${playerTab==="h2h"?"active":""}`} onClick={()=>{ setPlayerTab("h2h"); setPendingChallenges(0); if(window.innerWidth<768)setSidebarOpen(false); }} style={{ position: "relative" }}>
-                <span className="nav-icon">⚔️</span> Challenges
-                {pendingChallenges > 0 && <span style={{ position: "absolute", top: 6, right: 8, background: "#e53935", color: "#fff", borderRadius: "50%", width: 18, height: 18, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>{pendingChallenges}</span>}
-              </div>
+              {/* Rendered from PLAYER_TAB_ORDER rather than hardcoded, so the
+                  sidebar and the bottom bar can't disagree about what exists. */}
+              {sidebarItems.map(item => (
+                <div
+                  key={item.key}
+                  className={`nav-item ${playerTab === item.key ? "active" : ""}`}
+                  onClick={() => {
+                    setPlayerTab(item.key);
+                    if (item.key === "profile") setNewPerkCount(0);
+                    if (item.key === "h2h") setPendingChallenges(0);
+                    if (window.innerWidth < 768) setSidebarOpen(false);
+                  }}
+                  style={item.key === "h2h" ? { position: "relative" } : undefined}
+                >
+                  <span className="nav-icon">{item.emoji}</span> {item.label}
+                  {item.key === "h2h" && pendingChallenges > 0 && (
+                    <span style={{ position: "absolute", top: 6, right: 8, background: "#e53935", color: "#fff", borderRadius: "50%", width: 18, height: 18, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>{pendingChallenges}</span>
+                  )}
+                </div>
+              ))}
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
               <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)" }}><span className="nav-icon">🚪</span> Sign Out</div>
             </>
@@ -455,7 +504,10 @@ export default function App() {
           {isPlayer && playerTab === "plays" && <PlaysHub currentUserRole="player" />}
           {isPlayer && playerTab === "gamestats" && <GameStatsHub currentUserRole="player" userId={user.id} />}
           {isPlayer && playerTab === "scoutsheets" && <ScoutSheetsHub canManage={false} />}
-          {isPlayer && playerTab === "practiceschedule" && <PracticeSchedulePlayerView homeRosterId={displayProfile.home_roster_id} />}
+          {/* Schedule supersedes PracticeSchedulePlayerView — it shows the
+              same practices plus games and events. The old key still routes
+              here so a saved tab value doesn't dead-end. */}
+          {isPlayer && (playerTab === "schedule" || playerTab === "practiceschedule") && <SchedulePage role="player" homeRosterId={displayProfile.home_roster_id} onOpenTab={(t) => setPlayerTab(t as any)} />}
           {isPlayer && playerTab === "library" && <DrillLibrary canManage={false} onPractice={(id) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} canChallenge={xpEnabled && xpPerks.length > 0 && playerXp >= (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150)} onChallenge={(id) => { setChallengePrefillWorkoutId(id); setPlayerTab("h2h"); }} />}
           {isPlayer && playerTab === "profile" && <ProfilePage profile={displayProfile} onUpdated={handleProfileUpdated} myScores={allScores.filter((s: any) => s.player_id === user?.id)} workouts={workouts} xpEnabled={xpEnabled} />}
           {isPlayer && playerTab === "h2h" && xpEnabled && xpPerks.length > 0 && playerXp < (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) ? (
@@ -515,6 +567,7 @@ export default function App() {
           {isCoach && coachTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={false} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
           {isCoach && coachTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} onChallenge={() => setCoachTab("challenges")} />}
           {isCoach && coachTab === "plays" && <PlaysHub currentUserRole="coach" />}
+          {isCoach && coachTab === "schedule" && <SchedulePage role="coach" onOpenTab={(t) => setCoachTab(t as CoachTab)} />}
           {isCoach && coachTab === "practices" && <PracticeWeeksList />}
           {isCoach && coachTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
           {isCoach && coachTab === "gamestats" && <GameStatsHub currentUserRole="coach" userId={user.id} />}
@@ -552,6 +605,7 @@ export default function App() {
           {isAdmin && adminTab === "gamestats" && <GameStatsHub currentUserRole="admin" userId={user.id} />}
           {isAdmin && adminTab === "scoutsheets" && <ScoutSheetsHub canManage={true} />}
           {isAdmin && adminTab === "gameday" && <GameDaySheetsList />}
+          {isAdmin && adminTab === "schedule" && <SchedulePage role="admin" onOpenTab={(t) => setAdminTab(t as AdminTab)} />}
           {isAdmin && adminTab === "practices" && <PracticeWeeksList />}
           {isAdmin && adminTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
           {isAdmin && adminTab === "leaderboard" && <LeaderboardHub canManage={true} profile={displayProfile} />}
