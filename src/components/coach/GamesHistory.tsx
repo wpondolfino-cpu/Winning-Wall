@@ -35,6 +35,12 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [opponent, setOpponent] = useState("");
+  // Games created here used to write only the free-text name and leave
+  // opponent_id null, so a typed "Franklin" was invisible to the Franklin
+  // opponent page -- its last-5 results quietly showed four. Picking a
+  // known opponent sets the link; typing a new name still works.
+  const [opponents, setOpponents] = useState<{ id: string; name: string }[]>([]);
+  const [opponentId, setOpponentId] = useState<string | null>(null);
   const [gameDate, setGameDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [structure, setStructure] = useState<PeriodFormat>("quarters");
   const [periods, setPeriods] = useState(4);
@@ -91,6 +97,8 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
   useEffect(() => { load(); listSeasons().then(setSeasons); }, []);
 
   async function load() {
+    supabase.from("opponents").select("id,name").order("name")
+      .then(({ data }) => setOpponents((data as any[]) ?? []));
     setLoading(true);
     const { data } = await supabase.from("games").select("*").order("game_date", { ascending: false });
     setGames((data as Game[]) ?? []);
@@ -140,6 +148,7 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
         ot_minutes: fmt.ot_minutes,
         game_type: gameType,
         roster_id: rosterId || null,
+        opponent_id: opponentId,
         tip_time: tipTime || null,
         location: location.trim() || null,
         home_away: homeAway,
@@ -150,7 +159,7 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
     if (!error && data) {
       setGames((g) => [data as Game, ...g]);
       setCreating(false);
-      setOpponent(""); setTipTime(""); setLocation("");
+      setOpponent(""); setOpponentId(null); setTipTime(""); setLocation("");
       onOpenGame((data as Game).id);
     }
   }
@@ -297,10 +306,30 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
             <input
               autoFocus
               value={opponent}
-              onChange={(e) => setOpponent(e.target.value)}
+              list={gameType === "practice" ? undefined : "opponent-options"}
+              onChange={(e) => {
+                const v = e.target.value;
+                setOpponent(v);
+                // Links whenever the typed text matches a known opponent,
+                // whether it was picked from the list or typed in full.
+                const hit = opponents.find(o => o.name.trim().toLowerCase() === v.trim().toLowerCase());
+                setOpponentId(hit?.id ?? null);
+              }}
               placeholder={gameType === "practice" ? "e.g. Tues scrimmage" : "Opponent"}
               style={{ ...newGameField, width: "100%", minWidth: 140 }}
             />
+            {gameType !== "practice" && (
+              <datalist id="opponent-options">
+                {opponents.map(o => <option key={o.id} value={o.name} />)}
+              </datalist>
+            )}
+            {gameType !== "practice" && opponent.trim() !== "" && (
+              <div style={{ fontSize: 11, color: opponentId ? "#2f9e63" : "var(--muted)", marginTop: 3 }}>
+                {opponentId
+                  ? "Linked to their opponent page"
+                  : "New opponent — no scout sheet or past results to draw on"}
+              </div>
+            )}
           </Field>
 
           <Field label="Date">
