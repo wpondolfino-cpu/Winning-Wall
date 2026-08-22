@@ -1,7 +1,7 @@
 // src/components/scouting/ScoutSheetsHub.tsx
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../../lib/supabase";
-import {
+import { deleteScoutSheet,
   Opponent, getOpponents, createOpponent, uploadOpponentLogo,
   getOpponentLastGames, getScoutSheetsForOpponent,
   createScoutSheet, duplicateScoutSheet,
@@ -107,6 +107,26 @@ export default function ScoutSheetsHub({ canManage }: Props) {
     }
   }
 
+  /**
+   * Deletes a scout sheet.
+   *
+   * deleteScoutSheet has existed in scoutSheets.ts since the feature was
+   * built, but nothing ever called it -- a sheet made by mistake was
+   * permanent. The game it belongs to is deliberately left alone: it may
+   * have possessions, a report, and a place on the schedule, none of which
+   * should disappear because a scouting note was removed.
+   */
+  async function handleDeleteSheet(sheetId: string, dateLabel: string) {
+    if (!window.confirm(`Delete the scout sheet for ${dateLabel}? Their sets, personnel and specials on it are removed. The game itself stays.`)) return;
+    try {
+      await deleteScoutSheet(sheetId);
+      if (openSheetId === sheetId) setOpenSheetId(null);
+      if (activeOpponent) openOpponent(activeOpponent);
+    } catch (e: any) {
+      setError(e?.message ?? "Couldn't delete that scout sheet — try again.");
+    }
+  }
+
   // Creates a bare-bones game record tied to this opponent, then the
   // scout sheet on top of it. Keeps this feature usable without
   // requiring a full trip through the Game Stats game-creation flow.
@@ -209,7 +229,14 @@ export default function ScoutSheetsHub({ canManage }: Props) {
               <div style={{ fontSize: 11, color: "var(--muted)" }}>{new Date(g.game_date).toLocaleDateString()}</div>
             </div>
             {g.scout_sheet
-              ? <button type="button" onClick={() => setOpenSheetId(g.scout_sheet.id)} style={{ background: "none", border: "none", color: "var(--royal-light)", cursor: "pointer", fontSize: 12 }}>View scout sheet →</button>
+              ? (
+                <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <button type="button" onClick={() => setOpenSheetId(g.scout_sheet.id)} style={{ background: "none", border: "none", color: "var(--royal-light)", cursor: "pointer", fontSize: 12 }}>View scout sheet →</button>
+                  {canManage && (
+                    <button type="button" title="Delete this scout sheet" onClick={() => handleDeleteSheet(g.scout_sheet.id, new Date(g.game_date).toLocaleDateString())} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 7px", fontSize: 11, cursor: "pointer" }}>✕</button>
+                  )}
+                </span>
+              )
               : <span style={{ fontSize: 12, color: "var(--muted)" }}>No scout sheet</span>}
           </div>
         ))}
@@ -224,6 +251,9 @@ export default function ScoutSheetsHub({ canManage }: Props) {
                 <span onClick={() => setOpenSheetId(s.id)} style={{ cursor: "pointer", flex: 1 }}>{s.games?.game_date ? new Date(s.games.game_date).toLocaleDateString() : "—"}</span>
                 <span style={{ color: "var(--muted)", marginRight: 8 }}>{s.status}</span>
                 <button type="button" title="Export (re-importable)" onClick={(e) => { e.stopPropagation(); handleExportSheet(s.id); }} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 7px", fontSize: 11, cursor: "pointer" }}>💾</button>
+                {canManage && (
+                  <button type="button" title="Delete this scout sheet" onClick={(e) => { e.stopPropagation(); handleDeleteSheet(s.id, s.games?.game_date ? new Date(s.games.game_date).toLocaleDateString() : "this game"); }} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 7px", fontSize: 11, cursor: "pointer", marginLeft: 6 }}>✕</button>
+                )}
               </div>
             ))}
           </div>
