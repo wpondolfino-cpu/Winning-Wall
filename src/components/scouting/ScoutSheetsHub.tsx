@@ -115,16 +115,43 @@ export default function ScoutSheetsHub({ canManage }: Props) {
     setError(null);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setError("Not signed in."); return; }
-    const { data: game, error: gameErr } = await supabase.from("games").insert({
-      opponent: activeOpponent.name,
-      opponent_id: activeOpponent.id,
-      game_date: newGameDate,
-      season: new Date(newGameDate).getFullYear().toString(),
-      home_away: "home",
-      status: "draft",
-      created_by: user.id,
-    }).select().single();
-    if (gameErr) { setError(gameErr.message); return; }
+    // REUSE an existing game for this opponent and date before making one.
+    // Creating unconditionally produced a second game whenever a scout
+    // sheet was made for a game already created in the tracker -- two rows
+    // for one fixture, each with its own tracker, report and scout sheet,
+    // and neither showing the other's data.
+    //
+    // Matched on opponent_id when the existing game has one, and on the
+    // name otherwise, so a game typed in before opponent linking existed
+    // still gets picked up rather than duplicated.
+    const { data: sameDay } = await supabase
+      .from("games").select("id, opponent, opponent_id")
+      .eq("game_date", newGameDate);
+    const existing = (sameDay ?? []).find((g: any) =>
+      g.opponent_id === activeOpponent.id ||
+      (!g.opponent_id && (g.opponent ?? "").trim().toLowerCase() === activeOpponent.name.trim().toLowerCase())
+    );
+
+    let game: any = existing ?? null;
+    if (game) {
+      // Backfill the link on a game that was created by typing a name, so
+      // the opponent page and its last-5 results start seeing it.
+      if (!game.opponent_id) {
+        await supabase.from("games").update({ opponent_id: activeOpponent.id }).eq("id", game.id);
+      }
+    } else {
+      const { data: created, error: gameErr } = await supabase.from("games").insert({
+        opponent: activeOpponent.name,
+        opponent_id: activeOpponent.id,
+        game_date: newGameDate,
+        season: new Date(newGameDate).getFullYear().toString(),
+        home_away: "home",
+        status: "draft",
+        created_by: user.id,
+      }).select().single();
+      if (gameErr) { setError(gameErr.message); return; }
+      game = created;
+    }
 
     try {
       const sheet = duplicateFromSheetId
