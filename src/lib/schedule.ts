@@ -208,3 +208,17 @@ export async function resolveWeek(date: string, seasonId: string | null): Promis
   if (error) { console.error("Could not resolve week:", error); return null; }
   return (data as string) ?? null;
 }
+
+/**
+ * Formats a date-only column for display.
+ *
+ * `new Date("2026-08-22")` parses as UTC MIDNIGHT, so anywhere west of
+ * Greenwich toLocaleDateString renders it as the day before — a game
+ * created for today showed as yesterday. Anchoring at midday puts the
+ * instant far enough from either boundary that no timezone shifts the
+ * calendar day.
+ */
+export function formatDateOnly(iso: string | null | undefined, opts?: Intl.DateTimeFormatOptions): string {
+  if (!iso) return "—";
+  return new Date(iso.slice(0, 10) + "T12:00:00").toLocaleDateString(undefined, opts);
+}
