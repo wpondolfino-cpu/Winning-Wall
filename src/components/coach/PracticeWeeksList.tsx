@@ -25,11 +25,17 @@ interface WeekRowState {
   attention: Record<string, number>; // practice_id -> flagged group count
 }
 
-export default function PracticeWeeksList() {
+interface Props {
+  /** Opens straight into this practice — what tapping a Schedule row means. */
+  initialPracticeId?: string | null;
+}
+
+export default function PracticeWeeksList(props: Props) {
+  const initialPracticeId = props.initialPracticeId ?? null;
   const [rows, setRows]         = useState<WeekRowState[]>([]);
   const [loading, setLoading]   = useState(true);
   const [openWeekId, setOpenWeekId] = useState<string | null>(null);
-  const [openPracticeId, setOpenPracticeId] = useState<string | null>(null);
+  const [openPracticeId, setOpenPracticeId] = useState<string | null>(initialPracticeId);
   const [creatingNew, setCreatingNew] = useState(false);
   const [selectedForPrint, setSelectedForPrint] = useState<Set<string>>(new Set());
   const [printIds, setPrintIds] = useState<string[] | null>(null);
