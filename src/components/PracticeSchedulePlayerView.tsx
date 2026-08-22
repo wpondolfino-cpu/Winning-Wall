@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import { getCurrentPublishedPracticeForRoster, getPracticePrintData, PrintPractice } from "../lib/practicePlanner";
 
 interface Props {
+  /** Show one specific practice. Omit to fall back to the roster's current published practice. */
+  practiceId?: string | null;
   homeRosterId: string | null | undefined;
 }
 
@@ -16,22 +18,30 @@ function formatClock(t: string) {
   return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-export default function PracticeSchedulePlayerView({ homeRosterId }: Props) {
+export default function PracticeSchedulePlayerView({ homeRosterId, practiceId }: Props) {
   const [practice, setPractice] = useState<PrintPractice | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
-    if (!homeRosterId) { setLoading(false); setNotFound(true); return; }
+    // With a practiceId it shows THAT practice — which is what tapping a
+    // row on the Schedule means. Without one it falls back to the roster's
+    // current published practice, which is how this screen worked when it
+    // was its own tab.
+    if (!practiceId && !homeRosterId) { setLoading(false); setNotFound(true); return; }
     (async () => {
-      const p = await getCurrentPublishedPracticeForRoster(homeRosterId);
-      if (!p) { setLoading(false); setNotFound(true); return; }
-      const data = await getPracticePrintData(p.id);
+      let id = practiceId ?? null;
+      if (!id) {
+        const p = await getCurrentPublishedPracticeForRoster(homeRosterId!);
+        if (!p) { setLoading(false); setNotFound(true); return; }
+        id = p.id;
+      }
+      const data = await getPracticePrintData(id);
       setPractice(data);
       setLoading(false);
       if (!data) setNotFound(true);
     })();
-  }, [homeRosterId]);
+  }, [homeRosterId, practiceId]);
 
   if (loading) return <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>Loading…</div>;
 
