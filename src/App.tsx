@@ -507,7 +507,7 @@ export default function App() {
           {isPlayer && playerTab === "hof" && <HallOfFame onViewWorkout={(id) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} />}
           {isPlayer && playerTab === "plays" && <PlaysHub currentUserRole="player" />}
           {isPlayer && playerTab === "gamestats" && <GameStatsHub currentUserRole="player" userId={user.id} />}
-          {isPlayer && playerTab === "scoutsheets" && <ScoutSheetsHub canManage={false} />}
+          {isPlayer && playerTab === "scoutsheets" && <ScoutSheetsHub canManage={false} initialGameId={scheduleTarget?.gameId ?? null} key={scheduleTarget?.gameId ?? "list"} />}
           {/* Schedule supersedes PracticeSchedulePlayerView — it shows the
               same practices plus games and events. The old key still routes
               here so a saved tab value doesn't dead-end. */}
@@ -575,7 +575,7 @@ export default function App() {
           {isCoach && coachTab === "practices" && <PracticeWeeksList initialPracticeId={scheduleTarget?.practiceId ?? null} key={scheduleTarget?.practiceId ?? "list"} />}
           {isCoach && coachTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
           {isCoach && coachTab === "gamestats" && <GameStatsHub currentUserRole="coach" userId={user.id} />}
-          {isCoach && coachTab === "scoutsheets" && <ScoutSheetsHub canManage={true} />}
+          {isCoach && coachTab === "scoutsheets" && <ScoutSheetsHub canManage={true} initialGameId={scheduleTarget?.gameId ?? null} key={scheduleTarget?.gameId ?? "list"} />}
           {isCoach && coachTab === "gameday" && <GameDaySheetsList />}
           {isCoach && coachTab === "leaderboard" && <LeaderboardHub canManage={true} profile={displayProfile} />}
           {isCoach && coachTab === "announcements" && (<><AnnouncementPanel isAdmin={false} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
@@ -607,7 +607,7 @@ export default function App() {
           {isAdmin && adminTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} onChallenge={() => setAdminTab("challenges")} />}
           {isAdmin && adminTab === "plays" && <PlaysHub currentUserRole="admin" />}
           {isAdmin && adminTab === "gamestats" && <GameStatsHub currentUserRole="admin" userId={user.id} />}
-          {isAdmin && adminTab === "scoutsheets" && <ScoutSheetsHub canManage={true} />}
+          {isAdmin && adminTab === "scoutsheets" && <ScoutSheetsHub canManage={true} initialGameId={scheduleTarget?.gameId ?? null} key={scheduleTarget?.gameId ?? "list"} />}
           {isAdmin && adminTab === "gameday" && <GameDaySheetsList />}
           {isAdmin && adminTab === "schedule" && <SchedulePage role="admin" onOpenTab={(t, payload) => { setScheduleTarget(payload ?? null); setAdminTab(t as AdminTab); }} />}
           {isAdmin && adminTab === "practices" && <PracticeWeeksList initialPracticeId={scheduleTarget?.practiceId ?? null} key={scheduleTarget?.practiceId ?? "list"} />}
