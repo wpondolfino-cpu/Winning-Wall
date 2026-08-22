@@ -67,7 +67,19 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
 
   const today = new Date().toISOString().slice(0, 10);
 
-  const visible = weeks
+  /** Monday of the ISO week containing a date. */
+  function mondayOf(iso: string): string {
+    const d = new Date(iso + "T12:00:00");
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return d.toISOString().slice(0, 10);
+  }
+  function addDays(iso: string, n: number): string {
+    const d = new Date(iso + "T12:00:00");
+    d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+
+  const filtered = weeks
     .map(w => ({
       ...w,
       items: w.items
@@ -78,6 +90,39 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
         .filter(i => showPast || i.date >= today),
     }))
     .filter(w => w.items.length > 0);
+
+  /**
+   * The current week and the next one always appear, even when empty.
+   *
+   * A bare "Nothing coming up" reads like the page is broken rather than
+   * like the week is genuinely clear. Week scaffolding says which week is
+   * empty, which is information — and for a coach it's the frame the
+   * "+ Game" buttons act on.
+   *
+   * Built client-side from dates rather than by creating practice_weeks
+   * rows: nothing should be written to the database just to render a
+   * heading. A real week row takes over the moment one exists.
+   */
+  const scaffold = showPast ? filtered : (() => {
+    const out = [...filtered];
+    const thisMon = mondayOf(today);
+    for (const start of [thisMon, addDays(thisMon, 7)]) {
+      const end = addDays(start, 6);
+      const covered = out.some(w =>
+        (w.start_date && w.end_date && start >= w.start_date && start <= w.end_date) || w.start_date === start
+      );
+      if (!covered) {
+        out.push({
+          id: null,
+          name: start === thisMon ? "This week" : "Next week",
+          start_date: start, end_date: end, items: [],
+        });
+      }
+    }
+    return out.sort((a, b) => (a.start_date ?? "9999").localeCompare(b.start_date ?? "9999"));
+  })();
+
+  const visible = scaffold;
 
   function openRow(item: ScheduleItem) {
     if (item.kind === "game") {
@@ -169,7 +214,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
 
       {visible.length === 0 && (
         <div style={{ fontSize: 13, color: "var(--muted)", padding: "20px 0" }}>
-          {showPast ? "Nothing on the schedule." : "Nothing coming up."}
+          Nothing on the schedule.
         </div>
       )}
 
@@ -185,6 +230,11 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
           <div style={{ fontSize: 12, color: "var(--muted)", margin: "16px 0 8px" }}>
             {w.name}{w.start_date && w.end_date ? ` · ${fmtRange(w.start_date, w.end_date)}` : ""}
           </div>
+          {w.items.length === 0 && (
+            <div style={{ fontSize: 12, color: "var(--muted)", border: "1px dashed var(--border)", borderRadius: 10, padding: "14px 12px", marginBottom: 6 }}>
+              {filter === "all" ? "Nothing scheduled this week." : `No ${filter === "game" ? "games" : filter === "practice" ? "practices" : "events"} this week.`}
+            </div>
+          )}
           {w.items.map(item => {
             const live = item.kind === "game" || item.kind === "event" || isCoach || item.published;
             return (
