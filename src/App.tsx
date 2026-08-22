@@ -139,6 +139,10 @@ export default function App() {
 
   const [coachTab, setCoachTab]     = useState<CoachTab>("workouts");
   const [adminTab, setAdminTab]     = useState<AdminTab>("workouts");
+  // Set when a Schedule row routes to another tab, so that tab can open
+  // the specific practice or game rather than just its list. Cleared once
+  // consumed, so switching tabs by hand doesn't reopen it.
+  const [scheduleTarget, setScheduleTarget] = useState<{ practiceId?: string; gameId?: string; view?: string } | null>(null);
   const [coachNavOrder, setCoachNavOrder] = useState<string[]>(COACH_NAV_DEFAULT_ORDER);
   const [adminNavOrder, setAdminNavOrder] = useState<string[]>(ADMIN_NAV_DEFAULT_ORDER);
   const [navSections, setNavSections] = useState<Record<string, NavSection>>({});
@@ -507,7 +511,7 @@ export default function App() {
           {/* Schedule supersedes PracticeSchedulePlayerView — it shows the
               same practices plus games and events. The old key still routes
               here so a saved tab value doesn't dead-end. */}
-          {isPlayer && (playerTab === "schedule" || playerTab === "practiceschedule") && <SchedulePage role="player" homeRosterId={displayProfile.home_roster_id} onOpenTab={(t) => setPlayerTab(t as any)} />}
+          {isPlayer && (playerTab === "schedule" || playerTab === "practiceschedule") && <SchedulePage role="player" homeRosterId={displayProfile.home_roster_id} onOpenTab={(t, payload) => { setScheduleTarget(payload ?? null); setPlayerTab(t as any); }} />}
           {isPlayer && playerTab === "library" && <DrillLibrary canManage={false} onPractice={(id) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} canChallenge={xpEnabled && xpPerks.length > 0 && playerXp >= (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150)} onChallenge={(id) => { setChallengePrefillWorkoutId(id); setPlayerTab("h2h"); }} />}
           {isPlayer && playerTab === "profile" && <ProfilePage profile={displayProfile} onUpdated={handleProfileUpdated} myScores={allScores.filter((s: any) => s.player_id === user?.id)} workouts={workouts} xpEnabled={xpEnabled} />}
           {isPlayer && playerTab === "h2h" && xpEnabled && xpPerks.length > 0 && playerXp < (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) ? (
@@ -567,8 +571,8 @@ export default function App() {
           {isCoach && coachTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={false} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
           {isCoach && coachTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} onChallenge={() => setCoachTab("challenges")} />}
           {isCoach && coachTab === "plays" && <PlaysHub currentUserRole="coach" />}
-          {isCoach && coachTab === "schedule" && <SchedulePage role="coach" onOpenTab={(t) => setCoachTab(t as CoachTab)} />}
-          {isCoach && coachTab === "practices" && <PracticeWeeksList />}
+          {isCoach && coachTab === "schedule" && <SchedulePage role="coach" onOpenTab={(t, payload) => { setScheduleTarget(payload ?? null); setCoachTab(t as CoachTab); }} />}
+          {isCoach && coachTab === "practices" && <PracticeWeeksList initialPracticeId={scheduleTarget?.practiceId ?? null} key={scheduleTarget?.practiceId ?? "list"} />}
           {isCoach && coachTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
           {isCoach && coachTab === "gamestats" && <GameStatsHub currentUserRole="coach" userId={user.id} />}
           {isCoach && coachTab === "scoutsheets" && <ScoutSheetsHub canManage={true} />}
@@ -605,8 +609,8 @@ export default function App() {
           {isAdmin && adminTab === "gamestats" && <GameStatsHub currentUserRole="admin" userId={user.id} />}
           {isAdmin && adminTab === "scoutsheets" && <ScoutSheetsHub canManage={true} />}
           {isAdmin && adminTab === "gameday" && <GameDaySheetsList />}
-          {isAdmin && adminTab === "schedule" && <SchedulePage role="admin" onOpenTab={(t) => setAdminTab(t as AdminTab)} />}
-          {isAdmin && adminTab === "practices" && <PracticeWeeksList />}
+          {isAdmin && adminTab === "schedule" && <SchedulePage role="admin" onOpenTab={(t, payload) => { setScheduleTarget(payload ?? null); setAdminTab(t as AdminTab); }} />}
+          {isAdmin && adminTab === "practices" && <PracticeWeeksList initialPracticeId={scheduleTarget?.practiceId ?? null} key={scheduleTarget?.practiceId ?? "list"} />}
           {isAdmin && adminTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
           {isAdmin && adminTab === "leaderboard" && <LeaderboardHub canManage={true} profile={displayProfile} />}
           {isAdmin && adminTab === "announcements" && (<><AnnouncementPanel isAdmin={true} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
