@@ -1,5 +1,6 @@
 // src/components/coach/PracticeWinsTool.tsx
 import { useState, useEffect, useCallback } from "react";
+import { formatDateOnly } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
 import { getPractice, getRosters, Practice, Roster } from "../../lib/practicePlanner";
 import { PracticeWin, getPracticeWins, logPracticeWin, deletePracticeWins } from "../../lib/practiceWins";
@@ -85,7 +86,7 @@ export default function PracticeWinsTool({ practiceId, onClose }: Props) {
   return (
     <div style={{ maxWidth: 480, margin: "0 auto" }}>
       <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 13, marginBottom: 12 }}>← Close</button>
-      <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Practice Wins — {new Date(practice.practice_date).toLocaleDateString()}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Practice Wins — {formatDateOnly(practice.practice_date)}</div>
 
       <input value={drillName} onChange={e => setDrillName(e.target.value)} placeholder="Drill (optional)" style={{ ...inputStyle, width: "100%", marginBottom: 10 }} />
 
