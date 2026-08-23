@@ -27,6 +27,8 @@ export interface ScheduleItem {
   scoutPublished?: boolean;
   /** Games only: whether the game has been played (a final score exists). */
   played?: boolean;
+  /** Games only: the play sheet attached to this game, if one is. */
+  gamedaySheetId?: string | null;
   rosterIds?: string[];
 }
 
@@ -62,7 +64,7 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
   const [weeksRes, practicesRes, gamesRes, eventsRes, sheetsRes] = await Promise.all([
     supabase.from("practice_weeks").select("*").order("start_date", { ascending: true, nullsFirst: false }),
     supabase.from("practices").select("id, practice_date, start_time, week_id, status, roster_ids, is_tryout"),
-    supabase.from("games").select("id, game_date, tip_time, location, opponent, home_away, week_id, final_score_us, final_score_them, status"),
+    supabase.from("games").select("id, game_date, tip_time, location, opponent, home_away, week_id, final_score_us, final_score_them, status, gameday_sheet_id"),
     supabase.from("schedule_events").select("*"),
     supabase.from("scout_sheets").select("game_id, status"),
   ]);
@@ -98,6 +100,7 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
       subtitle: [g.location, played ? `${g.final_score_us}-${g.final_score_them}` : null].filter(Boolean).join(" · "),
       week_id: g.week_id, published: g.status === "published",
       scoutPublished: sheetByGame.get(g.id) === "published",
+      gamedaySheetId: g.gameday_sheet_id ?? null,
       played,
     });
   }
@@ -144,6 +147,7 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
 export async function updateScheduleFields(item: ScheduleItem, patch: {
   date?: string; time?: string | null; location?: string | null;
   opponent?: string; home_away?: string; title?: string;
+  gameday_sheet_id?: string | null;
 }): Promise<{ error: string | null }> {
   const stamp = new Date().toISOString();
   if (item.kind === "practice") {
@@ -161,6 +165,7 @@ export async function updateScheduleFields(item: ScheduleItem, patch: {
       ...(patch.location !== undefined ? { location: patch.location } : {}),
       ...(patch.opponent ? { opponent: patch.opponent } : {}),
       ...(patch.home_away ? { home_away: patch.home_away } : {}),
+      ...(patch.gameday_sheet_id !== undefined ? { gameday_sheet_id: patch.gameday_sheet_id } : {}),
       updated_at: stamp,
     }).eq("id", item.id);
     return { error: error?.message ?? null };
