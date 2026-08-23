@@ -35,6 +35,41 @@ export async function createOpponent(name: string): Promise<Opponent> {
   return data;
 }
 
+/**
+ * Renames an opponent.
+ *
+ * Also updates the free-text `opponent` column on every game linked to
+ * them, so a typo fixed here doesn't leave games still displaying the old
+ * spelling. games.opponent is a denormalised copy that predates
+ * opponent_id and is still what most screens render.
+ */
+export async function renameOpponent(id: string, name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Name can't be blank.");
+  const { error } = await supabase.from("opponents").update({ name: trimmed }).eq("id", id);
+  if (error) throw error;
+  await supabase.from("games").update({ opponent: trimmed }).eq("opponent_id", id);
+}
+
+/**
+ * Deletes an opponent.
+ *
+ * Refuses while anything still points at them rather than cascading:
+ * removing an opponent shouldn't quietly take scout sheets, or orphan
+ * games that have possessions and a place on the schedule.
+ */
+export async function deleteOpponent(id: string): Promise<{ error: string | null }> {
+  const [{ count: sheetCount }, { count: gameCount }] = await Promise.all([
+    supabase.from("scout_sheets").select("id", { count: "exact", head: true }).eq("opponent_id", id),
+    supabase.from("games").select("id", { count: "exact", head: true }).eq("opponent_id", id),
+  ]);
+  if ((sheetCount ?? 0) > 0 || (gameCount ?? 0) > 0) {
+    return { error: `Still in use — ${sheetCount ?? 0} scout sheet(s) and ${gameCount ?? 0} game(s) reference them. Delete or reassign those first.` };
+  }
+  const { error } = await supabase.from("opponents").delete().eq("id", id);
+  return { error: error?.message ?? null };
+}
+
 export async function updateOpponentLogo(id: string, logo_url: string | null) {
   const { error } = await supabase.from("opponents").update({ logo_url }).eq("id", id);
   if (error) throw error;
