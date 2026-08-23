@@ -504,10 +504,16 @@ export async function createPractice(input: {
   // most recent week (they're ordered newest-first) means the default
   // path can't strand one. getUnscheduledPractices below recovers any
   // that were stranded before this.
+  // Files by DATE, not by "most recent week".
+  //
+  // The old fallback grabbed whatever week was created last, which put a
+  // practice for Aug 24 inside a week labelled Aug 17-23 — a header
+  // visibly contradicting the rows under it. Weeks have date ranges now
+  // (migration 115), so the right week can be found, or created.
   let weekId = input.week_id ?? null;
   if (!weekId) {
-    const weeks = await getPracticeWeeks();
-    weekId = weeks[0]?.id ?? null;
+    const { data } = await supabase.rpc("week_for_date", { p_date: input.practice_date, p_season_id: null });
+    weekId = (data as string) ?? null;
   }
   const { data, error } = await supabase
     .from("practices")
