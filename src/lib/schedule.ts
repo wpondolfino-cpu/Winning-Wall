@@ -79,9 +79,14 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
   const items: ScheduleItem[] = [];
 
   for (const p of (practicesRes.data ?? []) as any[]) {
-    // A tryout practice is coach-only: the pool contains kids who haven't
-    // made the team, and the roster shouldn't see it on their schedule.
-    if (opts.playerVisibleOnly && (p.status !== "published" || p.is_tryout)) continue;
+    // Players see UNPUBLISHED practices too — the practice is a real
+    // commitment they need to plan work and rides around, even when the
+    // plan itself isn't written yet. Only the plan is gated; the slot
+    // isn't.
+    //
+    // Tryout practices stay coach-only regardless: the pool contains kids
+    // who haven't made the team, and the roster shouldn't see them.
+    if (opts.playerVisibleOnly && p.is_tryout) continue;
     items.push({
       id: p.id, kind: "practice", date: p.practice_date, time: p.start_time ?? null,
       title: p.is_tryout ? "Tryout" : "Practice",
