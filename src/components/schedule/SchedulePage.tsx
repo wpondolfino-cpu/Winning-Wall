@@ -129,7 +129,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
       if (!covered) {
         out.push({
           id: null,
-          name: start === thisMon ? "This week" : "Next week",
+          name: "",
           start_date: start, end_date: end, items: [],
         });
       }
@@ -140,6 +140,20 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
   const visible = scaffold;
 
   const weekKey = (w: ScheduleWeek) => w.id ?? w.start_date ?? w.name;
+
+  /**
+   * "This week" / "Next week", computed from the date range rather than
+   * baked into a name — so a real week carrying a coach's own title
+   * ("Week 1 - Foxboro & Sharon") gets the relative label too, not just
+   * the empty scaffolded ones.
+   */
+  function relativeWeekLabel(w: ScheduleWeek): string | null {
+    if (!w.start_date) return null;
+    const thisMon = mondayOf(today);
+    if (w.start_date === thisMon) return "This week";
+    if (w.start_date === addDays(thisMon, 7)) return "Next week";
+    return null;
+  }
   /** Current and next week open by default; everything else closed. */
   function isCollapsed(w: ScheduleWeek): boolean {
     const k = weekKey(w);
@@ -284,9 +298,14 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
           >
             <span style={{ fontSize: 12, color: "var(--muted)", width: 12 }}>{isCollapsed(w) ? "▸" : "▾"}</span>
             <span style={{ fontSize: 14, fontWeight: 700 }}>
-              {w.name || (w.start_date && w.end_date ? fmtRange(w.start_date, w.end_date) : "")}
+              {relativeWeekLabel(w) ?? w.name ?? (w.start_date && w.end_date ? fmtRange(w.start_date, w.end_date) : "")}
             </span>
-            {w.name && w.start_date && w.end_date && (
+            {/* A coach's own week title still shows, just after the
+                relative one — "This week · Week 1 - Foxboro & Sharon". */}
+            {relativeWeekLabel(w) && w.name && (
+              <span style={{ fontSize: 13, color: "var(--text)" }}>{w.name}</span>
+            )}
+            {w.start_date && w.end_date && (relativeWeekLabel(w) || w.name) && (
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{fmtRange(w.start_date, w.end_date)}</span>
             )}
             <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>
