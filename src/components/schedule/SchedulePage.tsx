@@ -18,13 +18,14 @@ import { getCurrentSeason, getRosters } from "../../lib/practicePlanner";
 import { supabase } from "../../lib/supabase";
 import EventEditor from "./EventEditor";
 import PracticeSchedulePlayerView from "../PracticeSchedulePlayerView";
+import { getGameDaySheets, GameDaySheet } from "../../lib/gameDaySheets";
 import ScheduleImport from "./ScheduleImport";
 
 interface Props {
   role: "player" | "coach" | "admin";
   homeRosterId?: string | null;
   /** Routes a row through to the tab that owns it. */
-  onOpenTab?: (tab: string, payload?: { gameId?: string; practiceId?: string; view?: string }) => void;
+  onOpenTab?: (tab: string, payload?: { gameId?: string; practiceId?: string; sheetId?: string; view?: string }) => void;
 }
 
 const KIND_COLOR: Record<string, string> = {
@@ -50,6 +51,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
   const [showImport, setShowImport] = useState(false);
   // Players have no practices tab to route to, so the plan opens here.
   const [openPractice, setOpenPractice] = useState<string | null>(null);
+  const [sheets, setSheets] = useState<GameDaySheet[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => { load(); }, [role]);
@@ -63,6 +65,10 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
       const [{ data: u }, rs] = await Promise.all([supabase.auth.getUser(), getRosters()]);
       setUserId(u.user?.id ?? "");
       setRosters(rs.map((r: any) => ({ id: r.id, name: r.name })));
+      // Play sheets are reusable — the same one can be attached to any
+      // number of games — so the whole list is offered rather than one
+      // per game.
+      getGameDaySheets().then(setSheets).catch(console.error);
     }
     setWeeks(await getSchedule(season?.id ?? null, { playerVisibleOnly: !isCoach }));
     setLoading(false);
@@ -165,6 +171,9 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
       ? [
           { label: "Tracker", live: true, go: () => onOpenTab?.("gamestats", { gameId: item.id, view: "track" }) },
           { label: "Scout sheet", live: true, go: () => onOpenTab?.("scoutsheets", { gameId: item.id }) },
+          // Coach-only, and before the report because it's a pre-game
+          // thing. Faded when no sheet is attached, same rule as the rest.
+          { label: "Play sheet", live: Boolean(item.gamedaySheetId), go: () => onOpenTab?.("gameday", { sheetId: item.gamedaySheetId ?? undefined }) },
           { label: "Game report", live: Boolean(item.played), go: () => onOpenTab?.("gamestats", { gameId: item.id, view: "report" }) },
         ]
       : [
@@ -186,7 +195,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
               cursor: b.live ? "pointer" : "default",
             }}
           >
-            {b.label}{b.live ? "" : " · not posted yet"}
+            {b.label}{b.live ? "" : b.label === "Play sheet" ? " · none attached" : " · not posted yet"}
           </button>
         ))}
       </div>
@@ -307,6 +316,18 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
                         <Field label="Home / Away">
                           <select value={draft.home_away ?? ""} onChange={e => setDraft({ ...draft, home_away: e.target.value })} style={input}>
                             <option value="">—</option><option value="home">Home</option><option value="away">Away</option><option value="neutral">Neutral</option>
+                          </select>
+                        </Field>
+                      )}
+                      {item.kind === "game" && (
+                        <Field label="Play sheet">
+                          <select
+                            value={draft.gameday_sheet_id ?? item.gamedaySheetId ?? ""}
+                            onChange={e => setDraft({ ...draft, gameday_sheet_id: e.target.value || null })}
+                            style={input}
+                          >
+                            <option value="">— none —</option>
+                            {sheets.map(sh => <option key={sh.id} value={sh.id}>{sh.name}</option>)}
                           </select>
                         </Field>
                       )}
