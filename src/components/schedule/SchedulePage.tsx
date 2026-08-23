@@ -262,10 +262,22 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
               {filter === "all" ? "Nothing scheduled this week." : `No ${filter === "game" ? "games" : filter === "practice" ? "practices" : "events"} this week.`}
             </div>
           )}
-          {w.items.map(item => {
+          {w.items.map((item, idx) => {
             const live = item.kind === "game" || item.kind === "event" || isCoach || item.published;
+            // A heading whenever the day changes. Repeating the date on
+            // every row made a Monday practice and a Wednesday practice
+            // read identically -- the day was there, but as the quietest
+            // thing on the line rather than the thing separating them.
+            const newDay = idx === 0 || w.items[idx - 1].date !== item.date;
             return (
               <div key={item.kind + item.id}>
+                {newDay && (
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: idx === 0 ? "0 0 6px" : "16px 0 6px" }}>
+                    <span style={{ fontSize: 15, fontWeight: 700 }}>{fmtWeekday(item.date)}</span>
+                    <span style={{ fontSize: 15, color: "var(--muted)" }}>{fmtMonth(item.date)} {fmtDayNum(item.date)}</span>
+                    <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                  </div>
+                )}
                 <div
                   onClick={() => openRow(item)}
                   style={{
@@ -276,15 +288,6 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
                     opacity: live ? 1 : 0.5, cursor: live ? "pointer" : "default",
                   }}
                 >
-                  {/* Weekday small above a large day number, with the time
-                      in the row's own colour. Everything at 12-13px in grey
-                      read as one undifferentiated block — nothing told you
-                      which line was the date and which was the time. */}
-                  <div style={{ minWidth: 54, textAlign: "center" }}>
-                    <div style={{ fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase", color: "var(--muted)" }}>{fmtWeekday(item.date)}</div>
-                    <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>{fmtDayNum(item.date)}</div>
-                    <div style={{ fontSize: 10, color: "var(--muted)" }}>{fmtMonth(item.date)}</div>
-                  </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 15, fontWeight: 600 }}>{item.title}</div>
                     <div style={{ fontSize: 12, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 2 }}>
