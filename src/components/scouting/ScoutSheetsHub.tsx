@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../../lib/supabase";
 import { formatDateOnly } from "../../lib/schedule";
-import { deleteScoutSheet,
+import { deleteScoutSheet, renameOpponent, deleteOpponent,
   Opponent, getOpponents, createOpponent, uploadOpponentLogo,
   getOpponentLastGames, getScoutSheetsForOpponent,
   createScoutSheet, duplicateScoutSheet,
@@ -17,6 +17,8 @@ interface Props {
   initialGameId?: string | null;
   canManage: boolean; // coach/admin = true, player = false (read-only, published only)
 }
+
+const iconBtnStyle: React.CSSProperties = { background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "2px 7px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" };
 
 export default function ScoutSheetsHub(props: Props) {
   const { canManage } = props;
@@ -137,6 +139,28 @@ export default function ScoutSheetsHub(props: Props) {
     }
   }
 
+  async function handleRenameOpponent() {
+    if (!activeOpponent) return;
+    const next = window.prompt("Team name:", activeOpponent.name);
+    if (!next || !next.trim() || next.trim() === activeOpponent.name) return;
+    try {
+      await renameOpponent(activeOpponent.id, next);
+      setActiveOpponent({ ...activeOpponent, name: next.trim() });
+      loadOpponents();
+    } catch (e: any) {
+      setError(e?.message ?? "Couldn't rename that team — try again.");
+    }
+  }
+
+  async function handleDeleteOpponent() {
+    if (!activeOpponent) return;
+    if (!window.confirm(`Delete ${activeOpponent.name}? Only possible if no games or scout sheets reference them.`)) return;
+    const { error: err } = await deleteOpponent(activeOpponent.id);
+    if (err) { setError(err); return; }
+    setActiveOpponent(null);
+    loadOpponents();
+  }
+
   /**
    * Deletes a scout sheet.
    *
@@ -231,8 +255,16 @@ export default function ScoutSheetsHub(props: Props) {
             {activeOpponent.logo_url ? <img src={activeOpponent.logo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 11, color: "var(--muted)" }}>Logo</span>}
           </div>
           {canManage && <input ref={fileRef} type="file" accept="image/*" onChange={handleLogoUpload} style={{ display: "none" }} />}
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 18 }}>{activeOpponent.name}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>{activeOpponent.name}</div>
+              {canManage && (
+                <>
+                  <button type="button" title="Rename this team" onClick={handleRenameOpponent} style={iconBtnStyle}>✎</button>
+                  <button type="button" title="Delete this team" onClick={handleDeleteOpponent} style={iconBtnStyle}>✕</button>
+                </>
+              )}
+            </div>
             <div style={{ fontSize: 12, color: "var(--muted)" }}>{allSheets.length} scout sheet{allSheets.length === 1 ? "" : "s"} on file</div>
           </div>
         </div>
