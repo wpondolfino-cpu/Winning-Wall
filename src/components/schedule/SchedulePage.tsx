@@ -20,6 +20,7 @@ import EventEditor from "./EventEditor";
 import PracticeSchedulePlayerView from "../PracticeSchedulePlayerView";
 import { getGameDaySheets, GameDaySheet } from "../../lib/gameDaySheets";
 import ScheduleImport from "./ScheduleImport";
+import QuickPracticeEditor from "./QuickPracticeEditor";
 
 interface Props {
   role: "player" | "coach" | "admin";
@@ -52,6 +53,11 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
   // Players have no practices tab to route to, so the plan opens here.
   const [openPractice, setOpenPractice] = useState<string | null>(null);
   const [sheets, setSheets] = useState<GameDaySheet[]>([]);
+  const [showPractice, setShowPractice] = useState(false);
+  // Weeks the coach has collapsed. Current and next start open; the rest
+  // start closed, because a season's worth of imported games otherwise
+  // pushes this week off the screen.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => { load(); }, [role]);
@@ -132,6 +138,16 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
   })();
 
   const visible = scaffold;
+
+  const weekKey = (w: ScheduleWeek) => w.id ?? w.start_date ?? w.name;
+  /** Current and next week open by default; everything else closed. */
+  function isCollapsed(w: ScheduleWeek): boolean {
+    const k = weekKey(w);
+    if (collapsed.has(k)) return true;
+    if (!w.start_date || !w.end_date) return false;
+    const thisMon = mondayOf(today);
+    return !(w.start_date <= addDays(thisMon, 13) && w.end_date >= thisMon);
+  }
 
   function openRow(item: ScheduleItem) {
     if (item.kind === "game") {
@@ -220,7 +236,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
       {isCoach && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
           <button onClick={() => onOpenTab?.("gamestats", { view: "new" })} style={primary}>+ Game</button>
-          <button onClick={() => onOpenTab?.("practices", { view: "new" })} style={chip}>+ Practice</button>
+          <button onClick={() => setShowPractice(true)} style={chip}>+ Practice</button>
           <button onClick={() => setShowEvent(true)} style={chip}>+ Event</button>
           <button onClick={() => setShowImport(true)} style={chip}>Import</button>
         </div>
@@ -245,6 +261,10 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
         </div>
       )}
 
+      {showPractice && (
+        <QuickPracticeEditor rosters={rosters} onClose={() => setShowPractice(false)} onSaved={load} />
+      )}
+
       {showEvent && (
         <EventEditor seasonId={seasonId} rosters={rosters} onClose={() => setShowEvent(false)} onSaved={load} />
       )}
@@ -254,16 +274,35 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
 
       {visible.map(w => (
         <div key={w.id ?? "loose"}>
-          <div style={{ fontSize: 12, color: "var(--muted)", margin: "16px 0 8px" }}>
-            {w.name ? `${w.name} · ` : ""}{w.start_date && w.end_date ? fmtRange(w.start_date, w.end_date) : ""}
+          <div
+            onClick={() => setCollapsed(c => { const n = new Set(c); const k = weekKey(w); n.has(k) ? n.delete(k) : n.add(k); return n; })}
+            style={{
+              display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+              margin: "20px 0 10px", padding: "8px 12px",
+              background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10,
+            }}
+          >
+            <span style={{ fontSize: 12, color: "var(--muted)", width: 12 }}>{isCollapsed(w) ? "▸" : "▾"}</span>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>
+              {w.name || (w.start_date && w.end_date ? fmtRange(w.start_date, w.end_date) : "")}
+            </span>
+            {w.name && w.start_date && w.end_date && (
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>{fmtRange(w.start_date, w.end_date)}</span>
+            )}
+            <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>
+              {w.items.length === 0 ? "—" : `${w.items.length} item${w.items.length === 1 ? "" : "s"}`}
+            </span>
           </div>
-          {w.items.length === 0 && (
+          {!isCollapsed(w) && w.items.length === 0 && (
             <div style={{ fontSize: 12, color: "var(--muted)", border: "1px dashed var(--border)", borderRadius: 10, padding: "14px 12px", marginBottom: 6 }}>
               {filter === "all" ? "Nothing scheduled this week." : `No ${filter === "game" ? "games" : filter === "practice" ? "practices" : "events"} this week.`}
             </div>
           )}
-          {w.items.map((item, idx) => {
-            const live = item.kind === "game" || item.kind === "event" || isCoach || item.published;
+          {!isCollapsed(w) && w.items.map((item, idx) => {
+            // Nothing dims any more. A row is on the schedule because it's
+            // happening; whether its plan is written is a separate fact,
+            // carried by the tag rather than by fading the whole row.
+            const planReady = item.kind !== "practice" || isCoach || item.published;
             // A heading whenever the day changes. Repeating the date on
             // every row made a Monday practice and a Wednesday practice
             // read identically -- the day was there, but as the quietest
@@ -285,7 +324,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
                     background: "var(--surface)", border: "1px solid var(--border)",
                     borderLeft: `4px solid ${KIND_COLOR[item.kind]}`,
                     borderRadius: 10, padding: "10px 12px", marginBottom: 6,
-                    opacity: live ? 1 : 0.5, cursor: live ? "pointer" : "default",
+                    cursor: planReady ? "pointer" : "default",
                   }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -317,8 +356,12 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
                     </button>
                   )}
                   {!isCoach && (
-                    <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                      {item.kind === "practice" && !item.published ? "plan not posted" : live ? "›" : ""}
+                    <div style={{ fontSize: 11, color: planReady ? KIND_COLOR[item.kind] : "var(--muted)", textAlign: "right", minWidth: 74 }}>
+                      {item.kind === "practice"
+                        ? (item.published
+                            ? <span style={{ fontWeight: 600 }}>Plan posted ›</span>
+                            : "Plan coming")
+                        : "›"}
                     </div>
                   )}
                 </div>
