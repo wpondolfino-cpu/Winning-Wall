@@ -255,7 +255,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
       {visible.map(w => (
         <div key={w.id ?? "loose"}>
           <div style={{ fontSize: 12, color: "var(--muted)", margin: "16px 0 8px" }}>
-            {w.name}{w.start_date && w.end_date ? ` · ${fmtRange(w.start_date, w.end_date)}` : ""}
+            {w.name ? `${w.name} · ` : ""}{w.start_date && w.end_date ? fmtRange(w.start_date, w.end_date) : ""}
           </div>
           {w.items.length === 0 && (
             <div style={{ fontSize: 12, color: "var(--muted)", border: "1px dashed var(--border)", borderRadius: 10, padding: "14px 12px", marginBottom: 6 }}>
@@ -276,13 +276,34 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
                     opacity: live ? 1 : 0.5, cursor: live ? "pointer" : "default",
                   }}
                 >
-                  <div style={{ minWidth: 70 }}>
-                    <div style={{ fontSize: 13 }}>{fmtDay(item.date)}</div>
-                    <div style={{ fontSize: 12, color: "var(--muted)" }}>{fmtTime(item.time)}</div>
+                  {/* Weekday small above a large day number, with the time
+                      in the row's own colour. Everything at 12-13px in grey
+                      read as one undifferentiated block — nothing told you
+                      which line was the date and which was the time. */}
+                  <div style={{ minWidth: 54, textAlign: "center" }}>
+                    <div style={{ fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase", color: "var(--muted)" }}>{fmtWeekday(item.date)}</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>{fmtDayNum(item.date)}</div>
+                    <div style={{ fontSize: 10, color: "var(--muted)" }}>{fmtMonth(item.date)}</div>
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14 }}>{item.title}</div>
-                    {item.subtitle && <div style={{ fontSize: 12, color: "var(--muted)" }}>{item.subtitle}</div>}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600 }}>{item.title}</div>
+                    <div style={{ fontSize: 12, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 2 }}>
+                      {/* Bus time leads on an away game: it's the one you
+                          have to be somewhere for, and missing it means
+                          missing the game. */}
+                      {item.busTime && (
+                        <span style={{ color: KIND_COLOR[item.kind], fontWeight: 600 }}>Bus {fmtTime(item.busTime)}</span>
+                      )}
+                      <span style={{ color: item.busTime ? "var(--muted)" : KIND_COLOR[item.kind], fontWeight: item.busTime ? 400 : 600 }}>
+                        {item.busTime ? `Tip ${fmtTime(item.time)}` : fmtTime(item.time)}
+                      </span>
+                      {item.kind === "game" && item.homeAway && (
+                        <span style={{ fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "1px 5px" }}>
+                          {item.homeAway}
+                        </span>
+                      )}
+                      {item.subtitle && <span style={{ color: "var(--muted)" }}>{item.subtitle}</span>}
+                    </div>
                   </div>
                   {isCoach && (
                     <button
@@ -317,6 +338,11 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
                           <select value={draft.home_away ?? ""} onChange={e => setDraft({ ...draft, home_away: e.target.value })} style={input}>
                             <option value="">—</option><option value="home">Home</option><option value="away">Away</option><option value="neutral">Neutral</option>
                           </select>
+                        </Field>
+                      )}
+                      {item.kind === "game" && (
+                        <Field label="Bus time">
+                          <input type="time" value={(draft.bus_time ?? item.busTime ?? "").slice(0, 5)} onChange={e => setDraft({ ...draft, bus_time: e.target.value || null })} style={input} />
                         </Field>
                       )}
                       {item.kind === "game" && (
@@ -361,9 +387,16 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function fmtDay(iso: string) {
-  const d = new Date(iso + "T12:00:00");
-  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+// All anchored at midday: a bare date string parses as UTC midnight, which
+// renders as the previous day anywhere west of Greenwich.
+function fmtWeekday(iso: string) {
+  return new Date(iso + "T12:00:00").toLocaleDateString(undefined, { weekday: "short" });
+}
+function fmtDayNum(iso: string) {
+  return new Date(iso + "T12:00:00").getDate();
+}
+function fmtMonth(iso: string) {
+  return new Date(iso + "T12:00:00").toLocaleDateString(undefined, { month: "short" });
 }
 function fmtRange(a: string, b: string) {
   const f = (iso: string) => new Date(iso + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
