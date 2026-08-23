@@ -29,6 +29,9 @@ export interface ScheduleItem {
   played?: boolean;
   /** Games only: the play sheet attached to this game, if one is. */
   gamedaySheetId?: string | null;
+  /** Games only. Away games have two times that matter; this is the one you have to be somewhere for. */
+  busTime?: string | null;
+  homeAway?: string | null;
   rosterIds?: string[];
 }
 
@@ -64,7 +67,7 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
   const [weeksRes, practicesRes, gamesRes, eventsRes, sheetsRes] = await Promise.all([
     supabase.from("practice_weeks").select("*").order("start_date", { ascending: true, nullsFirst: false }),
     supabase.from("practices").select("id, practice_date, start_time, week_id, status, roster_ids, is_tryout"),
-    supabase.from("games").select("id, game_date, tip_time, location, opponent, home_away, week_id, final_score_us, final_score_them, status, gameday_sheet_id"),
+    supabase.from("games").select("id, game_date, tip_time, location, opponent, home_away, week_id, final_score_us, final_score_them, status, gameday_sheet_id, bus_time"),
     supabase.from("schedule_events").select("*"),
     supabase.from("scout_sheets").select("game_id, status"),
   ]);
@@ -101,6 +104,8 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
       week_id: g.week_id, published: g.status === "published",
       scoutPublished: sheetByGame.get(g.id) === "published",
       gamedaySheetId: g.gameday_sheet_id ?? null,
+      busTime: g.bus_time ?? null,
+      homeAway: g.home_away ?? null,
       played,
     });
   }
@@ -123,12 +128,26 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
   const loose: ScheduleItem[] = [];
 
   for (const item of items) {
-    const w = grouped.find(g => g.start_date && g.end_date && item.date >= g.start_date && item.date <= g.end_date)
-      ?? grouped.find(g => g.id === item.week_id);
+    // Date range only. Falling back to the stored week_id put rows under a
+    // header whose dates contradicted them — a practice on Aug 24 showing
+    // inside "Aug 17 - 23". A row whose date matches no week gets its own
+    // group below rather than being filed somewhere wrong.
+    const w = grouped.find(g => g.start_date && g.end_date && item.date >= g.start_date && item.date <= g.end_date);
     if (w) w.items.push(item); else loose.push(item);
   }
-  if (loose.length) {
-    grouped.push({ id: null, name: "Unscheduled", start_date: null, end_date: null, items: loose });
+  // Loose rows are grouped into their own ISO weeks so they still read as
+  // weeks rather than one undifferentiated pile.
+  const looseByWeek = new Map<string, ScheduleItem[]>();
+  for (const item of loose) {
+    const d = new Date(item.date + "T12:00:00");
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const key = d.toISOString().slice(0, 10);
+    (looseByWeek.get(key) ?? looseByWeek.set(key, []).get(key)!).push(item);
+  }
+  for (const [key, list] of looseByWeek) {
+    const end = new Date(key + "T12:00:00");
+    end.setDate(end.getDate() + 6);
+    grouped.push({ id: null, name: "", start_date: key, end_date: end.toISOString().slice(0, 10), items: list });
   }
 
   for (const w of grouped) {
@@ -148,6 +167,7 @@ export async function updateScheduleFields(item: ScheduleItem, patch: {
   date?: string; time?: string | null; location?: string | null;
   opponent?: string; home_away?: string; title?: string;
   gameday_sheet_id?: string | null;
+  bus_time?: string | null;
 }): Promise<{ error: string | null }> {
   const stamp = new Date().toISOString();
   if (item.kind === "practice") {
@@ -166,6 +186,7 @@ export async function updateScheduleFields(item: ScheduleItem, patch: {
       ...(patch.opponent ? { opponent: patch.opponent } : {}),
       ...(patch.home_away ? { home_away: patch.home_away } : {}),
       ...(patch.gameday_sheet_id !== undefined ? { gameday_sheet_id: patch.gameday_sheet_id } : {}),
+      ...(patch.bus_time !== undefined ? { bus_time: patch.bus_time } : {}),
       updated_at: stamp,
     }).eq("id", item.id);
     return { error: error?.message ?? null };
