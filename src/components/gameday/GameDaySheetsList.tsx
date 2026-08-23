@@ -6,7 +6,12 @@ import { GAMEDAY_SECTIONS } from "../../lib/gameDaySheets";
 import { inputStyle } from "../../lib/inputStyle";
 import GameDaySheetEditor from "./GameDaySheetEditor";
 
-export default function GameDaySheetsList() {
+interface Props {
+  /** Opens straight into this sheet — what the Schedule's Play sheet button passes. */
+  initialSheetId?: string | null;
+}
+
+export default function GameDaySheetsList(props: Props) {
   const [sheets, setSheets] = useState<GameDaySheet[]>([]);
   const [newName, setNewName] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -14,7 +19,7 @@ export default function GameDaySheetsList() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [duplicatingFromId, setDuplicatingFromId] = useState<string | null>(null);
   const [duplicateName, setDuplicateName] = useState("");
-  const [openSheetId, setOpenSheetId] = useState<string | null>(null);
+  const [openSheetId, setOpenSheetId] = useState<string | null>(props.initialSheetId ?? null);
   const [error, setError] = useState<string | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
 
