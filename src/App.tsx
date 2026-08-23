@@ -142,7 +142,7 @@ export default function App() {
   // Set when a Schedule row routes to another tab, so that tab can open
   // the specific practice or game rather than just its list. Cleared once
   // consumed, so switching tabs by hand doesn't reopen it.
-  const [scheduleTarget, setScheduleTarget] = useState<{ practiceId?: string; gameId?: string; view?: string } | null>(null);
+  const [scheduleTarget, setScheduleTarget] = useState<{ practiceId?: string; gameId?: string; sheetId?: string; view?: string } | null>(null);
   const [coachNavOrder, setCoachNavOrder] = useState<string[]>(COACH_NAV_DEFAULT_ORDER);
   const [adminNavOrder, setAdminNavOrder] = useState<string[]>(ADMIN_NAV_DEFAULT_ORDER);
   const [navSections, setNavSections] = useState<Record<string, NavSection>>({});
@@ -506,7 +506,7 @@ export default function App() {
           {isPlayer && playerTab === "progress" && <ProgressPanel profile={displayProfile} myScores={myScores} workouts={workouts} />}
           {isPlayer && playerTab === "hof" && <HallOfFame onViewWorkout={(id) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} />}
           {isPlayer && playerTab === "plays" && <PlaysHub currentUserRole="player" />}
-          {isPlayer && playerTab === "gamestats" && <GameStatsHub currentUserRole="player" userId={user.id} />}
+          {isPlayer && playerTab === "gamestats" && <GameStatsHub currentUserRole="player" userId={user.id} initialGameId={scheduleTarget?.gameId ?? null} initialView={scheduleTarget?.view ?? null} key={scheduleTarget?.gameId ?? "hub"} />}
           {isPlayer && playerTab === "scoutsheets" && <ScoutSheetsHub canManage={false} initialGameId={scheduleTarget?.gameId ?? null} key={scheduleTarget?.gameId ?? "list"} />}
           {/* Schedule supersedes PracticeSchedulePlayerView — it shows the
               same practices plus games and events. The old key still routes
@@ -574,9 +574,9 @@ export default function App() {
           {isCoach && coachTab === "schedule" && <SchedulePage role="coach" onOpenTab={(t, payload) => { setScheduleTarget(payload ?? null); setCoachTab(t as CoachTab); }} />}
           {isCoach && coachTab === "practices" && <PracticeWeeksList initialPracticeId={scheduleTarget?.practiceId ?? null} key={scheduleTarget?.practiceId ?? "list"} />}
           {isCoach && coachTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
-          {isCoach && coachTab === "gamestats" && <GameStatsHub currentUserRole="coach" userId={user.id} />}
+          {isCoach && coachTab === "gamestats" && <GameStatsHub currentUserRole="coach" userId={user.id} initialGameId={scheduleTarget?.gameId ?? null} initialView={scheduleTarget?.view ?? null} key={scheduleTarget?.gameId ?? "hub"} />}
           {isCoach && coachTab === "scoutsheets" && <ScoutSheetsHub canManage={true} initialGameId={scheduleTarget?.gameId ?? null} key={scheduleTarget?.gameId ?? "list"} />}
-          {isCoach && coachTab === "gameday" && <GameDaySheetsList />}
+          {isCoach && coachTab === "gameday" && <GameDaySheetsList initialSheetId={scheduleTarget?.sheetId ?? null} key={scheduleTarget?.sheetId ?? "list"} />}
           {isCoach && coachTab === "leaderboard" && <LeaderboardHub canManage={true} profile={displayProfile} />}
           {isCoach && coachTab === "announcements" && (<><AnnouncementPanel isAdmin={false} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
           {isCoach && coachTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isCoach={true} />}
@@ -606,9 +606,9 @@ export default function App() {
           {isAdmin && adminTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={true} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
           {isAdmin && adminTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} onChallenge={() => setAdminTab("challenges")} />}
           {isAdmin && adminTab === "plays" && <PlaysHub currentUserRole="admin" />}
-          {isAdmin && adminTab === "gamestats" && <GameStatsHub currentUserRole="admin" userId={user.id} />}
+          {isAdmin && adminTab === "gamestats" && <GameStatsHub currentUserRole="admin" userId={user.id} initialGameId={scheduleTarget?.gameId ?? null} initialView={scheduleTarget?.view ?? null} key={scheduleTarget?.gameId ?? "hub"} />}
           {isAdmin && adminTab === "scoutsheets" && <ScoutSheetsHub canManage={true} initialGameId={scheduleTarget?.gameId ?? null} key={scheduleTarget?.gameId ?? "list"} />}
-          {isAdmin && adminTab === "gameday" && <GameDaySheetsList />}
+          {isAdmin && adminTab === "gameday" && <GameDaySheetsList initialSheetId={scheduleTarget?.sheetId ?? null} key={scheduleTarget?.sheetId ?? "list"} />}
           {isAdmin && adminTab === "schedule" && <SchedulePage role="admin" onOpenTab={(t, payload) => { setScheduleTarget(payload ?? null); setAdminTab(t as AdminTab); }} />}
           {isAdmin && adminTab === "practices" && <PracticeWeeksList initialPracticeId={scheduleTarget?.practiceId ?? null} key={scheduleTarget?.practiceId ?? "list"} />}
           {isAdmin && adminTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
