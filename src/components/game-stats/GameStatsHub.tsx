@@ -22,6 +22,10 @@ import ShiftEntry from "./ShiftEntry";
 import LineupsTab from "./LineupsTab";
 
 interface Props {
+  /** Opens straight into this game rather than the games list. */
+  initialGameId?: string | null;
+  /** Which view to open it in — "track" (default) or "report". */
+  initialView?: string | null;
   currentUserRole: "player" | "coach" | "admin";
   userId: string;
 }
@@ -36,9 +40,16 @@ type GamesView =
 
 type ReportsView = { mode: "history" } | { mode: "builder"; saved?: SavedReport };
 
-export default function GameStatsHub({ currentUserRole, userId }: Props) {
+export default function GameStatsHub({ currentUserRole, userId, initialGameId, initialView }: Props) {
   const [topTab, setTopTab] = useState<"games" | "reports" | "lineups" | "goals">("games");
-  const [gamesView, setGamesView] = useState<GamesView>({ mode: "list" });
+  // Opening straight into a game is what tapping a Schedule row means.
+  // Without this the hub always started on its list, so Tracker and Report
+  // both landed on the same front door rather than the game you tapped.
+  const [gamesView, setGamesView] = useState<GamesView>(
+    initialGameId
+      ? { mode: initialView === "report" ? "report" : "track", gameId: initialGameId } as GamesView
+      : { mode: "list" }
+  );
   const [reportsView, setReportsView] = useState<ReportsView>({ mode: "history" });
   const [quarter, setQuarter] = useState(1);
   const [gameFinal, setGameFinal] = useState<boolean | null>(null);
