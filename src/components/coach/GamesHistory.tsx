@@ -56,6 +56,7 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
   // so landing here shows what's imminent without any clicking.
   const [openWeeks, setOpenWeeks] = useState<Set<string>>(new Set());
   const [tipTime, setTipTime]     = useState("");
+  const [busTime, setBusTime]     = useState("");
   const [location, setLocation]   = useState("");
   const [homeAway, setHomeAway]   = useState("home");
   const [rosterId, setRosterId] = useState<string>("");
@@ -150,6 +151,7 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
         roster_id: rosterId || null,
         opponent_id: opponentId,
         tip_time: tipTime || null,
+        bus_time: busTime || null,
         location: location.trim() || null,
         home_away: homeAway,
         week_id: await resolveWeek(gameDate, null),
@@ -159,7 +161,7 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
     if (!error && data) {
       setGames((g) => [data as Game, ...g]);
       setCreating(false);
-      setOpponent(""); setOpponentId(null); setTipTime(""); setLocation("");
+      setOpponent(""); setOpponentId(null); setTipTime(""); setBusTime(""); setLocation("");
       onOpenGame((data as Game).id);
     }
   }
@@ -342,6 +344,14 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
           <Field label="Tip time">
             <input type="time" value={tipTime} onChange={(e) => setTipTime(e.target.value)} style={newGameField} />
           </Field>
+
+          {/* Only offered for away games — a home game has no bus, and an
+              empty field you always skip is worse than no field. */}
+          {gameType !== "practice" && homeAway === "away" && (
+            <Field label="Bus time">
+              <input type="time" value={busTime} onChange={(e) => setBusTime(e.target.value)} style={newGameField} />
+            </Field>
+          )}
 
           {gameType !== "practice" && (
             <>
