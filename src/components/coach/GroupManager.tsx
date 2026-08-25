@@ -87,7 +87,11 @@ export default function GroupManager({ workouts, onChanged }: Props) {
       await supabase.from("workouts").update({ is_active: false }).eq("group_id", currentActive.id);
     }
     await supabase.from("workout_groups").update({ status: "active" }).eq("id", groupId);
-    await supabase.from("workouts").update({ is_active: true }).eq("group_id", groupId);
+    // is_active makes them visible to players; leaderboard_active makes
+    // their scores count. Both, so this is genuinely the one button —
+    // otherwise a group that had been pulled off the leaderboard would
+    // come back visible but unscored.
+    await supabase.from("workouts").update({ is_active: true, leaderboard_active: true }).eq("group_id", groupId);
     try {
       await supabase.functions.invoke("send-push", {
         body: {
