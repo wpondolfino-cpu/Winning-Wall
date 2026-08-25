@@ -54,19 +54,19 @@ export async function submitScore(
   // Fetch workout to get scoring type and point values
   const { data: workout } = await supabase
     .from("workouts")
-    .select("scoring_type, flat_points, first_place_pts, second_place_pts, third_place_pts, group_id, workout_groups(current_run)")
+    .select("scoring_type, flat_points, first_place_pts, second_place_pts, third_place_pts, current_run")
     .eq("id", score.workout_id)
     .single();
 
   if (!workout) throw new Error("Workout not found");
 
-  // Which run of its group this score belongs to. Null for an ungrouped
-  // workout, which keeps all-time ranking exactly as it was. Stamped at
-  // submit time so a later rerun can't retroactively pull this score into
-  // a competition it wasn't part of.
-  const runNo: number | null = (workout as any).group_id
-    ? ((workout as any).workout_groups?.current_run ?? 1)
-    : null;
+  // Read off the WORKOUT, not its group: many groups here are just a
+  // group_name string with no workout_groups row, so a group-based lookup
+  // returned null and the score went unstamped.
+  //
+  // Stamped at submit time so a later rerun can't retroactively pull this
+  // score into a competition it wasn't part of.
+  const runNo: number = (workout as any).current_run ?? 1;
 
   const scoringType = workout.scoring_type ?? "competitive";
   const flatPts     = workout.flat_points ?? 1;
