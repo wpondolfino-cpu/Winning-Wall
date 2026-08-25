@@ -54,11 +54,19 @@ export async function submitScore(
   // Fetch workout to get scoring type and point values
   const { data: workout } = await supabase
     .from("workouts")
-    .select("scoring_type, flat_points, first_place_pts, second_place_pts, third_place_pts")
+    .select("scoring_type, flat_points, first_place_pts, second_place_pts, third_place_pts, group_id, workout_groups(current_run)")
     .eq("id", score.workout_id)
     .single();
 
   if (!workout) throw new Error("Workout not found");
+
+  // Which run of its group this score belongs to. Null for an ungrouped
+  // workout, which keeps all-time ranking exactly as it was. Stamped at
+  // submit time so a later rerun can't retroactively pull this score into
+  // a competition it wasn't part of.
+  const runNo: number | null = (workout as any).group_id
+    ? ((workout as any).workout_groups?.current_run ?? 1)
+    : null;
 
   const scoringType = workout.scoring_type ?? "competitive";
   const flatPts     = workout.flat_points ?? 1;
@@ -110,7 +118,7 @@ export async function submitScore(
     } else {
       // First time logging this workout
       const { data, error } = await supabase.from("scores")
-        .insert({ ...cleanScore, points: flatPts, self_points: flatPts, last_logged_date: today })
+        .insert({ run: runNo, ...cleanScore, points: flatPts, self_points: flatPts, last_logged_date: today })
         .select().single();
       if (error) throw error;
       saved = data as Score;
@@ -189,7 +197,7 @@ export async function submitScore(
   }
 
   // ── Always log attempt (used for streak tracking + history) ──
-  await supabase.from("score_attempts").insert({
+  await supabase.from("score_attempts").insert({ run: runNo,
     player_id:        score.player_id,
     workout_id:       score.workout_id,
     made:             cleanScore.made ?? 0,
