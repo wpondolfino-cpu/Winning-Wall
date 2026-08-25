@@ -82,10 +82,47 @@ export default function CoachPanel({ workouts, onPublished, coachId, coachName, 
     finally { setDeactivatingGroup(false); }
   }
 
+  /**
+   * Brings a group back onto the leaderboard, and asks whether it's a
+   * RERUN.
+   *
+   * Reactivating alone restores every score ever logged against these
+   * workouts -- a kid who ran Week 1 in November is still top of the board
+   * in February. Starting a new run resets the board without deleting
+   * anything: logged scores and personal bests survive, so "you did 18,
+   * now 24" still works, and only the ranking is scoped to this cycle.
+   *
+   * Asked rather than assumed, because reactivating is also how you undo
+   * an accidental removal -- and silently wiping a leaderboard would be
+   * the worst possible outcome of an undo.
+   */
   async function reactivateGroupOnLeaderboard(groupName: string) {
     setDeactivatingGroup(true);
     try {
       await supabase.from("workouts").update({ leaderboard_active: true }).eq("group_name", groupName);
+
+      // This panel filters on group_name, but runs live on the group row —
+      // so resolve an id from the workouts themselves, falling back to a
+      // name match for groups that predate group_id.
+      const gWorkouts = workouts.filter(w => w.group_name === groupName);
+      let groupId: string | null = (gWorkouts.find(w => (w as any).group_id) as any)?.group_id ?? null;
+      if (!groupId) {
+        const { data } = await supabase.from("workout_groups").select("id").eq("name", groupName).maybeSingle();
+        groupId = data?.id ?? null;
+      }
+
+      if (groupId) {
+        const ok = window.confirm(
+          `"${groupName}" is back on the leaderboard.\n\n` +
+          `Start a NEW RUN?\n\n` +
+          `• Yes — leaderboards for these workouts start empty. Everyone keeps their logged scores and personal bests; points already earned stay. Old scores stay in the table, just off the board.\n\n` +
+          `• No — the previous scores stay on the leaderboard exactly as they were. Choose this if you were undoing an accidental removal.`
+        );
+        if (ok) {
+          const { error } = await supabase.rpc("start_group_run", { p_group_id: groupId });
+          if (error) alert("Couldn't start a new run: " + error.message);
+        }
+      }
       onPublished();
     } catch (e: any) { alert("Error: " + e.message); }
     finally { setDeactivatingGroup(false); }
