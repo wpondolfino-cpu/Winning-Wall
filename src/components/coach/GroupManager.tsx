@@ -65,8 +65,22 @@ export default function GroupManager({ workouts, onChanged }: Props) {
   }
 
   async function publishGroup(groupId: string) {
-    if (!window.confirm("Publish this group? All workouts in it will become visible to players immediately.")) return;
-    const group = groups.find(g => g.id === groupId);
+    const g = groups.find(x => x.id === groupId);
+    const reRun = g?.status === "archived";
+    // Republishing an archived group starts a NEW RUN. Without it, every
+    // score from last time comes back with it -- a kid who ran Week 1 in
+    // November still topping the board in February. The run resets the
+    // leaderboard without deleting anything: logged scores and personal
+    // bests survive, so "you did 18, now 24" still works.
+    const msg = reRun
+      ? `Run "${g?.name}" again?\n\n• Leaderboards for its workouts start empty\n• Everyone keeps their logged scores and personal bests\n• Points already earned stay; new points are awarded fresh\n• Nothing is deleted — old scores stay tagged to run ${(g as any)?.current_run ?? 1}`
+      : "Publish this group? All workouts in it will become visible to players immediately.";
+    if (!window.confirm(msg)) return;
+    if (reRun) {
+      const { error } = await supabase.rpc("start_group_run", { p_group_id: groupId });
+      if (error) { console.error("Couldn't start a new run:", error); return; }
+    }
+    const group = groups.find(g2 => g2.id === groupId);
     const currentActive = groups.find(g => g.status === "active");
     if (currentActive && currentActive.id !== groupId) {
       await supabase.from("workout_groups").update({ status: "archived" }).eq("id", currentActive.id);
@@ -141,6 +155,7 @@ export default function GroupManager({ workouts, onChanged }: Props) {
 
         function renderGroupCard(g: any) {
           const sc = STATUS_COLOR[g.status] ?? STATUS_COLOR.draft;
+          const runNo = (g as any).current_run ?? 1;
           const groupWorkouts = workouts.filter((w: any) => w.group_id === g.id);
           const isEditing = editingGroup?.id === g.id;
           return (
@@ -167,6 +182,13 @@ export default function GroupManager({ workouts, onChanged }: Props) {
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{g.name}</span>
+                      {/* So you can always tell which cycle a group is on —
+                          otherwise a rerun looks identical to the first. */}
+                      {runNo > 1 && (
+                        <span style={{ fontSize: 11, color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 5, padding: "1px 6px" }}>
+                          Run {runNo}
+                        </span>
+                      )}
                       <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: sc.bg, color: sc.color }}>{sc.label}</span>
                     </div>
                     {g.description && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{g.description}</div>}
@@ -180,10 +202,12 @@ export default function GroupManager({ workouts, onChanged }: Props) {
                       style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 7, padding: "5px 8px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>
                       ✏️
                     </button>
-                    {g.status === "draft" && (
+                    {/* Archived groups had no way back — only a delete icon.
+                        Republishing is also where a new run starts. */}
+                    {(g.status === "draft" || g.status === "archived") && (
                       <button onClick={() => publishGroup(g.id)}
                         style={{ background: "rgba(40,180,80,0.12)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
-                        🌐 Publish
+                        {g.status === "archived" ? "🔁 Run again" : "🌐 Publish"}
                       </button>
                     )}
                     {g.status === "active" && (
