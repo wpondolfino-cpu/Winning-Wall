@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense, type ComponentType } from "react";
 import PlayCanvas, { CANVAS_W, CANVAS_H } from "./PlayCanvas";
 import { hoopPositions } from "./courtGeometry";
+import VideoUrlNote from "../shared/VideoUrlNote";
 import {
   Play, PlayData, PlayFrame, PlayPlayer, PlayAction, ActionType,
   CourtTemplate, COURT_TEMPLATES, COURT_TEMPLATE_LABELS,
@@ -929,6 +930,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             )}
             <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film URL (optional, YouTube)"
               style={{ width: "100%", marginBottom: currentUserRole !== "player" ? 8 : 14, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            <VideoUrlNote url={videoUrl} />
             {currentUserRole !== "player" && (
               <select value={category} onChange={(e) => setCategory(e.target.value)}
                 style={{ width: "100%", marginBottom: 14, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
@@ -1178,6 +1180,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         )}
         <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film URL (optional, YouTube — e.g. footage of the team running this play)"
           style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+        <VideoUrlNote url={videoUrl} />
         {currentUserRole !== "player" && (
           <select value={category} onChange={(e) => setCategory(e.target.value)}
             style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
