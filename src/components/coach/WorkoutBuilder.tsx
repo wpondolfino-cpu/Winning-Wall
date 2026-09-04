@@ -5,6 +5,7 @@ import { getCategories } from "../../lib/categories";
 import { loadGroupsForBuilder } from "./GroupManager";
 import LibraryDrillPicker from "./LibraryDrillPicker";
 import { renderRichText, insertBullet, insertNumbered, insertIndent } from "../../lib/richtext";
+import VideoUrlNote from "../shared/VideoUrlNote";
 
 const EMOJIS = ["🏀","🎯","⚡","💪","🏆","🔥","🎽","⏱️"];
 
@@ -470,6 +471,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
           <label>YouTube Video URL (optional)</label>
           <input value={videoUrl} onChange={e => setVideoUrl(e.target.value)} placeholder="https://youtube.com/watch?v=…" />
           {embedPreview && <div style={{ marginTop: 6, fontSize: 11, color: "#5de098" }}>✓ Valid YouTube URL</div>}
+          <VideoUrlNote url={videoUrl} />
         </div>
 
         <div>
