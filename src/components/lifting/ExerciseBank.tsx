@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { BankExercise, MuscleGroup, MUSCLE_GROUPS, getExerciseBank, upsertBankExercise, getYouTubeId } from "./lifting";
 import { supabase } from "../../lib/supabase";
+import VideoUrlNote from "../shared/VideoUrlNote";
 
 interface Props {
   playerId: string;
@@ -177,6 +178,7 @@ export default function ExerciseBank({ playerId, canManage }: Props) {
             </div>
             <input value={editVideo} onChange={e => setEditVideo(e.target.value)} placeholder="YouTube URL (optional)"
               style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+            <VideoUrlNote url={editVideo} />
             <input value={editDefaultNotes} onChange={e => setEditDefaultNotes(e.target.value)} placeholder='Default notes (e.g. "each leg", "slow tempo") — auto-fills when added to a program'
               style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
             <div style={{ display: "flex", gap: 8 }}>
@@ -252,8 +254,9 @@ export default function ExerciseBank({ playerId, canManage }: Props) {
                             <input type="number" value={editRest} onChange={e => setEditRest(e.target.value)} placeholder="Rest (secs)"
                               style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 7, padding: "7px 10px", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
                           </div>
-                          <input value={editVideo} onChange={e => setEditVideo(e.target.value)} placeholder="YouTube URL"
+                          <input value={editVideo} onChange={e => setEditVideo(e.target.value)} placeholder="YouTube URL (optional)"
                             style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 7, padding: "7px 10px", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+                          <VideoUrlNote url={editVideo} />
                           <input value={editDefaultNotes} onChange={e => setEditDefaultNotes(e.target.value)} placeholder='Default notes (e.g. "each leg") — auto-fills in programs'
                             style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 7, padding: "7px 10px", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
                           {editVideo && getYouTubeId(editVideo) && (
