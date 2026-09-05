@@ -283,7 +283,7 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <input value={editDrill.title ?? ""} onChange={e => setEditDrill({ ...editDrill, title: e.target.value })} placeholder="Title" style={inputStyle} />
               <textarea value={editDrill.description ?? ""} onChange={e => setEditDrill({ ...editDrill, description: e.target.value })} placeholder="Description" rows={3} style={{ ...inputStyle, resize: "vertical" as const }} />
-              <input value={editDrill.video_url ?? ""} onChange={e => setEditDrill({ ...editDrill, video_url: e.target.value })} placeholder="YouTube URL (optional)" style={inputStyle} />
+              <input value={editDrill.video_url ?? ""} onChange={e => setEditDrill({ ...editDrill, video_url: e.target.value })} placeholder="YouTube link" style={inputStyle} />
               <VideoUrlNote url={editDrill.video_url} />
               <select value={editDrill.category_name ?? ""} onChange={e => setEditDrill({ ...editDrill, category_name: e.target.value || null })} style={inputStyle}>
                 <option value="">No category</option>
