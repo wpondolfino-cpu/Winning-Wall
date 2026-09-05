@@ -15,6 +15,7 @@ import {
   Play, RosterPlayer, getMyPlays, getPlaysSharedWithMe, getMyAssignedPlaybooks,
   getPlaybookPlays, getPlayShares, revokePlayShare, markPlayViewed, markPlaybookViewed,
   forkPlay, getRoster, Playbook, deletePlay, getStaff, sharePlay, PlayShareTarget,
+  getMyForkOrigins, adoptSharedPlaybook, dismissPlayShare, dismissPlaybookShare, type ForkRecord,
   playToExportPayload, importPlayFromExportPayload, PLAY_EXPORT_SCHEMA_VERSION,
 } from "../../lib/plays";
 import { embedJsonInPdf, extractJsonFromPdf, drawSimpleCoverPage, svgElementToPngBytes } from "../../lib/pdfDataExport";
@@ -44,6 +45,9 @@ interface Props {
 }
 
 type Tab = "mine" | "shared" | "playbooks";
+
+/** A play shared with me, with the share row and sharer's name attached. */
+type SharedPlay = Play & { share_id: string; shared_by: string; shared_by_name: string | null; dismissed_at: string | null };
 
 // Catches any runtime error inside the 3D viewer and shows it directly,
 // instead of an unexplained blank/wrong screen if something in there throws.
@@ -104,8 +108,11 @@ function filterPlays<T extends { title: string; tags: string[] }>(plays: T[], se
 export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initialPlay, onExitInitialPlay }: Props) {
   const [tab, setTab] = useState<Tab>("mine");
   const [myPlays, setMyPlays] = useState<Play[]>([]);
-  const [sharedPlays, setSharedPlays] = useState<(Play & { share_id: string; shared_by: string })[]>([]);
-  const [playbooks, setPlaybooks] = useState<(Playbook & { share_id: string; viewed_at: string | null })[]>([]);
+  const [sharedPlays, setSharedPlays] = useState<SharedPlay[]>([]);
+  // Originals I already have a copy of, keyed by the original's id.
+  const [forkOrigins, setForkOrigins] = useState<Map<string, ForkRecord>>(new Map());
+  const [adopting, setAdopting] = useState<string | null>(null);
+  const [playbooks, setPlaybooks] = useState<(Playbook & { share_id: string; viewed_at: string | null; dismissed_at: string | null })[]>([]);
   const [openPlay, setOpenPlay] = useState<Play | null>(null);
   const [openIn3D, setOpenIn3D] = useState(false);
   const [sharePopupPlay, setSharePopupPlay] = useState<Play | null>(null);
@@ -132,6 +139,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
   useEffect(() => {
     load();
     getRoster().then(setRoster).catch(console.error);
+    getMyForkOrigins().then(setForkOrigins).catch(console.error);
     if (isStaff) getPlayCategories().then(setPlayCategories).catch(console.error);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -152,6 +160,62 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
     const plays = await getPlaybookPlays(pb.id);
     setOpenPlaybook({ pb, plays });
     if (!pb.viewed_at) markPlaybookViewed(pb.share_id);
+  }
+
+  /** Take a copy of a shared play without a detour through the editor. */
+  async function adoptPlay(p: Play) {
+    setAdopting(p.id);
+    try {
+      await forkPlay(p);
+      await load();
+      setForkOrigins(await getMyForkOrigins());
+      showToast(`Added \u201c${p.title}\u201d to My plays`);
+    } catch (e: any) { showToast("Error: " + e.message); }
+    finally { setAdopting(null); }
+  }
+
+  async function adoptPlaybook(pb: Playbook & { share_id: string }) {
+    setAdopting(pb.id);
+    try {
+      const plays = await getPlaybookPlays(pb.id);
+      const { copied, reused } = await adoptSharedPlaybook(pb.name, plays, pb.description ?? undefined, pb.video_url ?? undefined);
+      await load();
+      setForkOrigins(await getMyForkOrigins());
+      showToast(reused
+        ? `Added \u201c${pb.name}\u201d \u2014 ${copied} new, ${reused} you already had`
+        : `Added \u201c${pb.name}\u201d to Playbooks`);
+    } catch (e: any) { showToast("Error: " + e.message); }
+    finally { setAdopting(null); }
+  }
+
+  async function setPlayDismissed(p: SharedPlay, dismissed: boolean) {
+    try {
+      await dismissPlayShare(p.share_id, dismissed);
+      await load();
+      showToast(dismissed ? `Set aside \u201c${p.title}\u201d` : `Restored \u201c${p.title}\u201d`);
+    } catch (e: any) { showToast("Error: " + e.message); }
+  }
+
+  async function setPlaybookDismissed(pb: Playbook & { share_id: string }, dismissed: boolean) {
+    try {
+      await dismissPlaybookShare(pb.share_id, dismissed);
+      await load();
+      showToast(dismissed ? `Set aside \u201c${pb.name}\u201d` : `Restored \u201c${pb.name}\u201d`);
+    } catch (e: any) { showToast("Error: " + e.message); }
+  }
+
+  /** A dismissed play comes back when the sharer edits the original —
+   *  "you passed on this, but it's different now" is worth knowing. */
+  function changedSinceDismissed(p: SharedPlay): boolean {
+    return !!p.dismissed_at && p.updated_at > p.dismissed_at;
+  }
+
+  /** Null when I haven't copied this one; otherwise whether the sharer has
+   *  touched the original since I did. */
+  function adoptedState(p: Play): { updated: boolean } | null {
+    const rec = forkOrigins.get(p.id);
+    if (!rec) return null;
+    return { updated: p.updated_at > rec.copiedAt };
   }
 
   async function handleFork(p: Play) {
@@ -309,11 +373,24 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
             🖨️ Print / export this playbook
           </button>
         )}
-        {openPlaybook.plays.map((p) => (
-          <button key={p.id} onClick={() => setOpenPlay(p)} style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 12px", marginBottom: 6, border: "1px solid var(--border)", borderRadius: "8px" }}>
-            {p.title}
-          </button>
-        ))}
+        {openPlaybook.plays.map((p) => {
+          const isAdded = !!adoptedState(p);
+          return (
+            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--border)", borderRadius: 8, padding: "9px 11px", marginBottom: 6, background: isAdded ? "rgba(255,255,255,0.015)" : "transparent" }}>
+              <button onClick={() => setOpenPlay(p)} style={{ flex: 1, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", fontSize: 13.5, color: isAdded ? "var(--muted)" : "var(--text)" }}>
+                {isAdded && <span style={{ color: "#5de098", fontSize: 12, marginRight: 6 }}>✓</span>}
+                {p.title}
+                {isAdded && <span style={{ display: "block", fontSize: 11, color: "var(--muted)", marginTop: 2 }}>In my plays</span>}
+              </button>
+              {!isAdded && (
+                <button onClick={() => adoptPlay(p)} disabled={adopting === p.id}
+                  style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 600, border: "none", borderRadius: 6, padding: "6px 11px", background: "var(--gold)", color: "#1a1a1a", cursor: "pointer", fontFamily: "inherit", opacity: adopting === p.id ? 0.6 : 1 }}>
+                  {adopting === p.id ? "Adding…" : "Add to my plays"}
+                </button>
+              )}
+            </div>
+          );
+        })}
         {openPlaybook.plays.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>No plays in this playbook yet.</p>}
       </div>
     );
@@ -404,23 +481,92 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
         </>
       )}
 
-      {tab === "shared" && (
-        <>
-          {filterPlays(sharedPlays, search).map((p) => (
-            <button key={p.share_id} onClick={() => openSharedPlay(p)} style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 12px", marginBottom: 6, border: "1px solid var(--border)", borderRadius: "8px" }}>
-              {p.title}
-            </button>
-          ))}
-          {sharedPlays.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>Nothing shared with you yet.</p>}
-        </>
-      )}
+      {tab === "shared" && (() => {
+        const shown: SharedPlay[] = filterPlays(sharedPlays, search);
+        // Anything already in My plays sinks below a divider rather than
+        // vanishing — a row that disappears the instant you tap Add is a
+        // row you can't get back if you tapped the wrong one.
+        // Three groups. Dismissed sinks furthest, but comes back to the top
+        // if the sharer has edited the original since you set it aside.
+        const isSetAside = (p: SharedPlay) => !!p.dismissed_at && !changedSinceDismissed(p);
+        const pending = shown.filter((p) => !adoptedState(p) && !isSetAside(p));
+        const added = shown.filter((p) => adoptedState(p) && !isSetAside(p));
+        const setAside = shown.filter(isSetAside);
+        const row = (p: SharedPlay, isAdded: boolean) => {
+          const state = adoptedState(p);
+          return (
+            <div key={p.share_id} style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--border)", borderRadius: 8, padding: "9px 11px", marginBottom: 6, background: isAdded ? "rgba(255,255,255,0.015)" : "transparent" }}>
+              <button onClick={() => openSharedPlay(p)} style={{ flex: 1, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, color: isAdded ? "var(--muted)" : "var(--text)" }}>
+                  {isAdded && <span style={{ color: "#5de098", fontSize: 12 }}>✓</span>}
+                  {p.title}
+                </span>
+                <span style={{ display: "block", fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                  {isAdded && "In my plays · "}{p.shared_by_name ? `from ${p.shared_by_name}` : "shared with you"}
+                </span>
+                {state?.updated && (
+                  <span style={{ display: "block", fontSize: 11, color: "var(--gold)", marginTop: 2 }}>
+                    Updated since you added it
+                  </span>
+                )}
+                {changedSinceDismissed(p) && (
+                  <span style={{ display: "block", fontSize: 11, color: "var(--gold)", marginTop: 2 }}>
+                    Changed since you set it aside
+                  </span>
+                )}
+              </button>
+              {!isAdded && !p.dismissed_at && (
+                <button onClick={() => adoptPlay(p)} disabled={adopting === p.id}
+                  style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 600, border: "none", borderRadius: 6, padding: "6px 11px", background: "var(--gold)", color: "#1a1a1a", cursor: "pointer", fontFamily: "inherit", opacity: adopting === p.id ? 0.6 : 1 }}>
+                  {adopting === p.id ? "Adding…" : "Add to my plays"}
+                </button>
+              )}
+              {!isAdded && (
+                <button title={p.dismissed_at ? "Put it back" : "Set aside — the sharer isn't told"}
+                  onClick={() => setPlayDismissed(p, !p.dismissed_at)}
+                  style={{ flexShrink: 0, fontSize: 11.5, border: "1px solid var(--border)", borderRadius: 6, padding: "6px 10px", background: "transparent", color: "var(--muted)", cursor: "pointer", fontFamily: "inherit" }}>
+                  {p.dismissed_at ? "Restore" : "Not for me"}
+                </button>
+              )}
+            </div>
+          );
+        };
+        return (
+          <>
+            {pending.map((p) => row(p, false))}
+            {added.length > 0 && (
+              <div style={{ fontSize: 11, color: "var(--muted)", margin: "14px 0 6px" }}>Already added</div>
+            )}
+            {added.map((p) => row(p, true))}
+            {setAside.length > 0 && (
+              <div style={{ fontSize: 11, color: "var(--muted)", margin: "14px 0 6px" }}>Set aside</div>
+            )}
+            {setAside.map((p) => row(p, false))}
+            {sharedPlays.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>Nothing shared with you yet.</p>}
+          </>
+        );
+      })()}
 
       {tab === "playbooks" && (
         <>
-          {playbooks.map((pb) => (
-            <button key={pb.share_id} onClick={() => openPlaybookDetail(pb)} style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 12px", marginBottom: 6, border: "1px solid var(--border)", borderRadius: "8px" }}>
-              {pb.name} {!pb.viewed_at && <span style={{ fontSize: 11, color: "var(--gold)" }}>● new</span>}
-            </button>
+          {[...playbooks].sort((a, b) => Number(!!a.dismissed_at) - Number(!!b.dismissed_at)).map((pb) => (
+            <div key={pb.share_id} style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--border)", borderRadius: 8, padding: "9px 11px", marginBottom: 6, background: pb.dismissed_at ? "rgba(255,255,255,0.015)" : "transparent" }}>
+              <button onClick={() => openPlaybookDetail(pb)} style={{ flex: 1, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", fontSize: 13.5, color: pb.dismissed_at ? "var(--muted)" : "var(--text)" }}>
+                {pb.name} {!pb.viewed_at && !pb.dismissed_at && <span style={{ fontSize: 11, color: "var(--gold)" }}>● new</span>}
+                {pb.dismissed_at && <span style={{ display: "block", fontSize: 11, color: "var(--muted)", marginTop: 2 }}>Set aside</span>}
+              </button>
+              {!pb.dismissed_at && (
+                <button onClick={() => adoptPlaybook(pb)} disabled={adopting === pb.id}
+                  style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 600, border: "none", borderRadius: 6, padding: "6px 11px", background: "var(--gold)", color: "#1a1a1a", cursor: "pointer", fontFamily: "inherit", opacity: adopting === pb.id ? 0.6 : 1 }}>
+                  {adopting === pb.id ? "Adding…" : "Add to my playbooks"}
+                </button>
+              )}
+              <button title={pb.dismissed_at ? "Put it back" : "Set aside — the sharer isn't told"}
+                onClick={() => setPlaybookDismissed(pb, !pb.dismissed_at)}
+                style={{ flexShrink: 0, fontSize: 11.5, border: "1px solid var(--border)", borderRadius: 6, padding: "6px 10px", background: "transparent", color: "var(--muted)", cursor: "pointer", fontFamily: "inherit" }}>
+                {pb.dismissed_at ? "Restore" : "Not for me"}
+              </button>
+            </div>
           ))}
           {playbooks.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>No playbooks assigned yet.</p>}
         </>
