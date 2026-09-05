@@ -160,7 +160,7 @@ export default function ExercisePicker({ playerId, onSelect, placeholder = "Sear
                   <input type="number" value={newRest} onChange={e => setNewRest(e.target.value)} placeholder="Rest (secs)"
                     style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 7, padding: "7px 10px", color: "#e8eaf0", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
                 </div>
-                <input value={newVideo} onChange={e => setNewVideo(e.target.value)} placeholder="YouTube URL (optional)"
+                <input value={newVideo} onChange={e => setNewVideo(e.target.value)} placeholder="YouTube link"
                   style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 7, padding: "7px 10px", color: "#e8eaf0", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
                 <VideoUrlNote url={newVideo} />
                 <div style={{ display: "flex", gap: 6 }}>
