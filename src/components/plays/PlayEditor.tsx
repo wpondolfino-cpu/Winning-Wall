@@ -11,7 +11,7 @@ import {
   Play, PlayData, PlayFrame, PlayPlayer, PlayAction, ActionType,
   CourtTemplate, COURT_TEMPLATES, COURT_TEMPLATE_LABELS,
   SavedAction, Formation, RosterPlayer, PlayShareTarget,
-  emptyPlayData, createPlay, updatePlay, deletePlay, genPlayerId, playerActionSequence,
+  emptyPlayData, createPlay, updatePlay, deletePlay, genPlayerId, deriveNextFrame,
   getSavedActions, createSavedAction, deleteSavedAction,
   getFormations, createFormation, deleteFormation,
   getRoster, getStaff, sharePlay, getAllTags,
@@ -404,67 +404,9 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
   function addFrame() {
     pushHistory();
-    const last = frames[frames.length - 1];
-
-    // Cuts/dribbles carry their player forward to the action's endpoint;
-    // everyone else keeps their prior spot. Handoff markers clear each step
-    // since they mark a one-time moment, not a persistent state.
-    const players = last.players.map((p) => {
-      const seq = p.id ? playerActionSequence(last, p.id).filter((a) => a.type === "move" || a.type === "dribble" || a.type === "screen") : [];
-      const sourced = seq[seq.length - 1];
-      const base = sourced ? { ...p, x: sourced.x2, y: sourced.y2 } : { ...p };
-      return { ...base, handoff: false };
-    });
-
-    // Ball possession carries forward: a shot ends possession outright
-    // (nobody's holding a ball that just went up), otherwise an explicit
-    // handoff marker wins, then whoever a pass targeted, then a continuing
-    // dribbler, then whoever already held it.
-    let ballHolderId: string | null = last.ballHolderId ?? null;
-    const tookShot = last.actions.some((a) => a.type === "shot" || a.type === "lob");
-    if (tookShot) {
-      ballHolderId = null;
-    } else {
-      const handoffPlayer = last.players.find((p) => p.handoff);
-      if (handoffPlayer?.id) {
-        ballHolderId = handoffPlayer.id;
-      } else {
-        const passTarget = [...last.actions].reverse().find((a) => a.type === "pass" && a.targetPlayerId);
-        if (passTarget?.targetPlayerId) {
-          ballHolderId = passTarget.targetPlayerId;
-        } else {
-          const dribbler = [...last.actions].reverse().find((a) => a.type === "dribble" && a.sourcePlayerId);
-          if (dribbler?.sourcePlayerId) ballHolderId = dribbler.sourcePlayerId;
-        }
-      }
-    }
-
-    let ball = last.ball ? { ...last.ball } : null;
-    if (tookShot) {
-      const shotAction = [...last.actions].reverse().find((a) => a.type === "shot" || a.type === "lob");
-      if (shotAction) ball = { x: shotAction.x2, y: shotAction.y2 };
-    } else if (ballHolderId) {
-      const holder = players.find((p) => p.id === ballHolderId);
-      if (holder) ball = { x: holder.x, y: holder.y };
-    }
-
-    // A defender only ever gets Cut or Loop (both stored as "move" —
-    // there's no separate action type for it), so carrying their
-    // position forward is the same idea as a player's, just without any
-    // of the ball/handoff bookkeeping that never applies to them.
-    const defenders = last.defenders.map((d) => {
-      const seq = d.id ? playerActionSequence(last, d.id).filter((a) => a.type === "move") : [];
-      const sourced = seq[seq.length - 1];
-      return sourced ? { ...d, x: sourced.x2, y: sourced.y2 } : { ...d };
-    });
-
-    const copy: PlayFrame = {
-      players,
-      defenders,
-      ball,
-      ballHolderId,
-      actions: [],
-    };
+    // Carry-forward rules live in lib/plays.ts so the re-step path can't
+    // drift from this one.
+    const copy = deriveNextFrame(frames[frames.length - 1]);
     setFrames((fr) => [...fr, copy]);
     setFrameIdx(frames.length);
   }
