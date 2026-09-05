@@ -160,6 +160,117 @@ export function deriveNextFrame(prev: PlayFrame): PlayFrame {
 }
 
 /**
+ * Positions and possession only, as a comparable string. Used to decide
+ * whether an edit to a step actually changed anything the NEXT step is
+ * built from — moving a text label or recolouring a zone shouldn't
+ * suggest re-stepping the rest of the play.
+ */
+export function carryForwardSignature(frame: PlayFrame): string {
+  const derived = deriveNextFrame(frame);
+  return JSON.stringify({
+    p: derived.players.map((p) => [p.id ?? "", Math.round(p.x * 100), Math.round(p.y * 100)]),
+    d: derived.defenders.map((d) => [d.id ?? "", Math.round(d.x * 100), Math.round(d.y * 100)]),
+    b: derived.ball ? [Math.round(derived.ball.x * 100), Math.round(derived.ball.y * 100)] : null,
+    h: derived.ballHolderId ?? null,
+  });
+}
+
+/**
+ * Re-anchors one already-drawn step against the positions its previous
+ * step now implies.
+ *
+ * Positions come from `derived`; everything the user drew on `frame`
+ * stays. Where a player moved, the START of their first action moves with
+ * them and its END does not — a cut drawn to the rim still goes to the
+ * rim, just from a slightly different spot. Only the first action in a
+ * chain re-anchors: a roll drawn after a screen starts where that screen
+ * ended, which hasn't moved.
+ *
+ * Entities are matched by id, so anyone added or removed on this step is
+ * left exactly as they are.
+ */
+function reanchorFrame(frame: PlayFrame, derived: PlayFrame): PlayFrame {
+  const deltas = new Map<string, { dx: number; dy: number }>();
+
+  const derivedPlayers = new Map(derived.players.filter((p) => p.id).map((p) => [p.id as string, p]));
+  const players = frame.players.map((p) => {
+    const to = p.id ? derivedPlayers.get(p.id) : undefined;
+    if (!to) return p; // added on this step — leave it alone
+    const dx = to.x - p.x, dy = to.y - p.y;
+    if (dx || dy) deltas.set(p.id as string, { dx, dy });
+    // Keep this step's own handoff marker: it belongs to this beat, not
+    // to the carry-forward.
+    return { ...p, x: to.x, y: to.y };
+  });
+
+  const derivedDefenders = new Map(derived.defenders.filter((d) => d.id).map((d) => [d.id as string, d]));
+  const defenders = frame.defenders.map((d) => {
+    const to = d.id ? derivedDefenders.get(d.id) : undefined;
+    if (!to) return d;
+    const dx = to.x - d.x, dy = to.y - d.y;
+    if (dx || dy) deltas.set(d.id as string, { dx, dy });
+    return { ...d, x: to.x, y: to.y };
+  });
+
+  // Which action is first for each mover — only that one re-anchors.
+  const firstActionOf = new Map<string, PlayAction>();
+  for (const id of deltas.keys()) {
+    const seq = playerActionSequence(frame, id);
+    if (seq.length) firstActionOf.set(id, seq[0]);
+  }
+
+  const actions = frame.actions.map((a) => {
+    const id = a.sourcePlayerId;
+    if (!id) return a;
+    const delta = deltas.get(id);
+    if (!delta || firstActionOf.get(id) !== a) return a;
+    const { dx, dy } = delta;
+    const moved: PlayAction = { ...a, x1: a.x1 + dx, y1: a.y1 + dy };
+    // Bend points sit along the line, so they follow the moving end
+    // proportionally — otherwise a curve that kept its old bow would
+    // read as a different shape.
+    if (a.curve2 && a.curve) {
+      moved.curve = { x: a.curve.x + dx * (2 / 3), y: a.curve.y + dy * (2 / 3) };
+      moved.curve2 = { x: a.curve2.x + dx * (1 / 3), y: a.curve2.y + dy * (1 / 3) };
+    } else if (a.curve) {
+      moved.curve = { x: a.curve.x + dx / 2, y: a.curve.y + dy / 2 };
+    }
+    return moved;
+  });
+
+  return { ...frame, players, defenders, actions, ball: derived.ball, ballHolderId: derived.ballHolderId };
+}
+
+/**
+ * Re-applies the carry-forward rules from `index` onwards, so an edit to
+ * an earlier step flows through the ones built from it instead of leaving
+ * them stranded at positions that no longer follow.
+ *
+ * Each later step keeps everything drawn on it — the frames array comes
+ * back the same length, with the same actions, labels and zones. Only
+ * positions and possession are recomputed, and action starts follow the
+ * players they belong to.
+ */
+export function restepFrom(frames: PlayFrame[], index: number): PlayFrame[] {
+  if (index < 0 || index >= frames.length - 1) return frames;
+  const out = frames.slice();
+  for (let i = index; i < out.length - 1; i++) {
+    out[i + 1] = reanchorFrame(out[i + 1], deriveNextFrame(out[i]));
+  }
+  return out;
+}
+
+/** How many steps after `index` restepFrom would actually change. Drives the prompt's wording, and hides it entirely when the answer is none. */
+export function restepAffectedCount(frames: PlayFrame[], index: number): number {
+  const after = restepFrom(frames, index);
+  let n = 0;
+  for (let i = index + 1; i < frames.length; i++) {
+    if (JSON.stringify(frames[i]) !== JSON.stringify(after[i])) n++;
+  }
+  return n;
+}
+
+/**
  * Splits a sequence of chained actions (either one player's own moves, or
  * a cross-player ball chain) into time slices proportional to how far
  * each action actually travels, not an equal share per action. Two cuts
