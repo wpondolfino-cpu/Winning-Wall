@@ -36,6 +36,11 @@ interface Props {
   currentUserRole?: "player" | "coach" | "admin";
   onEdit?: (play: Play) => void;
   onCreateNew?: () => void;
+  /** Open straight into this play — used when arriving from a playbook. */
+  initialPlay?: Play | null;
+  /** Fired when the play we were sent to is closed, so the caller can put
+   *  you back where you came from rather than the plays list. */
+  onExitInitialPlay?: () => void;
 }
 
 type Tab = "mine" | "shared" | "playbooks";
@@ -96,7 +101,7 @@ function filterPlays<T extends { title: string; tags: string[] }>(plays: T[], se
   return plays.filter((p) => p.title.toLowerCase().includes(q) || p.tags.some((t) => t.toLowerCase().includes(q)));
 }
 
-export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Props) {
+export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initialPlay, onExitInitialPlay }: Props) {
   const [tab, setTab] = useState<Tab>("mine");
   const [myPlays, setMyPlays] = useState<Play[]>([]);
   const [sharedPlays, setSharedPlays] = useState<(Play & { share_id: string; shared_by: string })[]>([]);
@@ -121,6 +126,8 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const isStaff = currentUserRole === "coach" || currentUserRole === "admin";
+
+  useEffect(() => { if (initialPlay) setOpenPlay(initialPlay); }, [initialPlay]);
 
   useEffect(() => {
     load();
@@ -259,7 +266,11 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew }: Pro
         rosterMap={rosterMap}
         canManageShares={myPlays.some((p) => p.id === openPlay.id)}
         startIn3D={openIn3D}
-        onBack={() => { setOpenPlay(null); setOpenShareId(null); setOpenIn3D(false); }}
+        onBack={() => {
+          const cameFromCaller = !!initialPlay && openPlay.id === initialPlay.id;
+          setOpenPlay(null); setOpenShareId(null); setOpenIn3D(false);
+          if (cameFromCaller) onExitInitialPlay?.();
+        }}
         onEdit={onEdit}
         onFork={handleFork}
         onPrint={() => setPrintPlays({ plays: [openPlay] })}
