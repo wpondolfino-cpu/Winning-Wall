@@ -6,6 +6,7 @@
 import { useState, useEffect } from "react";
 import { getYouTubeId } from "../../lib/youtube";
 import VideoUrlNote from "../shared/VideoUrlNote";
+import PlayPrintView from "../plays/PlayPrintView";
 import {
   Playbook, Play, RosterPlayer,
   getPlaybooks, createPlaybook, updatePlaybook, setPlaybookStatus, deletePlaybook,
@@ -23,18 +24,38 @@ const STATUS_COLOR: Record<string, { bg: string; color: string; label: string }>
 const inputStyle = { width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" as const };
 
 
-export default function PlaybookManager() {
+interface Props {
+  /** Open a play from inside a playbook. The playbook id comes back too so
+   *  the caller can return you to the one you were looking at. */
+  onOpenPlay?: (play: Play, playbookId: string) => void;
+  /** Re-open this playbook on mount — used when coming back from a play. */
+  initialExpandedId?: string | null;
+}
+
+export default function PlaybookManager({ onOpenPlay, initialExpandedId }: Props = {}) {
   const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
+  const [roster, setRoster] = useState<RosterPlayer[]>([]);
+  // The playbook currently being printed, if any. Printing takes over the
+  // screen the same way it does for a single play.
+  const [printing, setPrinting] = useState<{ plays: Play[]; name: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [newVideoUrl, setNewVideoUrl] = useState("");
   const [saving, setSaving] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(initialExpandedId ?? null);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    getRoster().then(setRoster).catch(console.error);
+  }, []);
   async function load() { setLoading(true); setPlaybooks(await getPlaybooks()); setLoading(false); }
+
+  if (printing) {
+    const rosterMap: Record<string, RosterPlayer> = Object.fromEntries(roster.map((r) => [r.id, r]));
+    return <PlayPrintView plays={printing.plays} playbookName={printing.name} roster={rosterMap} onBack={() => setPrinting(null)} />;
+  }
 
   async function createNew() {
     if (!newName.trim()) return;
@@ -134,7 +155,14 @@ export default function PlaybookManager() {
                     )}
                   </div>
                 </div>
-                {isOpen && <PlaybookDetail playbook={pb} onChanged={load} />}
+                {isOpen && (
+                  <PlaybookDetail
+                    playbook={pb}
+                    onChanged={load}
+                    onPrint={(plays) => setPrinting({ plays, name: pb.name })}
+                    onOpenPlay={onOpenPlay ? (play) => onOpenPlay(play, pb.id) : undefined}
+                  />
+                )}
               </div>
             );
           })}
@@ -144,7 +172,12 @@ export default function PlaybookManager() {
   );
 }
 
-function PlaybookDetail({ playbook, onChanged }: { playbook: Playbook; onChanged: () => void }) {
+function PlaybookDetail({ playbook, onChanged, onPrint, onOpenPlay }: {
+  playbook: Playbook;
+  onChanged: () => void;
+  onPrint: (plays: Play[]) => void;
+  onOpenPlay?: (play: Play) => void;
+}) {
   const [plays, setPlays] = useState<Play[]>([]);
   const [myPlays, setMyPlays] = useState<Play[]>([]);
   const [showAdd, setShowAdd] = useState(false);
@@ -231,10 +264,25 @@ function PlaybookDetail({ playbook, onChanged }: { playbook: Playbook; onChanged
         )}
       </div>
 
-      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Plays in this playbook</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>Plays in this playbook</div>
+        {plays.length > 0 && (
+          <button onClick={() => onPrint(plays)} style={{ background: "none", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "3px 9px", fontSize: 11, cursor: "pointer" }}>
+            🖨️ Print / export
+          </button>
+        )}
+      </div>
       {plays.map((p) => (
         <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", fontSize: 13, color: "var(--text)" }}>
-          <span>{p.title}</span>
+          {onOpenPlay ? (
+            // Checking a play is the thing you most want to do while building
+            // a playbook, so the title opens it rather than being dead text.
+            <button onClick={() => onOpenPlay(p)} style={{ background: "none", border: "none", padding: 0, textAlign: "left", font: "inherit", fontSize: 13, color: "var(--text)", cursor: "pointer", textDecoration: "underline", textDecorationColor: "var(--border)", textUnderlineOffset: 3 }}>
+              {p.title}
+            </button>
+          ) : (
+            <span>{p.title}</span>
+          )}
           <button onClick={() => removePlay(p.id)} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 8px", fontSize: 11, cursor: "pointer" }}>Remove</button>
         </div>
       ))}
