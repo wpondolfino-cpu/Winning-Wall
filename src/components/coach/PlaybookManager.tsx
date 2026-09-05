@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from "react";
 import { getYouTubeId } from "../../lib/youtube";
+import VideoUrlNote from "../shared/VideoUrlNote";
 import {
   Playbook, Play, RosterPlayer,
   getPlaybooks, createPlaybook, updatePlaybook, setPlaybookStatus, deletePlaybook,
@@ -80,7 +81,8 @@ export default function PlaybookManager() {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Playbook name (e.g. Baseline out-of-bounds sets)" style={inputStyle} />
             <input value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Description (optional)" style={inputStyle} />
-            <input value={newVideoUrl} onChange={(e) => setNewVideoUrl(e.target.value)} placeholder="🎬 Walkthrough video URL (optional, YouTube)" style={inputStyle} />
+            <input value={newVideoUrl} onChange={(e) => setNewVideoUrl(e.target.value)} placeholder="🎬 Walkthrough video — YouTube link" style={inputStyle} />
+            <VideoUrlNote url={newVideoUrl} />
             <div style={{ fontSize: 11, color: "var(--muted)", padding: "8px 10px", background: "rgba(240,192,64,0.06)", borderRadius: 8, border: "1px solid rgba(240,192,64,0.15)" }}>
               📝 Playbooks start as <strong style={{ color: "var(--gold)" }}>Draft</strong> — add plays and assign players, then hit <strong style={{ color: "#5de098" }}>Publish</strong>.
             </div>
