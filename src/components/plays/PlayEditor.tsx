@@ -12,6 +12,7 @@ import {
   CourtTemplate, COURT_TEMPLATES, COURT_TEMPLATE_LABELS,
   SavedAction, Formation, RosterPlayer, PlayShareTarget,
   emptyPlayData, createPlay, updatePlay, deletePlay, genPlayerId, deriveNextFrame,
+  restepFrom, restepAffectedCount, carryForwardSignature,
   getSavedActions, createSavedAction, deleteSavedAction,
   getFormations, createFormation, deleteFormation,
   getRoster, getStaff, sharePlay, getAllTags,
@@ -153,7 +154,13 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
   const frame = frames[frameIdx];
 
-  useEffect(() => { setSelected(null); }, [frameIdx]);
+  // Set when an edit to this step changed what the NEXT step is built
+  // from. Holds the index of the edited step, or null when there's
+  // nothing to offer. Cleared on step change so it never follows you
+  // around the play.
+  const [restepIdx, setRestepIdx] = useState<number | null>(null);
+
+  useEffect(() => { setSelected(null); setRestepIdx(null); }, [frameIdx]);
 
   function pushHistory() {
     setHistory((h) => [...h.slice(-49), cloneFrames(frames)]);
@@ -161,7 +168,21 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   }
 
   function updateFrame(mutator: (f: PlayFrame) => PlayFrame) {
-    setFrames((fr) => fr.map((f, i) => (i === frameIdx ? mutator(f) : f)));
+    const before = frames[frameIdx];
+    const after = mutator(before);
+    // Only offer to re-step when this edit changed something a later step
+    // is actually built from — a text label or a zone never should.
+    if (frameIdx < frames.length - 1 && carryForwardSignature(before) !== carryForwardSignature(after)) {
+      setRestepIdx(frameIdx);
+    }
+    setFrames((fr) => fr.map((f, i) => (i === frameIdx ? after : f)));
+  }
+
+  function applyRestep() {
+    if (restepIdx === null) return;
+    pushHistory();
+    setFrames((fr) => restepFrom(fr, restepIdx));
+    setRestepIdx(null);
   }
 
   function undo() {
@@ -1020,6 +1041,29 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           />
         </div>
 
+        {restepIdx !== null && restepAffectedCount(frames, restepIdx) > 0 && (() => {
+          const n = restepAffectedCount(frames, restepIdx);
+          const which = n === 1 ? `Step ${restepIdx + 2}` : `Steps ${restepIdx + 2}\u2013${restepIdx + 1 + n}`;
+          return (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
+              background: "rgba(240,192,64,0.09)", border: "1px solid rgba(240,192,64,0.35)", borderRadius: 8,
+              padding: "8px 10px", marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.4 }}>
+                {which} {n === 1 ? "was" : "were"} built from this step. Update {n === 1 ? "it" : "them"}?
+              </span>
+              <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                <button onClick={applyRestep}
+                  style={{ padding: "5px 11px", fontSize: 12, fontWeight: 600, border: "none", borderRadius: 6, background: "var(--gold)", color: "#12141a", cursor: "pointer", fontFamily: "inherit" }}>
+                  Update
+                </button>
+                <button onClick={() => setRestepIdx(null)}
+                  style={{ padding: "5px 11px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "transparent", color: "var(--muted)", cursor: "pointer", fontFamily: "inherit" }}>
+                  Dismiss
+                </button>
+              </span>
+            </div>
+          );
+        })()}
         <div style={{ display: "flex", gap: 4, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
           {frames.map((_, i) => (
             <button key={i} onClick={() => setFrameIdx(i)}
@@ -1234,6 +1278,29 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           />
         </div>
 
+        {restepIdx !== null && restepAffectedCount(frames, restepIdx) > 0 && (() => {
+          const n = restepAffectedCount(frames, restepIdx);
+          const which = n === 1 ? `Step ${restepIdx + 2}` : `Steps ${restepIdx + 2}\u2013${restepIdx + 1 + n}`;
+          return (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
+              background: "rgba(240,192,64,0.09)", border: "1px solid rgba(240,192,64,0.35)", borderRadius: 8,
+              padding: "8px 10px", marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.4 }}>
+                {which} {n === 1 ? "was" : "were"} built from this step. Update {n === 1 ? "it" : "them"}?
+              </span>
+              <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                <button onClick={applyRestep}
+                  style={{ padding: "5px 11px", fontSize: 12, fontWeight: 600, border: "none", borderRadius: 6, background: "var(--gold)", color: "#12141a", cursor: "pointer", fontFamily: "inherit" }}>
+                  Update
+                </button>
+                <button onClick={() => setRestepIdx(null)}
+                  style={{ padding: "5px 11px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "transparent", color: "var(--muted)", cursor: "pointer", fontFamily: "inherit" }}>
+                  Dismiss
+                </button>
+              </span>
+            </div>
+          );
+        })()}
         <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
           {frames.map((_, i) => (
             <button key={i} onClick={() => setFrameIdx(i)}
