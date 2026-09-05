@@ -40,7 +40,7 @@ export default function CallEntryCard({ entry, myPlays, canManage, onPatch, onRe
 
       <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
         {canManage ? (
-          <input value={entry.video_url ?? ""} onChange={e => onPatch(entry.id, { video_url: e.target.value })} placeholder="YouTube URL (optional)" style={{ ...inputStyle, flex: 1, fontSize: 12 }} />
+          <input value={entry.video_url ?? ""} onChange={e => onPatch(entry.id, { video_url: e.target.value })} placeholder="YouTube link" style={{ ...inputStyle, flex: 1, fontSize: 12 }} />
         ) : entry.video_url ? <a href={entry.video_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "var(--royal-light)" }}>▶ Video</a> : null}
         {canManage ? (
           <select value={entry.play_id ?? ""} onChange={e => onPatch(entry.id, { play_id: e.target.value || null })} style={{ ...inputStyle, flex: 1, fontSize: 12 }}>
