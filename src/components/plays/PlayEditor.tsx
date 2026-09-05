@@ -928,7 +928,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
                 ))}
               </div>
             )}
-            <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film URL (optional, YouTube)"
+            <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film — YouTube link"
               style={{ width: "100%", marginBottom: currentUserRole !== "player" ? 8 : 14, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
             <VideoUrlNote url={videoUrl} />
             {currentUserRole !== "player" && (
@@ -1178,7 +1178,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             ))}
           </div>
         )}
-        <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film URL (optional, YouTube — e.g. footage of the team running this play)"
+        <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film — YouTube link, e.g. your team running this play"
           style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
         <VideoUrlNote url={videoUrl} />
         {currentUserRole !== "player" && (
