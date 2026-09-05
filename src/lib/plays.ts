@@ -92,6 +92,74 @@ export function ballChainSequence(frame: PlayFrame, action: PlayAction): PlayAct
 }
 
 /**
+ * Builds the frame that follows `prev` — the carry-forward rules, in one
+ * place.
+ *
+ * This used to live inline in PlayEditor's addFrame(). It's out here
+ * because "+ Add step" is no longer the only thing that needs to know
+ * what carries forward: re-stepping a play after an earlier step is
+ * edited has to apply exactly the same rules, and two copies of this
+ * would drift the moment either changed.
+ *
+ * Returns a frame with no actions on it — positions and possession only.
+ */
+export function deriveNextFrame(prev: PlayFrame): PlayFrame {
+  // Cuts/dribbles/screens carry their player forward to the action's
+  // endpoint; everyone else keeps their prior spot. Handoff markers clear
+  // each step since they mark a one-time moment, not a persistent state.
+  const players = prev.players.map((p) => {
+    const seq = p.id ? playerActionSequence(prev, p.id).filter((a) => a.type === "move" || a.type === "dribble" || a.type === "screen") : [];
+    const sourced = seq[seq.length - 1];
+    const base = sourced ? { ...p, x: sourced.x2, y: sourced.y2 } : { ...p };
+    return { ...base, handoff: false };
+  });
+
+  // Ball possession carries forward: a shot ends possession outright
+  // (nobody's holding a ball that just went up), otherwise an explicit
+  // handoff marker wins, then whoever a pass targeted, then a continuing
+  // dribbler, then whoever already held it.
+  let ballHolderId: string | null = prev.ballHolderId ?? null;
+  const tookShot = prev.actions.some((a) => a.type === "shot" || a.type === "lob");
+  if (tookShot) {
+    ballHolderId = null;
+  } else {
+    const handoffPlayer = prev.players.find((p) => p.handoff);
+    if (handoffPlayer?.id) {
+      ballHolderId = handoffPlayer.id;
+    } else {
+      const passTarget = [...prev.actions].reverse().find((a) => a.type === "pass" && a.targetPlayerId);
+      if (passTarget?.targetPlayerId) {
+        ballHolderId = passTarget.targetPlayerId;
+      } else {
+        const dribbler = [...prev.actions].reverse().find((a) => a.type === "dribble" && a.sourcePlayerId);
+        if (dribbler?.sourcePlayerId) ballHolderId = dribbler.sourcePlayerId;
+      }
+    }
+  }
+
+  let ball = prev.ball ? { ...prev.ball } : null;
+  if (tookShot) {
+    const shotAction = [...prev.actions].reverse().find((a) => a.type === "shot" || a.type === "lob");
+    if (shotAction) ball = { x: shotAction.x2, y: shotAction.y2 };
+  } else if (ballHolderId) {
+    const holder = players.find((p) => p.id === ballHolderId);
+    if (holder) ball = { x: holder.x, y: holder.y };
+  }
+
+  // A defender only ever gets Cut or Loop (both stored as "move" — there's
+  // no separate action type for it), so carrying their position forward is
+  // the same idea as a player's, just without any of the ball/handoff
+  // bookkeeping that never applies to them.
+  const defenders = prev.defenders.map((d) => {
+    const seq = d.id ? playerActionSequence(prev, d.id).filter((a) => a.type === "move") : [];
+    const sourced = seq[seq.length - 1];
+    return sourced ? { ...d, x: sourced.x2, y: sourced.y2 } : { ...d };
+  });
+
+  return { players, defenders, ball, ballHolderId, actions: [] };
+}
+
+/**
  * Splits a sequence of chained actions (either one player's own moves, or
  * a cross-player ball chain) into time slices proportional to how far
  * each action actually travels, not an equal share per action. Two cuts
