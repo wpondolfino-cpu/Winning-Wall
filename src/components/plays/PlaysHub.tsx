@@ -23,6 +23,11 @@ interface Props {
 export default function PlaysHub({ currentUserRole }: Props) {
   const [editing, setEditing] = useState<Play | "new" | null>(null);
   const [tab, setTab] = useState<"plays" | "playbooks">("plays");
+  // A play opened from inside a playbook. Held here rather than in either
+  // child so that closing it can put you back in the playbook you were
+  // building, still expanded.
+  const [fromPlaybook, setFromPlaybook] = useState<{ play: Play; playbookId: string } | null>(null);
+  const [lastPlaybookId, setLastPlaybookId] = useState<string | null>(null);
 
   // The editor takes the whole screen — showing tabs above a drawing
   // canvas would invite losing unsaved work to a stray tap.
@@ -61,7 +66,20 @@ export default function PlaysHub({ currentUserRole }: Props) {
       )}
 
       {tab === "playbooks" && canManage ? (
-        <PlaybookManager />
+        fromPlaybook ? (
+          <PlayViewer
+            currentUserRole={currentUserRole}
+            onCreateNew={() => setEditing("new")}
+            onEdit={(p) => setEditing(p)}
+            initialPlay={fromPlaybook.play}
+            onExitInitialPlay={() => setFromPlaybook(null)}
+          />
+        ) : (
+          <PlaybookManager
+            initialExpandedId={lastPlaybookId}
+            onOpenPlay={(play, playbookId) => { setLastPlaybookId(playbookId); setFromPlaybook({ play, playbookId }); }}
+          />
+        )
       ) : (
         <PlayViewer
           currentUserRole={currentUserRole}
