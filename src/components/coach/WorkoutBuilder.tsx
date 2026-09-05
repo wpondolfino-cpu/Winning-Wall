@@ -468,7 +468,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
         )}
 
         <div>
-          <label>YouTube Video URL (optional)</label>
+          <label>YouTube video link</label>
           <input value={videoUrl} onChange={e => setVideoUrl(e.target.value)} placeholder="https://youtube.com/watch?v=…" />
           {embedPreview && <div style={{ marginTop: 6, fontSize: 11, color: "#5de098" }}>✓ Valid YouTube URL</div>}
           <VideoUrlNote url={videoUrl} />
