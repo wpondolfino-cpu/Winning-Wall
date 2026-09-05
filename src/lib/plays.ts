@@ -495,17 +495,61 @@ export async function getAllTags(): Promise<string[]> {
 }
 
 /** Plays someone else has shared with the current user (active shares only). */
-export async function getPlaysSharedWithMe(): Promise<(Play & { share_id: string; shared_by: string })[]> {
+export async function getPlaysSharedWithMe(): Promise<(Play & { share_id: string; shared_by: string; shared_by_name: string | null; dismissed_at: string | null })[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
   const { data, error } = await supabase
     .from("play_shares")
-    .select("id, shared_by, viewed_at, plays(*)")
+    .select("id, shared_by, viewed_at, dismissed_at, plays(*)")
     .eq("shared_with", user.id)
     .is("revoked_at", null)
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []).map((row: any) => ({ ...row.plays, share_id: row.id, shared_by: row.shared_by }));
+  const rows = data ?? [];
+  // Who sent it matters more than when, especially once plays can come
+  // from another program rather than another coach in yours.
+  const names = await namesForIds(rows.map((r: any) => r.shared_by));
+  return rows.map((row: any) => ({
+    ...row.plays, share_id: row.id, shared_by: row.shared_by,
+    shared_by_name: names.get(row.shared_by) ?? null,
+    dismissed_at: row.dismissed_at ?? null,
+  }));
+}
+
+/** Display names for a set of profile ids, for "from ..." lines. */
+async function namesForIds(ids: string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return new Map();
+  const { data } = await supabase.from("profiles").select("id,name").in("id", unique);
+  return new Map((data ?? []).map((r: any) => [r.id, r.name]));
+}
+
+/**
+ * What I've already taken a copy of.
+ *
+ * Keyed by the ORIGINAL play's id, so a shared list can tell at a glance
+ * which rows are already in My plays — and, by comparing the original's
+ * updated_at against when I copied it, which ones the sharer has changed
+ * since. It can't say WHAT changed, only that something did.
+ */
+export interface ForkRecord { copyId: string; copiedAt: string; }
+
+export async function getMyForkOrigins(): Promise<Map<string, ForkRecord>> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return new Map();
+  const { data, error } = await supabase
+    .from("plays")
+    .select("id, forked_from, created_at")
+    .eq("created_by", user.id)
+    .not("forked_from", "is", null);
+  if (error) throw error;
+  const out = new Map<string, ForkRecord>();
+  // Keep the most recent copy if somehow there are several.
+  for (const row of (data ?? []) as any[]) {
+    const prev = out.get(row.forked_from);
+    if (!prev || row.created_at > prev.copiedAt) out.set(row.forked_from, { copyId: row.id, copiedAt: row.created_at });
+  }
+  return out;
 }
 
 // ── Re-importable export (hidden data embedded in a PDF) ────────
@@ -577,9 +621,29 @@ export async function deletePlay(id: string) {
 }
 
 /** Duplicate a play as a new one owned by the current user — used for forking. Carries the video and category over as a starting point, same as every other field; the copy owner can clear it. */
+/** `title`, or `title (copy)`, `title (copy 2)`… if I already have that name. */
+async function uniqueTitle(title: string): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return title;
+  const { data } = await supabase.from("plays").select("title").eq("created_by", user.id);
+  const taken = new Set((data ?? []).map((r: any) => r.title));
+  if (!taken.has(title)) return title;
+  if (!taken.has(`${title} (copy)`)) return `${title} (copy)`;
+  for (let n = 2; n < 100; n++) {
+    const candidate = `${title} (copy ${n})`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${title} (copy)`;
+}
+
+/**
+ * Copy a play into my own. Keeps the original's title, because "(copy)"
+ * on every single one is noise — it's only added when I already have a
+ * play by that name and the two would otherwise be indistinguishable.
+ */
 export async function forkPlay(source: Play, newTitle?: string): Promise<Play> {
   return createPlay({
-    title: newTitle ?? `${source.title} (copy)`,
+    title: newTitle ?? await uniqueTitle(source.title),
     tags: source.tags,
     court_template: source.court_template,
     data: source.data,
@@ -621,6 +685,30 @@ export async function sharePlay(playId: string, sharedWithId: string) {
 /** Player revoking a coach's (or anyone's) access to one of their plays. */
 export async function revokePlayShare(shareId: string) {
   const { error } = await supabase.from("play_shares").update({ revoked_at: new Date().toISOString() }).eq("id", shareId);
+  if (error) throw error;
+}
+
+/**
+ * Set aside something shared with me.
+ *
+ * Private to the recipient — the sharer is never told, and their own
+ * record of having sent it is untouched. A dismissed row drops out of the
+ * main list, and comes back if the sharer changes the original: "you
+ * passed on this, but it's different now" is worth surfacing.
+ */
+export async function dismissPlayShare(shareId: string, dismissed = true) {
+  const { error } = await supabase
+    .from("play_shares")
+    .update({ dismissed_at: dismissed ? new Date().toISOString() : null })
+    .eq("id", shareId);
+  if (error) throw error;
+}
+
+export async function dismissPlaybookShare(shareId: string, dismissed = true) {
+  const { error } = await supabase
+    .from("playbook_shares")
+    .update({ dismissed_at: dismissed ? new Date().toISOString() : null })
+    .eq("id", shareId);
   if (error) throw error;
 }
 
@@ -751,16 +839,18 @@ export async function getPlaybooks(): Promise<Playbook[]> {
 }
 
 /** Playbooks assigned to the current player (RLS already limits to active + shared). */
-export async function getMyAssignedPlaybooks(): Promise<(Playbook & { share_id: string; viewed_at: string | null })[]> {
+export async function getMyAssignedPlaybooks(): Promise<(Playbook & { share_id: string; viewed_at: string | null; dismissed_at: string | null })[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
   const { data, error } = await supabase
     .from("playbook_shares")
-    .select("id, viewed_at, playbooks(*)")
+    .select("id, viewed_at, dismissed_at, playbooks(*)")
     .eq("shared_with", user.id)
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []).map((row: any) => ({ ...row.playbooks, share_id: row.id, viewed_at: row.viewed_at })).filter((p: any) => p.id);
+  return (data ?? [])
+    .map((row: any) => ({ ...row.playbooks, share_id: row.id, viewed_at: row.viewed_at, dismissed_at: row.dismissed_at ?? null }))
+    .filter((p: any) => p.id);
 }
 
 export async function createPlaybook(name: string, description?: string, video_url?: string): Promise<Playbook> {
@@ -798,6 +888,35 @@ export async function getPlaybookPlays(playbookId: string): Promise<(Play & { so
     .order("sort_order", { ascending: true });
   if (error) throw error;
   return (data ?? []).map((row: any) => ({ ...row.plays, sort_order: row.sort_order }));
+}
+
+/**
+ * Take a whole shared playbook: a playbook of my own, holding copies of
+ * its plays.
+ *
+ * Plays I've already copied are reused rather than copied again — without
+ * that, taking a playbook after taking three of its plays individually
+ * would leave me with two of each. Returns how many were newly copied and
+ * how many were already mine, so the caller can say what happened.
+ */
+export async function adoptSharedPlaybook(
+  name: string,
+  plays: Play[],
+  description?: string,
+  video_url?: string,
+): Promise<{ playbook: Playbook; copied: number; reused: number }> {
+  const existing = await getMyForkOrigins();
+  const playbook = await createPlaybook(name, description, video_url);
+  let copied = 0, reused = 0;
+  for (let i = 0; i < plays.length; i++) {
+    const source = plays[i];
+    const already = existing.get(source.id);
+    let playId: string;
+    if (already) { playId = already.copyId; reused++; }
+    else { playId = (await forkPlay(source)).id; copied++; }
+    await addPlayToPlaybook(playbook.id, playId, i);
+  }
+  return { playbook, copied, reused };
 }
 
 export async function addPlayToPlaybook(playbookId: string, playId: string, sortOrder = 0) {
