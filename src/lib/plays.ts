@@ -495,7 +495,7 @@ export async function getAllTags(): Promise<string[]> {
 }
 
 /** Plays someone else has shared with the current user (active shares only). */
-export async function getPlaysSharedWithMe(): Promise<(Play & { share_id: string; shared_by: string; shared_by_name: string | null; dismissed_at: string | null })[]> {
+export async function getPlaysSharedWithMe(): Promise<(Play & { share_id: string; shared_by: string; shared_by_name: string | null; shared_by_role: string | null; dismissed_at: string | null })[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
   const { data, error } = await supabase
@@ -508,20 +508,27 @@ export async function getPlaysSharedWithMe(): Promise<(Play & { share_id: string
   const rows = data ?? [];
   // Who sent it matters more than when, especially once plays can come
   // from another program rather than another coach in yours.
-  const names = await namesForIds(rows.map((r: any) => r.shared_by));
+  const sharers = await sharersForIds(rows.map((r: any) => r.shared_by));
   return rows.map((row: any) => ({
     ...row.plays, share_id: row.id, shared_by: row.shared_by,
-    shared_by_name: names.get(row.shared_by) ?? null,
+    shared_by_name: sharers.get(row.shared_by)?.name ?? null,
+    shared_by_role: sharers.get(row.shared_by)?.role ?? null,
     dismissed_at: row.dismissed_at ?? null,
   }));
 }
 
-/** Display names for a set of profile ids, for "from ..." lines. */
-async function namesForIds(ids: string[]): Promise<Map<string, string>> {
+/**
+ * Name and role for a set of profile ids.
+ *
+ * The role matters as much as the name: a play from a coach is something
+ * you've been given, a play from a teammate is something you've been
+ * offered, and a player's tabs separate the two.
+ */
+async function sharersForIds(ids: string[]): Promise<Map<string, { name: string; role: string }>> {
   const unique = [...new Set(ids.filter(Boolean))];
   if (!unique.length) return new Map();
-  const { data } = await supabase.from("profiles").select("id,name").in("id", unique);
-  return new Map((data ?? []).map((r: any) => [r.id, r.name]));
+  const { data } = await supabase.from("profiles").select("id,name,role").in("id", unique);
+  return new Map((data ?? []).map((r: any) => [r.id, { name: r.name, role: r.role }]));
 }
 
 /**
