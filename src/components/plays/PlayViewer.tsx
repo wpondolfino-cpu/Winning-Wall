@@ -9,6 +9,7 @@ import { getProfile } from "../../lib/auth";
 import PlayCanvas, { CANVAS_W, CANVAS_H } from "./PlayCanvas";
 import PlayPrintView from "./PlayPrintView";
 import PlayCategoryManagerModal from "./PlayCategoryManagerModal";
+import RosterShareRows from "../shared/RosterShareRows";
 import { PlayCategory, getPlayCategories } from "../../lib/playCategories";
 import { getYouTubeId } from "../../lib/youtube";
 import {
@@ -861,12 +862,33 @@ function SharePopup({ play, onClose }: { play: Play; onClose: () => void }) {
     }).catch(console.error);
   }, [play.id]);
 
+  const [bulkBusy, setBulkBusy] = useState(false);
+
   async function handleAdd(targetId: string) {
     try {
       await sharePlay(play.id, targetId);
       setShares(await getPlayShares(play.id));
       setQuery("");
     } catch (e: any) { console.error(e); }
+  }
+  /** Share with a whole roster — one row per player, so everything
+   *  downstream (viewed, dismissed, revoke) still works per person. */
+  async function handleAddMany(ids: string[]) {
+    setBulkBusy(true);
+    try {
+      for (const id of ids) await sharePlay(play.id, id);
+      setShares(await getPlayShares(play.id));
+    } catch (e: any) { console.error(e); }
+    finally { setBulkBusy(false); }
+  }
+  async function handleRevokeMany(ids: string[]) {
+    setBulkBusy(true);
+    try {
+      const toRevoke = shares.filter((s) => ids.includes(s.shared_with));
+      for (const s of toRevoke) await revokePlayShare(s.id);
+      setShares(await getPlayShares(play.id));
+    } catch (e: any) { console.error(e); }
+    finally { setBulkBusy(false); }
   }
   async function handleRevoke(shareId: string) {
     await revokePlayShare(shareId);
@@ -891,6 +913,13 @@ function SharePopup({ play, onClose }: { play: Play; onClose: () => void }) {
           <h3 style={{ fontSize: 16, margin: 0, display: "flex", alignItems: "center", gap: 8 }}><ShareIcon /> Share "{play.title}"</h3>
           <button onClick={onClose} style={{ padding: "4px 10px" }}>✕</button>
         </div>
+
+        <RosterShareRows
+          sharedWithIds={shares.map((s) => s.shared_with)}
+          onAdd={handleAddMany}
+          onRemove={handleRevokeMany}
+          busy={bulkBusy}
+        />
 
         <div style={{ position: "relative", marginBottom: 16 }}>
           <input
