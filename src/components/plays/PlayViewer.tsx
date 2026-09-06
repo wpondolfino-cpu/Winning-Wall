@@ -47,7 +47,7 @@ interface Props {
 type Tab = "mine" | "shared" | "playbooks";
 
 /** A play shared with me, with the share row and sharer's name attached. */
-type SharedPlay = Play & { share_id: string; shared_by: string; shared_by_name: string | null; dismissed_at: string | null };
+type SharedPlay = Play & { share_id: string; shared_by: string; shared_by_name: string | null; shared_by_role: string | null; dismissed_at: string | null };
 
 // Catches any runtime error inside the 3D viewer and shows it directly,
 // instead of an unexplained blank/wrong screen if something in there throws.
@@ -107,6 +107,11 @@ function filterPlays<T extends { title: string; tags: string[] }>(plays: T[], se
 
 export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initialPlay, onExitInitialPlay }: Props) {
   const [tab, setTab] = useState<Tab>("mine");
+  // A player is given things; a coach is offered them. That difference is
+  // what splits the tabs and what decides whether the take/decline
+  // controls appear at all.
+  const isPlayer = currentUserRole !== "coach" && currentUserRole !== "admin";
+  const fromCoach = (p: SharedPlay) => p.shared_by_role === "coach" || p.shared_by_role === "admin";
   const [myPlays, setMyPlays] = useState<Play[]>([]);
   const [sharedPlays, setSharedPlays] = useState<SharedPlay[]>([]);
   // Originals I already have a copy of, keyed by the original's id.
@@ -403,7 +408,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
         <button onClick={() => setTab("mine")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "mine" ? "var(--royal)" : "transparent", color: tab === "mine" ? "#fff" : "var(--muted)", transition: "all .2s" }}>My plays</button>
         <button onClick={() => setTab("shared")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "shared" ? "var(--royal)" : "transparent", color: tab === "shared" ? "#fff" : "var(--muted)", transition: "all .2s" }}>Shared with me</button>
         {currentUserRole !== "coach" && currentUserRole !== "admin" && (
-          <button onClick={() => setTab("playbooks")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "playbooks" ? "var(--royal)" : "transparent", color: tab === "playbooks" ? "#fff" : "var(--muted)", transition: "all .2s" }}>Playbooks</button>
+          <button onClick={() => setTab("playbooks")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "playbooks" ? "var(--royal)" : "transparent", color: tab === "playbooks" ? "#fff" : "var(--muted)", transition: "all .2s" }}>From Coach</button>
         )}
       </div>
 
@@ -481,7 +486,30 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
         </>
       )}
 
-      {tab === "shared" && (() => {
+      {tab === "shared" && isPlayer && (() => {
+        // Anything from a coach lives under From Coach, so this tab is
+        // teammates only — and it's read-only, because a copy is a
+        // snapshot and would quietly go stale the moment the sharer
+        // edits the original.
+        const all: SharedPlay[] = filterPlays(sharedPlays, search);
+        const shown = all.filter((p) => !fromCoach(p));
+        return (
+          <>
+            {shown.map((p) => (
+              <button key={p.share_id} onClick={() => openSharedPlay(p)}
+                style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 12px", marginBottom: 6, border: "1px solid var(--border)", borderRadius: 8, background: "transparent", cursor: "pointer", fontFamily: "inherit" }}>
+                <span style={{ display: "block", fontSize: 13.5, color: "var(--text)" }}>{p.title}</span>
+                <span style={{ display: "block", fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                  {p.shared_by_name ? `from ${p.shared_by_name}` : "shared with you"}
+                </span>
+              </button>
+            ))}
+            {shown.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>Nothing from your teammates yet.</p>}
+          </>
+        );
+      })()}
+
+      {tab === "shared" && !isPlayer && (() => {
         const shown: SharedPlay[] = filterPlays(sharedPlays, search);
         // Anything already in My plays sinks below a divider rather than
         // vanishing — a row that disappears the instant you tap Add is a
@@ -547,30 +575,57 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
         );
       })()}
 
-      {tab === "playbooks" && (
+      {/* From Coach: everything the coach has given this player, plays and
+          playbooks together, so there's one place to look. Read-only —
+          these are assignments, and a copy would go stale the moment the
+          coach edited the original. */}
+      {tab === "playbooks" && (() => {
+        const allShared: SharedPlay[] = filterPlays(sharedPlays, search);
+        const coachPlays = allShared.filter(fromCoach);
+        return (
         <>
+          {playbooks.length > 0 && (
+            <div style={{ fontSize: 11, color: "var(--muted)", margin: "0 0 6px" }}>Playbooks</div>
+          )}
           {[...playbooks].sort((a, b) => Number(!!a.dismissed_at) - Number(!!b.dismissed_at)).map((pb) => (
             <div key={pb.share_id} style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--border)", borderRadius: 8, padding: "9px 11px", marginBottom: 6, background: pb.dismissed_at ? "rgba(255,255,255,0.015)" : "transparent" }}>
               <button onClick={() => openPlaybookDetail(pb)} style={{ flex: 1, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", fontSize: 13.5, color: pb.dismissed_at ? "var(--muted)" : "var(--text)" }}>
                 {pb.name} {!pb.viewed_at && !pb.dismissed_at && <span style={{ fontSize: 11, color: "var(--gold)" }}>● new</span>}
                 {pb.dismissed_at && <span style={{ display: "block", fontSize: 11, color: "var(--muted)", marginTop: 2 }}>Set aside</span>}
               </button>
-              {!pb.dismissed_at && (
+              {!isPlayer && !pb.dismissed_at && (
                 <button onClick={() => adoptPlaybook(pb)} disabled={adopting === pb.id}
                   style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 600, border: "none", borderRadius: 6, padding: "6px 11px", background: "var(--gold)", color: "#1a1a1a", cursor: "pointer", fontFamily: "inherit", opacity: adopting === pb.id ? 0.6 : 1 }}>
                   {adopting === pb.id ? "Adding…" : "Add to my playbooks"}
                 </button>
               )}
-              <button title={pb.dismissed_at ? "Put it back" : "Set aside — the sharer isn't told"}
-                onClick={() => setPlaybookDismissed(pb, !pb.dismissed_at)}
-                style={{ flexShrink: 0, fontSize: 11.5, border: "1px solid var(--border)", borderRadius: 6, padding: "6px 10px", background: "transparent", color: "var(--muted)", cursor: "pointer", fontFamily: "inherit" }}>
-                {pb.dismissed_at ? "Restore" : "Not for me"}
-              </button>
+              {!isPlayer && (
+                <button title={pb.dismissed_at ? "Put it back" : "Set aside — the sharer isn't told"}
+                  onClick={() => setPlaybookDismissed(pb, !pb.dismissed_at)}
+                  style={{ flexShrink: 0, fontSize: 11.5, border: "1px solid var(--border)", borderRadius: 6, padding: "6px 10px", background: "transparent", color: "var(--muted)", cursor: "pointer", fontFamily: "inherit" }}>
+                  {pb.dismissed_at ? "Restore" : "Not for me"}
+                </button>
+              )}
             </div>
           ))}
-          {playbooks.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>No playbooks assigned yet.</p>}
+          {coachPlays.length > 0 && (
+            <div style={{ fontSize: 11, color: "var(--muted)", margin: "14px 0 6px" }}>Plays</div>
+          )}
+          {coachPlays.map((p) => (
+            <button key={p.share_id} onClick={() => openSharedPlay(p)}
+              style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 12px", marginBottom: 6, border: "1px solid var(--border)", borderRadius: 8, background: "transparent", cursor: "pointer", fontFamily: "inherit" }}>
+              <span style={{ display: "block", fontSize: 13.5, color: "var(--text)" }}>{p.title}</span>
+              <span style={{ display: "block", fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                {p.shared_by_name ? `from ${p.shared_by_name}` : "from your coach"}
+              </span>
+            </button>
+          ))}
+          {playbooks.length === 0 && coachPlays.length === 0 && (
+            <p style={{ fontSize: 13, color: "var(--muted)" }}>Nothing from your coach yet.</p>
+          )}
         </>
-      )}
+        );
+      })()}
 
       {toast && (
         <div style={{ position: "fixed", bottom: 20, left: 16, right: 16, zIndex: 500, background: "var(--surface)", border: "1px solid var(--gold)", borderRadius: 10, padding: "12px 16px", fontSize: 14, fontWeight: 600, color: "var(--gold)", boxShadow: "0 4px 16px rgba(0,0,0,0.4)" }}>
