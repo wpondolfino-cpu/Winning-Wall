@@ -997,6 +997,38 @@ export async function getRoster(): Promise<RosterPlayer[]> {
 }
 
 /** All staff (coach/admin) — used to populate "share with coach" pickers. */
+/**
+ * Share targets grouped by team, so a coach can hand something to a whole
+ * roster instead of tapping fourteen names.
+ *
+ * Note this resolves membership NOW. Sharing with a roster writes one row
+ * per player, so it's a snapshot: someone called up later doesn't
+ * inherit it. That's why the pickers show "12 of 14" rather than a plain
+ * shared/not-shared — the gap is the thing you'd want to see.
+ */
+export interface RosterGroup {
+  id: string;
+  name: string;
+  color: string;
+  memberIds: string[];
+}
+
+export async function getRosterShareGroups(): Promise<RosterGroup[]> {
+  const [{ data: rosters }, { data: players }] = await Promise.all([
+    supabase.from("rosters").select("id,name,color").eq("status", "active").order("sort_order", { ascending: true }),
+    supabase.from("profiles").select("id,home_roster_id").eq("role", "player").not("home_roster_id", "is", null),
+  ]);
+  const byRoster = new Map<string, string[]>();
+  for (const p of (players ?? []) as any[]) {
+    const list = byRoster.get(p.home_roster_id) ?? [];
+    list.push(p.id);
+    byRoster.set(p.home_roster_id, list);
+  }
+  return ((rosters ?? []) as any[])
+    .map((r) => ({ id: r.id, name: r.name, color: r.color, memberIds: byRoster.get(r.id) ?? [] }))
+    .filter((r) => r.memberIds.length > 0);
+}
+
 export async function getStaff(): Promise<PlayShareTarget[]> {
   const { data, error } = await supabase
     .from("profiles")
