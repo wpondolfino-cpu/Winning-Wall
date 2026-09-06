@@ -73,9 +73,22 @@ export default function PlaybookManager({ onOpenPlay, initialExpandedId }: Props
     await setPlaybookStatus(id, "active");
     await load();
   }
+  /** Take it back off players so it can be worked on. Distinct from
+   *  archiving: unpublish means "I'm coming back to this", archive means
+   *  "I'm finished with it". */
+  async function unpublish(id: string) {
+    if (!window.confirm("Unpublish this playbook? It goes back to draft so you can edit it, and assigned players stop seeing it until you publish again.")) return;
+    await setPlaybookStatus(id, "draft");
+    await load();
+  }
   async function archive(id: string) {
     if (!window.confirm("Archive this playbook? It'll be hidden from assigned players but not deleted.")) return;
     await setPlaybookStatus(id, "archived");
+    await load();
+  }
+  /** Archiving used to be a dead end — this is the way back. */
+  async function restoreToDraft(id: string) {
+    await setPlaybookStatus(id, "draft");
     await load();
   }
   async function remove(id: string, name: string) {
@@ -142,9 +155,21 @@ export default function PlaybookManager({ onOpenPlay, initialExpandedId }: Props
                       </button>
                     )}
                     {pb.status === "active" && (
-                      <button onClick={() => archive(pb.id)}
+                      <button onClick={() => unpublish(pb.id)} title="Back to draft so you can edit it"
+                        style={{ background: "none", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                        ↩ Unpublish
+                      </button>
+                    )}
+                    {pb.status === "active" && (
+                      <button onClick={() => archive(pb.id)} title="Done with this one — hide it without deleting"
                         style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.25)", color: "#ff7b7b", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
                         📦 Archive
+                      </button>
+                    )}
+                    {pb.status === "archived" && (
+                      <button onClick={() => restoreToDraft(pb.id)} title="Bring it back as a draft"
+                        style={{ background: "none", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                        ↩ Restore to draft
                       </button>
                     )}
                     {pb.status !== "active" && (
@@ -304,6 +329,15 @@ function PlaybookDetail({ playbook, onChanged, onPrint, onOpenPlay }: {
 
       <div style={{ fontSize: 12, color: "var(--muted)", margin: "14px 0 6px" }}>Assigned to</div>
       {shares.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>Not assigned to anyone yet.</div>}
+      {playbook.status !== "active" && shares.length > 0 && (
+        // Assigning while it's a draft looks like a finished action, and the
+        // only hint otherwise was buried in the Publish confirmation.
+        <div style={{ fontSize: 11.5, color: "var(--gold)", marginBottom: 4 }}>
+          {playbook.status === "draft"
+            ? "They can't see it yet — publish to make it visible."
+            : "They can't see it — this playbook is archived."}
+        </div>
+      )}
       {shares.map((s: any) => (
         <div key={s.id} style={{ fontSize: 12, color: "var(--text)", padding: "3px 0" }}>
           {s.profiles?.name ?? "Player"} {s.viewed_at ? "· viewed" : "· not viewed yet"}
