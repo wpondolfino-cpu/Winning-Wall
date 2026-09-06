@@ -7,6 +7,7 @@ import { useState, useEffect } from "react";
 import { getYouTubeId } from "../../lib/youtube";
 import VideoUrlNote from "../shared/VideoUrlNote";
 import PlayPrintView from "../plays/PlayPrintView";
+import RosterShareRows from "../shared/RosterShareRows";
 import {
   Playbook, Play, RosterPlayer,
   getPlaybooks, createPlaybook, updatePlaybook, setPlaybookStatus, deletePlaybook,
@@ -348,6 +349,13 @@ function PlaybookDetail({ playbook, onChanged, onPrint, onOpenPlay }: {
       </button>
       {showAssign && (
         <div style={{ marginTop: 6 }}>
+          {/* Team rows tick and untick the checkboxes below rather than
+              saving — this picker stages its changes behind Save. */}
+          <RosterShareRows
+            sharedWithIds={[...picked]}
+            onAdd={(ids) => setPicked((prev) => { const next = new Set(prev); ids.forEach((id) => next.add(id)); return next; })}
+            onRemove={(ids) => setPicked((prev) => { const next = new Set(prev); ids.forEach((id) => next.delete(id)); return next; })}
+          />
           {roster.map((r) => (
             <label key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 12, color: "var(--text)" }}>
               <input type="checkbox" checked={picked.has(r.id)} onChange={() => togglePick(r.id)} />
