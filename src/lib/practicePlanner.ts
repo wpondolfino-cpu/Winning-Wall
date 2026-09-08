@@ -27,7 +27,12 @@ export interface AttendanceOverride {
   id: string;
   practice_id: string;
   player_id: string;
-  override_type: "call_up" | "excused";
+  override_type: "call_up" | "absent";
+  /** Only meaningful on an absence. true = excused, false = unexcused,
+   *  null = the coach hasn't said. Deliberately separate from
+   *  override_type so anything asking "is this player out" — the grouping
+   *  warning included — never has to know about it. */
+  excused: boolean | null;
   reason: string | null;
   /** Which of the practice's rosters this call-up is joining — only set for override_type "call_up". Lets a mixed practice (e.g. Varsity + JV) show a called-up player in the right team section instead of one undifferentiated list. */
   called_up_to_roster_id: string | null;
@@ -169,9 +174,10 @@ export async function getAttendanceOverrides(practiceId: string): Promise<Attend
 export async function setAttendanceOverride(
   practiceId: string,
   playerId: string,
-  overrideType: "call_up" | "excused",
+  overrideType: "call_up" | "absent",
   reason?: string,
-  calledUpToRosterId?: string | null
+  calledUpToRosterId?: string | null,
+  excused?: boolean | null
 ): Promise<{ error: string | null }> {
   const { error } = await supabase
     .from("practice_attendance_overrides")
@@ -179,10 +185,24 @@ export async function setAttendanceOverride(
       {
         practice_id: practiceId, player_id: playerId, override_type: overrideType,
         reason: reason?.trim() || null,
+        excused: overrideType === "absent" ? (excused ?? null) : null,
         called_up_to_roster_id: overrideType === "call_up" ? (calledUpToRosterId ?? null) : null,
       },
       { onConflict: "practice_id,player_id" }
     );
+  return { error: error?.message ?? null };
+}
+
+/** Set (or clear) whether an existing absence was excused. */
+export async function setAbsenceExcused(
+  practiceId: string, playerId: string, excused: boolean | null
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from("practice_attendance_overrides")
+    .update({ excused })
+    .eq("practice_id", practiceId)
+    .eq("player_id", playerId)
+    .eq("override_type", "absent");
   return { error: error?.message ?? null };
 }
 
@@ -217,7 +237,7 @@ export function lastNameKey(name: string): string {
 export function computeEffectiveAttendees<
   P extends { id: string; home_roster_id: string | null }
 >(allPlayers: P[], practiceRosterIds: string[], overrides: AttendanceOverride[]): P[] {
-  const excused = new Set(overrides.filter(o => o.override_type === "excused").map(o => o.player_id));
+  const excused = new Set(overrides.filter(o => o.override_type === "absent").map(o => o.player_id));
   const calledUpIds = overrides.filter(o => o.override_type === "call_up").map(o => o.player_id);
 
   const base = allPlayers.filter(
@@ -982,7 +1002,7 @@ export async function addGroupMember(groupId: string, playerId: string, isTryout
 // attention" badge in the weeks list without opening every block.
 export async function getPracticeAttentionCount(practiceId: string): Promise<number> {
   const overrides = await getAttendanceOverrides(practiceId);
-  const excused = new Set(overrides.filter(o => o.override_type === "excused").map(o => o.player_id));
+  const excused = new Set(overrides.filter(o => o.override_type === "absent").map(o => o.player_id));
   if (excused.size === 0) return 0;
 
   const blocks = await getPracticeBlocks(practiceId);
