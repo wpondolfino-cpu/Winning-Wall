@@ -577,12 +577,13 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
           <div style={fieldLabel}>Week</div>
           {!showNewWeek ? (
             <div style={{ display: "flex", gap: 6 }}>
+              {/* Every listing path filters by week, so a practice without
+                  one is unreachable — there's no "no week" option, because
+                  choosing it could only ever lose the practice. If you pick
+                  the wrong week you can change it here at any time, which is
+                  the case that option was really serving. */}
               <select value={weekId ?? ""} onChange={e => { const v = e.target.value || null; setWeekId(v); autosaveMeta({ week_id: v }); }} style={inputStyle}>
-                {/* A practice with no week is unreachable: every listing
-                    path filters by week. New practices now default to the
-                    most recent week, and this option warns rather than
-                    reading like a neutral choice. */}
-                <option value="">— No week (won't appear in lists) —</option>
+                {!weekId && <option value="">Choose a week…</option>}
                 {weeks.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
               <button onClick={() => setShowNewWeek(true)} style={smallBtn}>+ New</button>
