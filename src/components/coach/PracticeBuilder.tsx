@@ -19,7 +19,7 @@ import {
   createBlock, updateBlock, deleteBlock, reorderBlocks, getSegments,
   createSegment, deleteSegment, getSegmentDrills, createSegmentDrill,
   updateSegmentDrill, deleteSegmentDrill, autoSplitSegmentDrillDurations, reorderSegmentDrills,
-  getAttendanceOverrides, setAttendanceOverride, clearAttendanceOverride,
+  getAttendanceOverrides, setAttendanceOverride, clearAttendanceOverride, setAbsenceExcused,
   computeEffectiveAttendees, computeBlockTimes, totalDurationMinutes,
   formatDuration, columnTotals, getSavedGroupings, getAssignableCoaches, CoachLite, getGroupCountsForDrills,
   TryoutPlayer, getTryoutPlayers, getTryoutAttendance, setTryoutAttendance, getCurrentSeason,
@@ -474,13 +474,22 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
           .map(t => ({ id: t.id, name: t.name, home_roster_id: null } as any)),
       ]
     : rosterAttendees;
-  const excusedIds = new Set(overrides.filter(o => o.override_type === "excused").map(o => o.player_id));
+  const absentIds = new Set(overrides.filter(o => o.override_type === "absent").map(o => o.player_id));
+  const excusedFlag = new Map(overrides.filter(o => o.override_type === "absent").map(o => [o.player_id, o.excused]));
   const calledUpIds = new Set(overrides.filter(o => o.override_type === "call_up").map(o => o.player_id));
 
-  async function toggleExcuse(playerId: string) {
+  async function toggleAbsent(playerId: string) {
     if (!practice) { alert("Save the practice first."); return; }
-    if (excusedIds.has(playerId)) await clearAttendanceOverride(practice.id, playerId);
-    else await setAttendanceOverride(practice.id, playerId, "excused");
+    if (absentIds.has(playerId)) await clearAttendanceOverride(practice.id, playerId);
+    else await setAttendanceOverride(practice.id, playerId, "absent");
+    setOverrides(await getAttendanceOverrides(practice.id));
+  }
+
+  /** Tapping the one already chosen clears it back to unanswered. */
+  async function setExcused(playerId: string, value: boolean) {
+    if (!practice) return;
+    const current = excusedFlag.get(playerId);
+    await setAbsenceExcused(practice.id, playerId, current === value ? null : value);
     setOverrides(await getAttendanceOverrides(practice.id));
   }
 
@@ -620,14 +629,30 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
           </button>
           {showAttendance && (
             <div style={{ marginTop: 8, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: 12 }}>
-              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 8 }}>Uncheck a player to excuse them for this practice only. Use "Call up" to pull in a player from another roster.</div>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 8 }}>Uncheck a player to mark them out for this practice only, then say whether you knew about it. Use "Call up" to pull in a player from another roster.</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
-                {relevantPlayers.map(p => (
-                  <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-                    <input type="checkbox" checked={!excusedIds.has(p.id)} onChange={() => toggleExcuse(p.id)} />
-                    <span style={{ color: excusedIds.has(p.id) ? "var(--muted)" : "var(--text)", textDecoration: excusedIds.has(p.id) ? "line-through" : "none" }}>{p.name}</span>
-                  </label>
-                ))}
+                {relevantPlayers.map(p => {
+                  const absent = absentIds.has(p.id);
+                  const flag = excusedFlag.get(p.id);
+                  const pill = (label: string, value: boolean) => (
+                    <button type="button" onClick={() => setExcused(p.id, value)}
+                      style={{
+                        fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 5, cursor: "pointer", fontFamily: "inherit",
+                        border: flag === value ? "1px solid transparent" : "1px solid var(--border)",
+                        background: flag === value ? (value ? "rgba(40,180,80,0.18)" : "rgba(255,107,107,0.15)") : "transparent",
+                        color: flag === value ? (value ? "#5de098" : "#ff7b7b") : "var(--muted)",
+                      }}>{label}</button>
+                  );
+                  return (
+                    <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+                        <input type="checkbox" checked={!absent} onChange={() => toggleAbsent(p.id)} />
+                        <span style={{ color: absent ? "var(--muted)" : "var(--text)", textDecoration: absent ? "line-through" : "none" }}>{p.name}</span>
+                      </label>
+                      {absent && <span style={{ display: "flex", gap: 5, flexShrink: 0 }}>{pill("Excused", true)}{pill("Unexcused", false)}</span>}
+                    </div>
+                  );
+                })}
               </div>
               {calledUpIds.size > 0 && (
                 <div style={{ marginBottom: 8 }}>
@@ -912,7 +937,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
               ? effectiveAttendees.filter(p => p.home_roster_id === groupingTarget.segment.roster_id)
               : effectiveAttendees
           }
-          excusedIds={excusedIds}
+          excusedIds={absentIds}
           rosterId={
             groupingTarget.segment.scope_type === "roster" && groupingTarget.segment.roster_id
               ? groupingTarget.segment.roster_id
