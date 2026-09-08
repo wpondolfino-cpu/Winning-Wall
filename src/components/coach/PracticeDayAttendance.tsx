@@ -17,6 +17,7 @@ import {
   Roster, Practice, AttendanceOverride,
   getRosters, getPractice, getAttendanceOverrides, setAttendanceOverride,
   clearAttendanceOverride, markAttendanceTaken, lastNameKey,
+  setAbsenceExcused,
 } from "../../lib/practicePlanner";
 
 interface PlayerLite { id: string; name: string; home_roster_id: string | null; }
@@ -56,17 +57,27 @@ export default function PracticeDayAttendance({ practiceId, onClose, onSaved }: 
 
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(""), 3000); }
 
-  const excusedIds = new Set(overrides.filter(o => o.override_type === "excused").map(o => o.player_id));
+  const absentIds = new Set(overrides.filter(o => o.override_type === "absent").map(o => o.player_id));
+  // true / false / null — null means the coach hasn't said yet.
+  const excusedFlag = new Map(overrides.filter(o => o.override_type === "absent").map(o => [o.player_id, o.excused]));
   const callUps = overrides.filter(o => o.override_type === "call_up");
 
-  async function toggleExcuse(playerId: string) {
-    if (excusedIds.has(playerId)) await clearAttendanceOverride(practiceId, playerId);
-    else await setAttendanceOverride(practiceId, playerId, "excused");
+  async function toggleAbsent(playerId: string) {
+    if (absentIds.has(playerId)) await clearAttendanceOverride(practiceId, playerId);
+    else await setAttendanceOverride(practiceId, playerId, "absent");
+    setOverrides(await getAttendanceOverrides(practiceId));
+  }
+
+  /** Excused / unexcused on an absence. Tapping the selected one clears it
+   *  back to unanswered, so a mis-tap isn't stuck. */
+  async function setExcused(playerId: string, value: boolean) {
+    const current = excusedFlag.get(playerId);
+    await setAbsenceExcused(practiceId, playerId, current === value ? null : value);
     setOverrides(await getAttendanceOverrides(practiceId));
   }
 
   async function markAllPresent() {
-    const excused = [...excusedIds];
+    const excused = [...absentIds];
     await Promise.all(excused.map(id => clearAttendanceOverride(practiceId, id)));
     setOverrides(await getAttendanceOverrides(practiceId));
   }
@@ -135,7 +146,7 @@ export default function PracticeDayAttendance({ practiceId, onClose, onSaved }: 
           .filter((p): p is PlayerLite => !!p)
           .sort((a, b) => lastNameKey(a.name).localeCompare(lastNameKey(b.name)));
 
-        const attending = [...base, ...rosterCallUps].filter(p => !excusedIds.has(p.id)).length;
+        const attending = [...base, ...rosterCallUps].filter(p => !absentIds.has(p.id)).length;
         totalAttending += attending;
         totalRoster += base.length + rosterCallUps.length;
 
@@ -151,12 +162,26 @@ export default function PracticeDayAttendance({ practiceId, onClose, onSaved }: 
 
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               {[...base, ...rosterCallUps].map(p => {
-                const excused = excusedIds.has(p.id);
+                const absent = absentIds.has(p.id);
                 const isCallUp = rosterCallUps.some(c => c.id === p.id);
+                const flag = excusedFlag.get(p.id);
+                const pill = (label: string, value: boolean) => (
+                  <button onClick={() => setExcused(p.id, value)}
+                    style={{
+                      fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 6, cursor: "pointer",
+                      fontFamily: "inherit",
+                      border: flag === value ? "1px solid transparent" : "1px solid var(--border)",
+                      background: flag === value ? (value ? "rgba(40,180,80,0.18)" : "rgba(255,107,107,0.15)") : "transparent",
+                      color: flag === value ? (value ? "#5de098" : "#ff7b7b") : "var(--muted)",
+                    }}>
+                    {label}
+                  </button>
+                );
                 return (
-                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div key={p.id}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     {isCallUp ? (
-                      // Call-ups don't get an excuse toggle — "excused" and "called up"
+                      // Call-ups don't get an absent toggle — "absent" and "called up"
                       // share one override row in the database, so toggling this would
                       // silently overwrite (and lose) their call-up record. If they're
                       // not coming after all, remove the call-up entirely instead.
@@ -170,25 +195,35 @@ export default function PracticeDayAttendance({ practiceId, onClose, onSaved }: 
                         </span>
                       </div>
                     ) : (
-                      <button onClick={() => toggleExcuse(p.id)}
+                      <button onClick={() => toggleAbsent(p.id)}
                         style={{
                           flex: 1, display: "flex", justifyContent: "space-between", alignItems: "center",
                           padding: "9px 12px", borderRadius: 8, border: "1px solid var(--border)",
                           background: "var(--surface)", cursor: "pointer", textAlign: "left",
                         }}>
-                        <span style={{ fontSize: 13, color: excused ? "var(--muted)" : "var(--text)", textDecoration: excused ? "line-through" : "none" }}>
+                        <span style={{ fontSize: 13, color: absent ? "var(--muted)" : "var(--text)", textDecoration: absent ? "line-through" : "none" }}>
                           {p.name}
                         </span>
                         <span style={{
                           fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
-                          background: excused ? "rgba(255,107,107,0.12)" : "rgba(40,180,80,0.15)",
-                          color: excused ? "#ff7b7b" : "#5de098",
+                          background: absent ? "rgba(255,107,107,0.12)" : "rgba(40,180,80,0.15)",
+                          color: absent ? "#ff7b7b" : "#5de098",
                         }}>
-                          {excused ? "Excused" : "Present"}
+                          {absent ? "Absent" : "Present"}
                         </span>
                       </button>
                     )}
                     {isCallUp && <button onClick={() => removeCallUp(p.id)} title="Remove call-up" style={iconBtn}>✕</button>}
+                  </div>
+                  {absent && !isCallUp && (
+                    // Did you know about it — the thing that changes what you
+                    // do. Neither selected means you haven't said, which is
+                    // left alone rather than assumed either way.
+                    <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "5px 0 2px 12px" }}>
+                      {pill("Excused", true)}
+                      {pill("Unexcused", false)}
+                    </div>
+                  )}
                   </div>
                 );
               })}
