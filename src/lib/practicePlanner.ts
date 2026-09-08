@@ -518,13 +518,12 @@ export async function createPractice(input: {
   is_tryout?: boolean;
 }): Promise<{ id: string | null; error: string | null }> {
   const { data: { user } } = await supabase.auth.getUser();
-  // A practice with no week used to be invisible: getPracticesInWeek is
-  // the only listing path, so a null week_id meant the practice existed
-  // in the database with nowhere in the UI to appear. Falling back to the
-  // most recent week (they're ordered newest-first) means the default
-  // path can't strand one. getUnscheduledPractices below recovers any
-  // that were stranded before this.
   // Files by DATE, not by "most recent week".
+  //
+  // Every listing path filters by week, so a null week_id means a
+  // practice that exists with nowhere in the UI to appear. Nothing offers
+  // that as a choice any more, and this fallback means the default path
+  // can't produce one either.
   //
   // The old fallback grabbed whatever week was created last, which put a
   // practice for Aug 24 inside a week labelled Aug 17-23 — a header
@@ -585,18 +584,6 @@ export async function getCurrentPublishedPracticeForRoster(rosterId: string): Pr
     .maybeSingle();
   if (error) { console.error("Failed to load current practice:", error); return null; }
   return data;
-}
-
-/** Practices with no week — invisible everywhere else, since every other listing path filters by week. */
-export async function getUnscheduledPractices(): Promise<Practice[]> {
-  const { data, error } = await supabase.from("practices").select("*").is("week_id", null).order("practice_date", { ascending: true });
-  if (error) { console.error("Failed to load unscheduled practices:", error); return []; }
-  return data ?? [];
-}
-
-export async function assignPracticeToWeek(practiceId: string, weekId: string): Promise<{ error: string | null }> {
-  const { error } = await supabase.from("practices").update({ week_id: weekId, updated_at: new Date().toISOString() }).eq("id", practiceId);
-  return { error: error?.message ?? null };
 }
 
 export async function getPracticesInWeek(weekId: string): Promise<Practice[]> {
