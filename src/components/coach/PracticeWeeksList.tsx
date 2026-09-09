@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   PracticeWeek, Practice, RosterWithCount, Season, getPracticeWeeks, getPracticesInWeek,
   getPracticeAttentionCount, suggestNextWeekName, renamePracticeWeek,
-  deletePracticeWeek, deletePractice, getRosters, getSeasons, getCurrentSeason,
+  deletePracticeWeek, deletePractice, movePracticesToWeek, getRosters, getSeasons, getCurrentSeason,
   startNewSeason, suggestNextSeasonName,
   practiceToExportPayload, importPracticeFromExportPayload, PRACTICE_EXPORT_SCHEMA_VERSION,
 } from "../../lib/practicePlanner";
@@ -146,10 +146,44 @@ export default function PracticeWeeksList(props: Props) {
 
   async function handleDeleteWeek(week: PracticeWeek, practiceCount: number, e: React.MouseEvent) {
     e.stopPropagation();
-    const warning = practiceCount > 0
-      ? ` ${practiceCount} practice${practiceCount === 1 ? "" : "s"} in it will NOT be deleted — they'll just show as having no week.`
-      : "";
-    if (!window.confirm(`Delete "${week.name}"?${warning}`)) return;
+    // Deleting a week used to leave its practices alive with no week —
+    // invisible, since every listing path filters by week. Now the choice
+    // is explicit: move them somewhere, or delete them too.
+    if (practiceCount === 0) {
+      if (!window.confirm(`Delete "${week.name}"?`)) return;
+      await deletePracticeWeek(week.id);
+      await load();
+      return;
+    }
+
+    const others = rows.map(r => r.week).filter(w => w.id !== week.id);
+    const n = `${practiceCount} practice${practiceCount === 1 ? "" : "s"}`;
+
+    if (others.length === 0) {
+      alert(`"${week.name}" has ${n} in it, and it's your only week — there's nowhere to move them.\n\nCreate another week first, or delete the practices individually.`);
+      return;
+    }
+
+    const list = others.map((w, i) => `${i + 1}. ${w.name}`).join("\n");
+    const answer = window.prompt(
+      `"${week.name}" has ${n} in it.\n\nType a number to move them to that week, or type DELETE to delete them along with the week.\n\n${list}`,
+      "1"
+    );
+    if (answer === null) return;
+
+    if (answer.trim().toUpperCase() === "DELETE") {
+      if (!window.confirm(`Delete "${week.name}" and its ${n}? This can't be undone.`)) return;
+      const inWeek = rows.find(r => r.week.id === week.id)?.practices ?? [];
+      for (const p of inWeek) await deletePractice(p.id);
+      await deletePracticeWeek(week.id);
+      await load();
+      return;
+    }
+
+    const pick = others[Number(answer.trim()) - 1];
+    if (!pick) { alert("That wasn't one of the numbers listed."); return; }
+    const { error } = await movePracticesToWeek(week.id, pick.id);
+    if (error) { alert("Couldn't move the practices: " + error); return; }
     await deletePracticeWeek(week.id);
     await load();
   }
