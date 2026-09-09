@@ -6,7 +6,7 @@
 // saved grouping (e.g. "Varsity Starters") SNAPSHOTS its current
 // members in — editing the saved grouping later never changes this.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   SavedGrouping, SegmentDrillGroup, SegmentDrill, getSegmentDrillGroups,
   generateBalancedGroups, saveGeneratedGroups, assignSavedArrangementToSegmentDrill, createSavedArrangement,
@@ -44,6 +44,18 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
   const [newArrangementName, setNewArrangementName] = useState("");
   const [savingArrangement, setSavingArrangement] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  // Everything here writes as you do it — there's no unsaved state and no
+  // Save button. But it looks like a form, so people hesitate over Close.
+  // This is the reassurance: a marker that shows the write happened,
+  // rather than a Confirm button that would imply it hadn't.
+  const [justSaved, setJustSaved] = useState(false);
+  const savedTimer = useRef<number | null>(null);
+  function flashSaved() {
+    setJustSaved(true);
+    if (savedTimer.current) window.clearTimeout(savedTimer.current);
+    savedTimer.current = window.setTimeout(() => setJustSaved(false), 1600);
+  }
+  useEffect(() => () => { if (savedTimer.current) window.clearTimeout(savedTimer.current); }, []);
   const [showPicker, setShowPicker] = useState(false);
   const [previews, setPreviews] = useState<Record<string, string[][]>>({});
 
@@ -68,7 +80,7 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     const { groups: generated } = generateBalancedGroups(attendees, groupSize, numGroups);
     await saveGeneratedGroups(drill.id, generated, tryoutIds);
     await updateSegmentDrill(drill.id, { group_size: groupSize, num_groups: numGroups });
-    await load(); onChanged();
+    await load(); onChanged(); flashSaved();
   }
 
   /**
@@ -88,7 +100,7 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     const { error } = await assignSavedArrangementToSegmentDrill(drill.id, grouping, 0, tryoutIds);
     if (error) { setSaveMsg(error); return; }
     setShowPicker(false);
-    await load(); onChanged();
+    await load(); onChanged(); flashSaved();
   }
 
   /** Loads a preview of each saved arrangement so the picker can show what's inside rather than just a name. */
@@ -139,13 +151,13 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     if (from) await removeGroupMember(from, playerId, isTryout);
     if (to) await addGroupMember(to, playerId, isTryout);
     setDragPlayer(null);
-    await load(); onChanged();
+    await load(); onChanged(); flashSaved();
   }
 
   async function handleQuickSwap(groupId: string, excusedPlayerId: string, replacementId: string) {
     await removeGroupMember(groupId, excusedPlayerId, Boolean(tryoutIds?.has(excusedPlayerId)));
     await addGroupMember(groupId, replacementId, Boolean(tryoutIds?.has(replacementId)));
-    await load(); onChanged();
+    await load(); onChanged(); flashSaved();
   }
 
   return (
@@ -153,9 +165,12 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
       <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(720px, 96vw)", maxHeight: "90vh", overflowY: "auto", padding: 22 }} onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)" }}>Groups — {drill.label}</div>
-          <button onClick={onClose} style={smallBtn}>Close</button>
+          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 11, color: "#5de098", opacity: justSaved ? 1 : 0, transition: "opacity .25s" }}>✓ Saved</span>
+            <button onClick={onClose} style={smallBtn}>Done</button>
+          </span>
         </div>
-        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 14 }}>Drag a player chip to move them between groups or the bench. Generate replaces the current split; manual moves stick until you generate again.</div>
+        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 14 }}>Drag a player chip to move them between groups or the bench. Generate replaces the current split; manual moves stick until you generate again. Everything saves as you go — there\u2019s nothing to submit.</div>
 
         <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 14, flexWrap: "wrap" }}>
           <div>
