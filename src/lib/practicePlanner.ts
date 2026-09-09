@@ -451,15 +451,56 @@ export async function getPracticeWeeks(): Promise<PracticeWeek[]> {
   return data ?? [];
 }
 
-export async function createPracticeWeek(name: string): Promise<{ id: string | null; error: string | null }> {
+/** Sunday-Saturday span containing a date — the same rule week_for_date uses. */
+export function weekSpanFor(dateISO: string): { start: string; end: string } {
+  const d = new Date(dateISO + "T00:00:00Z");
+  const start = new Date(d);
+  start.setUTCDate(d.getUTCDate() - d.getUTCDay());
+  const end = new Date(start);
+  end.setUTCDate(start.getUTCDate() + 6);
+  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+}
+
+/**
+ * A named week, with a date range.
+ *
+ * The range isn't decoration: week_for_date only matches weeks that have
+ * one, so a week created without dates is invisible to the code that
+ * files practices — and a practice for that same span would create a
+ * duplicate date-named week beside it. `anchorDate` is the practice
+ * you're making the week for.
+ */
+export async function createPracticeWeek(
+  name: string, anchorDate?: string
+): Promise<{ id: string | null; error: string | null }> {
   const { data: { user } } = await supabase.auth.getUser();
   const current = await getCurrentSeason();
+  const span = anchorDate ? weekSpanFor(anchorDate) : null;
   const { data, error } = await supabase
     .from("practice_weeks")
-    .insert({ name: name.trim(), created_by: user?.id, season_id: current?.id ?? null })
+    .insert({
+      name: name.trim(), created_by: user?.id, season_id: current?.id ?? null,
+      start_date: span?.start ?? null, end_date: span?.end ?? null,
+    })
     .select("id")
     .single();
   return { id: data?.id ?? null, error: error?.message ?? null };
+}
+
+/** How many practices are in a week — what the delete prompt reports. */
+export async function countPracticesInWeek(weekId: string): Promise<number> {
+  const { count } = await supabase
+    .from("practices").select("id", { count: "exact", head: true }).eq("week_id", weekId);
+  return count ?? 0;
+}
+
+/** Move every practice in one week to another. */
+export async function movePracticesToWeek(fromWeekId: string, toWeekId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from("practices")
+    .update({ week_id: toWeekId, updated_at: new Date().toISOString() })
+    .eq("week_id", fromWeekId);
+  return { error: error?.message ?? null };
 }
 
 // Suggests "Week N" (opponent left blank) based on the highest
@@ -531,7 +572,7 @@ export async function createPractice(input: {
   // (migration 115), so the right week can be found, or created.
   let weekId = input.week_id ?? null;
   if (!weekId) {
-    const { data } = await supabase.rpc("week_for_date", { p_date: input.practice_date, p_season_id: null });
+    const { data } = await supabase.rpc("week_for_date", { p_date: input.practice_date, p_season_id: (await getCurrentSeason())?.id ?? null });
     weekId = (data as string) ?? null;
   }
   const { data, error } = await supabase
