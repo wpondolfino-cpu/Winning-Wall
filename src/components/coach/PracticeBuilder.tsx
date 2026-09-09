@@ -818,7 +818,15 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                           </td>
                           <td style={{ padding: "10px" }}>
                             <button onClick={() => openGroupingEditor(d, seg)} style={smallBtn}>
-                              {gCount > 0 ? `${gCount} group${gCount === 1 ? "" : "s"}` : "+ Groups"}
+                              {/* With a station set but no groups yet, the
+                                  station's headcount is the useful thing to
+                                  show — otherwise the row gives no hint that
+                                  anyone is assigned here at all. */}
+                              {gCount > 0
+                                ? `${gCount} group${gCount === 1 ? "" : "s"}`
+                                : (d.station_member_ids ?? []).length + (d.station_tryout_member_ids ?? []).length > 0
+                                  ? `${(d.station_member_ids ?? []).length + (d.station_tryout_member_ids ?? []).length} at station`
+                                  : "+ Groups"}
                             </button>
                           </td>
                           <td style={{ padding: "10px" }}>
