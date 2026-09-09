@@ -1083,7 +1083,17 @@ export async function getPracticeAttentionCount(practiceId: string): Promise<num
       const drills = await getSegmentDrills(seg.id);
       for (const drill of drills) {
         const groups = await getSegmentDrillGroups(drill.id);
-        count += groups.filter(g => g.member_ids.some(pid => excused.has(pid))).length;
+        if (groups.length > 0) {
+          count += groups.filter(g => g.member_ids.some(pid => excused.has(pid))).length;
+          continue;
+        }
+        // A station with no groups of its own still has people at it, and
+        // one of them being out is exactly what this badge is for — it
+        // would otherwise print an absent player's name on the sheet with
+        // nothing to say so. Counted as one, the same as any other group
+        // holding someone who isn't there.
+        const stationMembers = [...(drill.station_member_ids ?? []), ...(drill.station_tryout_member_ids ?? [])];
+        if (stationMembers.some(pid => excused.has(pid))) count += 1;
       }
     }
   }
@@ -1321,7 +1331,20 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
       const drills = await getSegmentDrills(seg.id);
       const drillPrintData: PrintDrill[] = [];
       for (const d of drills) {
-        const groups = await getSegmentDrillGroups(d.id);
+        let groups = await getSegmentDrillGroups(d.id);
+        // A station with no groups of its own still has people at it, and
+        // the printout is where you find out who. Rather than writing the
+        // station's members out as a real group — which splitting the
+        // station into 4v4 would then overwrite — it's synthesised here,
+        // so station_member_ids stays the only record of who's where.
+        const stationMembers = [...(d.station_member_ids ?? []), ...(d.station_tryout_member_ids ?? [])];
+        if (groups.length === 0 && stationMembers.length > 0) {
+          groups = [{
+            id: `station-${d.id}`, segment_drill_id: d.id, order_index: 0,
+            group_label: "At this station", source_saved_grouping_id: null,
+            member_ids: stationMembers,
+          }];
+        }
         groups.forEach(g => g.member_ids.forEach(id => allMemberIds.add(id)));
         drillPrintData.push({
           title: d.drill_id ? (drillTitleById[d.drill_id] ?? "Untitled drill") : (d.label ?? "Untitled drill"),
