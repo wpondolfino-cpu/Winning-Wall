@@ -25,6 +25,7 @@ import {
   TryoutPlayer, getTryoutPlayers, getTryoutAttendance, setTryoutAttendance, getCurrentSeason,
 } from "../../lib/practicePlanner";
 import GroupingEditor from "./GroupingEditor";
+import StationsEditor from "./StationsEditor";
 import TryoutPoolManager from "./TryoutPoolManager";
 import PracticeDrillLibrary from "./PracticeDrillLibrary";
 import PracticePrintView from "./PracticePrintView";
@@ -54,6 +55,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   const [newWeekName, setNewWeekName] = useState("");
   const [dragBlockId, setDragBlockId] = useState<string | null>(null);
   const [groupingTarget, setGroupingTarget] = useState<{ drill: SegmentDrill; segment: BlockSegment } | null>(null);
+  const [stationsTarget, setStationsTarget] = useState<{ segment: BlockSegment; drills: SegmentDrill[] } | null>(null);
   const [savedGroupingsCache, setSavedGroupingsCache] = useState<Record<string, SavedGrouping[]>>({});
   const [tryoutPool, setTryoutPool] = useState<TryoutPlayer[]>([]);
   const [showTryoutPool, setShowTryoutPool] = useState(false);
@@ -345,6 +347,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
       id: newId, segment_id: segment.id, drill_id: drill.id, order_index: existing.length,
       label, duration_minutes: duration, goal_text: null, coach_name: null, coach_ids: [],
       group_size: drill.default_group_size ?? null, num_groups: drill.default_num_groups ?? null,
+      // A brand-new drill has no station split — its groups pool from
+      // everyone until the block's stations are dealt.
+      station_member_ids: [], station_tryout_member_ids: [],
     };
     let updatedList = [...existing, newDrill];
 
@@ -836,6 +841,17 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                           <button onClick={() => handleAddDrill(seg, block)} style={{ ...smallBtn, fontSize: 11 }}>
                             + {roster ? `Add drill for ${roster.name}` : drills.length > 0 ? "Add station/drill" : "Add drill"}
                           </button>
+                          {/* More than one drill in a segment IS stations, so
+                              this only appears when there's a split to make. */}
+                          {drills.length > 1 && (
+                            <button onClick={() => setStationsTarget({ segment: seg, drills })}
+                              style={{ ...smallBtn, fontSize: 11, marginLeft: 6 }}>
+                              ⇉ Stations
+                              {drills.some(d => (d.station_member_ids ?? []).length > 0) && (
+                                <span style={{ color: "#5de098", marginLeft: 5 }}>✓</span>
+                              )}
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -933,14 +949,36 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
         />
       )}
 
+      {stationsTarget && (
+        <StationsEditor
+          drills={stationsTarget.drills}
+          attendees={
+            stationsTarget.segment.scope_type === "roster" && stationsTarget.segment.roster_id
+              ? effectiveAttendees.filter(p => p.home_roster_id === stationsTarget.segment.roster_id)
+              : effectiveAttendees
+          }
+          tryoutIds={isTryout ? tryoutIds : undefined}
+          onClose={() => setStationsTarget(null)}
+          onChanged={() => { void refreshBlock(stationsTarget.segment.block_id); }}
+        />
+      )}
+
       {groupingTarget && (
         <GroupingEditor
           drill={groupingTarget.drill}
-          attendees={
-            groupingTarget.segment.scope_type === "roster" && groupingTarget.segment.roster_id
+          attendees={(() => {
+            const base = groupingTarget.segment.scope_type === "roster" && groupingTarget.segment.roster_id
               ? effectiveAttendees.filter(p => p.home_roster_id === groupingTarget.segment.roster_id)
-              : effectiveAttendees
-          }
+              : effectiveAttendees;
+            // With a station split saved, this drill's groups come out of
+            // that station's people — otherwise the whole practice, as
+            // before.
+            const station = [
+              ...(groupingTarget.drill.station_member_ids ?? []),
+              ...(groupingTarget.drill.station_tryout_member_ids ?? []),
+            ];
+            return station.length ? base.filter(p => station.includes(p.id)) : base;
+          })()}
           excusedIds={absentIds}
           rosterId={
             groupingTarget.segment.scope_type === "roster" && groupingTarget.segment.roster_id
