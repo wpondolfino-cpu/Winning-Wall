@@ -36,7 +36,6 @@ export default function StationsEditor({ drills, attendees, tryoutIds, onClose, 
   const [assigned, setAssigned] = useState<Record<string, string[]>>({});
   const [dragId, setDragId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [justSaved, setJustSaved] = useState(false);
 
   useEffect(() => {
     const seed: Record<string, string[]> = {};
@@ -52,7 +51,7 @@ export default function StationsEditor({ drills, attendees, tryoutIds, onClose, 
   const labelOf = (d: SegmentDrill, i: number) => d.label?.trim() || `Station ${i + 1}`;
 
   /** Round-robin, so uneven numbers spread rather than piling on the last one. */
-  function deal() {
+  function splitEvenly() {
     const shuffled = [...attendees].sort(() => Math.random() - 0.5);
     const next: Record<string, string[]> = {};
     drills.forEach(d => { next[d.id] = []; });
@@ -81,9 +80,8 @@ export default function StationsEditor({ drills, attendees, tryoutIds, onClose, 
     }));
     setBusy(false);
     if (error) { alert("Couldn't save the stations: " + error); return; }
-    setJustSaved(true);
     onChanged();
-    setTimeout(() => setJustSaved(false), 1600);
+    onClose();   // saving IS the way out — no second button to press
   }
 
   async function clearAll() {
@@ -114,22 +112,18 @@ export default function StationsEditor({ drills, attendees, tryoutIds, onClose, 
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)" }}>Stations</div>
-          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 11, color: "#5de098", opacity: justSaved ? 1 : 0, transition: "opacity .25s" }}>✓ Saved</span>
-            <button onClick={onClose} style={inputStyle}>Done</button>
-          </span>
+          <button onClick={onClose} title="Close without saving"
+            style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 18, cursor: "pointer", lineHeight: 1, padding: 4 }}>✕</button>
         </div>
         <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 14, lineHeight: 1.5 }}>
-          Who is at each station in this block. Deal splits everyone evenly; drag to adjust.
-          Once saved, each station&rsquo;s own Groups button splits just those people &mdash; so a station of eight can become 4v4.
+          Who is at each station in this block. Split evenly spreads everyone; drag to adjust.
+          Each station&rsquo;s own Groups button then splits just those people &mdash; so a station of eight can become 4v4.
+          <br /><span style={{ color: "var(--gold)" }}>Nothing is saved until you press Save stations.</span>
         </div>
 
         <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-          <button onClick={deal} style={{ ...inputStyle, background: "var(--royal)", color: "#fff", border: "none", fontWeight: 600 }}>Deal evenly</button>
-          <button onClick={save} disabled={busy} style={{ ...inputStyle, background: "var(--gold)", color: "#1a1a1a", border: "none", fontWeight: 600, opacity: busy ? 0.6 : 1 }}>
-            {busy ? "Saving…" : "Save stations"}
-          </button>
-          <button onClick={clearAll} disabled={busy} style={inputStyle}>Clear split</button>
+          <button onClick={splitEvenly} style={{ ...inputStyle, background: "var(--royal)", color: "#fff", border: "none", fontWeight: 600 }}>Split evenly</button>
+          <button onClick={clearAll} disabled={busy} style={inputStyle}>Clear</button>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(drills.length, 4)}, minmax(0,1fr))`, gap: 10, marginBottom: 14 }}>
@@ -151,6 +145,17 @@ export default function StationsEditor({ drills, attendees, tryoutIds, onClose, 
           {unassigned.length === 0
             ? <div style={{ fontSize: 12, color: "var(--muted)" }}>Everyone&rsquo;s placed.</div>
             : <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{unassigned.map(p => chip(p.id, null))}</div>}
+        </div>
+
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button onClick={onClose} disabled={busy}
+            style={{ flex: 1, background: "transparent", border: "1px solid var(--border)", borderRadius: 10, padding: 10, color: "var(--muted)", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+            Cancel
+          </button>
+          <button onClick={save} disabled={busy}
+            style={{ flex: 1, background: "var(--gold)", border: "none", borderRadius: 10, padding: 10, color: "#1a1a1a", fontFamily: "inherit", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: busy ? 0.6 : 1 }}>
+            {busy ? "Saving…" : "Save stations"}
+          </button>
         </div>
       </div>
     </div>
