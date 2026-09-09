@@ -14,6 +14,7 @@ import {
   practiceToExportPayload, importPracticeFromExportPayload, PRACTICE_EXPORT_SCHEMA_VERSION,
 } from "../../lib/practicePlanner";
 import { embedJsonInPdf, extractJsonFromPdf, drawTextDocument } from "../../lib/pdfDataExport";
+import { inputStyle } from "../../lib/inputStyle";
 import PracticeBuilder from "./PracticeBuilder";
 import PracticePrintView from "./PracticePrintView";
 import PracticeDayAttendance from "./PracticeDayAttendance";
@@ -51,6 +52,10 @@ export default function PracticeWeeksList(props: Props) {
   const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
   const [startingSeason, setStartingSeason] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [weekToDelete, setWeekToDelete] = useState<{ week: PracticeWeek; count: number; others: PracticeWeek[] } | null>(null);
+  const [deleteStage, setDeleteStage] = useState<"choose" | "move" | "confirm">("choose");
+  const [moveTargetId, setMoveTargetId] = useState("");
+  const [busyDelete, setBusyDelete] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -144,47 +149,46 @@ export default function PracticeWeeksList(props: Props) {
     await load();
   }
 
+  /**
+   * Deleting a week used to leave its practices alive with no week —
+   * invisible, since every listing path filters by week. An empty week
+   * still goes with one confirm; a week with practices in it opens a
+   * dialog, because "move them" and "delete them too" are different
+   * enough that they shouldn't share an OK button.
+   */
   async function handleDeleteWeek(week: PracticeWeek, practiceCount: number, e: React.MouseEvent) {
     e.stopPropagation();
-    // Deleting a week used to leave its practices alive with no week —
-    // invisible, since every listing path filters by week. Now the choice
-    // is explicit: move them somewhere, or delete them too.
     if (practiceCount === 0) {
       if (!window.confirm(`Delete "${week.name}"?`)) return;
       await deletePracticeWeek(week.id);
       await load();
       return;
     }
-
     const others = rows.map(r => r.week).filter(w => w.id !== week.id);
-    const n = `${practiceCount} practice${practiceCount === 1 ? "" : "s"}`;
+    setWeekToDelete({ week, count: practiceCount, others });
+    setMoveTargetId(others[0]?.id ?? "");
+    setDeleteStage("choose");
+  }
 
-    if (others.length === 0) {
-      alert(`"${week.name}" has ${n} in it, and it's your only week — there's nowhere to move them.\n\nCreate another week first, or delete the practices individually.`);
-      return;
-    }
+  async function confirmMove() {
+    if (!weekToDelete || !moveTargetId) return;
+    setBusyDelete(true);
+    const { error } = await movePracticesToWeek(weekToDelete.week.id, moveTargetId);
+    if (error) { setBusyDelete(false); alert("Couldn't move the practices: " + error); return; }
+    await deletePracticeWeek(weekToDelete.week.id);
+    setBusyDelete(false);
+    setWeekToDelete(null);
+    await load();
+  }
 
-    const list = others.map((w, i) => `${i + 1}. ${w.name}`).join("\n");
-    const answer = window.prompt(
-      `"${week.name}" has ${n} in it.\n\nType a number to move them to that week, or type DELETE to delete them along with the week.\n\n${list}`,
-      "1"
-    );
-    if (answer === null) return;
-
-    if (answer.trim().toUpperCase() === "DELETE") {
-      if (!window.confirm(`Delete "${week.name}" and its ${n}? This can't be undone.`)) return;
-      const inWeek = rows.find(r => r.week.id === week.id)?.practices ?? [];
-      for (const p of inWeek) await deletePractice(p.id);
-      await deletePracticeWeek(week.id);
-      await load();
-      return;
-    }
-
-    const pick = others[Number(answer.trim()) - 1];
-    if (!pick) { alert("That wasn't one of the numbers listed."); return; }
-    const { error } = await movePracticesToWeek(week.id, pick.id);
-    if (error) { alert("Couldn't move the practices: " + error); return; }
-    await deletePracticeWeek(week.id);
+  async function confirmDeleteAll() {
+    if (!weekToDelete) return;
+    setBusyDelete(true);
+    const inWeek = rows.find(r => r.week.id === weekToDelete.week.id)?.practices ?? [];
+    for (const p of inWeek) await deletePractice(p.id);
+    await deletePracticeWeek(weekToDelete.week.id);
+    setBusyDelete(false);
+    setWeekToDelete(null);
     await load();
   }
 
@@ -248,8 +252,75 @@ export default function PracticeWeeksList(props: Props) {
     }))
     .filter(({ practices }) => practices.length > 0);
 
+  const btn = (kind: "primary" | "danger" | "ghost"): React.CSSProperties => ({
+    padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
+    fontFamily: "inherit", opacity: busyDelete ? 0.6 : 1,
+    border: kind === "ghost" ? "1px solid var(--border)" : "1px solid transparent",
+    background: kind === "primary" ? "var(--gold)" : kind === "danger" ? "rgba(255,107,107,0.14)" : "transparent",
+    color: kind === "primary" ? "#1a1a1a" : kind === "danger" ? "#ff7b7b" : "var(--muted)",
+  });
+
   return (
     <div>
+      {weekToDelete && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+             onClick={() => !busyDelete && setWeekToDelete(null)}>
+          <div onClick={e => e.stopPropagation()}
+               style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20, width: "100%", maxWidth: 420 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>
+              Delete “{weekToDelete.week.name}”
+            </div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.5 }}>
+              {weekToDelete.count} practice{weekToDelete.count === 1 ? " is" : "s are"} in this week.
+              {weekToDelete.others.length === 0 && " It's your only week, so there's nowhere to move them — you'd have to delete them too."}
+            </div>
+
+            {deleteStage === "choose" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {weekToDelete.others.length > 0 && (
+                  <button style={btn("primary")} onClick={() => setDeleteStage("move")}>
+                    Move {weekToDelete.count === 1 ? "it" : "them"} to another week
+                  </button>
+                )}
+                <button style={btn("danger")} onClick={() => setDeleteStage("confirm")}>
+                  Delete the week and {weekToDelete.count === 1 ? "its practice" : "its practices"}
+                </button>
+                <button style={btn("ghost")} onClick={() => setWeekToDelete(null)}>Cancel</button>
+              </div>
+            )}
+
+            {deleteStage === "move" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <label style={{ fontSize: 12, color: "var(--muted)" }}>Move to</label>
+                <select value={moveTargetId} onChange={e => setMoveTargetId(e.target.value)} style={inputStyle}>
+                  {weekToDelete.others.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                </select>
+                <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                  <button style={{ ...btn("primary"), flex: 1 }} disabled={busyDelete} onClick={confirmMove}>
+                    {busyDelete ? "Moving…" : "Move and delete week"}
+                  </button>
+                  <button style={btn("ghost")} disabled={busyDelete} onClick={() => setDeleteStage("choose")}>Back</button>
+                </div>
+              </div>
+            )}
+
+            {deleteStage === "confirm" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ fontSize: 13, color: "#ff7b7b", lineHeight: 1.5 }}>
+                  This deletes the week and {weekToDelete.count === 1 ? "the practice" : `all ${weekToDelete.count} practices`} in it, including their plans and attendance. It can't be undone.
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button style={{ ...btn("danger"), flex: 1 }} disabled={busyDelete} onClick={confirmDeleteAll}>
+                    {busyDelete ? "Deleting…" : "Yes, delete everything"}
+                  </button>
+                  <button style={btn("ghost")} disabled={busyDelete} onClick={() => setDeleteStage("choose")}>Back</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1 }}>Practices</div>
         <div style={{ display: "flex", gap: 8 }}>
