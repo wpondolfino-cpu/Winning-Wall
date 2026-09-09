@@ -94,6 +94,16 @@ export interface SegmentDrill {
   coach_ids: string[];       // real coach/admin profile ids — supports multiple coaches per drill
   group_size: number | null;
   num_groups: number | null;
+  /**
+   * Who is at this station.
+   *
+   * Only meaningful when the segment holds more than one drill — that's
+   * what makes them stations. Empty means the drill's groups pool from
+   * everyone attending, which is how every practice behaved before
+   * stations existed.
+   */
+  station_member_ids: string[];
+  station_tryout_member_ids: string[];
 }
 
 // ── Rosters ──────────────────────────────────────────────────
@@ -740,6 +750,38 @@ export async function createSegmentDrill(segmentId: string, input: Partial<Omit<
 
 export async function updateSegmentDrill(id: string, patch: Partial<Omit<SegmentDrill, "id" | "segment_id">>): Promise<{ error: string | null }> {
   const { error } = await supabase.from("segment_drills").update(patch).eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+/**
+ * Deal the people at a block across its stations.
+ *
+ * One write per drill rather than a single row, because a station is a
+ * property of the drill it belongs to — nothing else needs to know the
+ * split exists, including the code that reads groups.
+ */
+export async function setStationMembers(
+  assignments: { drillId: string; memberIds: string[]; tryoutIds?: string[] }[]
+): Promise<{ error: string | null }> {
+  for (const a of assignments) {
+    const { error } = await supabase
+      .from("segment_drills")
+      .update({
+        station_member_ids: a.memberIds,
+        station_tryout_member_ids: a.tryoutIds ?? [],
+      })
+      .eq("id", a.drillId);
+    if (error) return { error: error.message };
+  }
+  return { error: null };
+}
+
+/** Drop the station split for a whole block, back to pooling from everyone. */
+export async function clearStationMembers(drillIds: string[]): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from("segment_drills")
+    .update({ station_member_ids: [], station_tryout_member_ids: [] })
+    .in("id", drillIds);
   return { error: error?.message ?? null };
 }
 
