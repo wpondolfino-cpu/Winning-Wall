@@ -172,7 +172,10 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
     if (!date || rosterIds.length === 0) { alert("Pick a date and at least one roster first."); return null; }
     let finalWeekId = weekId;
     if (showNewWeek && newWeekName.trim()) {
-      const { id } = await createPracticeWeek(newWeekName);
+      // Anchor the new week to the practice you're creating it for, so it
+      // gets a real Sunday-Saturday range. Without one it's invisible to
+      // week_for_date and a duplicate date-named week appears beside it.
+      const { id } = await createPracticeWeek(newWeekName, date || undefined);
       finalWeekId = id;
     }
     const { id, error } = await createPractice({ practice_date: date, start_time: startTime, roster_ids: rosterIds, week_id: finalWeekId, is_tryout: tryoutDraft });
