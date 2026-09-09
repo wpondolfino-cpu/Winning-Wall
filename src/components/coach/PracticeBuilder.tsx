@@ -837,22 +837,28 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                     blockRows.push(
                       <tr key={`${seg.id}-add`} style={{ borderTop: isVeryFirstRow && blockIndex > 0 ? undefined : "1px dashed var(--border)" }}>
                         {isVeryFirstRow && timeCell}
-                        <td colSpan={4} style={{ padding: "6px 10px" }}>
+                        <td colSpan={2} style={{ padding: "6px 10px" }}>
                           <button onClick={() => handleAddDrill(seg, block)} style={{ ...smallBtn, fontSize: 11 }}>
                             + {roster ? `Add drill for ${roster.name}` : drills.length > 0 ? "Add station/drill" : "Add drill"}
                           </button>
-                          {/* More than one drill in a segment IS stations, so
-                              this only appears when there's a split to make. */}
+                        </td>
+                        {/* Sits in the Group column, under the drills' own
+                            + Groups buttons — it's the tier above them, not
+                            another way to add a drill. Only appears when the
+                            segment has more than one drill, because that's
+                            what makes them stations. */}
+                        <td style={{ padding: "6px 10px" }}>
                           {drills.length > 1 && (
                             <button onClick={() => setStationsTarget({ segment: seg, drills })}
-                              style={{ ...smallBtn, fontSize: 11, marginLeft: 6 }}>
+                              style={{ background: "var(--gold)", color: "#1a1a1a", border: "none", borderRadius: 7, padding: "6px 11px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                               ⇉ Stations
                               {drills.some(d => (d.station_member_ids ?? []).length > 0) && (
-                                <span style={{ color: "#5de098", marginLeft: 5 }}>✓</span>
+                                <span style={{ color: "#2d6b45", marginLeft: 5 }}>✓</span>
                               )}
                             </button>
                           )}
                         </td>
+                        <td />
                       </tr>
                     );
                   });
