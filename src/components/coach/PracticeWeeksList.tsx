@@ -192,6 +192,20 @@ export default function PracticeWeeksList(props: Props) {
     await load();
   }
 
+  /**
+   * A practice that's waiting on you.
+   *
+   * Published, already happened, and attendance never completed. A draft
+   * or a practice still in the future is deliberately excluded — every
+   * practice you schedule a fortnight ahead would otherwise look like an
+   * outstanding task, and a prompt that's always on is a prompt nobody
+   * reads.
+   */
+  function needsAttendance(p: Practice): boolean {
+    const today = new Date().toISOString().slice(0, 10);
+    return p.status === "published" && !p.attendance_taken_at && p.practice_date <= today;
+  }
+
   async function handleDeletePractice(practiceId: string, dateLabel: string, e: React.MouseEvent) {
     e.stopPropagation();
     if (!window.confirm(`Delete the ${dateLabel} practice? This can't be undone.`)) return;
@@ -403,6 +417,16 @@ export default function PracticeWeeksList(props: Props) {
                     ) : (
                       <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{week.name}</div>
                     )}
+                    {(() => {
+                      // Amber rather than gold, so it reads as a different
+                      // thing from the group warning sitting beside it.
+                      const waiting = practices.filter(needsAttendance).length;
+                      return waiting > 0 ? (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: "rgba(232,163,61,0.14)", color: "#e8a33d" }}>
+                          {waiting} need attendance
+                        </span>
+                      ) : null;
+                    })()}
                     {totalFlags > 0 && (
                       <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: "rgba(240,192,64,0.15)", color: "var(--gold)" }}>
                         ⚠ {totalFlags} group{totalFlags === 1 ? "" : "s"} need attention
@@ -452,12 +476,13 @@ export default function PracticeWeeksList(props: Props) {
                                 fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 6, border: "none", fontFamily: "inherit",
                                 cursor: p.status === "published" ? "pointer" : "not-allowed",
                                 opacity: p.status === "published" ? 1 : 0.35,
-                                background: p.status === "published" ? "var(--royal)" : "var(--surface)",
-                                color: p.status === "published" ? "#fff" : "var(--muted)",
+                                background: needsAttendance(p) ? "rgba(232,163,61,0.14)" : p.status === "published" ? "var(--royal)" : "var(--surface)",
+                                color: needsAttendance(p) ? "#e8a33d" : p.status === "published" ? "#fff" : "var(--muted)",
+                                boxShadow: needsAttendance(p) ? "inset 0 0 0 1px rgba(232,163,61,0.45)" : undefined,
                               }}>
                               {p.attendance_taken_at
                                 ? `✔ ${new Date(p.attendance_taken_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`
-                                : "Attendance"}
+                                : needsAttendance(p) ? "Take attendance" : "Attendance"}
                             </button>
                             <button
                               onClick={e => { e.stopPropagation(); if (p.status === "published") setWinsForId(p.id); }}
