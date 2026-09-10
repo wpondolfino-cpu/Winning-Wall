@@ -1,5 +1,6 @@
 // src/components/PlayersPanel.tsx  (Coach view — manage players)
 import { useState, useEffect } from "react";
+import PlayerAttendanceRecord from "./coach/PlayerAttendanceRecord";
 import { supabase, Score, Workout, ScoreAttempt, GRADE_CATEGORIES, GradeCategory, approveUser, rejectUser, resetPlayerScores } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 import { Roster, getRosters } from "../lib/practicePlanner";
@@ -854,7 +855,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       {/* Edit Player Modal */}
       {editPlayer && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setEditPlayer(null)}>
-          <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(400px, 96vw)", padding: 24 }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(480px, 96vw)", maxHeight: "90vh", overflowY: "auto", padding: 24 }} onClick={e => e.stopPropagation()}>
             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", marginBottom: 16 }}>✏️ Edit Player</div>
             <div style={{ marginBottom: 12 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label><input value={editPlayer.name} onChange={e => setEditPlayer({ ...editPlayer, name: e.target.value })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" as const }} /></div>
             <div style={{ marginBottom: 16 }}>
@@ -903,6 +904,16 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 )}
               </div>
             )}
+            {/* The record sits with the player rather than on the practices
+                page, because "how has this player been" is a question you
+                ask about a person. The team-wide view is a different shape
+                and doesn't exist yet. */}
+            {editPlayer.home_roster_id && (
+              <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginBottom: 14 }}>
+                <PlayerAttendanceRecord playerId={editPlayer.id} />
+              </div>
+            )}
+
             {editError && <div style={{ color: "#ff7b7b", fontSize: 12, marginBottom: 10 }}>{editError}</div>}
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={savePlayerEdit} disabled={editSaving} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{editSaving ? "Saving…" : "Save"}</button>
