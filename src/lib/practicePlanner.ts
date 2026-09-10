@@ -225,6 +225,101 @@ export async function clearAttendanceOverride(practiceId: string, playerId: stri
   return { error: error?.message ?? null };
 }
 
+/**
+ * One player's attendance, a row per season.
+ *
+ * Attendance is recorded by exception — a row exists only when someone is
+ * out — so "present" has to be derived, and the denominator is the part
+ * that has to be got right. Only practices where attendance was actually
+ * completed are counted: a practice nobody checked looks identical to one
+ * where everyone showed up, and counting it would quietly flatter the
+ * whole roster.
+ *
+ * `awaiting` is how many published, already-happened practices are still
+ * missing attendance, so the caller can say why the totals are lower than
+ * expected rather than leaving it to be discovered.
+ *
+ * Deliberately returns counts and not a percentage. The denominator is a
+ * judgement — call-ups, mid-season joiners, practices nobody took — and a
+ * percentage would present that judgement as a fact.
+ */
+export interface SeasonAttendance {
+  seasonId: string | null;
+  seasonName: string;
+  practices: number;
+  absences: number;
+  excused: number;
+  unexcused: number;
+  /** Absences recorded before excused/unexcused existed, or not yet answered. */
+  unanswered: number;
+  awaiting: number;
+}
+
+export async function getPlayerAttendance(playerId: string): Promise<SeasonAttendance[]> {
+  const [{ data: profile }, { data: seasons }, { data: weeks }] = await Promise.all([
+    supabase.from("profiles").select("home_roster_id").eq("id", playerId).single(),
+    supabase.from("seasons").select("id,name,created_at").order("created_at", { ascending: false }),
+    supabase.from("practice_weeks").select("id,season_id"),
+  ]);
+  const rosterId = (profile as any)?.home_roster_id ?? null;
+  if (!rosterId) return [];
+
+  const seasonOfWeek = new Map<string, string | null>(((weeks ?? []) as any[]).map(w => [w.id, w.season_id]));
+
+  // Every practice this player's roster was part of.
+  const { data: practices } = await supabase
+    .from("practices")
+    .select("id, week_id, practice_date, status, attendance_taken_at, roster_ids")
+    .contains("roster_ids", [rosterId]);
+
+  const mine = (practices ?? []) as any[];
+  const ids = mine.map(p => p.id);
+  const { data: overrides } = ids.length
+    ? await supabase.from("practice_attendance_overrides")
+        .select("practice_id, override_type, excused")
+        .eq("player_id", playerId).in("practice_id", ids)
+    : { data: [] as any[] };
+
+  const absenceOf = new Map<string, { excused: boolean | null }>();
+  for (const o of (overrides ?? []) as any[]) {
+    if (o.override_type === "absent") absenceOf.set(o.practice_id, { excused: o.excused });
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const bySeason = new Map<string | null, SeasonAttendance>();
+  const nameOf = new Map<string, string>(((seasons ?? []) as any[]).map(s => [s.id, s.name]));
+
+  for (const p of mine) {
+    const seasonId = p.week_id ? seasonOfWeek.get(p.week_id) ?? null : null;
+    let row = bySeason.get(seasonId);
+    if (!row) {
+      row = {
+        seasonId,
+        seasonName: seasonId ? (nameOf.get(seasonId) ?? "Unknown season") : "No season",
+        practices: 0, absences: 0, excused: 0, unexcused: 0, unanswered: 0, awaiting: 0,
+      };
+      bySeason.set(seasonId, row);
+    }
+    const happened = p.practice_date <= today;
+    if (p.status !== "published" || !happened) continue;
+    if (!p.attendance_taken_at) { row.awaiting += 1; continue; }
+
+    row.practices += 1;
+    const absence = absenceOf.get(p.id);
+    if (!absence) continue;
+    row.absences += 1;
+    if (absence.excused === true) row.excused += 1;
+    else if (absence.excused === false) row.unexcused += 1;
+    else row.unanswered += 1;
+  }
+
+  // Newest season first, matching how seasons are listed everywhere else.
+  const order = ((seasons ?? []) as any[]).map(s => s.id);
+  return [...bySeason.values()]
+    .filter(r => r.practices > 0 || r.awaiting > 0)
+    .sort((a, b) => order.indexOf(a.seasonId ?? "") - order.indexOf(b.seasonId ?? ""));
+}
+
 /** Stamps (or re-stamps) attendance_taken_at with the current time — called by the explicit "Complete attendance" action, never automatically on a checkbox toggle. Overwrites any prior value; no history is kept. */
 export async function markAttendanceTaken(practiceId: string): Promise<{ error: string | null }> {
   const { error } = await supabase
