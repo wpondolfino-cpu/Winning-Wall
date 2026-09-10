@@ -754,11 +754,11 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                   <button onClick={() => openEditScores(p.id)} style={{ background: "rgba(147,92,255,0.1)", border: "1px solid rgba(147,92,255,0.3)", color: "#b07aff", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>📊 Scores</button>
                   {/* Beside Scores rather than inside Edit: both are things
                       you look up, not things you change. */}
-                  <button onClick={() => setAttendanceFor({ id: p.id, name: p.name })} style={{ background: "rgba(93,224,152,0.1)", border: "1px solid rgba(93,224,152,0.3)", color: "#5de098", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗓 Attendance</button>
+                  <button onClick={() => setAttendanceFor({ id: p.id, name: p.name })} style={{ background: "rgba(94,207,214,0.1)", border: "1px solid rgba(94,207,214,0.32)", color: "#5ecfd6", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗓 Attendance</button>
                   {inactiveTab ? (
                     <button onClick={() => reactivatePlayer(p.id)} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>↩️ Restore</button>
                   ) : (
-                    <button onClick={() => removePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🚫 Remove</button>
+                    <button onClick={() => removePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.16)", color: "var(--muted)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🚫 Remove</button>
                   )}
                   <button onClick={() => resetPerks(p.id, p.name)} style={{ background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", color: "var(--gold)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🔄 Perks</button>
                   <button onClick={() => deletePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗑 Delete</button>
@@ -826,7 +826,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                   </div>
                   <div style={{ display: "flex", gap: 5 }}>
                     <button onClick={() => setEditCoach({ id: c.id, name: c.name, role: c.role })} style={{ background: "rgba(26,63,168,0.15)", border: "1px solid rgba(26,63,168,0.3)", color: "#93b4ff", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
-                    <button onClick={() => removeCoach(c.id, c.name)} disabled={removingCoach === c.id} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🚫 Remove</button>
+                    <button onClick={() => removeCoach(c.id, c.name)} disabled={removingCoach === c.id} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.16)", color: "var(--muted)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🚫 Remove</button>
                     <button onClick={() => deleteCoach(c.id, c.name)} disabled={removingCoach === c.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗑 Delete</button>
                   </div>
                 </div>
