@@ -256,6 +256,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const [inviteSending, setInviteSending] = useState(false);
   const [inviteMsg, setInviteMsg]     = useState("");
   const [editPlayer, setEditPlayer]   = useState<EditPlayer | null>(null);
+  const [attendanceFor, setAttendanceFor] = useState<{ id: string; name: string } | null>(null);
   // Jersey numbers already taken on each roster, so assigning a duplicate
   // gets a warning. Not blocked -- two players can legitimately share a
   // number across a season if one leaves.
@@ -751,6 +752,9 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
                   <button onClick={() => openEditPlayer(p)} style={{ background: "rgba(26,63,168,0.15)", border: "1px solid rgba(26,63,168,0.3)", color: "#93b4ff", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
                   <button onClick={() => openEditScores(p.id)} style={{ background: "rgba(147,92,255,0.1)", border: "1px solid rgba(147,92,255,0.3)", color: "#b07aff", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>📊 Scores</button>
+                  {/* Beside Scores rather than inside Edit: both are things
+                      you look up, not things you change. */}
+                  <button onClick={() => setAttendanceFor({ id: p.id, name: p.name })} style={{ background: "rgba(93,224,152,0.1)", border: "1px solid rgba(93,224,152,0.3)", color: "#5de098", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗓 Attendance</button>
                   {inactiveTab ? (
                     <button onClick={() => reactivatePlayer(p.id)} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>↩️ Restore</button>
                   ) : (
@@ -853,6 +857,18 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       )}
 
       {/* Edit Player Modal */}
+      {attendanceFor && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setAttendanceFor(null)}>
+          <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(520px, 96vw)", maxHeight: "90vh", overflowY: "auto", padding: 24 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)" }}>{attendanceFor.name}</div>
+              <button onClick={() => setAttendanceFor(null)} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 18, cursor: "pointer", padding: 4, lineHeight: 1 }}>✕</button>
+            </div>
+            <PlayerAttendanceRecord playerId={attendanceFor.id} />
+          </div>
+        </div>
+      )}
+
       {editPlayer && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setEditPlayer(null)}>
           <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(480px, 96vw)", maxHeight: "90vh", overflowY: "auto", padding: 24 }} onClick={e => e.stopPropagation()}>
@@ -904,16 +920,6 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 )}
               </div>
             )}
-            {/* The record sits with the player rather than on the practices
-                page, because "how has this player been" is a question you
-                ask about a person. The team-wide view is a different shape
-                and doesn't exist yet. */}
-            {editPlayer.home_roster_id && (
-              <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginBottom: 14 }}>
-                <PlayerAttendanceRecord playerId={editPlayer.id} />
-              </div>
-            )}
-
             {editError && <div style={{ color: "#ff7b7b", fontSize: 12, marginBottom: 10 }}>{editError}</div>}
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={savePlayerEdit} disabled={editSaving} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{editSaving ? "Saving…" : "Save"}</button>
