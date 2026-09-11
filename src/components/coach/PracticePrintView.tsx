@@ -109,6 +109,63 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                 )}
               </tbody>
             </table>
+
+            {/* Rotating blocks, written out in full. A coach standing at one
+                station needs to know who they've got and how they're
+                divided, so every round's split is printed by name rather
+                than left as a rule to apply. */}
+            {p.blocks.filter(b => b.rotation).map((b, bi) => {
+              const rot = b.rotation!;
+              return (
+                <div key={`rot-${bi}`} style={{ marginTop: 14, pageBreakInside: "avoid" }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, borderBottom: "1.5px solid #111", paddingBottom: 4, marginBottom: 8 }}>
+                    {b.start} – {b.end} · STATIONS — {rot.groups.length} groups rotate
+                  </div>
+
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10.5, marginBottom: 10 }}>
+                    <thead>
+                      <tr style={{ background: "#eee" }}>
+                        <th style={{ textAlign: "left", padding: "3px 6px", border: "0.5px solid #bbb" }}>Station</th>
+                        {rot.grid.map((_, r) => (
+                          <th key={r} style={{ padding: "3px 6px", border: "0.5px solid #bbb" }}>Rd {r + 1}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rot.stations.map((st, si) => (
+                        <tr key={si}>
+                          <td style={{ padding: "3px 6px", border: "0.5px solid #bbb" }}>{st.title}</td>
+                          {rot.grid.map((row, r) => (
+                            <td key={r} style={{ textAlign: "center", padding: "3px 6px", border: "0.5px solid #bbb" }}>
+                              {row[si].replace("Group ", "")}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  {rot.stations.map((st, si) => (
+                    <div key={si} style={{ marginBottom: 9, pageBreakInside: "avoid" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 3 }}>
+                        {st.title.toUpperCase()} — {st.ruleText}
+                        {st.coachNames.length > 0 && <> · {st.coachNames.join(", ")}</>}
+                      </div>
+                      <div style={{ fontSize: 10, lineHeight: 1.7 }}>
+                        {st.rounds.map(rd => (
+                          <div key={rd.round}>
+                            Rd {rd.round} · <b>{rd.groupLabel.replace("Group ", "")}</b> —{" "}
+                            {st.ruleText === "keep together"
+                              ? rd.parts[0].join(", ")
+                              : rd.parts.map(part => part.join(", ")).join("  |  ")}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         ))
       )}
