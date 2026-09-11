@@ -101,6 +101,7 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
         title: editDrill.title, description: editDrill.description ?? null, video_url: editDrill.video_url ?? null,
         category_name: editDrill.category_name ?? null, default_duration_minutes: editDrill.default_duration_minutes ?? null,
         default_group_size: editDrill.default_group_size ?? null, default_num_groups: editDrill.default_num_groups ?? null,
+        is_competitive: !!editDrill.is_competitive,
         linked_play_id: editDrill.linked_play_id ?? null, tags: editDrill.tags ?? [],
       });
       if (error) { alert("Couldn't save: " + error); return; }
@@ -111,6 +112,7 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
         title: editDrill.title, description: editDrill.description ?? undefined, video_url: editDrill.video_url ?? undefined,
         category_name: editDrill.category_name ?? null, default_duration_minutes: editDrill.default_duration_minutes ?? null,
         default_group_size: editDrill.default_group_size ?? null, default_num_groups: editDrill.default_num_groups ?? null,
+        is_competitive: !!editDrill.is_competitive,
         linked_play_id: editDrill.linked_play_id ?? null, tags: editDrill.tags ?? [],
       });
       if (error || !id) { alert("Couldn't create drill: " + (error ?? "unknown error")); return; }
@@ -122,6 +124,7 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
           id, title: editDrill.title, description: editDrill.description ?? null, video_url: editDrill.video_url ?? null,
           category_name: editDrill.category_name ?? null, default_duration_minutes: editDrill.default_duration_minutes ?? null,
           default_group_size: editDrill.default_group_size ?? null, default_num_groups: editDrill.default_num_groups ?? null,
+        is_competitive: !!editDrill.is_competitive,
           linked_play_id: editDrill.linked_play_id ?? null, is_starred: false, created_at: new Date().toISOString(),
         });
       } else {
@@ -301,6 +304,16 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
                   {plays.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
                 </select>
               )}
+              {/* Sits with the other defaults: set it once and the wins tool
+                  offers this drill every time you use it, instead of asking
+                  you to type its name between blocks. */}
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "var(--text)", marginBottom: 4 }}>
+                <input type="checkbox" checked={!!editDrill.is_competitive}
+                  onChange={e => setEditDrill({ ...editDrill, is_competitive: e.target.checked })} />
+                Somebody wins this drill
+                <span style={{ color: "var(--muted)", fontSize: 11 }}>— shows it in Practice Wins</span>
+              </label>
+
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={saveDrill} style={primaryBtn}>Save</button>
                 <button onClick={() => setEditDrill(null)} style={smallBtn}>Cancel</button>
