@@ -55,7 +55,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   const [newWeekName, setNewWeekName] = useState("");
   const [dragBlockId, setDragBlockId] = useState<string | null>(null);
   const [groupingTarget, setGroupingTarget] = useState<{ drill: SegmentDrill; segment: BlockSegment } | null>(null);
-  const [stationsTarget, setStationsTarget] = useState<{ segment: BlockSegment; drills: SegmentDrill[] } | null>(null);
+  const [stationsTarget, setStationsTarget] = useState<{ segment: BlockSegment; drills: SegmentDrill[]; block: PracticeBlock } | null>(null);
   const [savedGroupingsCache, setSavedGroupingsCache] = useState<Record<string, SavedGrouping[]>>({});
   const [tryoutPool, setTryoutPool] = useState<TryoutPlayer[]>([]);
   const [showTryoutPool, setShowTryoutPool] = useState(false);
@@ -350,6 +350,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
       // A brand-new drill has no station split — its groups pool from
       // everyone until the block's stations are dealt.
       station_member_ids: [], station_tryout_member_ids: [],
+      split_rule: "none", split_n: null,
     };
     let updatedList = [...existing, newDrill];
 
@@ -857,10 +858,10 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                             what makes them stations. */}
                         <td style={{ padding: "6px 10px" }}>
                           {drills.length > 1 && (
-                            <button onClick={() => setStationsTarget({ segment: seg, drills })}
+                            <button onClick={() => setStationsTarget({ segment: seg, drills, block })}
                               style={{ background: "var(--gold)", color: "#1a1a1a", border: "none", borderRadius: 7, padding: "6px 11px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                               ⇉ Stations
-                              {drills.some(d => (d.station_member_ids ?? []).length > 0) && (
+                              {(block.station_mode === "rotating" || drills.some(d => (d.station_member_ids ?? []).length > 0)) && (
                                 <span style={{ color: "#2d6b45", marginLeft: 5 }}>✓</span>
                               )}
                             </button>
@@ -965,6 +966,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
 
       {stationsTarget && (
         <StationsEditor
+          block={stationsTarget.block}
           drills={stationsTarget.drills}
           attendees={
             stationsTarget.segment.scope_type === "roster" && stationsTarget.segment.roster_id
