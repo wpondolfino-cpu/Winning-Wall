@@ -73,6 +73,19 @@ export interface PracticeBlock {
   practice_id: string;
   order_index: number;
   duration_minutes: number;
+  /**
+   * fixed    — people are assigned to a station and stay there.
+   * rotating — groups belong to the block and move between stations, each
+   *            splitting whoever arrives by its own rule.
+   */
+  station_mode: "fixed" | "rotating";
+}
+
+export interface RotationGroup {
+  id: string;
+  block_id: string;
+  group_index: number;
+  member_ids: string[];
 }
 
 export interface BlockSegment {
@@ -104,6 +117,11 @@ export interface SegmentDrill {
    */
   station_member_ids: string[];
   station_tryout_member_ids: string[];
+  /** Only read on a rotating block — how this station divides whoever arrives. */
+  split_rule: "none" | "teams" | "size";
+  split_n: number | null;
+  /** Overrides the library drill for this placement. Null = follow the library. */
+  is_competitive: boolean | null;
 }
 
 // ── Rosters ──────────────────────────────────────────────────
@@ -855,6 +873,85 @@ export async function updateSegmentDrill(id: string, patch: Partial<Omit<Segment
  * property of the drill it belongs to — nothing else needs to know the
  * split exists, including the code that reads groups.
  */
+/**
+ * Divide a rotating group at one station.
+ *
+ * Deterministic, and that isn't an implementation detail — the printout
+ * has to agree with the app, so the same group at the same station must
+ * always split the same way. Members are taken in order, which also means
+ * reordering a group in the dialog is how you change who ends up with
+ * whom.
+ *
+ * Nobody is left out: "groups of 2" on five people makes 2 + 3 rather
+ * than two pairs and a spare, because sitting a player out of a shooting
+ * drill isn't what the rule meant.
+ */
+export function splitForStation(
+  memberIds: string[], rule: "none" | "teams" | "size", n: number | null
+): string[][] {
+  if (rule === "none" || !n || n < 1 || memberIds.length === 0) return [memberIds];
+
+  if (rule === "teams") {
+    const sides: string[][] = Array.from({ length: Math.min(n, memberIds.length) }, () => []);
+    memberIds.forEach((id, i) => sides[i % sides.length].push(id));
+    return sides;
+  }
+
+  // "groups of n" — whole groups first, then the remainder is dealt back
+  // across them rather than left standing on its own.
+  const whole = Math.floor(memberIds.length / n);
+  if (whole === 0) return [memberIds];
+  const out: string[][] = Array.from({ length: whole }, (_, i) => memberIds.slice(i * n, i * n + n));
+  memberIds.slice(whole * n).forEach((id, i) => out[i % out.length].push(id));
+  return out;
+}
+
+/**
+ * Which group is at which station, per round.
+ *
+ * Generated rather than configured: group i starts at station i and
+ * everyone shifts along by one each round, which is how a rotation is
+ * actually run. Returns rounds[roundIndex][stationIndex] = group index.
+ */
+export function rotationSchedule(groupCount: number, stationCount: number): number[][] {
+  const rounds = Math.max(groupCount, stationCount);
+  return Array.from({ length: rounds }, (_, r) =>
+    Array.from({ length: stationCount }, (_, st) => (st - r + groupCount * rounds) % groupCount)
+  );
+}
+
+export async function getRotationGroups(blockId: string): Promise<RotationGroup[]> {
+  const { data, error } = await supabase
+    .from("block_rotation_groups").select("*")
+    .eq("block_id", blockId).order("group_index", { ascending: true });
+  if (error) { console.error("Failed to load rotation groups:", error); return []; }
+  return data ?? [];
+}
+
+export async function setRotationGroups(blockId: string, groups: string[][]): Promise<{ error: string | null }> {
+  await supabase.from("block_rotation_groups").delete().eq("block_id", blockId);
+  if (groups.length === 0) return { error: null };
+  const { error } = await supabase.from("block_rotation_groups").insert(
+    groups.map((member_ids, group_index) => ({ block_id: blockId, group_index, member_ids }))
+  );
+  return { error: error?.message ?? null };
+}
+
+export async function setBlockStationMode(blockId: string, mode: "fixed" | "rotating"): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("practice_blocks").update({ station_mode: mode }).eq("id", blockId);
+  return { error: error?.message ?? null };
+}
+
+export async function setDrillSplitRule(
+  drillId: string, rule: "none" | "teams" | "size", n: number | null
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from("segment_drills")
+    .update({ split_rule: rule, split_n: rule === "none" ? null : n })
+    .eq("id", drillId);
+  return { error: error?.message ?? null };
+}
+
 export async function setStationMembers(
   assignments: { drillId: string; memberIds: string[]; tryoutIds?: string[] }[]
 ): Promise<{ error: string | null }> {
@@ -1208,6 +1305,8 @@ export interface PracticeDrillLibraryDrill {
   default_duration_minutes: number | null;
   default_group_size: number | null;
   default_num_groups: number | null;
+  /** Whether this drill has a winner — drives what the wins tool offers. */
+  is_competitive: boolean;
   linked_play_id: string | null;
   is_starred: boolean;
   created_at: string;
@@ -1271,6 +1370,7 @@ export async function getPracticeDrillLibrary(filters: DrillFilters = {}): Promi
 export async function createPracticeDrill(input: {
   title: string; description?: string; video_url?: string; category_name?: string | null;
   default_duration_minutes?: number | null; default_group_size?: number | null; default_num_groups?: number | null;
+  is_competitive?: boolean;
   linked_play_id?: string | null; tags?: string[];
 }): Promise<{ id: string | null; error: string | null }> {
   const { data: { user } } = await supabase.auth.getUser();
@@ -1296,7 +1396,7 @@ export async function createPracticeDrill(input: {
 export async function updatePracticeDrill(id: string, input: Partial<{
   title: string; description: string | null; video_url: string | null; category_name: string | null;
   default_duration_minutes: number | null; default_group_size: number | null; default_num_groups: number | null;
-  linked_play_id: string | null; tags: string[];
+  linked_play_id: string | null; tags: string[]; is_competitive: boolean;
 }>): Promise<{ error: string | null }> {
   const { tags, ...rest } = input;
   const { error } = await supabase.from("practice_drills_library").update({ ...rest, updated_at: new Date().toISOString() }).eq("id", id);
@@ -1395,9 +1495,117 @@ export interface PrintDrill {
   goal_text: string | null; coachNames: string[]; groups: PrintDrillGroup[];
 }
 export interface PrintSegment { rosterName: string | null; drills: PrintDrill[]; }
-export interface PrintBlock { start: string; end: string; duration_minutes: number; segments: PrintSegment[]; }
+/**
+ * A rotating block, written out in full.
+ *
+ * `grid[roundIndex][stationIndex]` is the group letter at that station in
+ * that round, and `stations` carries every round's exact split by name —
+ * because a coach standing at one station needs to know who they've got
+ * and how they're divided, not a rule to apply in their head.
+ */
+export interface PrintRotation {
+  groups: { label: string; memberNames: string[] }[];
+  grid: string[][];
+  stations: {
+    title: string;
+    ruleText: string;
+    coachNames: string[];
+    rounds: { round: number; groupLabel: string; parts: string[][] }[];
+  }[];
+}
+export interface PrintBlock {
+  start: string; end: string; duration_minutes: number; segments: PrintSegment[];
+  /** Set only when this block's stations rotate. */
+  rotation?: PrintRotation;
+}
 export interface PrintPractice {
   id: string; practice_date: string; start_time: string; rosterNames: string[]; blocks: PrintBlock[];
+}
+
+/** "split into 2 teams" / "groups of 2" / "keep together", for the sheet. */
+function splitRuleText(rule: string, n: number | null): string {
+  if (rule === "teams" && n) return `split into ${n} team${n === 1 ? "" : "s"}`;
+  if (rule === "size" && n) return `groups of ${n}`;
+  return "keep together";
+}
+
+/**
+ * The drills in a practice that somebody can win.
+ *
+ * Offered by the wins tool instead of a free-text box: typing a drill
+ * name between blocks is the worst possible input, and it's what makes
+ * "Shell Drill" and "shell drill" two different rows in the history.
+ *
+ * A placement's own flag wins over the library's, so a drill you're
+ * running competitively tonight can be included without changing what it
+ * means everywhere else.
+ */
+export interface WinnableDrill {
+  drillId: string;
+  title: string;
+  label: string | null;
+  /**
+   * What to offer as one-tap winners.
+   *
+   * On a rotating block these are the block's rotation groups, since "Group
+   * B won" is the natural thing to log and they're the same people at
+   * every station. Otherwise it's the drill's own groups. Empty means the
+   * tool falls back to individual names.
+   */
+  groups: { label: string; memberIds: string[] }[];
+  /** Only that station's people, when a FIXED station split is in play. */
+  poolIds: string[] | null;
+}
+
+export async function getWinnableDrills(practiceId: string): Promise<WinnableDrill[]> {
+  const [blocks, library] = await Promise.all([
+    getPracticeBlocks(practiceId), getPracticeDrillLibrary(),
+  ]);
+  const libById = Object.fromEntries(library.map(d => [d.id, d]));
+  const out: WinnableDrill[] = [];
+
+  for (const block of blocks) {
+    // On a rotating block the useful unit is the rotation group — "Group B
+    // won" is the natural thing to log, and it's the same four people
+    // whichever station they're at. Loaded once per block rather than per
+    // drill.
+    const rotating = block.station_mode === "rotating";
+    const rotGroups = rotating ? await getRotationGroups(block.id) : [];
+
+    for (const seg of await getSegments(block.id)) {
+      for (const d of await getSegmentDrills(seg.id)) {
+        const lib = d.drill_id ? libById[d.drill_id] : undefined;
+        const competitive = d.is_competitive ?? lib?.is_competitive ?? false;
+        if (!competitive) continue;
+
+        const own = await getSegmentDrillGroups(d.id);
+        const station = [...(d.station_member_ids ?? []), ...(d.station_tryout_member_ids ?? [])];
+
+        // A rotating station splits whoever arrives, so its sub-teams only
+        // exist for one round and aren't worth offering. The rotation
+        // groups are, and every one of them passes through this station.
+        let groups: { label: string; memberIds: string[] }[];
+        if (rotating && rotGroups.length > 0) {
+          groups = rotGroups.map((g, i) => ({
+            label: `Group ${String.fromCharCode(65 + i)}`,
+            memberIds: g.member_ids,
+          }));
+        } else {
+          groups = own.map(g => ({ label: g.group_label ?? "Group", memberIds: g.member_ids }));
+        }
+
+        out.push({
+          drillId: d.id,
+          title: lib?.title ?? d.label ?? "Untitled drill",
+          label: d.label,
+          groups,
+          // Rotating stations see the whole block, so no pool narrowing.
+          poolIds: !rotating && station.length ? station : null,
+        });
+      }
+    }
+  }
+  return out;
 }
 
 export async function getPracticePrintData(practiceId: string): Promise<PrintPractice | null> {
@@ -1457,13 +1665,49 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
         drills: drillPrintData,
       });
     }
-    blockPrintData.push({ start: block.start, end: block.end, duration_minutes: block.duration_minutes, segments: segPrintData });
+    // A rotating block is written out in full: the grid of who's where
+    // each round, then every station's exact split by name. A coach at one
+    // station shouldn't have to apply a rule in their head.
+    let rotation: PrintRotation | undefined;
+    if ((block as any).station_mode === "rotating") {
+      const rotGroups = await getRotationGroups(block.id);
+      const rotDrills = segs.length ? await getSegmentDrills(segs[0].id) : [];
+      if (rotGroups.length > 0 && rotDrills.length > 0) {
+        rotGroups.forEach(g => g.member_ids.forEach(id => allMemberIds.add(id)));
+        const letter = (i: number) => String.fromCharCode(65 + i);
+        const sched = rotationSchedule(rotGroups.length, rotDrills.length);
+        rotation = {
+          groups: rotGroups.map((g, i) => ({ label: `Group ${letter(i)}`, memberNames: g.member_ids as any })),
+          grid: sched.map(row => row.map(gi => letter(gi))),
+          stations: rotDrills.map((d, si) => ({
+            title: d.drill_id ? (drillTitleById[d.drill_id] ?? "Untitled drill") : (d.label ?? `Station ${si + 1}`),
+            ruleText: splitRuleText(d.split_rule ?? "none", d.split_n ?? null),
+            coachNames: (d.coach_ids ?? []).map(id => coachNameById[id]).filter(Boolean) as string[],
+            rounds: sched.map((row, r) => ({
+              round: r + 1,
+              groupLabel: `Group ${letter(row[si])}`,
+              parts: splitForStation(rotGroups[row[si]].member_ids, (d.split_rule ?? "none") as any, d.split_n ?? null) as any,
+            })),
+          })),
+        };
+      }
+    }
+
+    blockPrintData.push({ start: block.start, end: block.end, duration_minutes: block.duration_minutes, segments: segPrintData, rotation });
   }
 
   const { data: memberProfiles } = allMemberIds.size > 0
     ? await supabase.from("profiles").select("id,name").in("id", Array.from(allMemberIds))
     : { data: [] as any[] };
   const nameById = Object.fromEntries((memberProfiles ?? []).map((p: any) => [p.id, p.name]));
+
+  blockPrintData.forEach(b => {
+    if (!b.rotation) return;
+    b.rotation.groups.forEach(g => { g.memberNames = (g.memberNames as any as string[]).map(id => nameById[id]).filter(Boolean); });
+    b.rotation.stations.forEach(st => st.rounds.forEach(rd => {
+      rd.parts = rd.parts.map(part => (part as any as string[]).map(id => nameById[id]).filter(Boolean));
+    }));
+  });
 
   blockPrintData.forEach(b => b.segments.forEach(s => s.drills.forEach((d: any) => {
     const raw = d._rawGroups as SegmentDrillGroup[] | undefined;
