@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { formatDateOnly } from "../../lib/schedule";
 import { supabase } from "../../lib/supabase";
-import { getPractice, getRosters, Practice, Roster } from "../../lib/practicePlanner";
+import { getPractice, getRosters, getWinnableDrills, WinnableDrill, Practice, Roster } from "../../lib/practicePlanner";
 import { PracticeWin, getPracticeWins, logPracticeWin, deletePracticeWins } from "../../lib/practiceWins";
 import { inputStyle } from "../../lib/inputStyle";
 
@@ -34,6 +34,12 @@ export default function PracticeWinsTool({ practiceId, onClose }: Props) {
   const [players, setPlayers] = useState<PlayerLite[]>([]);
   const [wins, setWins] = useState<PracticeWin[]>([]);
   const [drillName, setDrillName] = useState("");
+  // Drill first, then who won. Typing a name between blocks is the worst
+  // possible input, and it's what makes "Shell Drill" and "shell drill"
+  // two rows in the history.
+  const [winnable, setWinnable] = useState<WinnableDrill[]>([]);
+  const [pickedDrill, setPickedDrill] = useState<WinnableDrill | null>(null);
+  const [freeText, setFreeText] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
@@ -48,6 +54,7 @@ export default function PracticeWinsTool({ practiceId, onClose }: Props) {
     setRosters(allRosters.filter(r => (p?.roster_ids ?? []).includes(r.id)));
     setPlayers((allPlayers ?? []).filter(pl => (p?.roster_ids ?? []).includes(pl.home_roster_id ?? "")));
     setWins(w);
+    setWinnable(await getWinnableDrills(practiceId));
   }, [practiceId]);
 
   useEffect(() => { load().catch(console.error); }, [load]);
@@ -64,9 +71,12 @@ export default function PracticeWinsTool({ practiceId, onClose }: Props) {
     if (!selected.size) return;
     setSaving(true);
     try {
-      await logPracticeWin(practiceId, Array.from(selected), drillName);
+      const name = pickedDrill ? (pickedDrill.label?.trim() || pickedDrill.title) : drillName;
+      await logPracticeWin(practiceId, Array.from(selected), name);
+      // Clear the names but keep the drill — three rounds at one station
+      // shouldn't mean re-picking it three times.
       setSelected(new Set());
-      setDrillName("");
+      if (!pickedDrill) setDrillName("");
       await load();
     } finally {
       setSaving(false);
@@ -88,10 +98,97 @@ export default function PracticeWinsTool({ practiceId, onClose }: Props) {
       <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 13, marginBottom: 12 }}>← Close</button>
       <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Practice Wins — {formatDateOnly(practice.practice_date)}</div>
 
-      <input value={drillName} onChange={e => setDrillName(e.target.value)} placeholder="Drill (optional)" style={{ ...inputStyle, width: "100%", marginBottom: 10 }} />
+      {/* 1 — which drill. Tapping one keeps it selected after you log, so
+          three rounds at a station is three taps rather than three
+          re-picks. The count is what "it disappears once logged" was
+          reaching for, without blocking a second win on the same drill. */}
+      {winnable.length > 0 && !freeText && (
+        <>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>Which drill</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 12 }}>
+            {winnable.map(d => {
+              const on = pickedDrill?.drillId === d.drillId;
+              const logged = wins.filter(w => w.drill_name === (d.label?.trim() || d.title)).length;
+              return (
+                <button key={d.drillId}
+                  onClick={() => { setPickedDrill(on ? null : d); setSelected(new Set()); }}
+                  style={{
+                    textAlign: "left", fontSize: 13, padding: "9px 11px", borderRadius: 8, cursor: "pointer",
+                    fontFamily: "inherit", fontWeight: 600,
+                    border: `1px solid ${on ? "var(--gold)" : "var(--border)"}`,
+                    background: on ? "rgba(240,192,64,0.12)" : "var(--surface2)",
+                    color: on ? "var(--gold)" : "var(--text)",
+                  }}>
+                  {d.title}{d.label ? ` · ${d.label}` : ""}
+                  {logged > 0 && <span style={{ float: "right", fontSize: 11, color: "var(--muted)", fontWeight: 400 }}>{logged} logged</span>}
+                </button>
+              );
+            })}
+          </div>
+          <button onClick={() => { setFreeText(true); setPickedDrill(null); }}
+            style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11.5, cursor: "pointer", padding: 0, marginBottom: 12 }}>
+            Something else…
+          </button>
+        </>
+      )}
+
+      {(freeText || winnable.length === 0) && (
+        <>
+          <input value={drillName} onChange={e => setDrillName(e.target.value)} placeholder="Drill (optional)" style={{ ...inputStyle, width: "100%", marginBottom: 6 }} />
+          {winnable.length > 0 && (
+            <button onClick={() => { setFreeText(false); setDrillName(""); }}
+              style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11.5, cursor: "pointer", padding: 0, marginBottom: 10 }}>
+              ← Back to the practice&rsquo;s drills
+            </button>
+          )}
+          {winnable.length === 0 && (
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10, lineHeight: 1.5 }}>
+              No drills in this practice are marked as ones somebody wins. Tick &ldquo;Somebody wins this drill&rdquo; in the drill library to have them offered here.
+            </div>
+          )}
+        </>
+      )}
+
+      {/* 2 — who won. A drill's groups are one tap each; names are still
+          underneath for a single winner or an adjustment. */}
+      {pickedDrill && pickedDrill.groups.length > 0 && (
+        <>
+          {/* On a rotating block these are the block's rotation groups, so
+              they're the same at every station — the label says which kind
+              you're looking at rather than leaving it ambiguous. */}
+          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>
+            {pickedDrill.groups[0]?.label.startsWith("Group ") && pickedDrill.groups.length > 1
+              ? "Rotation groups" : "Groups at this drill"}
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+            {pickedDrill.groups.map((g, gi) => {
+              const all = g.memberIds.length > 0 && g.memberIds.every(id => selected.has(id));
+              return (
+                <button key={gi}
+                  onClick={() => setSelected(prev => {
+                    const next = new Set(prev);
+                    all ? g.memberIds.forEach(id => next.delete(id)) : g.memberIds.forEach(id => next.add(id));
+                    return next;
+                  })}
+                  style={{
+                    fontSize: 12, fontWeight: 600, padding: "7px 12px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit",
+                    border: `1px solid ${all ? "var(--royal)" : "var(--border)"}`,
+                    background: all ? "var(--royal)" : "transparent",
+                    color: all ? "#fff" : "var(--text)",
+                  }}>
+                  {g.label} ({g.memberIds.length})
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       {rosters.map(r => {
-        const rosterPlayers = players.filter(p => p.home_roster_id === r.id);
+        const pool = pickedDrill?.poolIds;
+        const rosterPlayers = players
+          .filter(p => p.home_roster_id === r.id)
+          .filter(p => !pool || pool.includes(p.id));
         if (!rosterPlayers.length) return null;
         return (
           <div key={r.id} style={{ marginBottom: 14 }}>
