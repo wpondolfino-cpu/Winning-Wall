@@ -1561,7 +1561,7 @@ export async function getWinnableDrills(practiceId: string): Promise<WinnableDri
   const [blocks, library] = await Promise.all([
     getPracticeBlocks(practiceId), getPracticeDrillLibrary(),
   ]);
-  const libById = Object.fromEntries(library.map(d => [d.id, d]));
+  const libById = Object.fromEntries(library.drills.map(d => [d.id, d]));
   const out: WinnableDrill[] = [];
 
   for (const block of blocks) {
