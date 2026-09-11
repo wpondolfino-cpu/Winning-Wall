@@ -248,7 +248,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
     // New blocks default to one combined segment spanning every roster.
     const { id: segId, error: segErr } = await createSegment(blockId, "combined", null);
     if (segErr || !segId) { alert("Block was created but the segment failed: " + (segErr ?? "unknown error")); return; }
-    setBlocks(prev => [...prev, { id: blockId, practice_id: id, order_index: prev.length, duration_minutes: 10 }]);
+    // station_mode defaults to fixed in the database; the local copy has to
+    // say so too or it isn't a PracticeBlock.
+    setBlocks(prev => [...prev, { id: blockId, practice_id: id, order_index: prev.length, duration_minutes: 10, station_mode: "fixed" as const }]);
     setSegByBlock(prev => ({ ...prev, [blockId]: [{ id: segId, block_id: blockId, scope_type: "combined", roster_id: null }] }));
     setDrillsBySeg(prev => ({ ...prev, [segId]: [] }));
   }
@@ -351,6 +353,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
       // everyone until the block's stations are dealt.
       station_member_ids: [], station_tryout_member_ids: [],
       split_rule: "none", split_n: null,
+      // Null means "follow the library drill", which is what a fresh
+      // placement should do.
+      is_competitive: null,
     };
     let updatedList = [...existing, newDrill];
 
