@@ -834,6 +834,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                               <span style={{ fontSize: 11, color: "var(--muted)" }}>
                                 {d.split_rule === "teams" ? `${d.split_n ?? 2} teams`
                                   : d.split_rule === "size" ? `groups of ${d.split_n ?? 2}`
+                                  : d.split_rule === "size_exact" ? `groups of exactly ${d.split_n ?? 2}`
                                   : "whole group"}
                               </span>
                             ) : (
