@@ -29,6 +29,7 @@ import {
 import GroupingEditor from "./GroupingEditor";
 import StationsEditor from "./StationsEditor";
 import CopyDrillPicker from "./CopyDrillPicker";
+import SaveTemplateModal from "./SaveTemplateModal";
 import TryoutPoolManager from "./TryoutPoolManager";
 import PracticeDrillLibrary from "./PracticeDrillLibrary";
 import PracticePrintView from "./PracticePrintView";
@@ -62,22 +63,19 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   const [copyTarget, setCopyTarget] = useState<{ segment: BlockSegment; block: PracticeBlock; orderIndex: number } | null>(null);
   const [templates, setTemplates] = useState<PracticeTemplate[]>([]);
   const [applyingTemplate, setApplyingTemplate] = useState(false);
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   useEffect(() => { getPracticeTemplates().then(setTemplates).catch(console.error); }, []);
 
-  async function handleSaveAsTemplate() {
+  async function handleSaveAsTemplate(name: string, label: string, withDrills: boolean) {
     if (!practice) return;
-    const name = window.prompt("Name this template — something you'd recognise, like \"Standard Tuesday\".");
-    if (!name?.trim()) return;
-    const label = window.prompt("Label it with a team? Optional, and only a hint — the template still works on any roster.", "") ?? "";
-    // The whole practice, or just the shape of the night.
-    const withDrills = window.confirm(
-      "Include the drills?\n\nOK — the whole practice: blocks, timings and every drill with its note, coaches and split rule.\n\nCancel — timings only: empty blocks at the right lengths, drills left for you."
-    );
+    setSavingTemplate(true);
     const { error } = await savePracticeAsTemplate(practice.id, name, label, withDrills);
+    setSavingTemplate(false);
     if (error) { alert("Couldn't save the template: " + error); return; }
     setTemplates(await getPracticeTemplates());
-    alert(`Saved “${name.trim()}” as a template${withDrills ? "" : " — timings only"}. Groups and station assignments are left out either way; they belong to this day.`);
+    setShowSaveTemplate(false);
   }
 
   async function handleApplyTemplate(t: PracticeTemplate) {
@@ -595,7 +593,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
           {practice?.status === "draft" && <button onClick={handlePublish} style={primaryBtn}>Publish</button>}
           {practice && <button onClick={() => setShowPrint(true)} style={secondaryBtn}>🖨️ Print</button>}
           {practice && <button onClick={handleDuplicate} style={secondaryBtn}>Duplicate</button>}
-          {practice && <button onClick={handleSaveAsTemplate} style={{ ...primaryBtn, background: "var(--gold)", color: "#1a1a1a" }}>📋 Save as template</button>}
+          {practice && <button onClick={() => setShowSaveTemplate(true)} style={{ ...primaryBtn, background: "var(--gold)", color: "#1a1a1a" }}>📋 Save as template</button>}
           {practice && <button onClick={handleDelete} style={dangerBtn}>Delete</button>}
           {!practice && (
             <button onClick={handleSaveMeta} disabled={saving} style={primaryBtn}>
@@ -1068,6 +1066,14 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
           seasonId={tryoutSeasonId}
           onClose={() => setShowTryoutPool(false)}
           onChanged={refreshTryoutPool}
+        />
+      )}
+
+      {showSaveTemplate && practice && (
+        <SaveTemplateModal
+          busy={savingTemplate}
+          onClose={() => setShowSaveTemplate(false)}
+          onSave={handleSaveAsTemplate}
         />
       )}
 
