@@ -297,6 +297,7 @@ export async function getPlayerAttendance(playerId: string): Promise<SeasonAtten
   const { data: practices } = await supabase
     .from("practices")
     .select("id, week_id, practice_date, status, attendance_taken_at, roster_ids")
+    .eq("is_template", false)   // a template would inflate the denominator
     .contains("roster_ids", [rosterId]);
 
   const mine = (practices ?? []) as any[];
@@ -785,6 +786,7 @@ export async function getPastPracticesForCopy(excludeId: string): Promise<PastPr
   const { data } = await supabase
     .from("practices").select("id, practice_date")
     .neq("id", excludeId)
+    .eq("is_template", false)   // a template has no real date to show
     .order("practice_date", { ascending: false });
   return (data ?? []) as PastPracticeSummary[];
 }
@@ -865,6 +867,253 @@ export async function copyDrillToSegment(
   return { id: newId, droppedFromGroups: dropped, error: null };
 }
 
+/**
+ * Copy one practice's blocks, segments and drills into another.
+ *
+ * Shared by duplicate and by starting from a template, so the two can't
+ * drift — the inline version this replaced had silently fallen behind,
+ * dropping coach assignments, station membership and split rules because
+ * it predated them.
+ *
+ * `withPeople` decides whether anything naming actual players comes
+ * along. A duplicate of last Tuesday should keep its groups; a template
+ * should not, because a template carrying November's groups into March is
+ * the same staleness problem as a saved arrangement.
+ */
+/**
+ * A reusable starting point. No date, no week — so every listing path
+ * that filters by week already excludes it, which is the whole reason
+ * templates live in the practices table rather than a parallel one.
+ */
+export interface PracticeTemplate {
+  id: string;
+  template_name: string;
+  roster_label: string | null;
+  created_at: string;
+  blockCount: number;
+  drillCount: number;
+}
+
+export async function getPracticeTemplates(): Promise<PracticeTemplate[]> {
+  const { data, error } = await supabase
+    .from("practices")
+    .select("id, template_name, roster_label, created_at")
+    .eq("is_template", true)
+    .order("created_at", { ascending: false });
+  if (error) { console.error("Failed to load templates:", error); return []; }
+  const rows = (data ?? []) as any[];
+  return Promise.all(rows.map(async r => {
+    const blocks = await getPracticeBlocks(r.id);
+    let drillCount = 0;
+    for (const b of blocks) {
+      for (const seg of await getSegments(b.id)) drillCount += (await getSegmentDrills(seg.id)).length;
+    }
+    return {
+      ...r, template_name: r.template_name ?? "Untitled template",
+      blockCount: blocks.length, drillCount,
+    };
+  }));
+}
+
+/**
+ * Save a practice's shape as a template.
+ *
+ * Groups, station membership and split overrides are deliberately left
+ * behind: they name specific people on a specific day, and a template
+ * carrying November's groups into March is the staleness problem saved
+ * arrangements already have. Everything else — structure, durations,
+ * drills, notes, coaches, split rules — comes across.
+ */
+export async function savePracticeAsTemplate(
+  practiceId: string, name: string, rosterLabel?: string | null, withDrills = true
+): Promise<{ id: string | null; error: string | null }> {
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from("practices")
+    .insert({
+      is_template: true, template_name: name.trim(),
+      roster_label: rosterLabel?.trim() || null,
+      // A template is dateless, but the column is not nullable — today's
+      // date is a placeholder nothing reads, since is_template excludes it
+      // from every path that looks at dates.
+      practice_date: new Date().toISOString().slice(0, 10),
+      start_time: "00:00:00", roster_ids: [], week_id: null,
+      status: "draft", created_by: user?.id,
+    })
+    .select("id").single();
+  if (error || !data) return { id: null, error: error?.message ?? "Couldn't create the template." };
+
+  // "Timings only" isn't a different kind of template — it's the same
+  // copy with the drills left out. Nothing records which it was, because
+  // the picker can just read what's in it, and a description computed
+  // from the content can't fall out of step with the content.
+  await copyPracticeContents(practiceId, data.id, { withPeople: false, withDrills });
+  return { id: data.id, error: null };
+}
+
+/** Pour a template's blocks into an existing practice. */
+export async function applyTemplateToPractice(templateId: string, practiceId: string): Promise<{ error: string | null }> {
+  try {
+    await copyPracticeContents(templateId, practiceId, { withPeople: false });
+    return { error: null };
+  } catch (e: any) {
+    return { error: e.message ?? "Couldn't apply the template." };
+  }
+}
+
+export async function renamePracticeTemplate(id: string, name: string, rosterLabel?: string | null): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("practices")
+    .update({ template_name: name.trim(), roster_label: rosterLabel?.trim() || null }).eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+export async function deletePracticeTemplate(id: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("practices").delete().eq("id", id).eq("is_template", true);
+  return { error: error?.message ?? null };
+}
+
+/**
+ * Where practice time actually went, by drill category.
+ *
+ * Clock minutes, not coaching minutes: a five-minute block running three
+ * stations counts as five, so the categories add up to the real length of
+ * the practices behind them. Fifteen would answer a different question —
+ * how much work happened — and would make the totals disagree with the
+ * calendar.
+ *
+ * Published practices only. A draft you never ran shouldn't be in a
+ * season total, and neither should a template.
+ *
+ * Drills with no category are reported rather than dropped. Silently
+ * losing their minutes would make every other number look bigger than it
+ * is, so they get a row that says to go and tag them.
+ */
+export interface CategoryMinutes {
+  category: string | null;
+  minutes: number;
+  practiceCount: number;
+}
+
+export interface PracticeTimeReport {
+  totalMinutes: number;
+  practiceCount: number;
+  rows: CategoryMinutes[];
+}
+
+export async function getPracticeTimeReport(seasonId: string | null): Promise<PracticeTimeReport> {
+  // seasonId null means all time.
+  const [{ data: weeks }, library] = await Promise.all([
+    supabase.from("practice_weeks").select("id, season_id"),
+    getPracticeDrillLibrary(),
+  ]);
+  const categoryById = Object.fromEntries(library.drills.map(d => [d.id, d.category_name ?? null]));
+  const weeksInScope = new Set(
+    ((weeks ?? []) as any[])
+      .filter(w => seasonId === null || w.season_id === seasonId)
+      .map(w => w.id)
+  );
+
+  const { data: practices } = await supabase
+    .from("practices")
+    .select("id, week_id")
+    .eq("is_template", false)
+    .eq("status", "published");
+
+  const inScope = ((practices ?? []) as any[]).filter(p => p.week_id && weeksInScope.has(p.week_id));
+  if (!inScope.length) return { totalMinutes: 0, practiceCount: 0, rows: [] };
+
+  const minutes = new Map<string | null, number>();
+  const seenIn = new Map<string | null, Set<string>>();
+  let totalMinutes = 0;
+
+  for (const p of inScope) {
+    for (const block of await getPracticeBlocks(p.id)) {
+      // A block's own duration is the clock time, however many drills or
+      // stations sit inside it. Drill minutes carve that block up; summing
+      // them would double-count stations running in parallel.
+      totalMinutes += block.duration_minutes;
+      const drills = (await Promise.all(
+        (await getSegments(block.id)).map(seg => getSegmentDrills(seg.id))
+      )).flat();
+
+      if (drills.length === 0) {
+        minutes.set(null, (minutes.get(null) ?? 0) + block.duration_minutes);
+        (seenIn.get(null) ?? seenIn.set(null, new Set()).get(null)!).add(p.id);
+        continue;
+      }
+
+      // Share the block's clock minutes out by how long each drill was
+      // set to run, so parallel stations split the block rather than
+      // multiplying it.
+      const weights = drills.map(d => d.duration_minutes || 1);
+      const totalWeight = weights.reduce((a, b) => a + b, 0);
+      drills.forEach((d, i) => {
+        const cat = d.drill_id ? (categoryById[d.drill_id] ?? null) : null;
+        const share = (weights[i] / totalWeight) * block.duration_minutes;
+        minutes.set(cat, (minutes.get(cat) ?? 0) + share);
+        if (!seenIn.has(cat)) seenIn.set(cat, new Set());
+        seenIn.get(cat)!.add(p.id);
+      });
+    }
+  }
+
+  const rows: CategoryMinutes[] = [...minutes.entries()]
+    .map(([category, m]) => ({
+      category,
+      minutes: Math.round(m),
+      practiceCount: seenIn.get(category)?.size ?? 0,
+    }))
+    .filter(r => r.minutes > 0)
+    .sort((a, b) => b.minutes - a.minutes);
+
+  return { totalMinutes: Math.round(totalMinutes), practiceCount: inScope.length, rows };
+}
+
+export async function copyPracticeContents(
+  fromPracticeId: string, toPracticeId: string, opts: { withPeople: boolean; withDrills?: boolean }
+): Promise<void> {
+  const withDrills = opts.withDrills !== false;
+  const blocks = await getPracticeBlocks(fromPracticeId);
+  for (const block of blocks) {
+    const { id: newBlockId } = await createBlock(toPracticeId, block.duration_minutes, block.order_index);
+    if (!newBlockId) continue;
+    if (block.station_mode === "rotating") await setBlockStationMode(newBlockId, "rotating");
+    if (opts.withPeople && block.station_mode === "rotating") {
+      const rot = await getRotationGroups(block.id);
+      if (rot.length) await setRotationGroups(newBlockId, rot.map(g => g.member_ids));
+    }
+
+    for (const seg of await getSegments(block.id)) {
+      const { id: newSegId } = await createSegment(newBlockId, seg.scope_type, seg.roster_id);
+      if (!newSegId) continue;
+      if (!withDrills) continue;
+      for (const d of await getSegmentDrills(seg.id)) {
+        const { id: newDrillId } = await createSegmentDrill(newSegId, {
+          drill_id: d.drill_id, order_index: d.order_index, label: d.label,
+          duration_minutes: d.duration_minutes, goal_text: d.goal_text,
+          coach_name: d.coach_name, coach_ids: d.coach_ids ?? [],
+          group_size: d.group_size, num_groups: d.num_groups,
+          is_competitive: d.is_competitive ?? null,
+          split_rule: d.split_rule ?? "none", split_n: d.split_n ?? null,
+          // Named players only travel on a duplicate.
+          station_member_ids: opts.withPeople ? (d.station_member_ids ?? []) : [],
+          station_tryout_member_ids: opts.withPeople ? (d.station_tryout_member_ids ?? []) : [],
+          split_overrides: opts.withPeople ? (d.split_overrides ?? {}) : {},
+        } as any);
+        if (!newDrillId || !opts.withPeople) continue;
+
+        const groups = await getSegmentDrillGroups(d.id);
+        if (groups.length) {
+          await supabase.from("segment_drill_groups").insert(groups.map((g, i) => ({
+            segment_drill_id: newDrillId, group_label: g.group_label,
+            order_index: i, member_ids: g.member_ids,
+          })));
+        }
+      }
+    }
+  }
+}
+
 export async function duplicatePractice(id: string, newDate: string): Promise<{ id: string | null; error: string | null }> {
   const original = await getPractice(id);
   if (!original) return { id: null, error: "Practice not found." };
@@ -877,24 +1126,7 @@ export async function duplicatePractice(id: string, newDate: string): Promise<{ 
   });
   if (createErr || !newId) return { id: null, error: createErr };
 
-  const blocks = await getPracticeBlocks(id);
-  for (const block of blocks) {
-    const { id: newBlockId } = await createBlock(newId, block.duration_minutes, block.order_index);
-    if (!newBlockId) continue;
-    const segments = await getSegments(block.id);
-    for (const seg of segments) {
-      const { id: newSegId } = await createSegment(newBlockId, seg.scope_type, seg.roster_id);
-      if (!newSegId) continue;
-      const drills = await getSegmentDrills(seg.id);
-      for (const d of drills) {
-        await createSegmentDrill(newSegId, {
-          drill_id: d.drill_id, order_index: d.order_index, label: d.label,
-          duration_minutes: d.duration_minutes, goal_text: d.goal_text,
-          coach_name: d.coach_name, group_size: d.group_size, num_groups: d.num_groups,
-        });
-      }
-    }
-  }
+  await copyPracticeContents(id, newId, { withPeople: true });
   return { id: newId, error: null };
 }
 
