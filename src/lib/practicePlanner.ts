@@ -768,6 +768,103 @@ export async function getPracticesInWeek(weekId: string): Promise<Practice[]> {
 // Clones a whole practice — blocks, segments, and drills — into a new
 // draft practice. Attendance overrides and group assignments are NOT
 // copied (those are day-specific), so the copy starts clean.
+/**
+ * Practices you could copy a drill out of, newest first.
+ *
+ * Kept deliberately thin — id, date and how many drills — because the
+ * picker loads this for every practice you've ever run and only fetches
+ * the drills for the one you actually open.
+ */
+export interface PastPracticeSummary { id: string; practice_date: string; }
+
+export async function getPastPracticesForCopy(excludeId: string): Promise<PastPracticeSummary[]> {
+  // Deliberately no drill count. Getting one means joining segment_drills
+  // through two tables for every practice you've ever run, and the count
+  // only saves a tap on the rare practice that turns out to be empty —
+  // which the next screen says plainly anyway.
+  const { data } = await supabase
+    .from("practices").select("id, practice_date")
+    .neq("id", excludeId)
+    .order("practice_date", { ascending: false });
+  return (data ?? []) as PastPracticeSummary[];
+}
+
+/** Every drill placement in one practice, for the copy picker. */
+export interface CopyableDrill {
+  drill: SegmentDrill;
+  title: string;
+  groupCount: number;
+  coachCount: number;
+}
+
+export async function getCopyableDrills(practiceId: string): Promise<CopyableDrill[]> {
+  const [blocks, library] = await Promise.all([
+    getPracticeBlocks(practiceId), getPracticeDrillLibrary(),
+  ]);
+  const titleById = Object.fromEntries(library.drills.map(d => [d.id, d.title]));
+  const out: CopyableDrill[] = [];
+  for (const block of blocks) {
+    for (const seg of await getSegments(block.id)) {
+      for (const d of await getSegmentDrills(seg.id)) {
+        const groups = await getSegmentDrillGroups(d.id);
+        out.push({
+          drill: d,
+          title: (d.drill_id ? titleById[d.drill_id] : null) ?? d.label ?? "Untitled drill",
+          groupCount: groups.length,
+          coachCount: (d.coach_ids ?? []).length,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Copy a drill placement into another practice, with everything that
+ * belongs to the placement rather than the library drill: the sub-label,
+ * duration, note, coaches, groups, station membership and split rule.
+ *
+ * Groups are filtered to people actually at the target practice. A group
+ * saved three weeks ago can easily hold someone who has since left, and
+ * copying it verbatim would print a name that won't be there — the
+ * attention badge wouldn't catch it either, since it only counts players
+ * marked absent, and someone off the roster isn't marked anything.
+ *
+ * Returns what was dropped so the caller can say so rather than letting
+ * it be discovered on the sheet.
+ */
+export async function copyDrillToSegment(
+  sourceDrillId: string, targetSegmentId: string, orderIndex: number, attendeeIds: string[]
+): Promise<{ id: string | null; droppedFromGroups: number; error: string | null }> {
+  const { data: src } = await supabase.from("segment_drills").select("*").eq("id", sourceDrillId).single();
+  if (!src) return { id: null, droppedFromGroups: 0, error: "That drill no longer exists." };
+
+  const attending = new Set(attendeeIds);
+  const keep = (ids: string[]) => (ids ?? []).filter(id => attending.has(id));
+
+  const { id: newId, error } = await createSegmentDrill(targetSegmentId, {
+    drill_id: src.drill_id, order_index: orderIndex, label: src.label,
+    duration_minutes: src.duration_minutes, goal_text: src.goal_text,
+    coach_name: src.coach_name, coach_ids: src.coach_ids ?? [],
+    group_size: src.group_size, num_groups: src.num_groups,
+    split_rule: src.split_rule ?? "none", split_n: src.split_n ?? null,
+    station_member_ids: keep(src.station_member_ids),
+    station_tryout_member_ids: keep(src.station_tryout_member_ids),
+  } as any);
+  if (error || !newId) return { id: null, droppedFromGroups: 0, error: error ?? "Couldn't create the drill." };
+
+  const groups = await getSegmentDrillGroups(sourceDrillId);
+  let dropped = 0;
+  const rows = groups.map((g, i) => {
+    const members = keep(g.member_ids);
+    dropped += g.member_ids.length - members.length;
+    return { segment_drill_id: newId, group_label: g.group_label, order_index: i, member_ids: members };
+  }).filter(r => r.member_ids.length > 0);
+
+  if (rows.length) await supabase.from("segment_drill_groups").insert(rows);
+  return { id: newId, droppedFromGroups: dropped, error: null };
+}
+
 export async function duplicatePractice(id: string, newDate: string): Promise<{ id: string | null; error: string | null }> {
   const original = await getPractice(id);
   if (!original) return { id: null, error: "Practice not found." };
