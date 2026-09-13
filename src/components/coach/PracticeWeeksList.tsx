@@ -17,6 +17,7 @@ import { embedJsonInPdf, extractJsonFromPdf, drawTextDocument } from "../../lib/
 import { inputStyle } from "../../lib/inputStyle";
 import PracticeBuilder from "./PracticeBuilder";
 import PracticePrintView from "./PracticePrintView";
+import PracticeTimePanel from "./PracticeTimePanel";
 import PracticeDayAttendance from "./PracticeDayAttendance";
 import PracticeWinsTool from "./PracticeWinsTool";
 
@@ -390,6 +391,11 @@ export default function PracticeWeeksList(props: Props) {
           </button>
         </div>
       )}
+
+      {/* Under the season picker: it's a season-level question and this is
+          the only season-level surface. Collapsed by default — you look at
+          it monthly, not every time you open the page. */}
+      {!loading && <PracticeTimePanel seasons={seasons} selectedSeasonId={selectedSeasonId} />}
 
       {loading ? (
         <div style={{ color: "var(--muted)", fontSize: 13, padding: "20px 0" }}>Loading…</div>
