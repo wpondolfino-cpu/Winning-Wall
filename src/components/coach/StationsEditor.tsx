@@ -22,7 +22,7 @@ import { useState, useEffect } from "react";
 import {
   SegmentDrill, PracticeBlock, setStationMembers, clearStationMembers,
   getRotationGroups, setRotationGroups, setBlockStationMode, setDrillSplitRule,
-  splitForStation, rotationSchedule, getPracticeDrillLibrary,
+  splitForStation, rotationSchedule, getPracticeDrillLibrary, resolvedSplit, setSplitOverride,
 } from "../../lib/practicePlanner";
 import { inputStyle } from "../../lib/inputStyle";
 
@@ -49,16 +49,25 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
   const [groups, setGroups] = useState<string[][]>([]);
   const [rules, setRules] = useState<Record<string, { rule: Rule; n: number }>>({});
   const [drillTitles, setDrillTitles] = useState<Record<string, string>>({});
+  // Which station's splits are expanded, and the staged overrides for all
+  // of them. Editing is opt-in: nine sub-splits shown open by default
+  // would bury the two controls that matter.
+  const [openSplits, setOpenSplits] = useState<string | null>(null);
+  const [overrides, setOverrides] = useState<Record<string, Record<string, string[][]>>>({});
+  const [splitDrag, setSplitDrag] = useState<{ drillId: string; gi: number; playerId: string } | null>(null);
 
   useEffect(() => {
     const seed: Record<string, string[]> = {};
     const r: Record<string, { rule: Rule; n: number }> = {};
+    const ov: Record<string, Record<string, string[][]>> = {};
     for (const d of drills) {
       seed[d.id] = [...(d.station_member_ids ?? []), ...(d.station_tryout_member_ids ?? [])];
       r[d.id] = { rule: (d.split_rule ?? "none") as Rule, n: d.split_n ?? 2 };
+      ov[d.id] = { ...(d.split_overrides ?? {}) };
     }
     setAssigned(seed);
     setRules(r);
+    setOverrides(ov);
     getRotationGroups(block.id).then(gs => setGroups(gs.map(g => g.member_ids))).catch(console.error);
     getPracticeDrillLibrary().then(({ drills: lib }) => {
       setDrillTitles(Object.fromEntries(lib.map(l => [l.id, l.title])));
@@ -134,6 +143,13 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
         for (const d of drills) {
           const r = rules[d.id] ?? { rule: "none" as Rule, n: 2 };
           await setDrillSplitRule(d.id, r.rule, r.rule === "none" ? null : r.n);
+          const mine = overrides[d.id] ?? {};
+          const before = d.split_overrides ?? {};
+          const keys = new Set([...Object.keys(mine), ...Object.keys(before)]);
+          for (const k of keys) {
+            if (JSON.stringify(mine[k]) === JSON.stringify(before[k])) continue;
+            await setSplitOverride(d.id, Number(k), mine[k] ?? null);
+          }
         }
         await clearStationMembers(drills.map(d => d.id));
       }
@@ -255,7 +271,8 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
               {drills.map((d, i) => {
                 const r = rules[d.id] ?? { rule: "none" as Rule, n: 2 };
                 return (
-                  <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px" }}>
+                  <div key={d.id}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px" }}>
                     <span style={{ flex: 1, fontSize: 12.5, color: "var(--text)" }}>
                       {labelOf(d, i)}
                       {subLabelOf(d) && <span style={{ color: "var(--muted)", fontSize: 11 }}> · {subLabelOf(d)}</span>}
@@ -282,6 +299,67 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
                         })}
                         style={{ ...inputStyle, width: 56, padding: "5px 8px", fontSize: 11.5, textAlign: "center" }} />
                     )}
+                  </div>
+                  {/* Every group's split at this station, all in one place.
+                      Collapsed by default — with three groups and three
+                      stations that's nine sub-splits, and showing them all
+                      open would bury the rule above. */}
+                  {r.rule !== "none" && groups.length > 0 && (
+                    <div style={{ marginLeft: 10, marginBottom: 6 }}>
+                      <button onClick={() => setOpenSplits(openSplits === d.id ? null : d.id)}
+                        style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11, cursor: "pointer", padding: "3px 0" }}>
+                        {openSplits === d.id ? "▾" : "▸"} Who&rsquo;s on which side
+                        {Object.keys(overrides[d.id] ?? {}).length > 0 && (
+                          <span style={{ color: "var(--gold)" }}> · {Object.keys(overrides[d.id] ?? {}).length} set by hand</span>
+                        )}
+                      </button>
+                      {openSplits === d.id && groups.map((g, gi) => {
+                        const staged = { split_rule: r.rule, split_n: r.n, split_overrides: overrides[d.id] ?? {} };
+                        const { parts, overridden } = resolvedSplit(staged as any, gi, g);
+                        return (
+                          <div key={gi} style={{ marginTop: 6, padding: "6px 8px", background: "rgba(255,255,255,0.02)", borderRadius: 7 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                              <span style={{ fontSize: 11, color: "var(--text)", fontWeight: 600 }}>Group {String.fromCharCode(65 + gi)}</span>
+                              {overridden && (
+                                <button onClick={() => setOverrides(p => {
+                                  const next = { ...(p[d.id] ?? {}) }; delete next[String(gi)];
+                                  return { ...p, [d.id]: next };
+                                })}
+                                  style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 10.5, cursor: "pointer", padding: 0 }}>
+                                  reset to the rule
+                                </button>
+                              )}
+                            </div>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              {parts.map((part, pi) => (
+                                <div key={pi}
+                                  onDragOver={e => e.preventDefault()}
+                                  onDrop={() => {
+                                    if (!splitDrag || splitDrag.drillId !== d.id || splitDrag.gi !== gi) return;
+                                    const moved = parts.map(p2 => p2.filter(id => id !== splitDrag.playerId));
+                                    moved[pi] = [...moved[pi], splitDrag.playerId];
+                                    setOverrides(p => ({ ...p, [d.id]: { ...(p[d.id] ?? {}), [String(gi)]: moved.filter(x => x.length > 0) } }));
+                                    setSplitDrag(null);
+                                  }}
+                                  style={{ flex: 1, minWidth: 110, border: "1px dashed var(--border)", borderRadius: 6, padding: 5 }}>
+                                  <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 3 }}>
+                                    {r.rule === "teams" ? `Side ${pi + 1}` : `Group ${pi + 1}`}
+                                  </div>
+                                  {part.map(id => (
+                                    <div key={id} draggable
+                                      onDragStart={() => setSplitDrag({ drillId: d.id, gi, playerId: id })}
+                                      style={{ fontSize: 11, color: "var(--text)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 5, padding: "3px 6px", marginBottom: 3, cursor: "grab" }}>
+                                      {nameOf(id)}
+                                    </div>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                   </div>
                 );
               })}
