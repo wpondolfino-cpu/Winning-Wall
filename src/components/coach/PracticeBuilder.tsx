@@ -1065,7 +1065,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
           orderIndex={copyTarget.orderIndex}
           attendeeIds={effectiveAttendees.map(p => p.id)}
           onClose={() => setCopyTarget(null)}
-          onCopied={(msg) => { alert(msg); void refreshBlock(copyTarget.block.id); }}
+          onCopied={(msg: string) => { alert(msg); void refreshBlock(copyTarget.block.id); }}
         />
       )}
 
