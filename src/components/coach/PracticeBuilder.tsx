@@ -23,9 +23,12 @@ import {
   computeEffectiveAttendees, computeBlockTimes, totalDurationMinutes,
   formatDuration, columnTotals, getSavedGroupings, getAssignableCoaches, CoachLite, getGroupCountsForDrills,
   TryoutPlayer, getTryoutPlayers, getTryoutAttendance, setTryoutAttendance, getCurrentSeason,
+  getPracticeTemplates, savePracticeAsTemplate, applyTemplateToPractice,
+  deletePracticeTemplate, PracticeTemplate,
 } from "../../lib/practicePlanner";
 import GroupingEditor from "./GroupingEditor";
 import StationsEditor from "./StationsEditor";
+import CopyDrillPicker from "./CopyDrillPicker";
 import TryoutPoolManager from "./TryoutPoolManager";
 import PracticeDrillLibrary from "./PracticeDrillLibrary";
 import PracticePrintView from "./PracticePrintView";
@@ -56,6 +59,41 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   const [dragBlockId, setDragBlockId] = useState<string | null>(null);
   const [groupingTarget, setGroupingTarget] = useState<{ drill: SegmentDrill; segment: BlockSegment } | null>(null);
   const [stationsTarget, setStationsTarget] = useState<{ segment: BlockSegment; drills: SegmentDrill[]; block: PracticeBlock } | null>(null);
+  const [copyTarget, setCopyTarget] = useState<{ segment: BlockSegment; block: PracticeBlock; orderIndex: number } | null>(null);
+  const [templates, setTemplates] = useState<PracticeTemplate[]>([]);
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
+
+  useEffect(() => { getPracticeTemplates().then(setTemplates).catch(console.error); }, []);
+
+  async function handleSaveAsTemplate() {
+    if (!practice) return;
+    const name = window.prompt("Name this template — something you'd recognise, like \"Standard Tuesday\".");
+    if (!name?.trim()) return;
+    const label = window.prompt("Label it with a team? Optional, and only a hint — the template still works on any roster.", "") ?? "";
+    // The whole practice, or just the shape of the night.
+    const withDrills = window.confirm(
+      "Include the drills?\n\nOK — the whole practice: blocks, timings and every drill with its note, coaches and split rule.\n\nCancel — timings only: empty blocks at the right lengths, drills left for you."
+    );
+    const { error } = await savePracticeAsTemplate(practice.id, name, label, withDrills);
+    if (error) { alert("Couldn't save the template: " + error); return; }
+    setTemplates(await getPracticeTemplates());
+    alert(`Saved “${name.trim()}” as a template${withDrills ? "" : " — timings only"}. Groups and station assignments are left out either way; they belong to this day.`);
+  }
+
+  async function handleApplyTemplate(t: PracticeTemplate) {
+    if (!practice) { alert("Save the practice first."); return; }
+    setApplyingTemplate(true);
+    const { error } = await applyTemplateToPractice(t.id, practice.id);
+    setApplyingTemplate(false);
+    if (error) { alert("Couldn't apply the template: " + error); return; }
+    await load();
+  }
+
+  async function handleDeleteTemplate(t: PracticeTemplate) {
+    if (!window.confirm(`Delete the template “${t.template_name}”? Practices built from it are untouched.`)) return;
+    await deletePracticeTemplate(t.id);
+    setTemplates(await getPracticeTemplates());
+  }
   const [savedGroupingsCache, setSavedGroupingsCache] = useState<Record<string, SavedGrouping[]>>({});
   const [tryoutPool, setTryoutPool] = useState<TryoutPlayer[]>([]);
   const [showTryoutPool, setShowTryoutPool] = useState(false);
@@ -557,6 +595,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
           {practice?.status === "draft" && <button onClick={handlePublish} style={primaryBtn}>Publish</button>}
           {practice && <button onClick={() => setShowPrint(true)} style={secondaryBtn}>🖨️ Print</button>}
           {practice && <button onClick={handleDuplicate} style={secondaryBtn}>Duplicate</button>}
+          {practice && <button onClick={handleSaveAsTemplate} style={{ ...primaryBtn, background: "var(--gold)", color: "#1a1a1a" }}>📋 Save as template</button>}
           {practice && <button onClick={handleDelete} style={dangerBtn}>Delete</button>}
           <button onClick={onClose} style={secondaryBtn}>Close</button>
         </div>
@@ -871,6 +910,13 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                           <button onClick={() => handleAddDrill(seg, block)} style={{ ...smallBtn, fontSize: 11 }}>
                             + {roster ? `Add drill for ${roster.name}` : drills.length > 0 ? "Add station/drill" : "Add drill"}
                           </button>
+                          {/* Adds a drill WITH its setup — note, coaches,
+                              groups, station — instead of a fresh placement
+                              you'd have to build again. */}
+                          <button onClick={() => setCopyTarget({ segment: seg, block, orderIndex: drills.length })}
+                            style={{ ...smallBtn, fontSize: 11, marginLeft: 6 }}>
+                            ⧉ From a past practice
+                          </button>
                         </td>
                         {/* Sits in the Group column, under the drills' own
                             + Groups buttons — it's the tier above them, not
@@ -898,6 +944,33 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
               </tbody>
             </table>
           </div>
+
+          {/* An empty state, not a permanent control: it disappears the
+              moment there's a block, so a practice you're deep into can't
+              be cluttered by it. */}
+          {blocks.length === 0 && templates.length > 0 && (
+            <div style={{ background: "rgba(44,76,155,0.12)", border: "1px solid rgba(44,76,155,0.4)", borderRadius: 9, padding: 12, marginBottom: 10 }}>
+              <div style={{ fontSize: 12, color: "#93b4ff", fontWeight: 600, marginBottom: 8 }}>Start from a template</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                {templates.map(t => (
+                  <span key={t.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: 7, padding: "6px 9px" }}>
+                    <button disabled={applyingTemplate} onClick={() => handleApplyTemplate(t)}
+                      style={{ background: "none", border: "none", color: "var(--text)", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
+                      {t.template_name}
+                      <span style={{ color: "var(--muted)" }}>
+                        {t.roster_label ? ` · ${t.roster_label}` : ""}
+                        {` · ${t.blockCount} block${t.blockCount === 1 ? "" : "s"}, `}
+                        {t.drillCount > 0 ? `${t.drillCount} drill${t.drillCount === 1 ? "" : "s"}` : "timings only"}
+                      </span>
+                    </button>
+                    <button onClick={() => handleDeleteTemplate(t)} title="Delete this template"
+                      style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
+                  </span>
+                ))}
+                <span style={{ fontSize: 11, color: "var(--muted)" }}>or build it blank below</span>
+              </div>
+            </div>
+          )}
 
           <button onClick={handleAddBlock} style={{ ...secondaryBtn, width: "100%", padding: "10px", border: "1px dashed var(--border)" }}>
             + Add time block
@@ -982,6 +1055,17 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
           seasonId={tryoutSeasonId}
           onClose={() => setShowTryoutPool(false)}
           onChanged={refreshTryoutPool}
+        />
+      )}
+
+      {copyTarget && practice && (
+        <CopyDrillPicker
+          practiceId={practice.id}
+          targetSegmentId={copyTarget.segment.id}
+          orderIndex={copyTarget.orderIndex}
+          attendeeIds={effectiveAttendees.map(p => p.id)}
+          onClose={() => setCopyTarget(null)}
+          onCopied={(msg) => { alert(msg); void refreshBlock(copyTarget.block.id); }}
         />
       )}
 
