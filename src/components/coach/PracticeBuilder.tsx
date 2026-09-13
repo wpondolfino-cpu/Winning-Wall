@@ -597,6 +597,11 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
           {practice && <button onClick={handleDuplicate} style={secondaryBtn}>Duplicate</button>}
           {practice && <button onClick={handleSaveAsTemplate} style={{ ...primaryBtn, background: "var(--gold)", color: "#1a1a1a" }}>📋 Save as template</button>}
           {practice && <button onClick={handleDelete} style={dangerBtn}>Delete</button>}
+          {!practice && (
+            <button onClick={handleSaveMeta} disabled={saving} style={primaryBtn}>
+              {saving ? "Creating…" : "Create practice"}
+            </button>
+          )}
           <button onClick={onClose} style={secondaryBtn}>Close</button>
         </div>
       </div>
@@ -673,11 +678,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
               Tryout pool ({tryoutPool.length})
             </button>
           )}
-          {!practice && (
-            <button onClick={handleSaveMeta} disabled={saving} style={primaryBtn}>
-              {saving ? "Creating…" : "Create practice"}
-            </button>
-          )}
+
         </div>
       </div>
 
@@ -756,7 +757,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
         </div>
       )}
 
-      {!practice && <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>Create the practice above, then add blocks below.</div>}
+      {!practice && <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>Create the practice first, then add blocks below.</div>}
 
       {practice && (
         <>
