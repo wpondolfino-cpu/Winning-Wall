@@ -22,7 +22,7 @@ import { useState, useEffect } from "react";
 import {
   SegmentDrill, PracticeBlock, setStationMembers, clearStationMembers,
   getRotationGroups, setRotationGroups, setBlockStationMode, setDrillSplitRule,
-  splitForStation, rotationSchedule,
+  splitForStation, rotationSchedule, getPracticeDrillLibrary,
 } from "../../lib/practicePlanner";
 import { inputStyle } from "../../lib/inputStyle";
 
@@ -48,6 +48,7 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
   // rotating: groups for the whole block, plus a rule per drill
   const [groups, setGroups] = useState<string[][]>([]);
   const [rules, setRules] = useState<Record<string, { rule: Rule; n: number }>>({});
+  const [drillTitles, setDrillTitles] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const seed: Record<string, string[]> = {};
@@ -59,10 +60,17 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
     setAssigned(seed);
     setRules(r);
     getRotationGroups(block.id).then(gs => setGroups(gs.map(g => g.member_ids))).catch(console.error);
+    getPracticeDrillLibrary().then(({ drills: lib }) => {
+      setDrillTitles(Object.fromEntries(lib.map(l => [l.id, l.title])));
+    }).catch(console.error);
   }, [drills, block.id]);
 
   const nameOf = (id: string) => attendees.find(p => p.id === id)?.name ?? "Unknown";
-  const labelOf = (d: SegmentDrill, i: number) => d.label?.trim() || `Station ${i + 1}`;
+  // The drill title names the station. A hand-typed sub-label is free
+  // text — two drills can easily both say "Station 3" — so it's shown
+  // alongside rather than instead of.
+  const labelOf = (d: SegmentDrill, i: number) => drillTitles[d.drill_id ?? ""] || d.label?.trim() || `Station ${i + 1}`;
+  const subLabelOf = (d: SegmentDrill) => d.label?.trim() || null;
 
   /* ── fixed ─────────────────────────────────────────────── */
   const placed = new Set(Object.values(assigned).flat());
@@ -211,13 +219,13 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
           </>
         ) : (
           <>
-            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>Rotation groups</div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>
+              Rotation groups — one per station, so nobody is idle
+            </div>
             <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
-              {[2, 3, 4, 5, 6].map(n => (
-                <button key={n} onClick={() => makeGroups(n)} style={{ ...inputStyle, padding: "7px 11px", fontSize: 12 }}>
-                  {n} groups
-                </button>
-              ))}
+              <button onClick={() => makeGroups(drills.length)} style={{ ...inputStyle, background: "var(--royal)", color: "#fff", border: "none", fontWeight: 600, padding: "7px 12px", fontSize: 12 }}>
+                Split into {drills.length} groups
+              </button>
               <button onClick={() => setGroups([])} style={{ ...inputStyle, padding: "7px 11px", fontSize: 12 }}>Clear</button>
             </div>
 
@@ -248,7 +256,10 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
                 const r = rules[d.id] ?? { rule: "none" as Rule, n: 2 };
                 return (
                   <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px" }}>
-                    <span style={{ flex: 1, fontSize: 12.5, color: "var(--text)" }}>{labelOf(d, i)}</span>
+                    <span style={{ flex: 1, fontSize: 12.5, color: "var(--text)" }}>
+                      {labelOf(d, i)}
+                      {subLabelOf(d) && <span style={{ color: "var(--muted)", fontSize: 11 }}> · {subLabelOf(d)}</span>}
+                    </span>
                     <select value={r.rule} onChange={e => setRules(p => ({ ...p, [d.id]: { ...r, rule: e.target.value as Rule } }))}
                       style={{ ...inputStyle, padding: "5px 8px", fontSize: 11.5 }}>
                       <option value="none">Keep together</option>
@@ -256,9 +267,20 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
                       <option value="size">Groups of …</option>
                     </select>
                     {r.rule !== "none" && (
-                      <input type="number" min={2} max={9} value={r.n}
-                        onChange={e => setRules(p => ({ ...p, [d.id]: { ...r, n: Math.max(2, parseInt(e.target.value || "2", 10)) } }))}
-                        style={{ ...inputStyle, width: 56, padding: "5px 8px", fontSize: 11.5 }} />
+                      // Plain text rather than type=number: a number input
+                      // fights you while you're mid-edit, clamping and
+                      // rejecting as you type. Cleaned up on blur instead.
+                      <input inputMode="numeric" value={String(r.n)}
+                        onChange={e => {
+                          const digits = e.target.value.replace(/[^0-9]/g, "");
+                          setRules(p => ({ ...p, [d.id]: { ...r, n: digits === "" ? ("" as any) : parseInt(digits, 10) } }));
+                        }}
+                        onBlur={() => setRules(p => {
+                          const cur = p[d.id]?.n;
+                          const n = Number(cur);
+                          return { ...p, [d.id]: { ...r, n: !n || n < 2 ? 2 : Math.min(n, 20) } };
+                        })}
+                        style={{ ...inputStyle, width: 56, padding: "5px 8px", fontSize: 11.5, textAlign: "center" }} />
                     )}
                   </div>
                 );
