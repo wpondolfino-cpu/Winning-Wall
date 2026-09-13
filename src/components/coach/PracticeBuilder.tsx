@@ -649,8 +649,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
             </div>
           )}
         </div>
-        <div style={{ alignSelf: "flex-end" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", marginBottom: 6, cursor: "pointer" }}>
+        <div>
+          <div style={fieldLabel}>&nbsp;</div>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", cursor: "pointer", height: 38 }}>
             <input
               type="checkbox"
               checked={practice ? isTryout : tryoutDraft}
@@ -668,14 +669,23 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
             Tryout practice
           </label>
           {isTryout && (
-            <button onClick={() => setShowTryoutPool(true)} style={{ ...smallBtn, marginBottom: 6 }}>
+            <button onClick={() => setShowTryoutPool(true)} style={{ ...smallBtn, marginTop: 4 }}>
               Tryout pool ({tryoutPool.length})
             </button>
           )}
-          <button onClick={handleSaveMeta} disabled={saving} style={primaryBtn}>{saving ? "Saving…" : practice ? "Save changes" : "Create practice"}</button>
-          {practice && <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4 }}>Changes above save automatically</div>}
+          {!practice && (
+            <button onClick={handleSaveMeta} disabled={saving} style={primaryBtn}>
+              {saving ? "Creating…" : "Create practice"}
+            </button>
+          )}
         </div>
       </div>
+
+      {practice && (
+        <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: -8, marginBottom: 12 }}>
+          Everything here saves as you change it.
+        </div>
+      )}
 
       {practice && rosterIds.length > 0 && (
         <div style={{ marginBottom: 14 }}>
