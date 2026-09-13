@@ -356,6 +356,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
       // Null means "follow the library drill", which is what a fresh
       // placement should do.
       is_competitive: null,
+      split_overrides: {},
     };
     let updatedList = [...existing, newDrill];
 
