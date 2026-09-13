@@ -27,7 +27,7 @@ import {
 import { inputStyle } from "../../lib/inputStyle";
 
 interface PlayerLite { id: string; name: string; }
-type Rule = "none" | "teams" | "size";
+type Rule = "none" | "teams" | "size" | "size_exact";
 
 interface Props {
   block: PracticeBlock;
@@ -281,7 +281,8 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
                       style={{ ...inputStyle, padding: "5px 8px", fontSize: 11.5 }}>
                       <option value="none">Keep together</option>
                       <option value="teams">Split into … teams</option>
-                      <option value="size">Groups of …</option>
+                      <option value="size">Groups of … (spare joins a group)</option>
+                      <option value="size_exact">Groups of exactly … (spare waits)</option>
                     </select>
                     {r.rule !== "none" && (
                       // Plain text rather than type=number: a number input
@@ -343,7 +344,9 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
                                   }}
                                   style={{ flex: 1, minWidth: 110, border: "1px dashed var(--border)", borderRadius: 6, padding: 5 }}>
                                   <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 3 }}>
-                                    {r.rule === "teams" ? `Side ${pi + 1}` : `Group ${pi + 1}`}
+                                    {r.rule === "teams" ? `Side ${pi + 1}`
+                                      : r.rule === "size_exact" && pi === parts.length - 1 && parts[pi].length < r.n
+                                        ? "Waiting" : `Group ${pi + 1}`}
                                   </div>
                                   {part.map(id => (
                                     <div key={id} draggable
