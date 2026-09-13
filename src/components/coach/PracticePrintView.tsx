@@ -155,9 +155,15 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                         {st.rounds.map(rd => (
                           <div key={rd.round}>
                             Rd {rd.round} · <b>{rd.groupLabel.replace("Group ", "")}</b> —{" "}
+                            {/* Teams play each other, so "vs". Pairs and small
+                                groups are parallel, so a divider. Members
+                                within a pair join with "+" because a comma
+                                reads the same as the divider at a glance. */}
                             {st.ruleText === "keep together"
                               ? rd.parts[0].join(", ")
-                              : rd.parts.map(part => part.join(", ")).join("  |  ")}
+                              : st.ruleText.startsWith("split into")
+                                ? rd.parts.map(part => part.join(", ")).join("  vs  ")
+                                : rd.parts.map(part => part.join(part.length <= 2 ? " + " : ", ")).join("   |   ")}
                           </div>
                         ))}
                       </div>
