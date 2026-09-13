@@ -617,9 +617,11 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
         </div>
         <div style={{ minWidth: 220 }}>
           <div style={fieldLabel}>Team(s)</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {/* Matches the height of the inputs either side, so the row sits
+              on one line instead of the checkboxes riding high. */}
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", minHeight: 38 }}>
             {rosters.map(r => (
-              <label key={r.id} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text)", cursor: "pointer" }}>
+              <label key={r.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--text)", cursor: "pointer" }}>
                 <input type="checkbox" checked={rosterIds.includes(r.id)}
                   onChange={e => {
                     const next = e.target.checked ? [...rosterIds, r.id] : rosterIds.filter(id => id !== r.id);
@@ -656,7 +658,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
         </div>
         <div>
           <div style={fieldLabel}>&nbsp;</div>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", cursor: "pointer", height: 38 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--muted)", cursor: "pointer", minHeight: 38 }}>
             <input
               type="checkbox"
               checked={practice ? isTryout : tryoutDraft}
