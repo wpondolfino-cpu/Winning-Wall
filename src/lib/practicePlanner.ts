@@ -118,7 +118,7 @@ export interface SegmentDrill {
   station_member_ids: string[];
   station_tryout_member_ids: string[];
   /** Only read on a rotating block — how this station divides whoever arrives. */
-  split_rule: "none" | "teams" | "size";
+  split_rule: "none" | "teams" | "size" | "size_exact";
   split_n: number | null;
   /** Overrides the library drill for this placement. Null = follow the library. */
   is_competitive: boolean | null;
@@ -896,7 +896,7 @@ export async function updateSegmentDrill(id: string, patch: Partial<Omit<Segment
  * drill isn't what the rule meant.
  */
 export function splitForStation(
-  memberIds: string[], rule: "none" | "teams" | "size", n: number | null
+  memberIds: string[], rule: "none" | "teams" | "size" | "size_exact", n: number | null
 ): string[][] {
   if (rule === "none" || !n || n < 1 || memberIds.length === 0) return [memberIds];
 
@@ -906,12 +906,20 @@ export function splitForStation(
     return sides;
   }
 
-  // "groups of n" — whole groups first, then the remainder is dealt back
-  // across them rather than left standing on its own.
+  // Two ways to make groups of n, and which is right depends on the drill.
+  //
+  // "size" — the spare joins a group. Three in pairs makes a three, which
+  // is better than leaving someone alone at a basket for form shooting.
+  //
+  // "size_exact" — the groups stay exactly n and the spare waits. Three at
+  // a two-person drill is a pair and one rotating in, because the drill
+  // physically can't take three.
   const whole = Math.floor(memberIds.length / n);
   if (whole === 0) return [memberIds];
   const out: string[][] = Array.from({ length: whole }, (_, i) => memberIds.slice(i * n, i * n + n));
-  memberIds.slice(whole * n).forEach((id, i) => out[i % out.length].push(id));
+  const spare = memberIds.slice(whole * n);
+  if (rule === "size_exact") return spare.length ? [...out, spare] : out;
+  spare.forEach((id, i) => out[i % out.length].push(id));
   return out;
 }
 
@@ -990,7 +998,7 @@ export async function setSplitOverride(
 }
 
 export async function setDrillSplitRule(
-  drillId: string, rule: "none" | "teams" | "size", n: number | null
+  drillId: string, rule: "none" | "teams" | "size" | "size_exact", n: number | null
 ): Promise<{ error: string | null }> {
   const { error } = await supabase
     .from("segment_drills")
@@ -1573,6 +1581,7 @@ export interface PrintPractice {
 function splitRuleText(rule: string, n: number | null): string {
   if (rule === "teams" && n) return `split into ${n} team${n === 1 ? "" : "s"}`;
   if (rule === "size" && n) return `groups of ${n}`;
+  if (rule === "size_exact" && n) return `groups of exactly ${n}`;
   return "keep together";
 }
 
