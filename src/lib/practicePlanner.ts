@@ -122,6 +122,15 @@ export interface SegmentDrill {
   split_n: number | null;
   /** Overrides the library drill for this placement. Null = follow the library. */
   is_competitive: boolean | null;
+  /**
+   * A specific split for a particular rotation group at this station,
+   * keyed by group index as a string. Absent = use split_rule.
+   *
+   * Keyed by group rather than round because each group meets each
+   * station once, so the group is the stable identity — a round number
+   * would shift if the stations were reordered.
+   */
+  split_overrides: Record<string, string[][]>;
 }
 
 // ── Rosters ──────────────────────────────────────────────────
@@ -913,6 +922,32 @@ export function splitForStation(
  * everyone shifts along by one each round, which is how a rotation is
  * actually run. Returns rounds[roundIndex][stationIndex] = group index.
  */
+/**
+ * The split a group actually gets at a station — the coach's override if
+ * there is one, otherwise the rule applied to whoever's there.
+ *
+ * Everything that needs a split goes through this, so the dialog, the
+ * printout and the wins tool can't disagree about what's happening at a
+ * station.
+ */
+export function resolvedSplit(
+  drill: Pick<SegmentDrill, "split_rule" | "split_n" | "split_overrides">,
+  groupIndex: number,
+  memberIds: string[]
+): { parts: string[][]; overridden: boolean } {
+  const override = drill.split_overrides?.[String(groupIndex)];
+  if (override && override.length > 0) {
+    // Anyone added to the group since the override was set would otherwise
+    // silently vanish from the sheet, so they're appended rather than lost.
+    const placed = new Set(override.flat());
+    const missing = memberIds.filter(id => !placed.has(id));
+    const parts = override.map(part => part.filter(id => memberIds.includes(id)));
+    if (missing.length) parts[parts.length - 1] = [...parts[parts.length - 1], ...missing];
+    return { parts: parts.filter(p => p.length > 0), overridden: true };
+  }
+  return { parts: splitForStation(memberIds, drill.split_rule ?? "none", drill.split_n ?? null), overridden: false };
+}
+
 export function rotationSchedule(groupCount: number, stationCount: number): number[][] {
   const rounds = Math.max(groupCount, stationCount);
   return Array.from({ length: rounds }, (_, r) =>
@@ -939,6 +974,18 @@ export async function setRotationGroups(blockId: string, groups: string[][]): Pr
 
 export async function setBlockStationMode(blockId: string, mode: "fixed" | "rotating"): Promise<{ error: string | null }> {
   const { error } = await supabase.from("practice_blocks").update({ station_mode: mode }).eq("id", blockId);
+  return { error: error?.message ?? null };
+}
+
+/** Save (or clear, with null) one group's split at this station. */
+export async function setSplitOverride(
+  drillId: string, groupIndex: number, parts: string[][] | null
+): Promise<{ error: string | null }> {
+  const { data } = await supabase.from("segment_drills").select("split_overrides").eq("id", drillId).single();
+  const current = ((data as any)?.split_overrides ?? {}) as Record<string, string[][]>;
+  const next = { ...current };
+  if (parts) next[String(groupIndex)] = parts; else delete next[String(groupIndex)];
+  const { error } = await supabase.from("segment_drills").update({ split_overrides: next }).eq("id", drillId);
   return { error: error?.message ?? null };
 }
 
@@ -1686,7 +1733,7 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
             rounds: sched.map((row, r) => ({
               round: r + 1,
               groupLabel: `Group ${letter(row[si])}`,
-              parts: splitForStation(rotGroups[row[si]].member_ids, (d.split_rule ?? "none") as any, d.split_n ?? null) as any,
+              parts: resolvedSplit(d, row[si], rotGroups[row[si]].member_ids).parts as any,
             })),
           })),
         };
