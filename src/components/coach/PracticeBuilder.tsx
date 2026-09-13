@@ -823,6 +823,19 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                             />
                           </td>
                           <td style={{ padding: "10px" }}>
+                            {/* On a rotating block the station's rule IS the
+                                grouping — whoever arrives gets split by it.
+                                Offering a Groups button as well would be two
+                                controls doing the same job, and the one that
+                                pooled from the whole practice would be
+                                wrong. */}
+                            {block.station_mode === "rotating" ? (
+                              <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                                {d.split_rule === "teams" ? `${d.split_n ?? 2} teams`
+                                  : d.split_rule === "size" ? `groups of ${d.split_n ?? 2}`
+                                  : "whole group"}
+                              </span>
+                            ) : (
                             <button onClick={() => openGroupingEditor(d, seg)} style={smallBtn}>
                               {/* With a station set but no groups yet, the
                                   station's headcount is the useful thing to
@@ -834,6 +847,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                                   ? `${(d.station_member_ids ?? []).length + (d.station_tryout_member_ids ?? []).length} at station`
                                   : "+ Groups"}
                             </button>
+                            )}
                           </td>
                           <td style={{ padding: "10px" }}>
                             <button onClick={() => openCoachPicker(d, block)} style={smallBtn}>
