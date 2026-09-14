@@ -2026,12 +2026,22 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
         // station into 4v4 would then overwrite — it's synthesised here,
         // so station_member_ids stays the only record of who's where.
         const stationMembers = [...(d.station_member_ids ?? []), ...(d.station_tryout_member_ids ?? [])];
-        if (groups.length === 0 && stationMembers.length > 0) {
-          groups = [{
-            id: `station-${d.id}`, segment_drill_id: d.id, order_index: 0,
-            group_label: "At this station", source_saved_grouping_id: null,
-            member_ids: stationMembers,
-          }];
+        // A split rule wins over any manual groups left on the drill. The
+        // rule is what the Stations dialog shows and what the row reports,
+        // so the sheet has to agree with it — otherwise old groups from
+        // before the rule was set would quietly print instead.
+        const ruled = d.split_rule && d.split_rule !== "none";
+        if ((ruled || groups.length === 0) && stationMembers.length > 0) {
+          // A fixed station can carry a split rule too, so the sheet shows
+          // the sides rather than one undifferentiated list of eight.
+          const { parts } = resolvedSplit(d, 0, stationMembers);
+          groups = parts.map((members, i) => ({
+            id: `station-${d.id}-${i}`, segment_drill_id: d.id, order_index: i,
+            group_label: parts.length === 1 ? "At this station"
+              : d.split_rule === "teams" ? `Side ${i + 1}` : `Group ${i + 1}`,
+            source_saved_grouping_id: null,
+            member_ids: members,
+          }));
         }
         groups.forEach(g => g.member_ids.forEach(id => allMemberIds.add(id)));
         drillPrintData.push({
