@@ -218,8 +218,8 @@ export default function GameFormatEditor({ gameId, format, gameType = "regular",
       <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
         {lengthsEditable(format)
           ? "Tap a period to change just its length -- scrimmages and practices often run uneven blocks."
-          : "Games run uniform periods, so \u201CMinutes each\u201D sets them all. Overtime length is asked for when you add one."}
-        {" "}Use the \u2715 on the last period to drop an extra one that shouldn't be there.
+          : "Games run uniform periods, so “Minutes each” sets them all. Overtime length is asked for when you add one."}
+        {" "}Use the ✕ on the last period to drop an extra one that shouldn't be there.
       </div>
       <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
         Possessions aren't moved or changed -- they're stored by period number, so a game tracked as Q1/Q2 is already correct as H1/H2 once relabelled.
