@@ -65,6 +65,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   const [applyingTemplate, setApplyingTemplate] = useState(false);
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState("");
   const [savingTemplate, setSavingTemplate] = useState(false);
 
   useEffect(() => { getPracticeTemplates().then(setTemplates).catch(console.error); }, []);
@@ -85,7 +86,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
     const { error } = await applyTemplateToPractice(t.id, practice.id);
     setApplyingTemplate(false);
     if (error) { alert("Couldn't apply the template: " + error); return; }
-    await load();
+    await reloadStructure(practice.id);
   }
 
   async function handleDeleteTemplate(t: PracticeTemplate) {
@@ -150,6 +151,29 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
     }));
   }
 
+  /**
+   * Re-read a practice's blocks, segments and drills.
+   *
+   * Takes the id rather than reading the prop: a practice created in this
+   * session lives in state with practiceId still null, and anything that
+   * relied on the prop silently refreshed nothing — which is why applying
+   * a template appeared to do nothing at all while the copy had in fact
+   * happened.
+   */
+  const reloadStructure = useCallback(async (id: string) => {
+    const bl = await getPracticeBlocks(id);
+    setBlocks(bl);
+    const segEntries = await Promise.all(bl.map(async b => [b.id, await getSegments(b.id)] as const));
+    const segMap = Object.fromEntries(segEntries);
+    setSegByBlock(segMap);
+    const allSegs = Object.values(segMap).flat() as BlockSegment[];
+    const drillEntries = await Promise.all(allSegs.map(async s => [s.id, await getSegmentDrills(s.id)] as const));
+    setDrillsBySeg(Object.fromEntries(drillEntries));
+    const allDrills = drillEntries.flatMap(([, ds]) => ds);
+    await cacheDrillTitles(allDrills);
+    await refreshGroupCounts(allDrills);
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     const [r, w, c] = await Promise.all([getRosters(), getPracticeWeeks(), getAssignableCoaches()]);
@@ -169,17 +193,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
         setTryoutDraft(Boolean((pr as any)?.is_tryout));
         setDate(pr.practice_date); setStartTime(pr.start_time.slice(0, 5));
         setRosterIds(pr.roster_ids); setWeekId(pr.week_id);
-        const [ov, bl] = await Promise.all([getAttendanceOverrides(pr.id), getPracticeBlocks(pr.id)]);
-        setOverrides(ov); setBlocks(bl);
-        const segEntries = await Promise.all(bl.map(async b => [b.id, await getSegments(b.id)] as const));
-        const segMap = Object.fromEntries(segEntries);
-        setSegByBlock(segMap);
-        const allSegs = Object.values(segMap).flat() as BlockSegment[];
-        const drillEntries = await Promise.all(allSegs.map(async s => [s.id, await getSegmentDrills(s.id)] as const));
-        setDrillsBySeg(Object.fromEntries(drillEntries));
-        const allDrills = drillEntries.flatMap(([, ds]) => ds);
-        await cacheDrillTitles(allDrills);
-        await refreshGroupCounts(allDrills);
+        const ov = await getAttendanceOverrides(pr.id);
+        setOverrides(ov);
+        await reloadStructure(pr.id);
       }
     } else {
       setDate(new Date().toISOString().slice(0, 10));
@@ -981,9 +997,20 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                   </button>
                 )}
               </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                {templates.map(t => (
-                  <span key={t.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: 7, padding: "6px 9px" }}>
+              {/* Scrolls rather than wrapping. Ten templates as wrapping
+                  chips would push the whole practice down the page every
+                  time you opened this. */}
+              {templates.length > 4 && (
+                <input value={templateSearch} onChange={e => setTemplateSearch(e.target.value)}
+                  placeholder="Search templates…"
+                  style={{ ...inputStyle, width: "100%", marginBottom: 8, fontSize: 12, padding: "6px 9px", boxSizing: "border-box" }} />
+              )}
+              <div style={{ display: "flex", gap: 6, alignItems: "center", overflowX: "auto", paddingBottom: 4 }}>
+                {templates
+                  .filter(t => !templateSearch.trim() ||
+                    `${t.template_name} ${t.roster_label ?? ""}`.toLowerCase().includes(templateSearch.trim().toLowerCase()))
+                  .map(t => (
+                  <span key={t.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: 7, padding: "6px 9px", flexShrink: 0, whiteSpace: "nowrap" }}>
                     <button disabled={applyingTemplate} onClick={() => handleApplyTemplate(t)}
                       style={{ background: "none", border: "none", color: "var(--text)", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
                       {t.template_name}
@@ -997,9 +1024,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                       style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
                   </span>
                 ))}
-                <span style={{ fontSize: 11, color: "var(--muted)" }}>
-                  {blocks.length === 0 ? "or build it blank below" : "applying one adds its blocks after yours"}
-                </span>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
+                {blocks.length === 0 ? "or build it blank below" : "applying one adds its blocks after yours"}
               </div>
             </div>
           )}
