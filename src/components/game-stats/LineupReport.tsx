@@ -45,7 +45,7 @@ const LINEUP_EXPLAINERS: Record<string, { what: string; how: string }> = {
   defppp: { what: "Points allowed per defensive possession with {subject} on the floor.", how: "their points / their possessions" },
   on_net: { what: "Team net rating over the possessions {subject} was ON the floor.", how: "our points per 100 - their points per 100, while on" },
   off_net: { what: "Team net rating over the possessions {subject} was OFF the floor, counting only games they appeared in. For a PAIR this pools three situations — each one on without the other, and neither on — so expand the row for the four-way split.", how: "our points per 100 - their points per 100, while off" },
-  onoff: { what: "Team net rating with {subject} on the floor, minus with them off. Off-court possessions only count games they appeared in. For a PAIR, \u201Coff\u201D pools three situations — one on without the other, and neither on — so expand the row for the four-way split.", how: "net rating on - net rating off" },
+  onoff: { what: "Team net rating with {subject} on the floor, minus with them off. Off-court possessions only count games they appeared in. For a PAIR, “off” pools three situations — one on without the other, and neither on — so expand the row for the four-way split.", how: "net rating on - net rating off" },
   oob_ppp: { what: "Points per possession on BLOB and SLOB trips. Which five you want out there for a sideline out with four seconds left.", how: "points on out-of-bounds trips / those trips" },
   three_rate: { what: "Share of field goal attempts that were threes. The clearest single expression of {subject}'s shot selection.", how: "3PA / FGA" },
   fouls: { what: "Foul trouble logged against {subject}, from the shift entry screen.", how: "count of foul-trouble events" },
@@ -410,7 +410,7 @@ function HeaderRow({ group, level, onExplain, narrow, sort, onSort, explain, ben
               title="Sort"
               style={{ cursor: "pointer", color: sort?.key === c.key ? "var(--text)" : "var(--border-strong, var(--muted))" }}
             >
-              {sort?.key === c.key ? (sort.dir === -1 ? "\u25BC" : "\u25B2") : "\u21C5"}
+              {sort?.key === c.key ? (sort.dir === -1 ? "▼" : "▲") : "⇅"}
             </span>
           </span>
         ))}
