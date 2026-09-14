@@ -64,6 +64,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   const [templates, setTemplates] = useState<PracticeTemplate[]>([]);
   const [applyingTemplate, setApplyingTemplate] = useState(false);
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
 
   useEffect(() => { getPracticeTemplates().then(setTemplates).catch(console.error); }, []);
@@ -956,12 +957,30 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
             </table>
           </div>
 
-          {/* An empty state, not a permanent control: it disappears the
-              moment there's a block, so a practice you're deep into can't
-              be cluttered by it. */}
-          {blocks.length === 0 && templates.length > 0 && (
+          {/* Open by itself on an empty practice, where starting from a
+              template is the likely next move. Once there are blocks it
+              collapses to a link rather than disappearing — hiding it
+              meant one stray click locked you out of your own templates
+              until you started another practice. */}
+          {templates.length > 0 && !showTemplates && blocks.length > 0 && (
+            <button onClick={() => setShowTemplates(true)}
+              style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11.5, cursor: "pointer", padding: "0 0 8px" }}>
+              ▸ Templates ({templates.length})
+            </button>
+          )}
+          {templates.length > 0 && (showTemplates || blocks.length === 0) && (
             <div style={{ background: "rgba(44,76,155,0.12)", border: "1px solid rgba(44,76,155,0.4)", borderRadius: 9, padding: 12, marginBottom: 10 }}>
-              <div style={{ fontSize: 12, color: "#93b4ff", fontWeight: 600, marginBottom: 8 }}>Start from a template</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ fontSize: 12, color: "#93b4ff", fontWeight: 600 }}>
+                  {blocks.length === 0 ? "Start from a template" : "Templates"}
+                </span>
+                {blocks.length > 0 && (
+                  <button onClick={() => setShowTemplates(false)}
+                    style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11, cursor: "pointer", padding: 0 }}>
+                    hide
+                  </button>
+                )}
+              </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                 {templates.map(t => (
                   <span key={t.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: 7, padding: "6px 9px" }}>
@@ -978,7 +997,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                       style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
                   </span>
                 ))}
-                <span style={{ fontSize: 11, color: "var(--muted)" }}>or build it blank below</span>
+                <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                  {blocks.length === 0 ? "or build it blank below" : "applying one adds its blocks after yours"}
+                </span>
               </div>
             </div>
           )}
