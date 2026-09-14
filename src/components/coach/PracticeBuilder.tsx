@@ -897,7 +897,16 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                                 controls doing the same job, and the one that
                                 pooled from the whole practice would be
                                 wrong. */}
-                            {block.station_mode === "rotating" ? (
+                            {/* Once a station carries a split rule, that rule
+                                IS the grouping — and a Groups button beside
+                                it would be a second way to do the same job,
+                                with no way to tell which one the sheet was
+                                going to use. The rule is shown instead;
+                                the Stations dialog is where it's changed.
+                                A drill with no rule keeps the button,
+                                because then there's nothing else doing the
+                                work. */}
+                            {(block.station_mode === "rotating" || (d.split_rule && d.split_rule !== "none")) ? (
                               <span style={{ fontSize: 11, color: "var(--muted)" }}>
                                 {d.split_rule === "teams" ? `${d.split_n ?? 2} teams`
                                   : d.split_rule === "size" ? `groups of ${d.split_n ?? 2}`
