@@ -2038,7 +2038,7 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
           groups = parts.map((members, i) => ({
             id: `station-${d.id}-${i}`, segment_drill_id: d.id, order_index: i,
             group_label: parts.length === 1 ? "At this station"
-              : d.split_rule === "teams" ? `Side ${i + 1}` : `Group ${i + 1}`,
+              : d.split_rule === "teams" ? `Team ${i + 1}` : `Group ${i + 1}`,
             source_saved_grouping_id: null,
             member_ids: members,
           }));
