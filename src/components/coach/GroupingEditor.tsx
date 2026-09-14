@@ -170,7 +170,7 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
             <button onClick={onClose} style={smallBtn}>Done</button>
           </span>
         </div>
-        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 14 }}>Drag a player chip to move them between groups or the bench. Generate replaces the current split; manual moves stick until you generate again. Everything saves as you go — there\u2019s nothing to submit.</div>
+        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 14 }}>Drag a player chip to move them between groups or the bench. Generate replaces the current split; manual moves stick until you generate again. Everything saves as you go — there’s nothing to submit.</div>
 
         <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 14, flexWrap: "wrap" }}>
           <div>
