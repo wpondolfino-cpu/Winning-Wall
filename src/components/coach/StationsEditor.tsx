@@ -211,7 +211,7 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
     return (
       <>
         <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>
-          How each station splits {mode === "rotating" ? "whoever\u2019s there" : "the people at it"}
+          How each station splits {mode === "rotating" ? "whoever’s there" : "the people at it"}
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 14 }}>
           {drills.map((d, i) => {
@@ -222,14 +222,14 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
               <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px" }}>
                 <span style={{ flex: 1, fontSize: 12.5, color: "var(--text)" }}>
                   {labelOf(d, i)}
-                  {subLabelOf(d) && <span style={{ color: "var(--muted)", fontSize: 11 }}> \u00b7 {subLabelOf(d)}</span>}
+                  {subLabelOf(d) && <span style={{ color: "var(--muted)", fontSize: 11 }}> · {subLabelOf(d)}</span>}
                 </span>
                 <select value={r.rule} onChange={e => setRules(p => ({ ...p, [d.id]: { ...r, rule: e.target.value as Rule } }))}
                   style={{ ...inputStyle, padding: "5px 8px", fontSize: 11.5 }}>
                   <option value="none">Keep together</option>
-                  <option value="teams">Split into \u2026 teams</option>
-                  <option value="size">Groups of \u2026 (spare joins a group)</option>
-                  <option value="size_exact">Groups of exactly \u2026 (spare waits)</option>
+                  <option value="teams">Split into … teams</option>
+                  <option value="size">Groups of … (spare joins a group)</option>
+                  <option value="size_exact">Groups of exactly … (spare waits)</option>
                 </select>
                 {r.rule !== "none" && (
                   <input inputMode="numeric" value={String(r.n)}
@@ -248,9 +248,9 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
                 <div style={{ marginLeft: 10, marginBottom: 6 }}>
                   <button onClick={() => setOpenSplits(openSplits === d.id ? null : d.id)}
                     style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11, cursor: "pointer", padding: "3px 0" }}>
-                    {openSplits === d.id ? "\u25be" : "\u25b8"} Who\u2019s on which side
+                    {openSplits === d.id ? "▾" : "▸"} Who’s on which side
                     {Object.keys(overrides[d.id] ?? {}).length > 0 && (
-                      <span style={{ color: "var(--gold)" }}> \u00b7 {Object.keys(overrides[d.id] ?? {}).length} set by hand</span>
+                      <span style={{ color: "var(--gold)" }}> · {Object.keys(overrides[d.id] ?? {}).length} set by hand</span>
                     )}
                   </button>
                   {openSplits === d.id && groupsHere.map((g, gi) => {
