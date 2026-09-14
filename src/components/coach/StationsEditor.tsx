@@ -285,7 +285,7 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
                               }}
                               style={{ flex: 1, minWidth: 110, border: "1px dashed var(--border)", borderRadius: 6, padding: 5 }}>
                               <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 3 }}>
-                                {r.rule === "teams" ? `Side ${pi + 1}`
+                                {r.rule === "teams" ? `Team ${pi + 1}`
                                   : r.rule === "size_exact" && pi === parts.length - 1 && parts[pi].length < r.n
                                     ? "Waiting" : `Group ${pi + 1}`}
                               </div>
