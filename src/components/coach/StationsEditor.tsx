@@ -39,7 +39,10 @@ interface Props {
 }
 
 export default function StationsEditor({ block, drills, attendees, tryoutIds, onClose, onChanged }: Props) {
-  const [mode, setMode] = useState<"fixed" | "rotating">(block.station_mode ?? "fixed");
+  const hasFixedAssignments = drills.some(d => (d.station_member_ids ?? []).length > 0);
+  const [mode, setMode] = useState<"fixed" | "rotating">(
+    block.station_mode === "fixed" && !hasFixedAssignments ? "rotating" : (block.station_mode ?? "rotating")
+  );
   const [busy, setBusy] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
 
@@ -137,6 +140,18 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
         }));
         if (error) throw new Error(error);
         await setRotationGroups(block.id, []);
+        // A fixed station splits its own people by the same rules, so they
+        // have to be saved in this mode too.
+        for (const d of drills) {
+          const r = rules[d.id] ?? { rule: "none" as Rule, n: 2 };
+          await setDrillSplitRule(d.id, r.rule, r.rule === "none" ? null : r.n);
+          const mine = overrides[d.id] ?? {};
+          const before = d.split_overrides ?? {};
+          for (const k of new Set([...Object.keys(mine), ...Object.keys(before)])) {
+            if (JSON.stringify(mine[k]) === JSON.stringify(before[k])) continue;
+            await setSplitOverride(d.id, Number(k), mine[k] ?? null);
+          }
+        }
       } else {
         const { error } = await setRotationGroups(block.id, groups.filter(g => g.length > 0));
         if (error) throw new Error(error);
@@ -183,6 +198,119 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
         color: mode === value ? "#fff" : "var(--muted)",
       }}>{label}</button>
   );
+
+  /**
+   * How each station divides the people who turn up at it.
+   *
+   * Identical in both modes, because the question is: a rotating station
+   * splits whichever group has rotated in, and a fixed station splits the
+   * people assigned to it. Only the number of groups differs — several in
+   * a rotation, exactly one when it's fixed.
+   */
+  function splitRules(groupsAtStation: (drill: SegmentDrill) => string[][]) {
+    return (
+      <>
+        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>
+          How each station splits {mode === "rotating" ? "whoever\u2019s there" : "the people at it"}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 14 }}>
+          {drills.map((d, i) => {
+            const r = rules[d.id] ?? { rule: "none" as Rule, n: 2 };
+            const groupsHere = groupsAtStation(d);
+            return (
+              <div key={d.id}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px" }}>
+                <span style={{ flex: 1, fontSize: 12.5, color: "var(--text)" }}>
+                  {labelOf(d, i)}
+                  {subLabelOf(d) && <span style={{ color: "var(--muted)", fontSize: 11 }}> \u00b7 {subLabelOf(d)}</span>}
+                </span>
+                <select value={r.rule} onChange={e => setRules(p => ({ ...p, [d.id]: { ...r, rule: e.target.value as Rule } }))}
+                  style={{ ...inputStyle, padding: "5px 8px", fontSize: 11.5 }}>
+                  <option value="none">Keep together</option>
+                  <option value="teams">Split into \u2026 teams</option>
+                  <option value="size">Groups of \u2026 (spare joins a group)</option>
+                  <option value="size_exact">Groups of exactly \u2026 (spare waits)</option>
+                </select>
+                {r.rule !== "none" && (
+                  <input inputMode="numeric" value={String(r.n)}
+                    onChange={e => {
+                      const digits = e.target.value.replace(/[^0-9]/g, "");
+                      setRules(p => ({ ...p, [d.id]: { ...r, n: digits === "" ? ("" as any) : parseInt(digits, 10) } }));
+                    }}
+                    onBlur={() => setRules(p => {
+                      const n = Number(p[d.id]?.n);
+                      return { ...p, [d.id]: { ...r, n: !n || n < 2 ? 2 : Math.min(n, 20) } };
+                    })}
+                    style={{ ...inputStyle, width: 56, padding: "5px 8px", fontSize: 11.5, textAlign: "center" }} />
+                )}
+              </div>
+              {r.rule !== "none" && groupsHere.length > 0 && (
+                <div style={{ marginLeft: 10, marginBottom: 6 }}>
+                  <button onClick={() => setOpenSplits(openSplits === d.id ? null : d.id)}
+                    style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11, cursor: "pointer", padding: "3px 0" }}>
+                    {openSplits === d.id ? "\u25be" : "\u25b8"} Who\u2019s on which side
+                    {Object.keys(overrides[d.id] ?? {}).length > 0 && (
+                      <span style={{ color: "var(--gold)" }}> \u00b7 {Object.keys(overrides[d.id] ?? {}).length} set by hand</span>
+                    )}
+                  </button>
+                  {openSplits === d.id && groupsHere.map((g, gi) => {
+                    const staged = { split_rule: r.rule, split_n: r.n, split_overrides: overrides[d.id] ?? {} };
+                    const { parts, overridden } = resolvedSplit(staged as any, gi, g);
+                    return (
+                      <div key={gi} style={{ marginTop: 6, padding: "6px 8px", background: "rgba(255,255,255,0.02)", borderRadius: 7 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                          <span style={{ fontSize: 11, color: "var(--text)", fontWeight: 600 }}>
+                            {mode === "rotating" ? `Group ${String.fromCharCode(65 + gi)}` : "At this station"}
+                          </span>
+                          {overridden && (
+                            <button onClick={() => setOverrides(p => {
+                              const next = { ...(p[d.id] ?? {}) }; delete next[String(gi)];
+                              return { ...p, [d.id]: next };
+                            })}
+                              style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 10.5, cursor: "pointer", padding: 0 }}>
+                              reset to the rule
+                            </button>
+                          )}
+                        </div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {parts.map((part, pi) => (
+                            <div key={pi}
+                              onDragOver={e => e.preventDefault()}
+                              onDrop={() => {
+                                if (!splitDrag || splitDrag.drillId !== d.id || splitDrag.gi !== gi) return;
+                                const moved = parts.map(p2 => p2.filter(id => id !== splitDrag.playerId));
+                                moved[pi] = [...moved[pi], splitDrag.playerId];
+                                setOverrides(p => ({ ...p, [d.id]: { ...(p[d.id] ?? {}), [String(gi)]: moved.filter(x => x.length > 0) } }));
+                                setSplitDrag(null);
+                              }}
+                              style={{ flex: 1, minWidth: 110, border: "1px dashed var(--border)", borderRadius: 6, padding: 5 }}>
+                              <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 3 }}>
+                                {r.rule === "teams" ? `Side ${pi + 1}`
+                                  : r.rule === "size_exact" && pi === parts.length - 1 && parts[pi].length < r.n
+                                    ? "Waiting" : `Group ${pi + 1}`}
+                              </div>
+                              {part.map(id => (
+                                <div key={id} draggable
+                                  onDragStart={() => setSplitDrag({ drillId: d.id, gi, playerId: id })}
+                                  style={{ fontSize: 11, color: "var(--text)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 5, padding: "3px 6px", marginBottom: 3, cursor: "grab" }}>
+                                  {nameOf(id)}
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              </div>
+            );
+          })}
+        </div>
+      </>
+    );
+  }
 
   const schedule = mode === "rotating" && groups.length > 0
     ? rotationSchedule(groups.length, drills.length) : [];
@@ -232,6 +360,12 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
                 ? <div style={{ fontSize: 12, color: "var(--muted)" }}>Everyone&rsquo;s placed.</div>
                 : <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{unassigned.map(p => chip(p.id))}</div>}
             </div>
+
+            <div style={{ marginTop: 14 }}>
+              {/* A fixed station has exactly one group to split: the people
+                  assigned to it. Same rules, same editor. */}
+              {splitRules(d => [assigned[d.id] ?? []])}
+            </div>
           </>
         ) : (
           <>
@@ -266,107 +400,7 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
               </div>
             )}
 
-            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>How each station splits whoever&rsquo;s there</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 14 }}>
-              {drills.map((d, i) => {
-                const r = rules[d.id] ?? { rule: "none" as Rule, n: 2 };
-                return (
-                  <div key={d.id}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px" }}>
-                    <span style={{ flex: 1, fontSize: 12.5, color: "var(--text)" }}>
-                      {labelOf(d, i)}
-                      {subLabelOf(d) && <span style={{ color: "var(--muted)", fontSize: 11 }}> · {subLabelOf(d)}</span>}
-                    </span>
-                    <select value={r.rule} onChange={e => setRules(p => ({ ...p, [d.id]: { ...r, rule: e.target.value as Rule } }))}
-                      style={{ ...inputStyle, padding: "5px 8px", fontSize: 11.5 }}>
-                      <option value="none">Keep together</option>
-                      <option value="teams">Split into … teams</option>
-                      <option value="size">Groups of … (spare joins a group)</option>
-                      <option value="size_exact">Groups of exactly … (spare waits)</option>
-                    </select>
-                    {r.rule !== "none" && (
-                      // Plain text rather than type=number: a number input
-                      // fights you while you're mid-edit, clamping and
-                      // rejecting as you type. Cleaned up on blur instead.
-                      <input inputMode="numeric" value={String(r.n)}
-                        onChange={e => {
-                          const digits = e.target.value.replace(/[^0-9]/g, "");
-                          setRules(p => ({ ...p, [d.id]: { ...r, n: digits === "" ? ("" as any) : parseInt(digits, 10) } }));
-                        }}
-                        onBlur={() => setRules(p => {
-                          const cur = p[d.id]?.n;
-                          const n = Number(cur);
-                          return { ...p, [d.id]: { ...r, n: !n || n < 2 ? 2 : Math.min(n, 20) } };
-                        })}
-                        style={{ ...inputStyle, width: 56, padding: "5px 8px", fontSize: 11.5, textAlign: "center" }} />
-                    )}
-                  </div>
-                  {/* Every group's split at this station, all in one place.
-                      Collapsed by default — with three groups and three
-                      stations that's nine sub-splits, and showing them all
-                      open would bury the rule above. */}
-                  {r.rule !== "none" && groups.length > 0 && (
-                    <div style={{ marginLeft: 10, marginBottom: 6 }}>
-                      <button onClick={() => setOpenSplits(openSplits === d.id ? null : d.id)}
-                        style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11, cursor: "pointer", padding: "3px 0" }}>
-                        {openSplits === d.id ? "▾" : "▸"} Who&rsquo;s on which side
-                        {Object.keys(overrides[d.id] ?? {}).length > 0 && (
-                          <span style={{ color: "var(--gold)" }}> · {Object.keys(overrides[d.id] ?? {}).length} set by hand</span>
-                        )}
-                      </button>
-                      {openSplits === d.id && groups.map((g, gi) => {
-                        const staged = { split_rule: r.rule, split_n: r.n, split_overrides: overrides[d.id] ?? {} };
-                        const { parts, overridden } = resolvedSplit(staged as any, gi, g);
-                        return (
-                          <div key={gi} style={{ marginTop: 6, padding: "6px 8px", background: "rgba(255,255,255,0.02)", borderRadius: 7 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                              <span style={{ fontSize: 11, color: "var(--text)", fontWeight: 600 }}>Group {String.fromCharCode(65 + gi)}</span>
-                              {overridden && (
-                                <button onClick={() => setOverrides(p => {
-                                  const next = { ...(p[d.id] ?? {}) }; delete next[String(gi)];
-                                  return { ...p, [d.id]: next };
-                                })}
-                                  style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 10.5, cursor: "pointer", padding: 0 }}>
-                                  reset to the rule
-                                </button>
-                              )}
-                            </div>
-                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                              {parts.map((part, pi) => (
-                                <div key={pi}
-                                  onDragOver={e => e.preventDefault()}
-                                  onDrop={() => {
-                                    if (!splitDrag || splitDrag.drillId !== d.id || splitDrag.gi !== gi) return;
-                                    const moved = parts.map(p2 => p2.filter(id => id !== splitDrag.playerId));
-                                    moved[pi] = [...moved[pi], splitDrag.playerId];
-                                    setOverrides(p => ({ ...p, [d.id]: { ...(p[d.id] ?? {}), [String(gi)]: moved.filter(x => x.length > 0) } }));
-                                    setSplitDrag(null);
-                                  }}
-                                  style={{ flex: 1, minWidth: 110, border: "1px dashed var(--border)", borderRadius: 6, padding: 5 }}>
-                                  <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 3 }}>
-                                    {r.rule === "teams" ? `Side ${pi + 1}`
-                                      : r.rule === "size_exact" && pi === parts.length - 1 && parts[pi].length < r.n
-                                        ? "Waiting" : `Group ${pi + 1}`}
-                                  </div>
-                                  {part.map(id => (
-                                    <div key={id} draggable
-                                      onDragStart={() => setSplitDrag({ drillId: d.id, gi, playerId: id })}
-                                      style={{ fontSize: 11, color: "var(--text)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 5, padding: "3px 6px", marginBottom: 3, cursor: "grab" }}>
-                                      {nameOf(id)}
-                                    </div>
-                                  ))}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  </div>
-                );
-              })}
-            </div>
+            {splitRules(() => groups)}
 
             {schedule.length > 0 && (
               <div style={{ background: "rgba(44,76,155,0.12)", border: "1px solid rgba(44,76,155,0.4)", borderRadius: 8, padding: "10px 12px", marginBottom: 14 }}>
