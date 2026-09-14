@@ -314,8 +314,8 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
   const rosterHint = players.length
     ? null
     : activeRoster
-      ? "No players are assigned to this roster yet. Switch to \u201CAll players\u201D above, or assign them under Rosters."
-      : "No players found. Players need the \u201Cplayer\u201D role to appear here.";
+      ? "No players are assigned to this roster yet. Switch to “All players” above, or assign them under Rosters."
+      : "No players found. Players need the “player” role to appear here.";
 
   if (loading) return <div className="card">Loading possessions…</div>;
   if (!possessions.length) {
