@@ -1043,7 +1043,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
         {restepIdx !== null && restepAffectedCount(frames, restepIdx) > 0 && (() => {
           const n = restepAffectedCount(frames, restepIdx);
-          const which = n === 1 ? `Step ${restepIdx + 2}` : `Steps ${restepIdx + 2}\u2013${restepIdx + 1 + n}`;
+          const which = n === 1 ? `Step ${restepIdx + 2}` : `Steps ${restepIdx + 2}–${restepIdx + 1 + n}`;
           return (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
               background: "rgba(240,192,64,0.09)", border: "1px solid rgba(240,192,64,0.35)", borderRadius: 8,
@@ -1280,7 +1280,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
         {restepIdx !== null && restepAffectedCount(frames, restepIdx) > 0 && (() => {
           const n = restepAffectedCount(frames, restepIdx);
-          const which = n === 1 ? `Step ${restepIdx + 2}` : `Steps ${restepIdx + 2}\u2013${restepIdx + 1 + n}`;
+          const which = n === 1 ? `Step ${restepIdx + 2}` : `Steps ${restepIdx + 2}–${restepIdx + 1 + n}`;
           return (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
               background: "rgba(240,192,64,0.09)", border: "1px solid rgba(240,192,64,0.35)", borderRadius: 8,
