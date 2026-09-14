@@ -175,7 +175,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
       await forkPlay(p);
       await load();
       setForkOrigins(await getMyForkOrigins());
-      showToast(`Added \u201c${p.title}\u201d to My plays`);
+      showToast(`Added “${p.title}” to My plays`);
     } catch (e: any) { showToast("Error: " + e.message); }
     finally { setAdopting(null); }
   }
@@ -188,8 +188,8 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
       await load();
       setForkOrigins(await getMyForkOrigins());
       showToast(reused
-        ? `Added \u201c${pb.name}\u201d \u2014 ${copied} new, ${reused} you already had`
-        : `Added \u201c${pb.name}\u201d to Playbooks`);
+        ? `Added “${pb.name}” — ${copied} new, ${reused} you already had`
+        : `Added “${pb.name}” to Playbooks`);
     } catch (e: any) { showToast("Error: " + e.message); }
     finally { setAdopting(null); }
   }
@@ -198,7 +198,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
     try {
       await dismissPlayShare(p.share_id, dismissed);
       await load();
-      showToast(dismissed ? `Set aside \u201c${p.title}\u201d` : `Restored \u201c${p.title}\u201d`);
+      showToast(dismissed ? `Set aside “${p.title}”` : `Restored “${p.title}”`);
     } catch (e: any) { showToast("Error: " + e.message); }
   }
 
@@ -206,7 +206,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
     try {
       await dismissPlaybookShare(pb.share_id, dismissed);
       await load();
-      showToast(dismissed ? `Set aside \u201c${pb.name}\u201d` : `Restored \u201c${pb.name}\u201d`);
+      showToast(dismissed ? `Set aside “${pb.name}”` : `Restored “${pb.name}”`);
     } catch (e: any) { showToast("Error: " + e.message); }
   }
 
