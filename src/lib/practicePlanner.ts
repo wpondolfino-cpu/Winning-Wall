@@ -492,8 +492,20 @@ export interface TryoutPlayer {
   name: string;
   jersey: number | null;
   grade: number | null;
-  /** Which tryout they attended. Derived from grade on entry but stored, because the case that matters is a freshman pulled up to the varsity tryout. */
+  /** @deprecated Superseded by roster_ids. Still written, read by nothing. */
   tryout_group: "upper" | "freshman" | null;
+  /**
+   * Which rosters this player is in contention for.
+   *
+   * A tryout practice offers anyone overlapping its own roster_ids, so a
+   * freshman tryout stops handing you the varsity hopefuls. Someone being
+   * pulled up is just in contention for both — no special case needed.
+   *
+   * Empty means nobody has said yet. Deliberately not derived from grade:
+   * which teams a player is up for is a judgement, and guessing it would
+   * put names in front of the wrong tryout.
+   */
+  roster_ids: string[];
   linked_profile_id: string | null;
   notes: string | null;
   status: "active" | "cut";
@@ -501,27 +513,36 @@ export interface TryoutPlayer {
 }
 
 /** The pool for a season. Pass includeCut when reviewing decisions; group building wants active only. */
-export async function getTryoutPlayers(seasonId: string | null, includeCut = false): Promise<TryoutPlayer[]> {
+export async function getTryoutPlayers(
+  seasonId: string | null, includeCut = false, rosterIds?: string[]
+): Promise<TryoutPlayer[]> {
   let q = supabase.from("tryout_players").select("*");
   q = seasonId ? q.eq("season_id", seasonId) : q.is("season_id", null);
   if (!includeCut) q = q.eq("status", "active");
+  // Anyone in contention for one of these rosters. Players with none set
+  // are included rather than hidden — a name nobody has assigned yet
+  // should still be findable, not silently dropped from every tryout.
+  if (rosterIds?.length) q = q.or(`roster_ids.ov.{${rosterIds.join(",")}},roster_ids.eq.{}`);
   const { data, error } = await q.order("name", { ascending: true });
   if (error) { console.error("Failed to load tryout players:", error); return []; }
   return data ?? [];
 }
 
 /** Freshmen try out separately, so the group defaults from grade — but it's stored, not derived at read time, so a freshman at the varsity tryout can be moved. */
+/** @deprecated Kept only so the legacy tryout_group column keeps a value. Which teams a player is up for now lives in roster_ids and is set, not derived. */
 export function groupForGrade(grade: number | null): "upper" | "freshman" | null {
   if (grade == null) return null;
   return grade <= 9 ? "freshman" : "upper";
 }
 
-export async function addTryoutPlayer(seasonId: string | null, name: string, grade?: number | null, jersey?: number | null): Promise<{ id: string | null; error: string | null }> {
+export async function addTryoutPlayer(
+  seasonId: string | null, name: string, grade?: number | null, jersey?: number | null, rosterIds?: string[]
+): Promise<{ id: string | null; error: string | null }> {
   const trimmed = name.trim();
   if (!trimmed) return { id: null, error: "Name can't be blank." };
   const { data: { user } } = await supabase.auth.getUser();
   const { data, error } = await supabase.from("tryout_players")
-    .insert({ season_id: seasonId, name: trimmed, grade: grade ?? null, tryout_group: groupForGrade(grade ?? null), jersey: jersey ?? null, created_by: user?.id })
+    .insert({ season_id: seasonId, name: trimmed, grade: grade ?? null, tryout_group: groupForGrade(grade ?? null), roster_ids: rosterIds ?? [], jersey: jersey ?? null, created_by: user?.id })
     .select("id").single();
   return { id: data?.id ?? null, error: error?.message ?? null };
 }
@@ -542,7 +563,7 @@ export async function addTryoutPlayersBulk(seasonId: string | null, block: strin
   return { added: error ? 0 : rows.length, error: error?.message ?? null };
 }
 
-export async function updateTryoutPlayer(id: string, patch: Partial<Pick<TryoutPlayer, "name" | "jersey" | "grade" | "tryout_group" | "notes" | "status" | "linked_profile_id">>): Promise<{ error: string | null }> {
+export async function updateTryoutPlayer(id: string, patch: Partial<Pick<TryoutPlayer, "name" | "jersey" | "grade" | "tryout_group" | "roster_ids" | "notes" | "status" | "linked_profile_id">>): Promise<{ error: string | null }> {
   const { error } = await supabase.from("tryout_players").update(patch).eq("id", id);
   return { error: error?.message ?? null };
 }
