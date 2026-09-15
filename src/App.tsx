@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, Fragment } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, ChangeEvent } from "react";
 import { useAuth } from "./hooks/useAuth";
 import { useWorkouts } from "./hooks/useWorkouts";
 import { getMyScores, getAllScores, signOut, Score, Profile, getPlayerXp, getXpPerks, checkUnseenPerks, loadPeriodAnchor, supabase } from "./lib/supabase";
@@ -130,6 +130,22 @@ function initialTabFromUrl<T extends string>(valid: Set<string>, fallback: T): T
   return t && valid.has(t) ? (t as T) : fallback;
 }
 
+/**
+ * The page a user lands on when the app opens without a tab in the
+ * address. Coaches/admins choose theirs (profiles.nav_home, falling back
+ * to Manage Workouts if unset or no longer a real tab). Players' is set
+ * by season mode: Schedule in-season, Workouts offseason.
+ */
+function homeTabFor(profile: Profile | null | undefined): string {
+  if (!profile) return "workouts";
+  if (profile.role === "player") {
+    return effectiveModeFor(profile) === "inseason" ? "schedule" : "workouts";
+  }
+  const chosen = (profile as any).nav_home as string | null | undefined;
+  const valid = urlTabsForRole(profile.role);
+  return chosen && valid?.has(chosen) ? chosen : "workouts";
+}
+
 export default function App() {
   const { user, profile, authState } = useAuth();
   const { workouts, refresh: refreshWorkouts } = useWorkouts();
@@ -204,7 +220,19 @@ export default function App() {
 
   useEffect(() => { loadPeriodAnchor().catch(console.error); }, []);
   const [seasonMode, setSeasonMode] = useState<SeasonMode>("offseason");
-  useEffect(() => { loadSeasonMode().then(setSeasonMode).catch(console.error); }, []);
+  // A player's landing page depends on season mode, which loads after the
+  // app starts -- landing waits for this so an in-season player doesn't
+  // open on Workouts just because the mode hadn't arrived yet.
+  const [seasonModeReady, setSeasonModeReady] = useState(false);
+  useEffect(() => {
+    loadSeasonMode()
+      .then(setSeasonMode)
+      .catch(console.error)
+      .finally(() => setSeasonModeReady(true));
+  }, []);
+  // Coach/admin home page (profiles.nav_home). Null = Manage Workouts.
+  const [navHome, setNavHome] = useState<string | null>(null);
+  const [navHomeSaved, setNavHomeSaved] = useState(false);
 
   // Reset XP/perks state the instant the logged-in user changes, so a newly
   // created account can never briefly inherit stale XP/perk data left over
@@ -221,6 +249,7 @@ export default function App() {
     const savedSections = (profile as any).nav_sections as Record<string, NavSection> | null;
     const savedExpanded = (profile as any).nav_expanded as { inseason: boolean; offseason: boolean } | null;
     setNavSections(savedSections ?? {});
+    setNavHome(((profile as any).nav_home as string | null) ?? null);
     setNavExpanded(savedExpanded ?? { inseason: true, offseason: true });
     if (profile.role === "coach") {
       const validKeys = new Set(COACH_NAV_DEFAULT_ORDER);
@@ -389,9 +418,38 @@ export default function App() {
   // in each entry's state so a cancelled Back can be undone exactly.
   const historyIdxRef = useRef(0);
   const changeFromPopRef = useRef(false);
+  // Landing: once per sign-in, pick the opening tab -- the one in the
+  // address if it's valid for this role, otherwise the user's home page.
+  const landingDoneRef = useRef(false);
+  // The tab we were on when landing redirected. While we're still on it,
+  // the redirect hasn't rendered yet, so don't record it in history.
+  const landingFromRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!currentTab) { lastSyncedTabRef.current = null; return; }
+    if (!currentTab) {
+      lastSyncedTabRef.current = null;
+      landingDoneRef.current = false;
+      landingFromRef.current = null;
+      return;
+    }
+    if (!landingDoneRef.current) {
+      if (activeRole === "player" && !seasonModeReady) return;
+      landingDoneRef.current = true;
+      const valid = urlTabsForRole(activeRole);
+      const urlTab = readTabFromUrl();
+      const landing = urlTab && valid?.has(urlTab) ? urlTab : homeTabFor(profile);
+      if (landing !== currentTab) {
+        landingFromRef.current = currentTab;
+        if (activeRole === "player") setPlayerTab(landing as PlayerTab);
+        else if (activeRole === "coach") setCoachTab(landing as CoachTab);
+        else if (activeRole === "admin") setAdminTab(landing as AdminTab);
+        return;
+      }
+    }
+    if (landingFromRef.current !== null) {
+      if (currentTab === landingFromRef.current) return;
+      landingFromRef.current = null;
+    }
     const url = new URL(window.location.href);
     url.searchParams.set("tab", currentTab);
     if (lastSyncedTabRef.current === null) {
@@ -409,7 +467,11 @@ export default function App() {
     }
     changeFromPopRef.current = false;
     lastSyncedTabRef.current = currentTab;
-  }, [currentTab]);
+    // profile is read only on the landing pass, which is keyed by
+    // currentTab/seasonModeReady; re-running on every profile change
+    // would do nothing but repeat the no-op sync.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTab, seasonModeReady]);
 
   useEffect(() => {
     function onPopState(e: PopStateEvent) {
@@ -443,6 +505,49 @@ export default function App() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
+  async function saveNavHome(key: string) {
+    if (!user) return;
+    const previous = navHome;
+    const value = key === "workouts" ? null : key;
+    setNavHome(value);
+    setNavHomeSaved(false);
+    const { error } = await supabase.from("profiles").update({ nav_home: value }).eq("id", user.id);
+    if (error) {
+      setNavHome(previous);
+      alert(`Couldn't save your home page: ${error.message}`);
+      return;
+    }
+    setNavHomeSaved(true);
+    setTimeout(() => setNavHomeSaved(false), 2000);
+  }
+
+  function renderHomePagePicker(navOrder: string[], navConfig: NavItemConfig[]) {
+    const options = navOrder
+      .map(k => navConfig.find(i => i.key === k))
+      .filter((i): i is NavItemConfig => !!i);
+    const current = navHome && options.some(o => o.key === navHome) ? navHome : "workouts";
+    return (
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>🏠 Home page</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <select
+            value={current}
+            onChange={(e: ChangeEvent<HTMLSelectElement>) => saveNavHome(e.target.value)}
+            style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontSize: 13, fontFamily: "inherit", minWidth: 200 }}
+          >
+            {options.map(o => (
+              <option key={o.key} value={o.key}>{o.icon} {o.label}</option>
+            ))}
+          </select>
+          {navHomeSaved && <span style={{ fontSize: 12, color: "var(--muted)" }}>✓ Saved</span>}
+        </div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>
+          Where the app opens when you launch it or sign in. Refreshing keeps you on the page you're on.
+        </div>
+      </div>
+    );
+  }
+
   /**
    * Every sidebar / bottom-bar click goes through here: checks nothing
    * unsaved is about to be lost, forgets any Schedule deep link, and
@@ -451,6 +556,8 @@ export default function App() {
    */
   function navigateFromNav(apply: () => void): boolean {
     if (!confirmNavAway()) return false;
+    // A tap made before landing resolved (season mode still loading) wins.
+    landingDoneRef.current = true;
     setScheduleTarget(null);
     setNavNonce((n: number) => n + 1);
     apply();
@@ -722,7 +829,8 @@ export default function App() {
           {isCoach && coachTab === "settings" && (
             <div className="panel active">
               <div className="section-title">Settings</div>
-              <div className="section-sub" style={{ marginBottom: 20 }}>Customize your sidebar</div>
+              <div className="section-sub" style={{ marginBottom: 20 }}>Customize your home page and sidebar</div>
+              {renderHomePagePicker(coachNavOrder, COACH_NAV_CONFIG)}
               <button onClick={() => setShowReorderModal(true)} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                 🔀 Customize Sidebar
               </button>
@@ -759,6 +867,7 @@ export default function App() {
             <div className="panel active">
               <div className="section-title">Settings</div>
               <div className="section-sub" style={{ marginBottom: 20 }}>Configure your Winning Wall platform</div>
+              {renderHomePagePicker(adminNavOrder, ADMIN_NAV_CONFIG)}
               <button onClick={() => setShowReorderModal(true)} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 20 }}>
                 🔀 Customize Sidebar
               </button>
