@@ -98,7 +98,8 @@
 // and flagrants also don't flip the team toggle, since the ball can go
 // either way and guessing wrong misattributes the next trip.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { registerNavGuard } from "../../lib/navGuard";
 import { supabase } from "../../lib/supabase";
 import {
   queuePossession,
@@ -236,6 +237,32 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
   const [newPlayName, setNewPlayName] = useState("");
   const [addingPlayFor, setAddingPlayFor] = useState<PlayCallCategory | null>(null);
   const [history, setHistory] = useState<FlowSnapshot[]>([]);
+
+  // A possession only saves when its last tap is made, so anything past
+  // the first screen lives in memory until then. Warn before a sidebar
+  // tap, the Back button, a refresh or closing the page throws it away.
+  // Finished possessions are already queued and aren't at risk.
+  const possessionInProgress = step !== "type" || possessionType !== null;
+  const possessionInProgressRef = useRef(possessionInProgress);
+  possessionInProgressRef.current = possessionInProgress;
+
+  useEffect(() => registerNavGuard(() =>
+    possessionInProgressRef.current
+      ? "You're partway through entering a possession. If you leave now, that possession won't be saved.\n\nLeave anyway?"
+      : null
+  ), []);
+
+  useEffect(() => {
+    if (!possessionInProgress) return;
+    // Browsers show their own generic "Leave site?" text here; a custom
+    // message isn't allowed.
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [possessionInProgress]);
 
   useEffect(() => {
     loadPlayCalls();
