@@ -509,11 +509,13 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
     if (!practice?.is_tryout) { setTryoutPool([]); return; }
     const season = await getCurrentSeason();
     setTryoutSeasonId(season?.id ?? null);
-    setTryoutPool(await getTryoutPlayers(season?.id ?? null));
+    // Only the names in contention for this practice's teams. A freshman
+    // tryout shouldn't hand you the varsity hopefuls.
+    setTryoutPool(await getTryoutPlayers(season?.id ?? null, false, rosterIds));
     setTryoutPresent(await getTryoutAttendance(practice.id));
   }
 
-  useEffect(() => { refreshTryoutPool(); }, [practice?.id, practice?.is_tryout]);
+  useEffect(() => { refreshTryoutPool(); }, [practice?.id, practice?.is_tryout, rosterIds.join(",")]);
 
   async function refreshSavedGroupings(ids: string[]) {
     if (!ids.length) return;
@@ -1121,6 +1123,8 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
       {showTryoutPool && (
         <TryoutPoolManager
           seasonId={tryoutSeasonId}
+          defaultRosterIds={rosterIds}
+          rosters={rosters}
           onClose={() => setShowTryoutPool(false)}
           onChanged={refreshTryoutPool}
         />
