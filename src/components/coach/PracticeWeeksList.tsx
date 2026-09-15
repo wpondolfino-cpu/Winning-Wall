@@ -446,6 +446,7 @@ export default function PracticeWeeksList(props: Props) {
       {showPool && (
         <TryoutPoolManager
           seasonId={selectedSeasonId}
+          rosters={activeRosters}
           onClose={() => setShowPool(false)}
           onChanged={refreshPoolCounts}
         />
