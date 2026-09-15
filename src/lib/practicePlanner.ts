@@ -1117,6 +1117,10 @@ export async function setDrillTags(drillId: string, tags: string[]): Promise<{ e
   await supabase.from("practice_drill_tag_links").delete().eq("drill_id", drillId);
   const clean = [...new Set(tags.map(t => t.trim()).filter(Boolean))];
   if (clean.length) {
+    // tag_name is a foreign key onto practice_drill_tags, so a tag that
+    // doesn't exist yet has to be created before it can be linked —
+    // otherwise a brand-new tag fails the constraint.
+    await ensureTagsExist(clean);
     const { error } = await supabase.from("practice_drill_tag_links")
       .insert(clean.map(t => ({ drill_id: drillId, tag_name: t })));
     if (error) return { error: error.message };
