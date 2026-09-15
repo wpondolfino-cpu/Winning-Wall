@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, Fragment } from "react";
 import type { ReactNode } from "react";
 import { useAuth } from "./hooks/useAuth";
 import { useWorkouts } from "./hooks/useWorkouts";
@@ -35,6 +35,7 @@ import ScoutSheetsHub from "./components/scouting/ScoutSheetsHub";
 import SchedulePage from "./components/schedule/SchedulePage";
 import NavModeChangePopup from "./components/NavModeChangePopup";
 import GameDaySheetsList from "./components/gameday/GameDaySheetsList";
+import { confirmNavAway } from "./lib/navGuard";
 
 type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "scoutsheets" | "schedule" | "practiceschedule" | "more";
 // "playbooks" stays in these unions deliberately: a coach who reordered
@@ -92,12 +93,49 @@ const ADMIN_NAV_CONFIG: NavItemConfig[] = [
 ];
 const ADMIN_NAV_DEFAULT_ORDER = ADMIN_NAV_CONFIG.map(i => i.key);
 
+// ── Tab ↔ address bar ─────────────────────────────────────────
+// The app has no router: the open tab is just a value in state, so the
+// browser never saw a page change and Back jumped straight out of the
+// app. The open tab is now mirrored into ?tab= and every tab change adds
+// a history entry, so Back/Forward move between tabs and a refresh
+// reopens the same tab (at its main page -- only the tab is recorded).
+//
+// ?tab= rather than #tab: Supabase puts invite/reset tokens in the hash,
+// and useAuth reads the hash to find them.
+//
+// Each role only accepts its own tabs, so a player opening a coach link
+// just lands on their default page. "playbooks" is left out on purpose:
+// it survives in the tab unions for saved nav orders but renders nothing.
+const PLAYER_URL_TABS = new Set<string>([
+  "schedule", "workouts", "leaderboard", "h2h", "plays", "gamestats",
+  "scoutsheets", "lifting", "progress", "hof", "profile", "library", "more",
+]);
+const COACH_URL_TABS = new Set<string>(COACH_NAV_DEFAULT_ORDER);
+const ADMIN_URL_TABS = new Set<string>(ADMIN_NAV_DEFAULT_ORDER);
+
+function urlTabsForRole(role: string | undefined): Set<string> | null {
+  if (role === "player") return PLAYER_URL_TABS;
+  if (role === "coach") return COACH_URL_TABS;
+  if (role === "admin") return ADMIN_URL_TABS;
+  return null;
+}
+
+function readTabFromUrl(): string | null {
+  try { return new URLSearchParams(window.location.search).get("tab"); }
+  catch { return null; }
+}
+
+function initialTabFromUrl<T extends string>(valid: Set<string>, fallback: T): T {
+  const t = readTabFromUrl();
+  return t && valid.has(t) ? (t as T) : fallback;
+}
+
 export default function App() {
   const { user, profile, authState } = useAuth();
   const { workouts, refresh: refreshWorkouts } = useWorkouts();
   const [myScores, setMyScores]     = useState<Score[]>([]);
   const [allScores, setAllScores]   = useState<Score[]>([]);
-  const [playerTab, setPlayerTab]   = useState<PlayerTab>("workouts");
+  const [playerTab, setPlayerTab]   = useState<PlayerTab>(() => initialTabFromUrl<PlayerTab>(PLAYER_URL_TABS, "workouts"));
   const swipeTabs: PlayerTab[]        = ["workouts", "leaderboard", "h2h", "lifting", "more"];
   const touchStartX                   = useRef(0);
   const pullStartY                    = useRef(0);
@@ -137,12 +175,18 @@ export default function App() {
     if (diffX < 0 && idx > 0) setPlayerTab(swipeTabs[idx - 1]);
   }
 
-  const [coachTab, setCoachTab]     = useState<CoachTab>("workouts");
-  const [adminTab, setAdminTab]     = useState<AdminTab>("workouts");
+  const [coachTab, setCoachTab]     = useState<CoachTab>(() => initialTabFromUrl<CoachTab>(COACH_URL_TABS, "workouts"));
+  const [adminTab, setAdminTab]     = useState<AdminTab>(() => initialTabFromUrl<AdminTab>(ADMIN_URL_TABS, "workouts"));
   // Set when a Schedule row routes to another tab, so that tab can open
-  // the specific practice or game rather than just its list. Cleared once
-  // consumed, so switching tabs by hand doesn't reopen it.
+  // the specific practice or game rather than just its list. Cleared by
+  // any sidebar/bottom-bar click and by Back/Forward -- it used to never
+  // be cleared, so Practices kept reopening the last practice opened from
+  // Schedule instead of showing the list.
   const [scheduleTarget, setScheduleTarget] = useState<{ practiceId?: string; gameId?: string; sheetId?: string; view?: string } | null>(null);
+  // Bumped by every sidebar/bottom-bar click. It keys the panel area, so
+  // clicking the tab you're already in remounts it at its main page
+  // (e.g. out of an open practice and back to the practice list).
+  const [navNonce, setNavNonce] = useState(0);
   const [coachNavOrder, setCoachNavOrder] = useState<string[]>(COACH_NAV_DEFAULT_ORDER);
   const [adminNavOrder, setAdminNavOrder] = useState<string[]>(ADMIN_NAV_DEFAULT_ORDER);
   const [navSections, setNavSections] = useState<Record<string, NavSection>>({});
@@ -213,7 +257,11 @@ export default function App() {
     });
     const renderItem = (item: NavItemConfig) => (
       <div key={item.key} className={`nav-item ${activeKey === item.key ? "active" : ""}`}
-        onClick={() => { onSelect(item.key); if (item.key === "players") setPendingApprovals(0); if (window.innerWidth < 768) setSidebarOpen(false); }}>
+        onClick={() => {
+          if (!navigateFromNav(() => onSelect(item.key))) return;
+          if (item.key === "players") setPendingApprovals(0);
+          if (window.innerWidth < 768) setSidebarOpen(false);
+        }}>
         <span className="nav-icon">{item.icon}</span> {item.label}
         {item.key === "players" && pendingApprovals > 0 && <span style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{pendingApprovals}</span>}
       </div>
@@ -324,6 +372,89 @@ export default function App() {
   async function loadAllScores() { setAllScores(await getAllScores()); }
   function handleProfileUpdated(updates: Partial<Profile>) {
     setLocalProfile(prev => ({ ...(prev ?? profile!), ...updates }));
+  }
+
+  // ── Browser history sync (see the note above PLAYER_URL_TABS) ──
+  const activeRole = profile?.role;
+  const currentTab: string | null =
+    activeRole === "player" ? playerTab :
+    activeRole === "coach"  ? coachTab  :
+    activeRole === "admin"  ? adminTab  : null;
+  const currentTabRef = useRef<string | null>(currentTab);
+  currentTabRef.current = currentTab;
+  const activeRoleRef = useRef(activeRole);
+  activeRoleRef.current = activeRole;
+  const lastSyncedTabRef = useRef<string | null>(null);
+  // Position of the current entry among this app's history entries. Kept
+  // in each entry's state so a cancelled Back can be undone exactly.
+  const historyIdxRef = useRef(0);
+  const changeFromPopRef = useRef(false);
+
+  useEffect(() => {
+    if (!currentTab) { lastSyncedTabRef.current = null; return; }
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", currentTab);
+    if (lastSyncedTabRef.current === null) {
+      // First sync after sign-in or a refresh: replace, don't add, so
+      // Back from the first screen still leaves the app normally. A
+      // refreshed entry keeps its old position.
+      const existingIdx = window.history.state?.wwIdx;
+      historyIdxRef.current = typeof existingIdx === "number" ? existingIdx : 0;
+      window.history.replaceState({ wwTab: currentTab, wwIdx: historyIdxRef.current }, "", url);
+    } else if (changeFromPopRef.current) {
+      // Back/Forward already moved the browser to this entry.
+    } else if (lastSyncedTabRef.current !== currentTab) {
+      historyIdxRef.current += 1;
+      window.history.pushState({ wwTab: currentTab, wwIdx: historyIdxRef.current }, "", url);
+    }
+    changeFromPopRef.current = false;
+    lastSyncedTabRef.current = currentTab;
+  }, [currentTab]);
+
+  useEffect(() => {
+    function onPopState(e: PopStateEvent) {
+      const role = activeRoleRef.current;
+      const valid = urlTabsForRole(role);
+      if (!valid) return;
+      const state = e.state as { wwTab?: unknown; wwIdx?: unknown } | null;
+      const target = typeof state?.wwTab === "string" ? state.wwTab : readTabFromUrl();
+      const targetIdx = typeof state?.wwIdx === "number" ? state.wwIdx : null;
+      if (!target || !valid.has(target) || target === currentTabRef.current) {
+        if (targetIdx !== null) historyIdxRef.current = targetIdx;
+        return;
+      }
+      if (!confirmNavAway()) {
+        // The browser has already moved; step back to the entry for the
+        // screen we're staying on so the address bar still matches it.
+        if (targetIdx !== null) {
+          const delta = historyIdxRef.current - targetIdx;
+          if (delta !== 0) window.history.go(delta);
+        }
+        return;
+      }
+      if (targetIdx !== null) historyIdxRef.current = targetIdx;
+      changeFromPopRef.current = true;
+      setScheduleTarget(null);
+      if (role === "player") setPlayerTab(target as PlayerTab);
+      else if (role === "coach") setCoachTab(target as CoachTab);
+      else if (role === "admin") setAdminTab(target as AdminTab);
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  /**
+   * Every sidebar / bottom-bar click goes through here: checks nothing
+   * unsaved is about to be lost, forgets any Schedule deep link, and
+   * remounts the panel area so even the current tab opens at its main page.
+   * Returns false if the user chose to stay.
+   */
+  function navigateFromNav(apply: () => void): boolean {
+    if (!confirmNavAway()) return false;
+    setScheduleTarget(null);
+    setNavNonce((n: number) => n + 1);
+    apply();
+    return true;
   }
 
   if (authState === "loading") {
@@ -451,7 +582,7 @@ export default function App() {
                   key={item.key}
                   className={`nav-item ${playerTab === item.key ? "active" : ""}`}
                   onClick={() => {
-                    setPlayerTab(item.key);
+                    if (!navigateFromNav(() => setPlayerTab(item.key))) return;
                     if (item.key === "profile") setNewPerkCount(0);
                     if (item.key === "h2h") setPendingChallenges(0);
                     if (window.innerWidth < 768) setSidebarOpen(false);
@@ -499,6 +630,9 @@ export default function App() {
           {(isPlayer || isCoach || isAdmin) && <NotificationOptIn playerId={user.id} />}
 
 
+          {/* Keyed by navNonce so a nav click always remounts the open tab
+              at its main page -- see navigateFromNav. */}
+          <Fragment key={navNonce}>
           {/* Player panels */}
           {isPlayer && playerTab === "workouts" && <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} canChallengeFromLibrary={xpEnabled && xpPerks.length > 0 && playerXp >= (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150)} onChallengeDrill={(id) => { setChallengePrefillWorkoutId(id); setPlayerTab("h2h"); }} />}
           {isPlayer && playerTab === "leaderboard" && <LeaderboardHub currentUserId={user.id} profile={displayProfile} />}
@@ -638,6 +772,7 @@ export default function App() {
               <ProfileEditor profile={displayProfile} onUpdated={handleProfileUpdated} />
             </div>
           )}
+          </Fragment>
         </div>
       </div>
 
@@ -646,7 +781,7 @@ export default function App() {
         <nav className="bottom-tab-bar" aria-label="Main navigation">
           {bottomTabs.map(tab => (
             <button key={tab.key} className={`bottom-tab${playerTab === tab.key ? " active" : ""}`}
-              onClick={() => { setPlayerTab(tab.key); if (tab.key === "h2h") setPendingChallenges(0); }}
+              onClick={() => { if (navigateFromNav(() => setPlayerTab(tab.key)) && tab.key === "h2h") setPendingChallenges(0); }}
               style={tab.key === "h2h" ? { position: "relative" } : undefined}>
               <svg className="bottom-tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 {tab.icon}
