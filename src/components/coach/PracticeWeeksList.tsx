@@ -10,6 +10,7 @@ import {
   PracticeWeek, Practice, RosterWithCount, Season, getPracticeWeeks, getPracticesInWeek,
   getPracticeAttentionCount, suggestNextWeekName, renamePracticeWeek,
   deletePracticeWeek, deletePractice, movePracticesToWeek, getRosters, getSeasons, getCurrentSeason,
+  getTryoutPlayers, clearTryoutPool,
   startNewSeason, suggestNextSeasonName,
   practiceToExportPayload, importPracticeFromExportPayload, PRACTICE_EXPORT_SCHEMA_VERSION,
 } from "../../lib/practicePlanner";
@@ -18,6 +19,7 @@ import { inputStyle } from "../../lib/inputStyle";
 import PracticeBuilder from "./PracticeBuilder";
 import PracticePrintView from "./PracticePrintView";
 import PracticeTimePanel from "./PracticeTimePanel";
+import TryoutPoolManager from "./TryoutPoolManager";
 import PracticeDayAttendance from "./PracticeDayAttendance";
 import PracticeWinsTool from "./PracticeWinsTool";
 
@@ -56,6 +58,29 @@ export default function PracticeWeeksList(props: Props) {
   const [weekToDelete, setWeekToDelete] = useState<{ week: PracticeWeek; count: number; others: PracticeWeek[] } | null>(null);
   const [deleteStage, setDeleteStage] = useState<"choose" | "move" | "confirm">("choose");
   const [moveTargetId, setMoveTargetId] = useState("");
+  // The pool is a season-level thing, but until now the only way in was a
+  // practice ticked as a tryout — so once tryouts were over you had to
+  // fake one to reach it.
+  const [poolCounts, setPoolCounts] = useState<{ active: number; cut: number }>({ active: 0, cut: 0 });
+  const [showPool, setShowPool] = useState(false);
+
+  const refreshPoolCounts = useCallback(async () => {
+    const all = await getTryoutPlayers(selectedSeasonId, true);
+    setPoolCounts({
+      active: all.filter(p => p.status !== "cut").length,
+      cut: all.filter(p => p.status === "cut").length,
+    });
+  }, [selectedSeasonId]);
+
+  useEffect(() => { void refreshPoolCounts(); }, [refreshPoolCounts]);
+
+  async function handleClearPool() {
+    if (!window.confirm("Clear the whole tryout pool? Every name, note, group placement and attendance record for tryouts is deleted. This can't be undone.")) return;
+    if (!window.confirm("Really clear it? There's no undo.")) return;
+    const { error } = await clearTryoutPool(selectedSeasonId);
+    if (error) { alert("Couldn't clear the pool: " + error); return; }
+    await refreshPoolCounts();
+  }
   const [busyDelete, setBusyDelete] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
 
@@ -395,6 +420,37 @@ export default function PracticeWeeksList(props: Props) {
       {/* Under the season picker: it's a season-level question and this is
           the only season-level surface. Collapsed by default — you look at
           it monthly, not every time you open the page. */}
+      {/* Hidden when the pool is empty, which is most of the year — a
+          permanent row reading "0 names" teaches you to stop looking at
+          this part of the page. */}
+      {!loading && poolCounts.active + poolCounts.cut > 0 && (
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "11px 13px", marginBottom: 10, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ flex: 1, minWidth: 200 }}>
+            <span style={{ fontSize: 12.5, color: "var(--text)" }}>Tryout pool</span>
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>
+              {" · "}{poolCounts.active} name{poolCounts.active === 1 ? "" : "s"}
+              {poolCounts.cut > 0 && `, ${poolCounts.cut} cut`}
+            </span>
+          </span>
+          <button onClick={() => setShowPool(true)}
+            style={{ fontSize: 11, color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 11px", background: "transparent", cursor: "pointer", fontFamily: "inherit" }}>
+            Open pool
+          </button>
+          <button onClick={handleClearPool}
+            style={{ fontSize: 11, color: "#ff7b7b", border: "1px solid rgba(255,107,107,0.3)", borderRadius: 6, padding: "5px 11px", background: "transparent", cursor: "pointer", fontFamily: "inherit" }}>
+            Clear pool
+          </button>
+        </div>
+      )}
+
+      {showPool && (
+        <TryoutPoolManager
+          seasonId={selectedSeasonId}
+          onClose={() => setShowPool(false)}
+          onChanged={refreshPoolCounts}
+        />
+      )}
+
       {!loading && <PracticeTimePanel seasons={seasons} selectedSeasonId={selectedSeasonId} rosters={activeRosters} />}
 
       {loading ? (
