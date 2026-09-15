@@ -395,7 +395,7 @@ export default function PracticeWeeksList(props: Props) {
       {/* Under the season picker: it's a season-level question and this is
           the only season-level surface. Collapsed by default — you look at
           it monthly, not every time you open the page. */}
-      {!loading && <PracticeTimePanel seasons={seasons} selectedSeasonId={selectedSeasonId} />}
+      {!loading && <PracticeTimePanel seasons={seasons} selectedSeasonId={selectedSeasonId} rosters={activeRosters} />}
 
       {loading ? (
         <div style={{ color: "var(--muted)", fontSize: 13, padding: "20px 0" }}>Loading…</div>
