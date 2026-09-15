@@ -15,16 +15,23 @@
 import { useState, useEffect } from "react";
 import {
   TryoutPlayer, getTryoutPlayers, addTryoutPlayer, addTryoutPlayersBulk,
-  updateTryoutPlayer, deleteTryoutPlayer, clearTryoutPool,
+  updateTryoutPlayer, deleteTryoutPlayer, clearTryoutPool, Roster,
 } from "../../lib/practicePlanner";
 
 interface Props {
   seasonId: string | null;
   onClose: () => void;
   onChanged?: () => void;
+  /** Teams to put new names in contention for. Passed by a tryout
+   *  practice so the common path needs no picking at all. */
+  defaultRosterIds?: string[];
+  rosters?: Roster[];
 }
 
-export default function TryoutPoolManager({ seasonId, onClose, onChanged }: Props) {
+export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaultRosterIds, rosters = [] }: Props) {
+  // Which teams to show. Null is everyone, including names nobody has
+  // assigned yet.
+  const [filterRosterId, setFilterRosterId] = useState<string | null>(null);
   const [players, setPlayers] = useState<TryoutPlayer[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCut, setShowCut] = useState(false);
@@ -45,7 +52,7 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged }: Prop
 
   async function handleAdd() {
     if (!newName.trim()) return;
-    const { error } = await addTryoutPlayer(seasonId, newName);
+    const { error } = await addTryoutPlayer(seasonId, newName, null, null, defaultRosterIds ?? []);
     if (error) { setMsg(error); return; }
     setNewName("");
     await load(); onChanged?.();
@@ -86,6 +93,10 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged }: Prop
 
   const active = players.filter(p => p.status === "active");
   const cut = players.filter(p => p.status === "cut");
+  // A name with no teams set shows under every filter rather than
+  // disappearing — it needs finding, not hiding.
+  const shown = [...active, ...cut].filter(p =>
+    !filterRosterId || (p.roster_ids ?? []).length === 0 || (p.roster_ids ?? []).includes(filterRosterId));
 
   return (
     <div style={overlay}>
@@ -131,14 +142,62 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged }: Prop
           <div style={{ fontSize: 13, color: "var(--muted)" }}>Nobody in the pool yet.</div>
         ) : (
           <>
+            {rosters.length > 0 && (
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
+                {[{ id: null as string | null, name: "All" }, ...rosters.map(r => ({ id: r.id as string | null, name: r.name }))].map(r => (
+                  <button key={r.id ?? "all"} onClick={() => setFilterRosterId(r.id)}
+                    style={{
+                      fontSize: 11, padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit",
+                      border: `1px solid ${filterRosterId === r.id ? "var(--gold)" : "var(--border)"}`,
+                      background: filterRosterId === r.id ? "rgba(240,192,64,0.12)" : "transparent",
+                      color: filterRosterId === r.id ? "var(--gold)" : "var(--muted)",
+                    }}>
+                    {r.name}
+                  </button>
+                ))}
+              </div>
+            )}
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>
-              {active.length} in the pool{cut.length > 0 ? ` · ${cut.length} cut` : ""}
+              {shown.filter(p => p.status !== "cut").length} in the pool{cut.length > 0 ? ` · ${cut.length} cut` : ""}
             </div>
-            {[...active, ...cut].map(p => (
+            {shown.map(p => (
               <div key={p.id} style={{ borderTop: "1px solid var(--border)", padding: "8px 0", opacity: p.status === "cut" ? 0.5 : 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <div style={{ flex: 1, fontSize: 14, textDecoration: p.status === "cut" ? "line-through" : "none" }}>
-                    {p.name}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, textDecoration: p.status === "cut" ? "line-through" : "none" }}>
+                      {p.name}
+                    </div>
+                    {/* Which teams they're up for. Tap to change — someone
+                        pulled up to the varsity tryout is just in
+                        contention for both. */}
+                    {rosters.length > 0 && (
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 3 }}>
+                        {rosters.map(r => {
+                          const on = (p.roster_ids ?? []).includes(r.id);
+                          return (
+                            <button key={r.id}
+                              onClick={async () => {
+                                const next = on
+                                  ? (p.roster_ids ?? []).filter(id => id !== r.id)
+                                  : [...(p.roster_ids ?? []), r.id];
+                                await updateTryoutPlayer(p.id, { roster_ids: next });
+                                await load(); onChanged?.();
+                              }}
+                              style={{
+                                fontSize: 10, padding: "2px 7px", borderRadius: 5, cursor: "pointer", fontFamily: "inherit",
+                                border: `1px solid ${on ? "rgba(240,192,64,0.5)" : "var(--border)"}`,
+                                background: on ? "rgba(240,192,64,0.14)" : "transparent",
+                                color: on ? "var(--gold)" : "var(--muted)",
+                              }}>
+                              {r.name}
+                            </button>
+                          );
+                        })}
+                        {(p.roster_ids ?? []).length === 0 && (
+                          <span style={{ fontSize: 10, color: "#ff9b9b" }}>no teams set</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <button
                     onClick={() => { setNotesFor(notesFor === p.id ? null : p.id); setNotesDraft(p.notes ?? ""); }}
