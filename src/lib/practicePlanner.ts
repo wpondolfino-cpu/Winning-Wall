@@ -988,25 +988,44 @@ export async function deletePracticeTemplate(id: string): Promise<{ error: strin
  * losing their minutes would make every other number look bigger than it
  * is, so they get a row that says to go and tag them.
  */
-export interface CategoryMinutes {
-  category: string | null;
+/**
+ * Where practice time actually went, by drill tag.
+ *
+ * Tags rather than category, because a five-minute drill is often two
+ * skills at once — dribbling AND finishing — and a single category can't
+ * say so. A tag can, and "Stations" stops being pressed into service as a
+ * category when it's really a shape.
+ *
+ * The consequence, stated plainly: tag minutes DON'T add up to the length
+ * of your practices. That five-minute drill gives five minutes to both
+ * tags. So a percentage here is "this share of practice time touched that
+ * tag", measured against real practice minutes — coherent, and not
+ * expected to reach 100.
+ *
+ * Clock minutes, so a five-minute block of three stations counts as five.
+ * Published practices only, and never a template.
+ */
+export interface TagMinutes {
+  tag: string | null;   // null = the untagged row
   minutes: number;
   practiceCount: number;
+  drillIds: string[];   // what to offer when you click through to tag them
 }
 
 export interface PracticeTimeReport {
   totalMinutes: number;
   practiceCount: number;
-  rows: CategoryMinutes[];
+  rows: TagMinutes[];
 }
 
-export async function getPracticeTimeReport(seasonId: string | null): Promise<PracticeTimeReport> {
-  // seasonId null means all time.
+export async function getPracticeTimeReport(
+  seasonId: string | null, rosterId?: string | null
+): Promise<PracticeTimeReport> {
   const [{ data: weeks }, library] = await Promise.all([
     supabase.from("practice_weeks").select("id, season_id"),
     getPracticeDrillLibrary(),
   ]);
-  const categoryById = Object.fromEntries(library.drills.map(d => [d.id, d.category_name ?? null]));
+  const { tagsByDrill } = library;
   const weeksInScope = new Set(
     ((weeks ?? []) as any[])
       .filter(w => seasonId === null || w.season_id === seasonId)
@@ -1015,58 +1034,100 @@ export async function getPracticeTimeReport(seasonId: string | null): Promise<Pr
 
   const { data: practices } = await supabase
     .from("practices")
-    .select("id, week_id")
+    .select("id, week_id, roster_ids")
     .eq("is_template", false)
     .eq("status", "published");
 
-  const inScope = ((practices ?? []) as any[]).filter(p => p.week_id && weeksInScope.has(p.week_id));
+  const inScope = ((practices ?? []) as any[]).filter(p =>
+    p.week_id && weeksInScope.has(p.week_id) &&
+    (!rosterId || (p.roster_ids ?? []).includes(rosterId))
+  );
   if (!inScope.length) return { totalMinutes: 0, practiceCount: 0, rows: [] };
 
   const minutes = new Map<string | null, number>();
   const seenIn = new Map<string | null, Set<string>>();
+  const drillsFor = new Map<string | null, Set<string>>();
   let totalMinutes = 0;
+
+  const add = (key: string | null, mins: number, practiceId: string, libraryDrillId?: string | null) => {
+    minutes.set(key, (minutes.get(key) ?? 0) + mins);
+    if (!seenIn.has(key)) seenIn.set(key, new Set());
+    seenIn.get(key)!.add(practiceId);
+    if (libraryDrillId) {
+      if (!drillsFor.has(key)) drillsFor.set(key, new Set());
+      drillsFor.get(key)!.add(libraryDrillId);
+    }
+  };
 
   for (const p of inScope) {
     for (const block of await getPracticeBlocks(p.id)) {
-      // A block's own duration is the clock time, however many drills or
-      // stations sit inside it. Drill minutes carve that block up; summing
-      // them would double-count stations running in parallel.
+      // The block's own duration is the clock time, however many drills or
+      // parallel stations sit inside it.
       totalMinutes += block.duration_minutes;
       const drills = (await Promise.all(
         (await getSegments(block.id)).map(seg => getSegmentDrills(seg.id))
       )).flat();
 
-      if (drills.length === 0) {
-        minutes.set(null, (minutes.get(null) ?? 0) + block.duration_minutes);
-        (seenIn.get(null) ?? seenIn.set(null, new Set()).get(null)!).add(p.id);
-        continue;
-      }
+      if (drills.length === 0) { add(null, block.duration_minutes, p.id); continue; }
 
-      // Share the block's clock minutes out by how long each drill was
-      // set to run, so parallel stations split the block rather than
-      // multiplying it.
+      // Share the block's clock minutes out by each drill's own duration,
+      // so parallel stations split the block rather than multiplying it.
       const weights = drills.map(d => d.duration_minutes || 1);
       const totalWeight = weights.reduce((a, b) => a + b, 0);
       drills.forEach((d, i) => {
-        const cat = d.drill_id ? (categoryById[d.drill_id] ?? null) : null;
         const share = (weights[i] / totalWeight) * block.duration_minutes;
-        minutes.set(cat, (minutes.get(cat) ?? 0) + share);
-        if (!seenIn.has(cat)) seenIn.set(cat, new Set());
-        seenIn.get(cat)!.add(p.id);
+        const tags = d.drill_id ? (tagsByDrill[d.drill_id] ?? []) : [];
+        if (tags.length === 0) { add(null, share, p.id, d.drill_id); return; }
+        // Every tag gets the drill's full minutes — that's the point, and
+        // why the column doesn't sum to the practice length.
+        tags.forEach(t => add(t, share, p.id, d.drill_id));
       });
     }
   }
 
-  const rows: CategoryMinutes[] = [...minutes.entries()]
-    .map(([category, m]) => ({
-      category,
+  const rows: TagMinutes[] = [...minutes.entries()]
+    .map(([tag, m]) => ({
+      tag,
       minutes: Math.round(m),
-      practiceCount: seenIn.get(category)?.size ?? 0,
+      practiceCount: seenIn.get(tag)?.size ?? 0,
+      drillIds: [...(drillsFor.get(tag) ?? [])],
     }))
     .filter(r => r.minutes > 0)
     .sort((a, b) => b.minutes - a.minutes);
 
   return { totalMinutes: Math.round(totalMinutes), practiceCount: inScope.length, rows };
+}
+
+/** The drills behind the untagged row, so they can be tagged in place. */
+export async function getDrillsByIds(ids: string[]): Promise<{ id: string; title: string; tags: string[] }[]> {
+  if (!ids.length) return [];
+  const [{ data: drills }, { data: links }] = await Promise.all([
+    supabase.from("practice_drills_library").select("id,title").in("id", ids),
+    supabase.from("practice_drill_tag_links").select("drill_id,tag_name").in("drill_id", ids),
+  ]);
+  const tags: Record<string, string[]> = {};
+  ((links ?? []) as any[]).forEach(l => { (tags[l.drill_id] ??= []).push(l.tag_name); });
+  return ((drills ?? []) as any[])
+    .map(d => ({ id: d.id, title: d.title, tags: tags[d.id] ?? [] }))
+    .sort((a, b) => a.title.localeCompare(b.title));
+}
+
+/** Replace one drill's tags — the whole set, since that's how they're stored. */
+export async function setDrillTags(drillId: string, tags: string[]): Promise<{ error: string | null }> {
+  await supabase.from("practice_drill_tag_links").delete().eq("drill_id", drillId);
+  const clean = [...new Set(tags.map(t => t.trim()).filter(Boolean))];
+  if (clean.length) {
+    const { error } = await supabase.from("practice_drill_tag_links")
+      .insert(clean.map(t => ({ drill_id: drillId, tag_name: t })));
+    if (error) return { error: error.message };
+  }
+  return { error: null };
+}
+
+/** Every tag already in use, for suggesting rather than retyping. */
+export async function getAllDrillTags(): Promise<string[]> {
+  const { data } = await supabase.from("practice_drill_tag_links").select("tag_name");
+  return [...new Set(((data ?? []) as any[]).map(t => t.tag_name))].sort();
 }
 
 export async function copyPracticeContents(
