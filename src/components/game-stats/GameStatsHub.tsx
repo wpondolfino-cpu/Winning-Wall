@@ -18,6 +18,7 @@ import ReportBuilder from "./ReportBuilder";
 import GoalsManager from "./GoalsManager";
 import SyncIssuesViewer from "./SyncIssuesViewer";
 import GameFormatEditor from "./GameFormatEditor";
+import { confirmNavAway } from "../../lib/navGuard";
 import ShiftEntry from "./ShiftEntry";
 import LineupsTab from "./LineupsTab";
 
@@ -386,7 +387,7 @@ function GamesTab({
     return (
       <div>
         <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <button onClick={() => setView({ mode: "list" })} style={backBtn}>← Games</button>
+          <button onClick={() => { if (confirmNavAway()) setView({ mode: "list" }); }} style={backBtn}>← Games</button>
           <div className="role-tabs" style={{ margin: 0 }}>
             {periodsInPlay(format).map((q) => (
               <button key={q} className={`role-tab ${quarter === q ? "active" : ""}`} onClick={() => setQuarter(q)}>
@@ -401,12 +402,12 @@ function GamesTab({
             </button>
           )}
           <button
-            onClick={() => { setReportSel({ kind: "quarter", quarter }); setView({ mode: "report", gameId: view.gameId, opponent: "" }); }}
+            onClick={() => { if (!confirmNavAway()) return; setReportSel({ kind: "quarter", quarter }); setView({ mode: "report", gameId: view.gameId, opponent: "" }); }}
             style={backBtn}
           >
             View report →
           </button>
-          <button onClick={() => setView({ mode: "shifts", gameId: view.gameId })} style={backBtn}>Shifts</button>
+          <button onClick={() => { if (confirmNavAway()) setView({ mode: "shifts", gameId: view.gameId }); }} style={backBtn}>Shifts</button>
           {!gameFinal && !quarterClosed && (
             <button onClick={() => onEndQuarter(view.gameId, quarter)} style={backBtn}>End {periodLabel(format, quarter)}</button>
           )}
