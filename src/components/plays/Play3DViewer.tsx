@@ -60,8 +60,23 @@ export default function Play3DViewer({ play, roster, onBack, selfOverride = null
   // had scrolled down to reach the 3D button, you landed partway down the
   // 3D view with its Back/Play controls above the top of the screen.
   // Jump to the top of the viewer once it opens.
+  //
+  // Not scrollIntoView: that also scrolls the outer page, which lined the
+  // controls up with the very top of the window -- underneath the sticky
+  // app header, so they were still hidden. Instead scroll only the content
+  // panel, and make sure the outer page itself sits at the top (the app
+  // shell is sized to the window, so it should never be scrolled anyway).
   useEffect(() => {
-    rootRef.current?.scrollIntoView({ block: "start" });
+    const root = rootRef.current;
+    if (!root) return;
+    if (window.scrollY !== 0) window.scrollTo(0, 0);
+    const scroller = root.closest(".main-content") as HTMLElement | null;
+    if (!scroller) {
+      root.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    const offset = root.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    scroller.scrollTop = Math.max(0, scroller.scrollTop + offset - 12);
   }, []);
   const [speed, setSpeed] = useState(1);
 
@@ -851,7 +866,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
     .filter((t) => t.length > 0);
 
   return (
-    <div ref={rootRef} style={{ scrollMarginTop: 12 }}>
+    <div ref={rootRef}>
       <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
         <button onClick={onBack} style={{ padding: "8px 12px", fontSize: 13 }}>← Back to 2D</button>
         <button onClick={handlePlayPauseClick} className="coach-add-btn" style={{ fontSize: 13 }}>{isPlaying ? "⏸ Pause" : "▶ Play"}</button>
