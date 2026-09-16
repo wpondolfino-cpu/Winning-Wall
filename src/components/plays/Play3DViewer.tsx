@@ -26,6 +26,77 @@ const FACE_COLORS = [0x378add, 0x639922, 0xd85a30, 0xd4537e, 0x7f77dd];
 const SCALE = 40; // divides the 600x420 2D coordinate space down to world units
 const toWorld = (x: number, y: number) => ({ x: (x - 300) / SCALE, z: (y - 210) / SCALE });
 
+// ── Screen "set stance" ──────────────────────────────────────────
+// In 3D a screen used to look exactly like a cut: run to a spot, stop.
+// A screener now plants -- body widens and drops a little, with a small
+// settle -- as they arrive, holds it while screening (including into the
+// next step if they're still standing there), and releases it as soon as
+// they roll/pop/cut away. Only the body changes shape; the head or avatar
+// just drops with it, so memoji faces never stretch.
+const BODY_BOTTOM = 0.1;          // body cylinder: height 0.9, centred at 0.55
+const STANCE_WIDEN = 0.38;        // +38% width at full stance
+const STANCE_DROP = 0.1;          // -10% height at full stance
+const STANCE_ARRIVE_FROM = 0.8;   // plant over the last 20% of the screen's travel
+const STANCE_RELEASE_BY = 0.25;   // back to normal within the first 25% of the next move
+
+interface StanceParts {
+  body?: THREE.Mesh;
+  head?: THREE.Object3D;
+  headBaseY?: number;
+  numberFront?: THREE.Mesh;
+  numberBack?: THREE.Mesh;
+}
+
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+/** Ease that overshoots slightly past 1 and settles back -- the "plant". Starts at exactly 0 and ends at exactly 1. */
+const settleEase = (a: number) => { const c = 1.7; return 1 + (c + 1) * Math.pow(a - 1, 3) + c * Math.pow(a - 1, 2); };
+const isMovement = (a: PlayAction) => a.type === "move" || a.type === "dribble" || a.type === "screen";
+
+/** Whether this player is still standing in a screen when a step begins: their most recent movement in any earlier step was a screen. */
+function plantedAtStepStart(frames: PlayFrame[], idx: number, playerId: string | undefined): boolean {
+  if (!playerId) return false;
+  for (let f = idx - 1; f >= 0; f--) {
+    const seq = playerActionSequence(frames[f], playerId);
+    for (let k = seq.length - 1; k >= 0; k--) {
+      if (seq[k].type === "screen") return true;
+      if (isMovement(seq[k])) return false;
+    }
+  }
+  return false;
+}
+
+/** How far into the set stance (0 = normal, 1 = planted, briefly a bit over 1 while settling) a player is at beat progress t. */
+function stanceAt(t: number, seq: PlayAction[], frame: PlayFrame, startsPlanted: boolean): number {
+  const activeIdx = seq.length > 0 ? activeSequenceIndex(t, seq) : -1;
+  let mIdx = -1;
+  for (let k = activeIdx; k >= 0; k--) if (isMovement(seq[k])) { mIdx = k; break; }
+  if (mIdx < 0) return startsPlanted ? 1 : 0;           // hasn't moved yet this step
+  const m = seq[mIdx];
+  if (mIdx !== activeIdx) return m.type === "screen" ? 1 : 0; // standing after their last move (e.g. passing)
+  const localT = localActionProgress(t, m, frame);
+  let prevIdx = -1;
+  for (let k = mIdx - 1; k >= 0; k--) if (isMovement(seq[k])) { prevIdx = k; break; }
+  const wasPlanted = prevIdx >= 0 ? seq[prevIdx].type === "screen" : startsPlanted;
+  const release = wasPlanted ? Math.max(0, 1 - localT / STANCE_RELEASE_BY) : 0;
+  const arrive = m.type === "screen" ? settleEase(clamp01((localT - STANCE_ARRIVE_FROM) / (1 - STANCE_ARRIVE_FROM))) : 0;
+  return Math.max(release, arrive);
+}
+
+function applyStance(g: THREE.Group, k: number) {
+  const u = g.userData as StanceParts;
+  if (!u.body) return;
+  const sx = 1 + STANCE_WIDEN * k;
+  const sy = 1 - STANCE_DROP * k;
+  u.body.scale.set(sx, sy, sx);
+  u.body.position.y = BODY_BOTTOM + 0.45 * sy;
+  if (u.head && u.headBaseY !== undefined) u.head.position.y = u.headBaseY - 0.9 * (1 - sy);
+  // Jersey numbers sit on the body's surface -- push them out as it
+  // widens so they aren't swallowed, and down as it drops.
+  const numY = BODY_BOTTOM + (0.62 - BODY_BOTTOM) * sy;
+  u.numberFront?.position.set(0, numY, 0.281 * sx);
+  u.numberBack?.position.set(0, numY, -0.281 * sx);
+}
+
 const PRESETS_DESKTOP: { label: string; pos: [number, number, number]; lookAt?: [number, number, number] }[] = [
   { label: "Half court", pos: [0, 4, 9] },
   { label: "Baseline", pos: [3, 5, -15], lookAt: [1, 1, 3] },
@@ -318,11 +389,16 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
             (err) => console.error("3D avatar texture failed to load:", avatarUrl, err)
           );
           g.add(sprite);
+          (g.userData as StanceParts).head = sprite;
+          (g.userData as StanceParts).headBaseY = sprite.position.y;
         } else {
           const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 12), new THREE.MeshStandardMaterial({ color }));
           head.position.y = 1.15;
           g.add(head);
+          (g.userData as StanceParts).head = head;
+          (g.userData as StanceParts).headBaseY = head.position.y;
         }
+        (g.userData as StanceParts).body = body;
 
         const numberFront = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.4), new THREE.MeshBasicMaterial({ map: makeJerseyNumberTexture(p.num, false), transparent: true }));
         numberFront.position.set(0, 0.62, 0.281);
@@ -331,6 +407,8 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
         numberBack.position.set(0, 0.62, -0.281);
         numberBack.rotation.y = Math.PI;
         g.add(numberBack);
+        (g.userData as StanceParts).numberFront = numberFront;
+        (g.userData as StanceParts).numberBack = numberBack;
 
         if (isSelf) {
           const ring = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.42, 24), new THREE.MeshBasicMaterial({ color: 0xf0c040, side: THREE.DoubleSide }));
@@ -341,6 +419,10 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
 
         const w = toWorld(p.x, p.y);
         g.position.set(w.x, 0, w.z);
+        // Still screening from an earlier step? Show them planted while idle
+        // on this step too, so the stance doesn't pop off between steps.
+        const allFrames = stateRef.current.play.data.frames;
+        applyStance(g, plantedAtStepStart(allFrames, allFrames.indexOf(frame), p.id) ? 1 : 0);
         scene.add(g);
         playerGroups[i] = g;
       });
@@ -568,6 +650,20 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           const lobJumpT = lobCatch ? localActionProgress(t, lobCatch, animFromFrame!) : t;
           const jumpAmplitude = 1.3;
           playerGroups[i].position.y = lobCatch ? Math.sin((Math.PI / 2) * Math.pow(lobJumpT, 1.5)) * jumpAmplitude : 0;
+
+          // Screen set stance (see stanceAt). A player with no actions who
+          // still changes spot (older plays) counts as moving away.
+          const startsPlanted = plantedAtStepStart(stateRef.current.play.data.frames, stateRef.current.frameIdx, fp.id);
+          let stance: number;
+          if (fullSeq.length > 0) {
+            stance = stanceAt(t, fullSeq, animFromFrame!, startsPlanted);
+          } else if (startsPlanted) {
+            const moved = fp.x !== tp.x || fp.y !== tp.y;
+            stance = moved ? Math.max(0, 1 - t / STANCE_RELEASE_BY) : 1;
+          } else {
+            stance = 0;
+          }
+          applyStance(playerGroups[i], stance);
         });
         // A defender only ever gets Cut or Loop (both stored as "move"),
         // so this mirrors the player loop above but simpler — no ball,
