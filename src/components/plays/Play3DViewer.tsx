@@ -52,7 +52,17 @@ const PRESETS_MOBILE = PRESETS_DESKTOP.map((p) => zoomedOut(p, 2.15));
 
 export default function Play3DViewer({ play, roster, onBack, selfOverride = null }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const [frameIdx, setFrameIdx] = useState(0);
+
+  // The 3D view replaces the (much taller) 2D screen in place, and the
+  // scrolling panel (.main-content) keeps its old scroll position. If you
+  // had scrolled down to reach the 3D button, you landed partway down the
+  // 3D view with its Back/Play controls above the top of the screen.
+  // Jump to the top of the viewer once it opens.
+  useEffect(() => {
+    rootRef.current?.scrollIntoView({ block: "start" });
+  }, []);
   const [speed, setSpeed] = useState(1);
 
   // Mutable refs so the render loop (set up once) can read current props/state.
@@ -841,7 +851,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
     .filter((t) => t.length > 0);
 
   return (
-    <div>
+    <div ref={rootRef} style={{ scrollMarginTop: 12 }}>
       <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
         <button onClick={onBack} style={{ padding: "8px 12px", fontSize: 13 }}>← Back to 2D</button>
         <button onClick={handlePlayPauseClick} className="coach-add-btn" style={{ fontSize: 13 }}>{isPlaying ? "⏸ Pause" : "▶ Play"}</button>
