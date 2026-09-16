@@ -831,6 +831,15 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
     (mountRef.current as any)?._togglePlayPause?.();
   }
 
+  // Notes placed with the 2D Text tool, shown as a caption over the 3D
+  // view. A note belongs to the step it was placed on, and frameIdx stays
+  // on that step while its movement plays (it only advances once the
+  // beat finishes), so the caption follows the action it describes.
+  // Steps with no notes show nothing.
+  const stepNotes = (play.data.frames[frameIdx]?.texts ?? [])
+    .map((t) => t.text.trim())
+    .filter((t) => t.length > 0);
+
   return (
     <div>
       <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -858,7 +867,30 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           {presets.map((preset) => <option key={preset.label} value={preset.label}>{preset.label}</option>)}
         </select>
       </div>
-      <div ref={mountRef} style={{ width: "100%", height: 420, borderRadius: 12, overflow: "hidden", background: "#1a2235" }} />
+      {/* The overlay is a sibling of mountRef, not a child: three.js
+          appends its canvas into mountRef by hand, and React shouldn't
+          reconcile children in there. pointerEvents none lets taps and
+          orbit drags reach the canvas underneath. */}
+      <div style={{ position: "relative" }}>
+        <div ref={mountRef} style={{ width: "100%", height: 420, borderRadius: 12, overflow: "hidden", background: "#1a2235" }} />
+        {stepNotes.length > 0 && (
+          <div
+            key={frameIdx}
+            aria-live="polite"
+            style={{
+              position: "absolute", left: 10, right: 10, bottom: 10,
+              padding: "8px 12px", borderRadius: 8,
+              background: "rgba(0,0,0,0.68)", color: "#fff",
+              pointerEvents: "none",
+              animation: "play3dNoteIn 180ms ease-out",
+            }}
+          >
+            <style>{`@keyframes play3dNoteIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }`}</style>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", marginBottom: 2 }}>Step {frameIdx + 1}</div>
+            <div style={{ fontSize: 13, lineHeight: 1.4, overflowWrap: "anywhere" }}>{stepNotes.join(" · ")}</div>
+          </div>
+        )}
+      </div>
       <p style={{ textAlign: "center", fontSize: 12, color: "var(--muted)", margin: "8px 0" }}>Drag to orbit, scroll to zoom</p>
       {play.data.frames.length > 1 && (
         <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
