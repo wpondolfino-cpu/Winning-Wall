@@ -316,24 +316,24 @@ export function ReportBody({
             <div key={s.key}>
               <SectionDivider label="Half court (man / zone)" />
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                <SplitCard label="vs man" row={halfCourt.vsMan} />
-                <SplitCard label="vs zone" row={halfCourt.vsZone} />
+                <SplitCard label="vs man" row={halfCourt.vsMan} unit="looks" />
+                <SplitCard label="vs zone" row={halfCourt.vsZone} unit="looks" />
               </div>
               <div style={{ height: 8 }} />
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
-                <SplitCard label="Man set" row={halfCourt.set} />
-                <SplitCard label="Motion" row={halfCourt.motion} />
-                <SplitCard label="Zone set" row={halfCourt.zone} />
-                <SplitCard label="Unscripted" row={halfCourt.unscripted} />
+                <SplitCard label="Man set" row={halfCourt.set} unit="looks" />
+                <SplitCard label="Motion" row={halfCourt.motion} unit="looks" />
+                <SplitCard label="Zone set" row={halfCourt.zone} unit="looks" />
+                <SplitCard label="Unscripted" row={halfCourt.unscripted} unit="looks" />
               </div>
               {inbounds.total > 0 && (
                 <div style={{ marginTop: 8 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <SplitCard label="Inbounds vs man" row={inbounds.man} />
-                    <SplitCard label="Inbounds vs zone" row={inbounds.zone} />
+                    <SplitCard label="Inbounds vs man" row={inbounds.man} unit="looks" />
+                    <SplitCard label="Inbounds vs zone" row={inbounds.zone} unit="looks" />
                   </div>
                   <div style={{ fontSize: 12, color: inbounds.untagged ? "#8a6512" : "var(--muted)", marginTop: 4 }}>
-                    {inbounds.tagged} of {inbounds.total} inbounds trips tagged
+                    {inbounds.tagged} of {inbounds.total} inbounds looks tagged
                     {inbounds.untagged > 0 && " - the rest can be tagged in the possession editor"}
                   </div>
                 </div>
@@ -348,10 +348,10 @@ export function ReportBody({
             <div key={s.key}>
               <SectionDivider label="Paint touch impact" />
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
-                <SplitCard label="With paint touch" row={paint.withTouch} />
-                <SplitCard label="No paint touch" row={paint.withoutTouch} />
-                <SplitCard label="Both sides" row={paint.bothSides} />
-                <SplitCard label="One side only" row={paint.oneSide} />
+                <SplitCard label="With paint touch" row={paint.withTouch} unit="looks" />
+                <SplitCard label="No paint touch" row={paint.withoutTouch} unit="looks" />
+                <SplitCard label="Both sides" row={paint.bothSides} unit="looks" />
+                <SplitCard label="One side only" row={paint.oneSide} unit="looks" />
               </div>
             </div>
           );
@@ -373,7 +373,7 @@ export function ReportBody({
                 </div>
               ))}
               <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-                Shots that ended a possession. A rebounded miss isn't graded, so it isn't counted here.
+                Every graded shot, including misses that were rebounded. Games tracked before rebounded misses kept their grade only include the shot that ended each trip.
               </div>
             </div>
           );
@@ -544,12 +544,13 @@ export function ReportBody({
   );
 }
 
-function SplitCard({ label, row }: { label: string; row: { trips: number; points: number; ppp: number } }) {
+/** `unit` says what was counted: whole trips (points per possession) or looks (points per look, each look bringing only what it scored). */
+function SplitCard({ label, row, unit = "trips" }: { label: string; row: { trips: number; points: number; ppp: number }; unit?: "trips" | "looks" }) {
   return (
     <div className="stat-card">
       <div style={{ fontSize: 12, color: "var(--muted)" }}>{label}</div>
       <div style={{ fontSize: 20, fontWeight: 500 }}>{row.ppp}</div>
-      <div style={{ fontSize: 12, color: "var(--muted)" }}>{row.trips} trips · {row.points} pts</div>
+      <div style={{ fontSize: 12, color: "var(--muted)" }}>{row.trips} {row.trips === 1 ? unit.slice(0, -1) : unit} · {row.points} pts</div>
     </div>
   );
 }
