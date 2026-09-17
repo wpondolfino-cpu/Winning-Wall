@@ -1475,8 +1475,14 @@ function lookSplitRow(rows: LookRow[], label: string): SplitRow {
  * built on all of them, so the report says how many it's standing on and
  * the untagged ones can be fixed in the possession editor.
  */
-export function computeInboundsDefense(possessions: Possession[]) {
-  const looks = countedLooks(possessions, "us").filter(
+/**
+ * Inbounds split by the defence played on it. On our own inbounds
+ * (team "us") that's what THEY were in; on theirs it's what WE were in,
+ * so the same tag answers "how do we attack a zone inbounds?" on one side
+ * and "how do we defend an inbounds in man?" on the other.
+ */
+export function computeInboundsDefense(possessions: Possession[], team: Team = "us") {
+  const looks = countedLooks(possessions, team).filter(
     (r) => (r.look.type === "blob" || r.look.type === "slob") && !r.look.putback
   );
   const tagged = looks.filter((r) => r.look.oob_defense != null);
