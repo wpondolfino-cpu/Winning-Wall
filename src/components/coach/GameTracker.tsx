@@ -5,41 +5,48 @@
 // an OREB extends the current trip (increments oreb_count) instead of
 // starting a new one.
 //
+// LOOKS (migration 134). A trip is recorded as one or more looks, each
+// with its own type, structure, play call, paint touch, result and points
+// (see the Looks note in gameStats.ts). The current look lives in the
+// flow state below; `looks` holds the ones already finished in this trip.
+// A look ends and the next begins when:
+//   - an offensive rebound keeps the trip alive   (ends "rebounded")
+//   - a BLOB/SLOB flows into a half-court set     (ends "flowed")
+//   - a press break turns into transition/half court, or our press on
+//     defence falls back into man/zone            (ends "broke_press"/"flowed")
+//   - a foul/jump/OOB makes it a BLOB/SLOB        (ends "reset")
+// commit() adds the final look and writes the row through summarizeLooks,
+// so the trip's counters (oreb_count, missed_fg_count, absorbed FTs, ...)
+// always agree with its looks.
+//
 // OREB is no longer a standalone button -- a missed shot (or a missed free
 // throw) is a "pendingCommit" that doesn't save yet; instead it asks
-// "Offensive rebound?" Yes/No. No commits the miss as the trip's final
-// result (defensive rebound implied). Yes keeps the trip alive, tallies
-// missed_fg_count (for FG misses only, not FT misses -- OREB% is
-// conventionally measured against missed field goals), and routes into the
-// shared action_branch (Shot / Turnover / Set-Motion) for what happens
-// next. This also means a missed shot that gets rebounded is now actually
-// recorded as a miss (shot_type/quality included) instead of vanishing
-// into an untracked oreb_count bump, like it did before. A missed free
-// throw that gets rebounded gets the same treatment via
-// absorbed_ft_attempts/absorbed_ft_made -- both its attempt count and its
-// points (if some were made) get folded into whatever the trip eventually
-// ends with, instead of silently disappearing.
+// "Offensive rebound?" on both ends, after shot quality has been graded.
+// No commits the miss as the trip's final result. Yes closes the look as
+// "rebounded" -- keeping its shot type, grade and any free throws made --
+// and opens a putback look of the same type (a putback off a transition
+// miss is still transition), then routes into action_branch. Picking a
+// half-court structure there turns the putback into a normal half-court
+// look instead. A rebounded press break or awarded free throw becomes a
+// half-court look; the latter is how an end-of-game trip converts into a
+// real possession.
 //
-// On defense the OREB question still applies (their own rebound of their
-// own miss) but skips shot quality entirely, straight from Miss to the
-// question.
+// A free throw trip with some (not all) makes gets a third answer on the
+// rebound question, "Last one went in", since then there was no rebound
+// chance at all. Yes and No both record a live missed last free throw,
+// which OREB% counts as a rebound chance.
 //
-// action_branch: Shot / Turnover / (Set / Motion, us only). Shot skips
-// straight to a reduced outcome grid (no Turnover button -- that's already
-// branched separately). Set/Motion route through the normal play-call
-// picker into the full "traditional half-court" outcome grid (includes
-// Turnover). Paint touch/both sides show there UNLESS the trip is a
-// direct BLOB/SLOB with no OREB in it (we don't track paint touch on raw
-// inbounds plays) -- once an OREB happens, paint touch becomes trackable
-// again even for a BLOB/SLOB-originated trip, since flowing into a real
-// Set/Motion after a rebound is functionally a half-court possession.
+// action_branch: Shot / Turnover / Foul-Jump-OOB / (the four half-court
+// structures, us only). Shot skips straight to a reduced outcome grid.
+// Paint touch/both sides are asked on half-court looks that set up --
+// never on a putback, a transition look or an inbounds look.
 //
 // The team toggle (us on offense / us on defense) auto-flips after every
 // committed possession, since basketball possessions alternate -- undo
 // reverts the flip along with the possession it's undoing. On defense we
-// skip shot quality and play-calling (Set/Motion/BLOB/SLOB picker)
-// entirely -- we're coaching our own shot selection, not judging theirs,
-// and we don't know the name of a play we didn't call. FT trips ask
+// skip play-calling (Set/Motion/BLOB/SLOB picker) entirely -- we don't
+// know the name of a play we didn't call -- but shot quality IS graded,
+// as the shot we allowed. FT trips ask
 // attempts (1/2/3 shots) before makes, so FT% is computable -- and are
 // auto-tagged "great" quality, but only on our own trips to the line.
 //
@@ -53,9 +60,8 @@
 // would and count toward those same Man/Zone effectiveness numbers,
 // while press_result keeps track of what the press itself turned into
 // (forced turnover vs. broke down into a half-court look) for press
-// effectiveness specifically. possession_type stays 'press' through an
-// OREB, same as blob/slob, so it keeps counting toward press effectiveness
-// even if the trip continues.
+// effectiveness specifically. Man/Zone off the press is a look of its
+// own: the press look ends "flowed" and a man or zone look begins.
 //
 // BLOB/SLOB/Set/Motion/Zone pickers also surface any play drawn in the
 // Plays feature and tagged with that category (case-insensitive), not just
@@ -68,11 +74,9 @@
 // reclassifying a live trip, which is how a BLOB actually happens.
 //
 // Press break: pick which press (a play_calls row under 'press_type'),
-// then what it turned into. Transition and half-court REPLACE the
-// possession type, so those points land in transition PPP and half-court
-// PPP with no special case anywhere downstream -- press_break_type_id is
-// what durably marks the trip as a break. Only a trip that ended against
-// the press (turnover, FT trip) keeps possession_type 'press_break'.
+// then what it turned into. Transition and half-court end the press look
+// and start a look of that type, so those points land in the transition
+// and half-court numbers. The trip stays a press break trip either way.
 //
 // Half-court structure is four buttons rather than two: Man set, Motion,
 // Zone set, Unscripted. Zone set is also the record that we were playing
@@ -93,8 +97,8 @@
 // flagrant -- all flagged possession_type 'non_possession_ft' and
 // excluded from every rate stat top and bottom, while still counting on
 // the scoreboard and in FT%. Only end-of-game is a live ball, so only it
-// asks the rebound question; saying yes flips possession_type to
-// half_court, which IS the conversion into a real possession. Technicals
+// asks the rebound question; saying yes starts a half-court look, which IS
+// the conversion into a real possession. Technicals
 // and flagrants also don't flip the team toggle, since the ball can go
 // either way and guessing wrong misattributes the next trip.
 
@@ -108,6 +112,9 @@ import {
   fetchDrawnPlaysForCategory,
   ensurePlayCallForPlay,
   periodLabel,
+  emptyLook,
+  summarizeLooks,
+  looksOf,
   DEFAULT_GAME_FORMAT,
   type GameFormat,
   type Possession,
@@ -124,6 +131,8 @@ import {
   type OobDefense,
   type FtAwardType,
   type Outcome,
+  type Look,
+  type LookEnd,
   DEFAULT_PRESS_TYPES,
 } from "../../lib/gameStats";
 
@@ -165,9 +174,11 @@ interface PendingShot {
 
 interface PendingCommit {
   outcome: Outcome;
-  extra: Partial<Possession>;
-  isFgMiss: boolean; // whether this is a missed FG (vs a missed FT) -- decides whether confirming an OREB adds to missed_fg_count
+  /** The result half of the look -- shot type, grade, free throws, points. */
+  detail: Partial<Look>;
   label: string; // shown on the oreb_check screen, e.g. "missed 2" or "missed FT"
+  /** A free throw trip with some but not all makes: the last one may have gone in, so "Last one went in" is offered. */
+  ftPartial: boolean;
 }
 
 interface FlowSnapshot {
@@ -184,12 +195,8 @@ interface FlowSnapshot {
   ftAwardType: FtAwardType | null;
   paintTouch: boolean;
   paintTouchBoth: boolean;
-  orebCount: number;
-  missedFgCount: number;
-  missedFg2Count: number;
-  missedFg3Count: number;
-  absorbedFtAttempts: number;
-  absorbedFtMade: number;
+  looks: Look[];
+  putback: boolean;
   pendingShot: PendingShot | null;
   pendingCommit: PendingCommit | null;
   orebOccurred: boolean;
@@ -221,15 +228,10 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
   const [ftAwardType, setFtAwardType] = useState<FtAwardType | null>(null);
   const [paintTouch, setPaintTouch] = useState(false);
   const [paintTouchBoth, setPaintTouchBoth] = useState(false);
-  const [orebCount, setOrebCount] = useState(0);
-  const [missedFgCount, setMissedFgCount] = useState(0);
-  // Split by shot type so rebounded misses can enter the SHOOTING
-  // denominators, not just OREB%. Zero extra taps -- the type was already
-  // tapped, it just used to be thrown away at this point.
-  const [missedFg2Count, setMissedFg2Count] = useState(0);
-  const [missedFg3Count, setMissedFg3Count] = useState(0);
-  const [absorbedFtAttempts, setAbsorbedFtAttempts] = useState(0);
-  const [absorbedFtMade, setAbsorbedFtMade] = useState(0);
+  // Looks already finished earlier in this trip, and whether the current
+  // look is a putback (started by a rebound, nothing new picked yet).
+  const [looks, setLooks] = useState<Look[]>([]);
+  const [putback, setPutback] = useState(false);
   const [pendingShot, setPendingShot] = useState<PendingShot | null>(null);
   const [pendingCommit, setPendingCommit] = useState<PendingCommit | null>(null);
   const [orebOccurred, setOrebOccurred] = useState(false); // true once any OREB happens in this trip
@@ -328,12 +330,8 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
     setFtAwardType(null);
     setPaintTouch(false);
     setPaintTouchBoth(false);
-    setOrebCount(0);
-    setMissedFgCount(0);
-    setMissedFg2Count(0);
-    setMissedFg3Count(0);
-    setAbsorbedFtAttempts(0);
-    setAbsorbedFtMade(0);
+    setLooks([]);
+    setPutback(false);
     setPendingShot(null);
     setPendingCommit(null);
     setOrebOccurred(false);
@@ -348,7 +346,7 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
       {
         step, possessionType, halfCourtType, playCallId, oobResult, defenseScheme, pressResult,
         pressBreakTypeId, pressBreakResult, oobDefense, ftAwardType, paintTouch, paintTouchBoth,
-        orebCount, missedFgCount, missedFg2Count, missedFg3Count, absorbedFtAttempts, absorbedFtMade, pendingShot, pendingCommit, orebOccurred, ftAttempts,
+        looks, putback, pendingShot, pendingCommit, orebOccurred, ftAttempts,
       },
     ]);
   }
@@ -370,12 +368,8 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
       setFtAwardType(prev.ftAwardType);
       setPaintTouch(prev.paintTouch);
       setPaintTouchBoth(prev.paintTouchBoth);
-      setOrebCount(prev.orebCount);
-      setMissedFgCount(prev.missedFgCount);
-      setMissedFg2Count(prev.missedFg2Count);
-      setMissedFg3Count(prev.missedFg3Count);
-      setAbsorbedFtAttempts(prev.absorbedFtAttempts);
-      setAbsorbedFtMade(prev.absorbedFtMade);
+      setLooks(prev.looks);
+      setPutback(prev.putback);
       setPendingShot(prev.pendingShot);
       setPendingCommit(prev.pendingCommit);
       setOrebOccurred(prev.orebOccurred);
@@ -384,45 +378,60 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
     });
   }
 
-  async function commit(outcome: Outcome, extra: Partial<Possession> = {}) {
+  /** The look being tracked right now, from the flow state. */
+  function currentLook(): Look {
+    return {
+      ...emptyLook(possessionType ?? "half_court"),
+      half_court_type: halfCourtType,
+      play_call_id: playCallId,
+      putback,
+      defense_scheme: defenseScheme,
+      press_result: pressResult,
+      press_break_type_id: pressBreakTypeId,
+      press_break_result: pressBreakResult,
+      oob_result: oobResult,
+      oob_defense: oobDefense,
+      paint_touch: paintTouch,
+      paint_touch_both_sides: paintTouchBoth,
+    };
+  }
+
+  /** Finishes the current look. `detail` carries anything picked in this same tap, before state has caught up. */
+  function closeLook(end: LookEnd, detail: Partial<Look> = {}) {
+    const finished: Look = { ...currentLook(), end, ...detail };
+    setLooks((ls: Look[]) => [...ls, finished]);
+  }
+
+  /** Clears the flow state for the next look in the same trip. */
+  function startNextLook(type: PossessionType, opts: { putback?: boolean; defenseScheme?: DefenseScheme | null } = {}) {
+    setPossessionType(type);
+    setHalfCourtType(null);
+    setPlayCallId(null);
+    setPutback(opts.putback ?? false);
+    setDefenseScheme(opts.defenseScheme ?? null);
+    setPressResult(null);
+    setPressBreakTypeId(null);
+    setPressBreakResult(null);
+    setOobResult(null);
+    setOobDefense(null);
+    setPaintTouch(false);
+    setPaintTouchBoth(false);
+  }
+
+  async function commit(outcome: Outcome, detail: Partial<Look> = {}) {
+    const finalLook: Look = { ...currentLook(), end: "final", outcome, ...detail };
+    const summary = summarizeLooks([...looks, finalLook]);
     const possession: Possession = {
       id: crypto.randomUUID(),
       game_id: gameId,
       team,
       quarter,
       sequence,
-      possession_type: possessionType!,
-      half_court_type: halfCourtType,
-      play_call_id: playCallId,
-      oob_result: oobResult,
-      defense_scheme: defenseScheme,
-      press_result: pressResult,
-      press_break_type_id: pressBreakTypeId,
-      press_break_result: pressBreakResult,
-      oob_defense: oobDefense,
+      ...summary,
       ft_award_type: ftAwardType,
-      paint_touch: paintTouch,
-      paint_touch_both_sides: paintTouchBoth,
-      oreb_count: orebCount,
-      missed_fg_count: missedFgCount,
-      missed_fg2_count: missedFg2Count,
-      missed_fg3_count: missedFg3Count,
-      absorbed_ft_attempts: absorbedFtAttempts,
-      absorbed_ft_made: absorbedFtMade,
-      outcome,
-      shot_type: null,
-      shot_quality: null,
-      turnover_type: null,
-      ft_attempts: null,
-      points: 0,
       created_by: userId,
       created_at: new Date().toISOString(),
-      ...extra,
     };
-    // Absorbed FT makes are real points scored earlier in this same trip
-    // (a free throw made before a miss got offensive-rebounded) -- the
-    // final action's own points alone would undercount the trip.
-    possession.points += absorbedFtMade;
     await queuePossession(possession);
     setLog((l) => [...l, possession]);
     setSequence((s) => s + 1);
@@ -450,9 +459,9 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
       pushHistory();
       setPendingCommit({
         outcome: "fg_missed",
-        extra: { shot_type: pendingShot.shotType, points: 0, shot_quality: quality },
-        isFgMiss: true,
+        detail: { shot_type: pendingShot.shotType, points: 0, shot_quality: quality },
         label: `missed ${pendingShot.shotType}`,
+        ftPartial: false,
       });
       setStep("oreb_check");
     }
@@ -481,44 +490,40 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
   }
 
   /** "No" on the OREB question -- the pending miss (FG or FT) is the trip's
-      final result, so it commits as-is. */
+      final result. A missed free throw here was still a live rebound
+      chance, just one the defence got. */
   function declineOreb() {
-    if (pendingCommit) commit(pendingCommit.outcome, pendingCommit.extra);
+    if (pendingCommit) {
+      commit(pendingCommit.outcome, { ...pendingCommit.detail, ft_rebound_chance: pendingCommit.outcome === "ft_trip" });
+    }
     setPendingCommit(null);
   }
 
-  /** "Yes" on the OREB question -- the trip stays alive. If the pending
-      thing was a missed FG (not FT), it counts toward missed_fg_count so
-      OREB% has an accurate denominator. If the trip originated as a
-      BLOB/SLOB we keep that possession_type (so it still counts toward
-      BLOB/SLOB effectiveness) -- otherwise it becomes a half-court trip,
-      since the putback itself is a half-court-style action. */
+  /** "Last one went in" -- only offered after a free throw trip with some
+      makes. No rebound chance happened, so the trip simply ends. */
+  function lastFtMade() {
+    if (pendingCommit) commit(pendingCommit.outcome, pendingCommit.detail);
+    setPendingCommit(null);
+  }
+
+  /** "Yes" on the OREB question -- the trip stays alive. The look that
+      missed is finished as "rebounded", keeping its shot type, grade and
+      any free throws made, and a putback look begins. The putback keeps
+      the type of the look it came from (a putback off a transition miss
+      is still transition), except that a press break or awarded free
+      throw becomes half court -- the latter is how an end-of-game trip
+      converts into a real possession. Defence keeps the scheme it was in. */
   function confirmOreb() {
+    if (!pendingCommit) return;
     pushHistory();
-    setOrebCount((c) => c + 1);
-    if (pendingCommit?.isFgMiss) {
-      setMissedFgCount((c) => c + 1);
-      // The pending commit is still holding the shot type from the
-      // make/miss screen, so nothing extra needs asking here.
-      if (pendingCommit.extra.shot_type === 3) setMissedFg3Count((c) => c + 1);
-      else setMissedFg2Count((c) => c + 1);
-    }
-    if (pendingCommit && pendingCommit.outcome === "ft_trip") {
-      setAbsorbedFtAttempts((c) => c + ((pendingCommit.extra.ft_attempts as number) ?? 0));
-      setAbsorbedFtMade((c) => c + ((pendingCommit.extra.points as number) ?? 0));
-    }
-    // A press break or an end-of-game FT trip that gets rebounded becomes
-    // a genuine half-court possession here -- which is exactly how the
-    // end-of-game conversion works: once possession_type stops being
-    // "non_possession_ft" it counts everywhere, while ft_award_type still
-    // records that they hacked us to get there.
-    if (possessionType !== "blob" && possessionType !== "slob" && possessionType !== "press") {
-      setPossessionType("half_court");
-      setHalfCourtType(null);
-      setPlayCallId(null);
-    }
-    setPaintTouch(false);
-    setPaintTouchBoth(false);
+    const wasType = possessionType ?? "half_court";
+    closeLook("rebounded", {
+      outcome: pendingCommit.outcome,
+      ...pendingCommit.detail,
+      ft_rebound_chance: pendingCommit.outcome === "ft_trip",
+    });
+    const nextType: PossessionType = wasType === "press_break" || wasType === "non_possession_ft" ? "half_court" : wasType;
+    startNextLook(nextType, { putback: true, defenseScheme });
     setOrebOccurred(true);
     setPendingCommit(null);
     setStep("action_branch");
@@ -591,7 +596,7 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
    * needed changing.
    */
   async function archivePlayCall(pc: PlayCall) {
-    const inUse = log.some((p) => p.play_call_id === pc.id || p.press_break_type_id === pc.id);
+    const inUse = log.some((p) => looksOf(p).some((l) => l.play_call_id === pc.id || l.press_break_type_id === pc.id));
     const msg = inUse
       ? `Archive "${pc.name}"? It's been used in this game — those possessions keep it, it just won't show in the picker any more.`
       : `Archive "${pc.name}"? It disappears from the picker. Past games that used it are unaffected.`;
@@ -623,7 +628,17 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
    */
   function chooseHalfCourtType(type: HalfCourtType) {
     pushHistory();
-    if (possessionType === "blob" || possessionType === "slob") setOobResult("flowed_half_court");
+    if (putback) {
+      // Set up after a rebound: this look is a half-court look now, not a
+      // putback -- which is also what turns a transition trip into a
+      // half-court possession.
+      setPossessionType("half_court");
+      setPutback(false);
+    } else if (possessionType === "blob" || possessionType === "slob") {
+      // The inbounds look is over; the set is a look of its own.
+      closeLook("flowed", { oob_result: "flowed_half_court" });
+      startNextLook("half_court");
+    }
     setHalfCourtType(type);
     setStep(type === "unscripted" ? "flags" : "play_call");
   }
@@ -645,20 +660,51 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
    */
   function choosePressBreakResult(result: PressBreakResult, nextStep: Step, becomes?: PossessionType) {
     pushHistory();
-    setPressBreakResult(result);
-    if (becomes) setPossessionType(becomes);
+    if (becomes) {
+      // Broke it: the press look ends, and the transition or half-court
+      // look it turned into begins.
+      closeLook("broke_press", { press_break_result: result });
+      startNextLook(becomes);
+    } else {
+      setPressBreakResult(result);
+    }
     setStep(nextStep);
   }
 
+  /** Foul/Jump/OOB: the trip becomes an inbounds play. */
+  function reclassifyToOob(type: "blob" | "slob") {
+    pushHistory();
+    if (possessionType === "press_break") {
+      closeLook("broke_press", { press_break_result: "oob" });
+    } else if (!putback) {
+      closeLook("reset");
+    }
+    // An untouched putback look (fouled straight off the rebound) had
+    // nothing happen in it, so it's replaced rather than recorded.
+    startNextLook(type);
+    setStep("oob_result");
+  }
+
+  /** Our press on defence falling back into man or zone: the press look ends and a man/zone look begins. */
+  function pressFallsBack(scheme: DefenseScheme) {
+    pushHistory();
+    closeLook("flowed", { press_result: scheme });
+    startNextLook("half_court", { defenseScheme: scheme });
+    setStep("flags");
+  }
+
+  // A putback isn't an inbounds play, so it never gets an OOB result.
+  const isInboundsLook = (possessionType === "blob" || possessionType === "slob") && !putback;
+
   function chooseShot() {
     pushHistory();
-    if (possessionType === "blob" || possessionType === "slob") setOobResult("direct_shot");
+    if (isInboundsLook) setOobResult("direct_shot");
     setStep("quick_shot");
   }
 
   function chooseTurnover() {
     pushHistory();
-    if (possessionType === "blob" || possessionType === "slob") setOobResult("turnover");
+    if (isInboundsLook) setOobResult("turnover");
     setStep("turnover_type");
   }
 
@@ -855,26 +901,8 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
         <Section label="Press result" accent>
           <Grid cols={3}>
             <Btn onClick={() => { pushHistory(); setPressResult("turnover"); setStep("turnover_type"); }}>Turnover</Btn>
-            <Btn
-              onClick={() => {
-                pushHistory();
-                setPressResult("man");
-                setDefenseScheme("man");
-                setStep("flags");
-              }}
-            >
-              Man
-            </Btn>
-            <Btn
-              onClick={() => {
-                pushHistory();
-                setPressResult("zone");
-                setDefenseScheme("zone");
-                setStep("flags");
-              }}
-            >
-              Zone
-            </Btn>
+            <Btn onClick={() => pressFallsBack("man")}>Man</Btn>
+            <Btn onClick={() => pressFallsBack("zone")}>Zone</Btn>
           </Grid>
         </Section>
       )}
@@ -993,8 +1021,9 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
       )}
 
       {step === "flags" && (() => {
-        const isDirectBlobSlob = (possessionType === "blob" || possessionType === "slob") && !orebOccurred;
-        const showPaintTouch = possessionType !== "transition" && !isDirectBlobSlob;
+        // Asked on half-court looks that set up -- not transition, not an
+        // inbounds look, not a putback.
+        const showPaintTouch = possessionType === "half_court" && !putback;
         return (
           <>
             {showPaintTouch && (
@@ -1034,30 +1063,8 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
       {step === "oob_reclassify" && (
         <Section label="Inbounding from" accent>
           <Grid cols={2}>
-            <Btn
-              onClick={() => {
-                pushHistory();
-                setPossessionType("blob");
-                setHalfCourtType(null);
-                setPlayCallId(null);
-                setDefenseScheme(null);
-                setStep("oob_result");
-              }}
-            >
-              BLOB
-            </Btn>
-            <Btn
-              onClick={() => {
-                pushHistory();
-                setPossessionType("slob");
-                setHalfCourtType(null);
-                setPlayCallId(null);
-                setDefenseScheme(null);
-                setStep("oob_result");
-              }}
-            >
-              SLOB
-            </Btn>
+            <Btn onClick={() => reclassifyToOob("blob")}>BLOB</Btn>
+            <Btn onClick={() => reclassifyToOob("slob")}>SLOB</Btn>
           </Grid>
         </Section>
       )}
@@ -1102,8 +1109,8 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
                   shot_type: pendingShot.shotType,
                   points: pendingShot.shotType + 1,
                   shot_quality: "great",
-                  absorbed_ft_attempts: 1,
-                  absorbed_ft_made: 1,
+                  ft_attempts: 1,
+                  ft_made: 1,
                 })
               }
             >
@@ -1115,8 +1122,8 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
                   shot_type: pendingShot.shotType,
                   points: pendingShot.shotType,
                   shot_quality: "great",
-                  absorbed_ft_attempts: 1,
-                  absorbed_ft_made: 0,
+                  ft_attempts: 1,
+                  ft_made: 0,
                 })
               }
             >
@@ -1129,9 +1136,14 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
       {step === "oreb_check" && (
         <Section label={`Offensive rebound? (${pendingCommit?.label ?? ""})`} accent>
           <Grid cols={2}>
-            <Btn tone="success" onClick={confirmOreb}>Yes</Btn>
-            <Btn onClick={declineOreb}>No</Btn>
+            <Btn tone="success" subtitle={team === "us" ? "We got it" : "They got it"} onClick={confirmOreb}>Yes</Btn>
+            <Btn subtitle={team === "us" ? "They got it" : "We got it"} onClick={declineOreb}>No</Btn>
           </Grid>
+          {pendingCommit?.ftPartial && (
+            <Grid cols={1} style={{ marginTop: 8 }}>
+              <Btn subtitle="No rebound" onClick={lastFtMade}>Last one went in</Btn>
+            </Grid>
+          )}
         </Section>
       )}
 
@@ -1149,7 +1161,7 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
         <Section label={`Points made (of ${ftAttempts})`}>
           <Grid cols={ftAttempts + 1}>
             {Array.from({ length: ftAttempts + 1 }, (_, n) => n).map((n) => {
-              const extra: Partial<Possession> = { points: n, ft_attempts: ftAttempts, shot_quality: "great" };
+              const detail: Partial<Look> = { points: n, ft_attempts: ftAttempts, ft_made: n, shot_quality: "great" };
               const missed = n < ftAttempts;
               return (
                 <Btn
@@ -1161,10 +1173,12 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
                     // real possession off the glass.
                     const deadBall = ftAwardType === "technical" || ftAwardType === "flagrant";
                     if (!missed || deadBall) {
-                      commit("ft_trip", extra);
+                      commit("ft_trip", detail);
                     } else {
                       pushHistory();
-                      setPendingCommit({ outcome: "ft_trip", extra, isFgMiss: false, label: "missed FT" });
+                      // With some makes, the miss might not have been the
+                      // last shot -- the rebound screen asks.
+                      setPendingCommit({ outcome: "ft_trip", detail, label: "missed FT", ftPartial: n > 0 });
                       setStep("oreb_check");
                     }
                   }}
