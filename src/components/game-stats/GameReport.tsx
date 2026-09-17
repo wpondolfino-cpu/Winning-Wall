@@ -530,7 +530,7 @@ export function ReportBody({
               <DefenseSchemeRow row={defense.press} />
               {defense.press.calls > 0 && (
                 <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-                  Press forced {defense.pressTurnovers} turnover{defense.pressTurnovers === 1 ? "" : "s"}, broke down to Man {defense.pressToMan}x, Zone {defense.pressToZone}x
+                  Press forced {defense.pressTurnovers} turnover{defense.pressTurnovers === 1 ? "" : "s"} · broke down to Man {defense.pressToMan}x, Zone {defense.pressToZone}x, transition {defense.pressToTransition}x · fouled/OOB {defense.pressToOob}x · to the line {defense.pressToFtTrip}x
                 </div>
               )}
             </div>
