@@ -89,7 +89,8 @@
 // a half-court look (the half-court flow, post-OREB, BLOB/SLOB, press
 // break), via the shared HalfCourtButtons component.
 //
-// oob_defense tags what they were in ON THE INBOUNDS, which is a separate
+// oob_defense tags the defence played ON THE INBOUNDS -- what they were in
+// on our inbounds, what we were in on theirs. It is a separate
 // question at a separate moment from half_court_type -- a team can go zone
 // on a BLOB and match up man after, so neither overrides the other. It's
 // optional; the report shows how many trips were tagged so the untagged
@@ -954,18 +955,16 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
               />
             </Section>
           )}
-          {team === "us" && (
-            <Section label="Defense on the inbounds" accent>
-              <Grid cols={2}>
-                <Btn active={oobDefense === "man"} onClick={() => setOobDefense((v) => (v === "man" ? null : "man"))}>
-                  vs man
-                </Btn>
-                <Btn active={oobDefense === "zone"} onClick={() => setOobDefense((v) => (v === "zone" ? null : "zone"))}>
-                  vs zone
-                </Btn>
-              </Grid>
-            </Section>
-          )}
+          <Section label={team === "us" ? "Defense on the inbounds" : "Our defense on the inbounds"} accent>
+            <Grid cols={2}>
+              <Btn active={oobDefense === "man"} onClick={() => setOobDefense((v) => (v === "man" ? null : "man"))}>
+                {team === "us" ? "vs man" : "man"}
+              </Btn>
+              <Btn active={oobDefense === "zone"} onClick={() => setOobDefense((v) => (v === "zone" ? null : "zone"))}>
+                {team === "us" ? "vs zone" : "zone"}
+              </Btn>
+            </Grid>
+          </Section>
           <Section label="What happened" accent>
             <Grid cols={3}>
               <Btn onClick={chooseShot}>Shot</Btn>
