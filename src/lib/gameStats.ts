@@ -22,7 +22,8 @@ export type Team = "us" | "opponent";
 // every rate stat both top and bottom; still on the scoreboard and in FT%.
 export type PossessionType = "transition" | "half_court" | "blob" | "slob" | "press" | "press_break" | "non_possession_ft";
 export type DefenseScheme = "man" | "zone";
-export type PressResult = "turnover" | "man" | "zone";
+/** What our press on defence turned into -- mirrors PressBreakResult on the offence side. */
+export type PressResult = "turnover" | "man" | "zone" | "transition" | "oob" | "ft_trip";
 // The half-court structure we ran. "zone" is a zone set, which doubles as
 // the record that we were playing against a zone -- there's no separate
 // defense_faced field, because it would be a second copy of the same fact.
@@ -205,9 +206,10 @@ export function looksOf(p: Possession): Look[] {
     };
     return [press, base];
   }
-  if (p.possession_type === "press" && (p.press_result === "man" || p.press_result === "zone")) {
+  if (p.possession_type === "press" && (p.press_result === "man" || p.press_result === "zone" || p.press_result === "transition")) {
     const press: Look = { ...emptyLook("press"), press_result: p.press_result, end: "flowed" };
-    return [press, { ...base, type: "half_court", press_result: null }];
+    const broke: PossessionType = p.press_result === "transition" ? "transition" : "half_court";
+    return [press, { ...base, type: broke, press_result: null }];
   }
   if ((p.possession_type === "blob" || p.possession_type === "slob") && p.oob_result === "flowed_half_court") {
     // The row only kept one play call, and the tracker overwrote the
@@ -1681,10 +1683,16 @@ export function computeDefenseEffectiveness(possessions: Possession[]) {
   const zone = summarizeDefense(oppLooks.filter((r) => r.look.defense_scheme === "zone").map((r) => r.look), "Zone");
   const pressLooks = oppLooks.filter((r) => r.look.type === "press");
   const press = summarizeDefense(pressLooks.map((r) => r.trip), "Press (overall)");
-  const pressTurnovers = pressLooks.filter((r) => r.look.press_result === "turnover").length;
-  const pressToMan = pressLooks.filter((r) => r.look.press_result === "man").length;
-  const pressToZone = pressLooks.filter((r) => r.look.press_result === "zone").length;
-  return { man, zone, press, pressTurnovers, pressToMan, pressToZone };
+  const pressBy = (r: PressResult) => pressLooks.filter((x) => x.look.press_result === r).length;
+  return {
+    man, zone, press,
+    pressTurnovers: pressBy("turnover"),
+    pressToMan: pressBy("man"),
+    pressToZone: pressBy("zone"),
+    pressToTransition: pressBy("transition"),
+    pressToOob: pressBy("oob"),
+    pressToFtTrip: pressBy("ft_trip"),
+  };
 }
 
 /** Human-readable one-line summary of a possession, for the sync-issues viewer where a raw row isn't meaningful at a glance. */
