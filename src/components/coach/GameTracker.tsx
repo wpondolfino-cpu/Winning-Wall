@@ -59,10 +59,12 @@
 // Press asks Turnover / Man / Zone: Turnover goes to the usual live/dead
 // ball screen, Man/Zone tag defense_scheme the same way a direct call
 // would and count toward those same Man/Zone effectiveness numbers,
-// while press_result keeps track of what the press itself turned into
-// (forced turnover vs. broke down into a half-court look) for press
-// effectiveness specifically. Man/Zone off the press is a look of its
-// own: the press look ends "flowed" and a man or zone look begins.
+// while press_result keeps track of what the press itself turned into for
+// press effectiveness specifically. The options mirror the offence's press
+// break: a turnover we forced, man or zone once they broke it, transition
+// if they got out on us, a foul/jump/OOB that makes it their inbounds, or
+// a trip to the line. Man, zone and transition end the press look and
+// start a look of that type; the rest stay on the press look.
 //
 // BLOB/SLOB/Set/Motion/Zone pickers also surface any play drawn in the
 // Plays feature and tagged with that category (case-insensitive), not just
@@ -659,6 +661,8 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
     pushHistory();
     if (possessionType === "press_break") {
       closeLook("broke_press", { press_break_result: "oob" });
+    } else if (possessionType === "press") {
+      closeLook("broke_press", { press_result: "oob" });
     } else if (!putback) {
       closeLook("reset");
     }
@@ -668,12 +672,22 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
     setStep("oob_result");
   }
 
-  /** Our press on defence falling back into man or zone: the press look ends and a man/zone look begins. */
-  function pressFallsBack(scheme: DefenseScheme) {
+  /**
+   * What our press on defence turned into -- the mirror of
+   * choosePressBreakResult. Man/Zone and Transition end the press look and
+   * start a look of that type (keeping the scheme we matched up in);
+   * Turnover, a foul/jump/OOB and a trip to the line all stay on the press
+   * look, since the press itself is what produced them.
+   */
+  function choosePressResult(result: PressResult, nextStep: Step, becomes?: PossessionType, scheme?: DefenseScheme) {
     pushHistory();
-    closeLook("flowed", { press_result: scheme });
-    startNextLook("half_court", { defenseScheme: scheme });
-    setStep("flags");
+    if (becomes) {
+      closeLook("flowed", { press_result: result });
+      startNextLook(becomes, { defenseScheme: scheme ?? null });
+    } else {
+      setPressResult(result);
+    }
+    setStep(nextStep);
   }
 
   // A putback isn't an inbounds play, so it never gets an OOB result.
@@ -881,11 +895,16 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
       )}
 
       {step === "press_result" && (
-        <Section label="Press result" accent>
+        <Section label="What it turned into" accent>
           <Grid cols={3}>
-            <Btn onClick={() => { pushHistory(); setPressResult("turnover"); setStep("turnover_type"); }}>Turnover</Btn>
-            <Btn onClick={() => pressFallsBack("man")}>Man</Btn>
-            <Btn onClick={() => pressFallsBack("zone")}>Zone</Btn>
+            <Btn onClick={() => choosePressResult("turnover", "turnover_type")}>Turnover</Btn>
+            <Btn onClick={() => choosePressResult("man", "flags", "half_court", "man")}>Man</Btn>
+            <Btn onClick={() => choosePressResult("zone", "flags", "half_court", "zone")}>Zone</Btn>
+          </Grid>
+          <Grid cols={3} style={{ marginTop: 8 }}>
+            <Btn subtitle="They got out" onClick={() => choosePressResult("transition", "flags", "transition")}>Transition</Btn>
+            <Btn subtitle="Still their ball" onClick={() => choosePressResult("oob", "oob_reclassify")}>Foul/Jump/OOB</Btn>
+            <Btn onClick={() => choosePressResult("ft_trip", "ft_attempts")}>FT trip</Btn>
           </Grid>
         </Section>
       )}
