@@ -23,6 +23,7 @@ import {
   computeShotQuality,
   computeTeamStats,
   countedPossessions,
+  countedLooks,
   periodLengthSeconds,
   type GameFormat,
   type Possession,
@@ -375,12 +376,14 @@ function statMap(possessions: Possession[], team: "us" | "opponent", goals: Stat
  */
 function extraStats(possessions: Possession[], team: "us" | "opponent"): Record<string, number | null> {
   const own = countedPossessions(possessions).filter((p) => p.team === team);
-  const oob = own.filter((p) => p.possession_type === "blob" || p.possession_type === "slob");
+  // Per look: an inbounds that flowed into a set scores nothing itself, so
+  // this answers whether the inbounds play worked, not what the set did.
+  const oob = countedLooks(possessions, team).filter((r) => r.look.type === "blob" || r.look.type === "slob");
   const fga = own.filter((p) => p.outcome === "fg_made" || p.outcome === "fg_missed");
   const fga3 = fga.filter((p) => p.shot_type === 3);
   const sq = computeShotQuality(possessions, team);
   return {
-    oob_ppp: oob.length ? round2(oob.reduce((s, p) => s + (p.points ?? 0), 0) / oob.length) : null,
+    oob_ppp: oob.length ? round2(oob.reduce((s, r) => s + r.look.points, 0) / oob.length) : null,
     oob_trips: oob.length,
     three_rate: fga.length ? Math.round((fga3.length / fga.length) * 1000) / 10 : null,
     sq_great: sq.total ? sq.breakdown.great : null,
