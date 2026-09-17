@@ -647,14 +647,12 @@ function LooksCard({
 
               {(l.type === "blob" || l.type === "slob") && !l.putback && (
                 <>
-                  {p.team === "us" && (
-                    <Field label="Defense on inbounds">
-                      <select value={l.oob_defense ?? ""} onChange={(e) => updateLook(i, { oob_defense: (e.target.value || null) as OobDefense | null })} style={selectStyle}>
-                        <option value="">— untagged</option>
-                        {OOB_DEFENSES.map((d) => <option key={d} value={d}>vs {d}</option>)}
-                      </select>
-                    </Field>
-                  )}
+                  <Field label={p.team === "us" ? "Defense on inbounds" : "Our defense on inbounds"}>
+                    <select value={l.oob_defense ?? ""} onChange={(e) => updateLook(i, { oob_defense: (e.target.value || null) as OobDefense | null })} style={selectStyle}>
+                      <option value="">— untagged</option>
+                      {OOB_DEFENSES.map((d) => <option key={d} value={d}>{p.team === "us" ? `vs ${d}` : d}</option>)}
+                    </select>
+                  </Field>
                   {l.end !== "flowed" && (
                     <Field label="OOB result">
                       <select value={l.oob_result ?? ""} onChange={(e) => updateLook(i, { oob_result: (e.target.value || null) as OobResult | null })} style={selectStyle}>
