@@ -310,9 +310,11 @@ function actionSliceBounds(seq: PlayAction[]): { moveStart: number; moveEnd: num
  * 3D viewer to pick a single position for a player mesh, since (unlike 2D,
  * which renders every action independently) there's only one mesh to move.
  */
-export function activeSequenceIndex(t: number, seq: PlayAction[]): number {
+export function activeSequenceIndex(t: number, seq: PlayAction[], frame?: PlayFrame): number {
   if (seq.length === 0) return -1;
-  const bounds = actionSliceBounds(seq);
+  // Pass the frame so screen-wait timing (see stepTiming) is honoured;
+  // without it this falls back to the plain whole-step split.
+  const bounds = frame ? boundsForSequence(frame, seq) : actionSliceBounds(seq);
   for (let i = seq.length - 1; i >= 0; i--) {
     if (t >= bounds[i].moveStart) return i;
   }
@@ -345,12 +347,12 @@ export function localActionProgress(globalT: number, action: PlayAction, frame: 
     const chain = ballChainSequence(frame, action);
     if (chain.length > 1) {
       const idx = chain.indexOf(action);
-      const { moveStart, moveEnd } = actionSliceBounds(chain)[idx];
-      if (globalT < moveStart) return 0;
-      if (globalT > moveEnd) return 1;
-      return (globalT - moveStart) / (moveEnd - moveStart);
+      const { moveStart, moveEnd } = boundsForSequence(frame, chain)[idx];
+      return progressIn(globalT, moveStart, moveEnd);
     }
   }
+  const timed = stepTiming(frame)?.bounds.get(action);
+  if (timed) return progressIn(globalT, timed.moveStart, timed.moveEnd);
   if (!action.sourcePlayerId) return globalT;
   const seq = playerActionSequence(frame, action.sourcePlayerId);
   const total = seq.length;
@@ -360,6 +362,256 @@ export function localActionProgress(globalT: number, action: PlayAction, frame: 
   if (globalT < moveStart) return 0;
   if (globalT > moveEnd) return 1;
   return (globalT - moveStart) / (moveEnd - moveStart);
+}
+
+function progressIn(t: number, start: number, end: number): number {
+  if (t <= start) return 0;
+  if (t >= end || end <= start) return 1;
+  return (t - start) / (end - start);
+}
+
+// ── Screen-wait timing ───────────────────────────────────────────
+// Every player's moves used to run on their own clock across the whole
+// step, so a cutter drawn in the same step as the screen they use ran past
+// the spot long before the screener got there. Now, in any step where
+// someone's path runs close to a screen spot, the step plays in "waves":
+// screens set first, then whoever uses them goes. Anyone not involved
+// keeps the old whole-step timing. Steps with no screen users are
+// untouched -- stepTiming returns null and every caller falls back to
+// the original code path.
+//
+// Waves chain: a player who uses a screen and then sets one is in wave 1,
+// so whoever uses THAT screen goes in wave 2 (screen-the-screener).
+//
+//   - A move/dribble uses a screen if its path passes within
+//     SCREEN_USE_RADIUS of the screen's end spot. A screen action only
+//     counts as using another screen if it doesn't also END beside it
+//     (two screeners setting side by side are a double screen, not a
+//     sequence).
+//   - A pass or lob waits for its receiver's wave, so the ball doesn't
+//     arrive before a delayed cutter does.
+//   - A screener's moves after the screen (roll, pop) start once the first
+//     player using it has gone past the spot, not before.
+
+const SCREEN_USE_RADIUS = 50;
+const MAX_WAVE = 3;
+
+interface SliceBounds { moveStart: number; moveEnd: number }
+interface StepTiming {
+  /** Per-action bounds for every action in an involved player's chain. Players not involved are absent (old timing applies). */
+  bounds: Map<PlayAction, SliceBounds>;
+  wave: Map<PlayAction, number>;
+  waves: number;
+  maxPerWave: number;
+}
+
+const timingCache = new WeakMap<PlayFrame, StepTiming | null>();
+
+function pointOnAction(a: PlayAction, u: number): PlayPoint {
+  const mt = 1 - u;
+  if (a.curve2 && a.curve) {
+    return {
+      x: mt * mt * mt * a.x1 + 3 * mt * mt * u * a.curve.x + 3 * mt * u * u * a.curve2.x + u * u * u * a.x2,
+      y: mt * mt * mt * a.y1 + 3 * mt * mt * u * a.curve.y + 3 * mt * u * u * a.curve2.y + u * u * u * a.y2,
+    };
+  }
+  if (a.curve) {
+    return {
+      x: mt * mt * a.x1 + 2 * mt * u * a.curve.x + u * u * a.x2,
+      y: mt * mt * a.y1 + 2 * mt * u * a.curve.y + u * u * a.y2,
+    };
+  }
+  return { x: a.x1 + (a.x2 - a.x1) * u, y: a.y1 + (a.y2 - a.y1) * u };
+}
+
+/** Closest approach of an action's path to a point: distance, and how far along the path (0-1) it happens. */
+function closestApproach(a: PlayAction, pt: PlayPoint): { dist: number; at: number } {
+  const SAMPLES = 32;
+  let best = { dist: Infinity, at: 0 };
+  for (let i = 0; i <= SAMPLES; i++) {
+    const u = i / SAMPLES;
+    const p = pointOnAction(a, u);
+    const d = Math.hypot(p.x - pt.x, p.y - pt.y);
+    if (d < best.dist) best = { dist: d, at: u };
+  }
+  return best;
+}
+
+function sliceWindow(group: PlayAction[], start: number, end: number, out: Map<PlayAction, SliceBounds>) {
+  if (group.length === 0) return;
+  if (group.length === 1) {
+    // A lone action travels its whole window, same as a lone action
+    // travels the whole step today.
+    out.set(group[0], { moveStart: start, moveEnd: end });
+    return;
+  }
+  const rel = actionSliceBounds(group);
+  const len = end - start;
+  group.forEach((a, i) => out.set(a, { moveStart: start + rel[i].moveStart * len, moveEnd: start + rel[i].moveEnd * len }));
+}
+
+/** Splits a sequence into runs of the same wave (waves never decrease along a sequence). */
+function groupByWave(seq: PlayAction[], wave: Map<PlayAction, number>): { w: number; actions: PlayAction[] }[] {
+  const groups: { w: number; actions: PlayAction[] }[] = [];
+  for (const a of seq) {
+    const w = wave.get(a) ?? 0;
+    const last = groups[groups.length - 1];
+    if (last && last.w === w) last.actions.push(a); else groups.push({ w, actions: [a] });
+  }
+  return groups;
+}
+
+function stepTiming(frame: PlayFrame): StepTiming | null {
+  if (timingCache.has(frame)) return timingCache.get(frame)!;
+  const result = computeStepTiming(frame);
+  timingCache.set(frame, result);
+  return result;
+}
+
+function computeStepTiming(frame: PlayFrame): StepTiming | null {
+  const screens = frame.actions.filter((a) => a.type === "screen" && a.sourcePlayerId);
+  if (screens.length === 0) return null;
+
+  // Who uses which screen.
+  const usesScreens = new Map<PlayAction, PlayAction[]>();
+  const usersOf = new Map<PlayAction, { user: PlayAction; at: number }[]>();
+  for (const screen of screens) {
+    const spot = { x: screen.x2, y: screen.y2 };
+    for (const m of frame.actions) {
+      if (m === screen || !m.sourcePlayerId || m.sourcePlayerId === screen.sourcePlayerId) continue;
+      if (m.type !== "move" && m.type !== "dribble" && m.type !== "screen") continue;
+      const near = closestApproach(m, spot);
+      if (near.dist > SCREEN_USE_RADIUS) continue;
+      if (m.type === "screen" && Math.hypot(m.x2 - spot.x, m.y2 - spot.y) <= SCREEN_USE_RADIUS) continue;
+      usesScreens.set(m, [...(usesScreens.get(m) ?? []), screen]);
+      usersOf.set(screen, [...(usersOf.get(screen) ?? []), { user: m, at: near.at }]);
+    }
+  }
+  if (usesScreens.size === 0) return null;
+
+  // Chains by player, in order.
+  const sources = Array.from(new Set(frame.actions.map((a) => a.sourcePlayerId).filter((id): id is string => !!id)));
+  const chains = new Map<string, PlayAction[]>(sources.map((id) => [id, playerActionSequence(frame, id)]));
+
+  // Assign waves, iterating until stable (bounded, so a circular drawing
+  // -- two players "using" each other's screens -- can't loop forever).
+  const wave = new Map<PlayAction, number>();
+  const afterScreen = new Map<PlayAction, PlayAction>();
+  frame.actions.forEach((a) => wave.set(a, 0));
+  for (let pass = 0; pass < 8; pass++) {
+    let changed = false;
+    for (const seq of chains.values()) {
+      let running = 0;
+      let pendingScreen: PlayAction | null = null;
+      for (const a of seq) {
+        let w = running;
+        for (const s of usesScreens.get(a) ?? []) w = Math.max(w, (wave.get(s) ?? 0) + 1);
+        if ((a.type === "pass" || a.type === "lob") && a.targetPlayerId) {
+          for (const r of chains.get(a.targetPlayerId) ?? []) {
+            if (r.type === "move" || r.type === "dribble" || r.type === "screen") w = Math.max(w, wave.get(r) ?? 0);
+          }
+        }
+        w = Math.min(w, MAX_WAVE);
+        if (wave.get(a) !== w) { wave.set(a, w); changed = true; }
+        if (pendingScreen) { afterScreen.set(a, pendingScreen); pendingScreen = null; }
+        running = w;
+        if (a.type === "screen" && usersOf.has(a)) {
+          running = Math.min(w + 1, MAX_WAVE);
+          pendingScreen = a;
+        }
+      }
+    }
+    if (!changed) break;
+  }
+
+  // Keep every ball chain in order: a later hop never goes before an earlier one.
+  for (const a of frame.actions) {
+    if (a.type !== "pass" && a.type !== "lob") continue;
+    const chain = ballChainSequence(frame, a);
+    let run = 0;
+    for (const c of chain) { run = Math.max(run, wave.get(c) ?? 0); wave.set(c, run); }
+  }
+  // ...and re-level each player's own chain after that, so their waves
+  // still never go backwards.
+  for (const seq of chains.values()) {
+    let run = 0;
+    for (const c of seq) { run = Math.max(run, wave.get(c) ?? 0); wave.set(c, run); }
+  }
+
+  const waves = Math.max(...Array.from(wave.values())) + 1;
+  if (waves <= 1) return null;
+
+  const involved = (seq: PlayAction[]) =>
+    seq.some((a) => (wave.get(a) ?? 0) > 0 || (a.type === "screen" && usersOf.has(a)));
+
+  const bounds = new Map<PlayAction, SliceBounds>();
+  let maxPerWave = 1;
+  const layout = (release: Map<PlayAction, number>) => {
+    for (const seq of chains.values()) {
+      if (!involved(seq)) continue;
+      for (const g of groupByWave(seq, wave)) {
+        let start = g.w / waves;
+        const end = (g.w + 1) / waves;
+        const releaseAt = release.get(g.actions[0]);
+        if (releaseAt !== undefined) start = Math.min(Math.max(start, releaseAt), end - 0.02);
+        sliceWindow(g.actions, start, end, bounds);
+        maxPerWave = Math.max(maxPerWave, g.actions.length);
+      }
+    }
+  };
+
+  // First pass: everyone at the start of their wave. Then work out when
+  // each used screen's first user actually goes past the spot, and lay
+  // out again so the screener's roll/pop waits for that moment.
+  layout(new Map());
+  const release = new Map<PlayAction, number>();
+  for (const [a, screen] of afterScreen) {
+    let first = Infinity;
+    for (const { user, at } of usersOf.get(screen) ?? []) {
+      const b = bounds.get(user);
+      if (b) first = Math.min(first, b.moveStart + at * (b.moveEnd - b.moveStart));
+    }
+    if (first !== Infinity) release.set(a, first + 0.03);
+  }
+  if (release.size > 0) layout(release);
+
+  return { bounds, wave, waves, maxPerWave };
+}
+
+/**
+ * Time slices for a sequence -- a player's own chain or a cross-player
+ * ball chain -- honouring screen-wait timing when the step has any.
+ */
+function boundsForSequence(frame: PlayFrame, seq: PlayAction[]): SliceBounds[] {
+  const timing = stepTiming(frame);
+  if (!timing) return actionSliceBounds(seq);
+  const isBallChain = seq.length > 1 && new Set(seq.map((a) => a.sourcePlayerId)).size > 1;
+  if (isBallChain) {
+    if (!seq.some((a) => (timing.wave.get(a) ?? 0) > 0)) return actionSliceBounds(seq);
+    const out = new Map<PlayAction, SliceBounds>();
+    for (const g of groupByWave(seq, timing.wave)) sliceWindow(g.actions, g.w / timing.waves, (g.w + 1) / timing.waves, out);
+    return seq.map((a) => out.get(a)!);
+  }
+  if (seq.every((a) => timing.bounds.has(a))) return seq.map((a) => timing.bounds.get(a)!);
+  return actionSliceBounds(seq);
+}
+
+/**
+ * How long a step should play, in single-action units (the 2D and 3D
+ * players multiply this by their per-action time). A chained sequence
+ * needs proportionally more time; a step split into screen waves needs
+ * enough for each wave to play at normal speed.
+ */
+export function stepTimingUnits(frame: PlayFrame): number {
+  const maxChainLen = Math.max(
+    1,
+    ...frame.players.map((p) => (p.id ? playerActionSequence(frame, p.id).length : 1)),
+    ...frame.defenders.map((d) => (d.id ? playerActionSequence(frame, d.id).length : 1)),
+    ...frame.actions.filter((a) => a.type === "pass" || a.type === "lob").map((a) => ballChainSequence(frame, a).length)
+  );
+  const timing = stepTiming(frame);
+  if (!timing) return maxChainLen;
+  return Math.max(maxChainLen, timing.waves * timing.maxPerWave);
 }
 
 /** Generates a stable id for a newly-placed player. Not cryptographically meaningful — just needs to be unique within a play. */
