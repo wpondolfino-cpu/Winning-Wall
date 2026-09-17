@@ -94,7 +94,7 @@ export interface Possession {
    * (see summarizeLooks) and must agree with them.
    */
   looks: Look[] | null;
-  /** Missed last free throws with the ball live -- rebound chances, whoever got the board. Feeds OREB%. */
+  /** Unused: free throws are left out of OREB% entirely. Kept because the column exists (migration 134). */
   live_ft_misses: number;
   created_by: string;
   created_at: string;
@@ -144,8 +144,6 @@ export interface Look {
   /** Free throws taken in this look -- an FT trip, or the bonus shot of an And-1. */
   ft_attempts: number | null;
   ft_made: number | null;
-  /** The last free throw of this look was missed with the ball live. */
-  ft_rebound_chance: boolean;
   /** Points scored in this look only. */
   points: number;
 }
@@ -164,7 +162,7 @@ export function emptyLook(type: PossessionType): Look {
     press_result: null, press_break_type_id: null, press_break_result: null,
     oob_result: null, oob_defense: null, paint_touch: false, paint_touch_both_sides: false,
     end: "final", outcome: null, shot_type: null, shot_quality: null, turnover_type: null,
-    ft_attempts: null, ft_made: null, ft_rebound_chance: false, points: 0,
+    ft_attempts: null, ft_made: null, points: 0,
   };
 }
 
@@ -286,7 +284,10 @@ export function summarizeLooks(looks: Look[]): Pick<Possession,
     missed_fg3_count: missedFg.filter((l) => l.shot_type === 3).length,
     absorbed_ft_attempts: otherFtLooks.reduce((s, l) => s + (l.ft_attempts ?? 0), 0),
     absorbed_ft_made: otherFtLooks.reduce((s, l) => s + (l.ft_made ?? 0), 0),
-    live_ft_misses: looks.filter((l) => l.ft_rebound_chance).length,
+    // Always 0: the tracker can't tell a missed LAST free throw from a
+    // missed first one without an extra tap, so free throws are left out
+    // of OREB% on both sides of the fraction instead (see computeTeamStats).
+    live_ft_misses: 0,
     outcome: final.outcome ?? "fg_missed",
     shot_type: final.shot_type,
     shot_quality: final.shot_quality,
@@ -483,7 +484,7 @@ export const STAT_EXPLAINERS: Record<string, { what: string; how: string }> = {
   ft_pct: { what: "Free throw percentage. Includes intentional-foul and technical free throws, since a free throw is a free throw.", how: "FTM / FTA" },
   ft_rate: { what: "How often we get to the line relative to how often we shoot. A proxy for attacking rather than settling. Intentional-foul and technical free throws are excluded, since the offense didn't earn them.", how: "earned FTA / FGA" },
   tov_pct: { what: "Share of possessions that ended in a turnover.", how: "turnovers / possessions" },
-  oreb_pct: { what: "Share of available offensive rebounds collected. A missed last free throw with the ball live is a rebound chance too, not just a missed field goal.", how: "OREB / (missed FGs + live missed last FTs)" },
+  oreb_pct: { what: "Share of available offensive rebounds collected, field goals only. Free throws sit outside it on both sides: a rebounded free throw isn't counted here, and a missed one isn't counted as a chance. They still count everywhere else -- the trip carries on, and the points land in second chance points.", how: "rebounds of missed FGs / missed FGs" },
   transition_pct: { what: "Share of looks that were transition. A press break that got out and ran is a transition look, and so is a putback off a transition miss.", how: "transition looks / all looks" },
   transition_ppp: { what: "Points per transition look, including breaks against a press that pushed and putbacks off a transition miss. A transition miss that was rebounded and pulled out into a set is a transition look worth 0, and the set gets the points.", how: "points scored in transition looks / transition looks" },
   halfcourt_ppp: { what: "Points per half-court look. A BLOB, SLOB or press break that flowed into a set is its own half-court look, so is every set run after an offensive rebound, and so is a putback off a half-court miss. Each look only brings the points scored in it.", how: "points scored in half-court looks / half-court looks" },
@@ -1087,15 +1088,17 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   const deadTov = trips.filter((p) => p.outcome === "turnover" && p.turnover_type === "dead").length;
   const chargeTov = trips.filter((p) => p.outcome === "turnover" && p.turnover_type === "charge").length;
   const oreb = trips.reduce((s, p) => s + p.oreb_count, 0);
-  // Rebound chances: every missed field goal (the rebounded ones in
-  // missed_fg_count, plus the final shot if the trip ended on a miss) and
-  // every missed LAST free throw with the ball live (live_ft_misses,
-  // rebounded or not). oreb_count already includes free-throw rebounds,
-  // so both halves of the fraction now count them.
-  const orebOpportunities = trips.reduce(
-    (s, p) => s + p.missed_fg_count + (p.outcome === "fg_missed" ? 1 : 0) + (p.live_ft_misses ?? 0),
-    0
-  );
+  // OREB% is field goals only, on BOTH sides. Chances are every missed
+  // field goal: the rebounded ones (missed_fg_count) plus the final shot
+  // if the trip ended on a miss. The rebounds counted against them are
+  // therefore rebounds of missed field goals -- which is exactly
+  // missed_fg_count -- not oreb_count, which also counts free throw
+  // rebounds. Telling a missed LAST free throw from a missed first one
+  // would need an extra tap, so free throws stay out of the percentage;
+  // they still count everywhere else (the trip continues, second chance
+  // points, extra possessions).
+  const orebFg = trips.reduce((s, p) => s + p.missed_fg_count, 0);
+  const orebOpportunities = trips.reduce((s, p) => s + p.missed_fg_count + (p.outcome === "fg_missed" ? 1 : 0), 0);
   // FT makes/attempts from a trip that ended as an ft_trip itself, PLUS any
   // FT attempts that happened earlier in a trip but got absorbed into a
   // later, different final outcome (missed a FT, got the OREB, kept going)
@@ -1136,7 +1139,7 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   const secondChancePpp = oreb ? trips.reduce((s, p) => s + secondChancePointsOf(p, true), 0) / oreb : 0;
   const ftPct = ftAttempted ? (ftMade / ftAttempted) * 100 : 0;
   const tovPct = trips.length ? (turnovers / trips.length) * 100 : 0;
-  const orebPct = orebOpportunities ? (oreb / orebOpportunities) * 100 : 0;
+  const orebPct = orebOpportunities ? (orebFg / orebOpportunities) * 100 : 0;
   const ftRate = fgaCount ? ftAttemptedEarned / fgaCount : 0;
   const paintTouchSinglePct = paintLooks.length ? (paintTouchSingle / paintLooks.length) * 100 : 0;
   const paintTouchBothPct = paintLooks.length ? (paintTouchBoth / paintLooks.length) * 100 : 0;
@@ -1155,7 +1158,7 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
     { key: "possessions", label: "Possessions", value: trips.length },
     { key: "ft_pct", label: "FT%", value: round1(ftPct), raw: `${ftMade}/${ftAttempted}` },
     { key: "transition_pct", label: "Transition %", value: round1(transitionPct), raw: `${transitionLooks.length}/${looks.length}` },
-    { key: "oreb_pct", label: "OREB%", value: round1(orebPct), raw: `${oreb}/${orebOpportunities}` },
+    { key: "oreb_pct", label: "OREB%", value: round1(orebPct), raw: `${orebFg}/${orebOpportunities}` },
     { key: "tov_pct", label: "TOV%", value: round1(tovPct), raw: `${liveTov}+${deadTov}+${chargeTov}=${turnovers}` },
     { key: "ft_rate", label: "FT rate %", value: round1(ftRate * 100) },
     { key: "paint_touch_single", label: "Paint touch %", value: round1(paintTouchSinglePct), raw: `${paintTouchSingle}/${paintLooks.length}` },
