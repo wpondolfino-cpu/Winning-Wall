@@ -22,6 +22,15 @@
 // version just stays queued (replacing whatever was queued before) and
 // tries again on the next sync trigger -- so editing a broken record is
 // also how you retry it, with the fix already baked in.
+//
+// Looks (migration 134): a trip tracked with looks is edited look by look
+// -- trip-wide fields on top, then one row per look -- and every edit is
+// written back through summarizeLooks, so the rebound, missed-shot and
+// free-throw counts, the possession type and the points are all worked
+// out from the looks rather than typed. Trips tracked before looks
+// existed keep the original card, where those counts are edited by hand:
+// the detail of their earlier looks was never saved, so rebuilding them
+// from looks would wipe the counts.
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
@@ -48,6 +57,13 @@ import {
   type Outcome,
   type ShotQuality,
   type TurnoverType,
+  type Look,
+  type LookEnd,
+  type DefenseScheme,
+  type PressResult,
+  emptyLook,
+  summarizeLooks,
+  LOOK_END_LABELS,
 } from "../../lib/gameStats";
 
 interface Props {
@@ -175,6 +191,22 @@ export default function PossessionEditor({ gameId, opponent, format = DEFAULT_GA
         );
         const pressTypes = playCalls.filter((pc) => pc.category === "press_type");
 
+        if (p.looks && p.looks.length) {
+          return (
+            <LooksCard
+              key={p.id}
+              p={p}
+              format={format}
+              playCalls={playCalls}
+              isQueued={isQueued}
+              err={err}
+              saving={savingId === p.id}
+              onSave={(patch) => save(p, patch)}
+              onDelete={() => remove(p.id)}
+            />
+          );
+        }
+
         return (
           <div key={p.id} style={{ borderTop: "1px solid var(--border)", padding: "12px 0" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -190,6 +222,7 @@ export default function PossessionEditor({ gameId, opponent, format = DEFAULT_GA
               <button style={{ ...actionBtn, background: "transparent", color: "#8a2f2f" }} onClick={() => remove(p.id)}>Delete</button>
             </div>
             {err && isQueued && <div style={{ fontSize: 11, color: "#c2402f", marginBottom: 8 }}>{err}</div>}
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 8 }}>Tracked before looks were recorded -- counts are edited by hand.</div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }}>
               <Field label="Team">
@@ -357,6 +390,420 @@ export default function PossessionEditor({ gameId, opponent, format = DEFAULT_GA
   );
 }
 
+// ── Looks editor ────────────────────────────────────────────────
+
+const LOOK_TYPES: PossessionType[] = ["transition", "half_court", "blob", "slob", "press_break", "press"];
+const LOOK_TYPE_LABELS: Record<PossessionType, string> = {
+  transition: "Transition",
+  half_court: "Half court",
+  blob: "BLOB",
+  slob: "SLOB",
+  press_break: "Press break",
+  press: "Press (our D)",
+  non_possession_ft: "Awarded FTs",
+};
+const DEFENSE_SCHEMES: DefenseScheme[] = ["man", "zone"];
+const PRESS_RESULTS: PressResult[] = ["turnover", "man", "zone"];
+
+/** How an earlier (non-final) look ended, as one pickable value. */
+type EarlierResult = "miss2" | "miss3" | "missft" | "flowed" | "broke_press" | "reset";
+const EARLIER_RESULTS: { value: EarlierResult; label: string }[] = [
+  { value: "miss2", label: "Missed 2, rebounded" },
+  { value: "miss3", label: "Missed 3, rebounded" },
+  { value: "missft", label: "Missed FT, rebounded" },
+  { value: "flowed", label: "Flowed" },
+  { value: "broke_press", label: "Broke the press" },
+  { value: "reset", label: "Reset (foul/jump/OOB)" },
+];
+
+function earlierResultOf(l: Look): EarlierResult {
+  if (l.end === "rebounded") return l.outcome === "ft_trip" ? "missft" : l.shot_type === 3 ? "miss3" : "miss2";
+  return l.end as EarlierResult;
+}
+
+/** Points a look scored, from its result -- never typed, so it can't disagree with the result. */
+function lookPoints(l: Look): number {
+  if (l.outcome === "fg_made") return (l.shot_type ?? 2) + (l.ft_made ?? 0);
+  if (l.outcome === "ft_trip") return l.ft_made ?? 0;
+  return 0;
+}
+
+function applyEarlierResult(l: Look, r: EarlierResult): Look {
+  const cleared: Look = {
+    ...l, outcome: null, shot_type: null, shot_quality: null, turnover_type: null,
+    ft_attempts: null, ft_made: null, ft_rebound_chance: false,
+  };
+  if (r === "miss2" || r === "miss3") {
+    return { ...cleared, end: "rebounded", outcome: "fg_missed", shot_type: r === "miss3" ? 3 : 2, shot_quality: l.shot_quality };
+  }
+  if (r === "missft") {
+    return { ...cleared, end: "rebounded", outcome: "ft_trip", ft_attempts: l.ft_attempts ?? 2, ft_made: l.ft_made ?? 0, shot_quality: "great", ft_rebound_chance: true };
+  }
+  return { ...cleared, end: r as LookEnd };
+}
+
+function LooksCard({
+  p, format, playCalls, isQueued, err, saving, onSave, onDelete,
+}: {
+  p: Possession;
+  format: GameFormat;
+  playCalls: PlayCall[];
+  isQueued: boolean;
+  err?: string;
+  saving: boolean;
+  onSave: (patch: Partial<Possession>) => void;
+  onDelete: () => void;
+}) {
+  const looks = p.looks ?? [];
+  const pressTypes = playCalls.filter((pc) => pc.category === "press_type");
+
+  function write(next: Look[]) {
+    const withPoints = next.map((l) => ({ ...l, points: lookPoints(l) }));
+    onSave(summarizeLooks(withPoints));
+  }
+
+  function updateLook(i: number, patch: Partial<Look>) {
+    write(looks.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  }
+
+  function changeType(i: number, type: PossessionType) {
+    // Anything that only belonged to the old type goes; the result stays.
+    updateLook(i, {
+      type, half_court_type: null, play_call_id: null, paint_touch: false, paint_touch_both_sides: false,
+      press_result: null, press_break_type_id: null, press_break_result: null, oob_result: null, oob_defense: null,
+    });
+  }
+
+  function removeLook(i: number) {
+    if (!window.confirm("Remove this look?")) return;
+    write(looks.filter((_, j) => j !== i));
+  }
+
+  function addEarlierLook() {
+    // The common fix is a rebound that wasn't tapped live: a missed 2 of
+    // the same type as the look that followed it.
+    const final = looks[looks.length - 1];
+    const added: Look = { ...emptyLook(final.type === "non_possession_ft" ? "half_court" : final.type), end: "rebounded", outcome: "fg_missed", shot_type: 2, defense_scheme: final.defense_scheme };
+    write([...looks.slice(0, -1), added, final]);
+  }
+
+  const summaryBits = [
+    p.oreb_count ? `${p.oreb_count} offensive rebound${p.oreb_count === 1 ? "" : "s"}` : null,
+    p.missed_fg_count ? `${p.missed_fg_count} rebounded miss${p.missed_fg_count === 1 ? "" : "es"}` : null,
+    p.absorbed_ft_attempts ? `${p.absorbed_ft_made}/${p.absorbed_ft_attempts} other FTs` : null,
+    p.live_ft_misses ? `${p.live_ft_misses} live missed last FT` : null,
+  ].filter(Boolean);
+
+  return (
+    <div style={{ borderTop: "1px solid var(--border)", padding: "12px 0" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>{periodLabel(format, p.quarter)} · #{p.sequence}</span>
+          {isQueued && (
+            <span style={{ fontSize: 12, color: "#c2402f" }} title={err ?? "Not yet synced"}>
+              ⚠ {err ? "sync failed" : "unsynced"}
+            </span>
+          )}
+          {saving && <span style={{ fontSize: 11, color: "var(--muted)" }}>saving…</span>}
+        </div>
+        <button style={{ ...actionBtn, background: "transparent", color: "#8a2f2f" }} onClick={onDelete}>Delete</button>
+      </div>
+      {err && isQueued && <div style={{ fontSize: 11, color: "#c2402f", marginBottom: 8 }}>{err}</div>}
+
+      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Trip</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }}>
+        <Field label="Team">
+          <select value={p.team} onChange={(e) => onSave({ team: e.target.value as Team })} style={selectStyle}>
+            {TEAMS.map((t) => <option key={t} value={t}>{t === "us" ? "Us" : "Opponent"}</option>)}
+          </select>
+        </Field>
+        <Field label={periodNoun(format)}>
+          <NumberField value={p.quarter} min={1} max={12} commitOn="blur" onChange={(n) => onSave({ quarter: n })} style={selectStyle} />
+        </Field>
+        <Field label="Counts as">
+          <div style={readOnlyStyle}>{LOOK_TYPE_LABELS[p.possession_type]}</div>
+        </Field>
+        <Field label="Points">
+          <div style={readOnlyStyle}>{p.points}</div>
+        </Field>
+        {(looks[0].type === "non_possession_ft" || p.ft_award_type) && (
+          <Field label="FTs awarded for">
+            <select value={p.ft_award_type ?? ""} onChange={(e) => onSave({ ft_award_type: (e.target.value || null) as FtAwardType | null })} style={selectStyle}>
+              <option value="">—</option>
+              {FT_AWARD_TYPES.map((t) => <option key={t} value={t}>{t === "eog" ? "end of game" : t}</option>)}
+            </select>
+          </Field>
+        )}
+      </div>
+      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
+        Counts as, points{summaryBits.length ? " and the counts here" : ""} come from the looks below{summaryBits.length ? ` · ${summaryBits.join(" · ")}` : ""}
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 12 }}>
+        <div style={{ fontSize: 12, fontWeight: 600 }}>Looks</div>
+        <button style={actionBtn} onClick={addEarlierLook}>+ Add look before final</button>
+      </div>
+
+      {looks.map((l, i) => {
+        const isFinal = i === looks.length - 1;
+        const isAwarded = l.type === "non_possession_ft";
+        const structureCategory = l.half_court_type && l.half_court_type !== "unscripted" ? l.half_court_type : null;
+        const callList =
+          l.type === "blob" || l.type === "slob" ? playCalls.filter((pc) => pc.category === l.type)
+          : structureCategory ? playCalls.filter((pc) => pc.category === structureCategory)
+          : [];
+        const showCall = !l.putback && p.team === "us" && callList.length > 0 && (l.type === "blob" || l.type === "slob" || !!structureCategory);
+        const isShot = l.outcome === "fg_made" || l.outcome === "fg_missed";
+        const tag =
+          isFinal ? { text: "Final", bg: "rgba(31,122,77,0.18)", fg: "#1f7a4d" }
+          : l.end === "rebounded" ? { text: LOOK_END_LABELS.rebounded, bg: "rgba(138,101,18,0.18)", fg: "#8a6512" }
+          : { text: LOOK_END_LABELS[l.end], bg: "rgba(37,80,212,0.15)", fg: "var(--royal-light)" };
+
+        return (
+          <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", marginTop: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>Look {i + 1}</span>
+                <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, background: tag.bg, color: tag.fg }}>{tag.text}</span>
+                {l.putback && <span style={{ fontSize: 11, color: "var(--muted)" }}>putback</span>}
+                <span style={{ fontSize: 11, color: "var(--muted)" }}>{l.points} pts</span>
+              </div>
+              {!isFinal && (
+                <button style={{ ...actionBtn, background: "transparent", color: "#8a2f2f", padding: "4px 8px" }} onClick={() => removeLook(i)} title="Remove look">
+                  Remove
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 8 }}>
+              <Field label="Type">
+                {isAwarded ? (
+                  <div style={readOnlyStyle}>{LOOK_TYPE_LABELS[l.type]}</div>
+                ) : (
+                  <select value={l.type} onChange={(e) => changeType(i, e.target.value as PossessionType)} style={selectStyle}>
+                    {LOOK_TYPES.map((t) => <option key={t} value={t}>{LOOK_TYPE_LABELS[t]}</option>)}
+                  </select>
+                )}
+              </Field>
+
+              {i > 0 && !isAwarded && (
+                <Field label="Putback">
+                  <label style={checkboxLabelStyle}>
+                    <input
+                      type="checkbox"
+                      checked={l.putback}
+                      onChange={(e) => updateLook(i, e.target.checked
+                        ? { putback: true, half_court_type: null, play_call_id: null, paint_touch: false, paint_touch_both_sides: false }
+                        : { putback: false })}
+                    /> straight off the rebound
+                  </label>
+                </Field>
+              )}
+
+              {l.type === "half_court" && !l.putback && p.team === "us" && (
+                <Field label="Structure">
+                  <select
+                    value={l.half_court_type ?? ""}
+                    onChange={(e) => updateLook(i, { half_court_type: (e.target.value || null) as HalfCourtType | null, play_call_id: null })}
+                    style={selectStyle}
+                  >
+                    <option value="">—</option>
+                    {HALF_COURT_TYPES.map((t) => <option key={t} value={t}>{HALF_COURT_LABELS[t]}</option>)}
+                  </select>
+                </Field>
+              )}
+
+              {(l.type === "half_court" || l.type === "transition") && p.team === "opponent" && (
+                <Field label="Our defense">
+                  <select value={l.defense_scheme ?? ""} onChange={(e) => updateLook(i, { defense_scheme: (e.target.value || null) as DefenseScheme | null })} style={selectStyle}>
+                    <option value="">—</option>
+                    {DEFENSE_SCHEMES.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </Field>
+              )}
+
+              {showCall && (
+                <Field label="Play call">
+                  <select value={l.play_call_id ?? ""} onChange={(e) => updateLook(i, { play_call_id: e.target.value || null })} style={selectStyle}>
+                    <option value="">—</option>
+                    {callList.map((pc) => <option key={pc.id} value={pc.id}>{pc.name}</option>)}
+                  </select>
+                </Field>
+              )}
+
+              {l.type === "half_court" && !l.putback && (
+                <>
+                  <Field label="Paint touch">
+                    <label style={checkboxLabelStyle}>
+                      <input type="checkbox" checked={l.paint_touch} onChange={(e) => updateLook(i, { paint_touch: e.target.checked })} /> touched
+                    </label>
+                  </Field>
+                  <Field label="Both sides">
+                    <label style={checkboxLabelStyle}>
+                      <input type="checkbox" checked={l.paint_touch_both_sides} onChange={(e) => updateLook(i, { paint_touch_both_sides: e.target.checked })} /> both sides
+                    </label>
+                  </Field>
+                </>
+              )}
+
+              {(l.type === "blob" || l.type === "slob") && !l.putback && (
+                <>
+                  {p.team === "us" && (
+                    <Field label="Defense on inbounds">
+                      <select value={l.oob_defense ?? ""} onChange={(e) => updateLook(i, { oob_defense: (e.target.value || null) as OobDefense | null })} style={selectStyle}>
+                        <option value="">— untagged</option>
+                        {OOB_DEFENSES.map((d) => <option key={d} value={d}>vs {d}</option>)}
+                      </select>
+                    </Field>
+                  )}
+                  {l.end !== "flowed" && (
+                    <Field label="OOB result">
+                      <select value={l.oob_result ?? ""} onChange={(e) => updateLook(i, { oob_result: (e.target.value || null) as OobResult | null })} style={selectStyle}>
+                        <option value="">—</option>
+                        {OOB_RESULTS.filter((o) => o !== "flowed_half_court").map((o) => <option key={o} value={o}>{o.replace("_", " ")}</option>)}
+                      </select>
+                    </Field>
+                  )}
+                </>
+              )}
+
+              {l.type === "press_break" && (
+                <>
+                  <Field label="Press faced">
+                    <select value={l.press_break_type_id ?? ""} onChange={(e) => updateLook(i, { press_break_type_id: e.target.value || null })} style={selectStyle}>
+                      <option value="">—</option>
+                      {pressTypes.map((pc) => <option key={pc.id} value={pc.id}>{pc.name}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Press break result">
+                    <select value={l.press_break_result ?? ""} onChange={(e) => updateLook(i, { press_break_result: (e.target.value || null) as PressBreakResult | null })} style={selectStyle}>
+                      <option value="">—</option>
+                      {PRESS_BREAK_RESULTS.map((r) => <option key={r} value={r}>{r.replace("_", " ")}</option>)}
+                    </select>
+                  </Field>
+                </>
+              )}
+
+              {l.type === "press" && (
+                <Field label="Press result">
+                  <select value={l.press_result ?? ""} onChange={(e) => updateLook(i, { press_result: (e.target.value || null) as PressResult | null })} style={selectStyle}>
+                    <option value="">—</option>
+                    {PRESS_RESULTS.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </Field>
+              )}
+
+              {/* ── Result ── */}
+              {!isFinal ? (
+                <Field label="Result">
+                  <select value={earlierResultOf(l)} onChange={(e) => write(looks.map((x, j) => (j === i ? applyEarlierResult(x, e.target.value as EarlierResult) : x)))} style={selectStyle}>
+                    {EARLIER_RESULTS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
+                </Field>
+              ) : (
+                <Field label="Outcome">
+                  <select
+                    value={l.outcome ?? ""}
+                    onChange={(e) => {
+                      const outcome = e.target.value as Outcome;
+                      updateLook(i, {
+                        outcome,
+                        shot_type: outcome === "fg_made" || outcome === "fg_missed" ? l.shot_type ?? 2 : null,
+                        shot_quality: outcome === "ft_trip" ? "great" : outcome === "turnover" ? null : l.shot_quality,
+                        turnover_type: outcome === "turnover" ? l.turnover_type : null,
+                        ft_attempts: outcome === "ft_trip" ? l.ft_attempts ?? 2 : null,
+                        ft_made: outcome === "ft_trip" ? l.ft_made ?? 0 : null,
+                        ft_rebound_chance: outcome === "ft_trip" ? l.ft_rebound_chance : false,
+                      });
+                    }}
+                    style={selectStyle}
+                  >
+                    {OUTCOMES.map((o) => <option key={o} value={o}>{o.replace("_", " ")}</option>)}
+                  </select>
+                </Field>
+              )}
+
+              {isShot && (
+                <>
+                  {isFinal && (
+                    <Field label="Shot type">
+                      <select value={l.shot_type ?? 2} onChange={(e) => updateLook(i, { shot_type: Number(e.target.value) as 2 | 3 })} style={selectStyle}>
+                        <option value="2">2pt</option>
+                        <option value="3">3pt</option>
+                      </select>
+                    </Field>
+                  )}
+                  <Field label="Shot quality">
+                    <select value={l.shot_quality ?? ""} onChange={(e) => updateLook(i, { shot_quality: (e.target.value || null) as ShotQuality | null })} style={selectStyle}>
+                      <option value="">—</option>
+                      {QUALITIES.map((q) => <option key={q} value={q}>{q}</option>)}
+                    </select>
+                  </Field>
+                </>
+              )}
+
+              {isFinal && l.outcome === "fg_made" && (
+                <Field label="And-1 free throw">
+                  <select
+                    value={l.ft_attempts ? (l.ft_made ? "made" : "missed") : ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      updateLook(i, v ? { ft_attempts: 1, ft_made: v === "made" ? 1 : 0 } : { ft_attempts: null, ft_made: null });
+                    }}
+                    style={selectStyle}
+                  >
+                    <option value="">none</option>
+                    <option value="made">made</option>
+                    <option value="missed">missed</option>
+                  </select>
+                </Field>
+              )}
+
+              {isFinal && l.outcome === "turnover" && (
+                <Field label="Turnover type">
+                  <select value={l.turnover_type ?? ""} onChange={(e) => updateLook(i, { turnover_type: (e.target.value || null) as TurnoverType | null })} style={selectStyle}>
+                    <option value="">—</option>
+                    {TURNOVER_TYPES.map((t) => <option key={t} value={t}>{TURNOVER_TYPE_LABELS[t]}</option>)}
+                  </select>
+                </Field>
+              )}
+
+              {l.outcome === "ft_trip" && (
+                <>
+                  <Field label="FT attempts">
+                    <select
+                      value={l.ft_attempts ?? 2}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        updateLook(i, { ft_attempts: n, ft_made: Math.min(l.ft_made ?? 0, n) });
+                      }}
+                      style={selectStyle}
+                    >
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                    </select>
+                  </Field>
+                  <Field label="FT made">
+                    <NumberField value={l.ft_made ?? 0} min={0} max={l.ft_attempts ?? 3} commitOn="blur" onChange={(n) => updateLook(i, { ft_made: n })} style={selectStyle} />
+                  </Field>
+                  {isFinal && (
+                    <Field label="Last FT">
+                      <label style={checkboxLabelStyle}>
+                        <input type="checkbox" checked={l.ft_rebound_chance} onChange={(e) => updateLook(i, { ft_rebound_chance: e.target.checked })} /> missed, ball live
+                      </label>
+                    </Field>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
@@ -373,6 +820,12 @@ const selectStyle: React.CSSProperties = {
   borderRadius: 6,
   border: "1px solid var(--border)",
   background: "var(--surface2)",
+  color: "var(--text)",
+};
+
+const readOnlyStyle: React.CSSProperties = {
+  padding: "5px 0",
+  fontSize: 13,
   color: "var(--text)",
 };
 
