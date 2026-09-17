@@ -431,13 +431,13 @@ function lookPoints(l: Look): number {
 function applyEarlierResult(l: Look, r: EarlierResult): Look {
   const cleared: Look = {
     ...l, outcome: null, shot_type: null, shot_quality: null, turnover_type: null,
-    ft_attempts: null, ft_made: null, ft_rebound_chance: false,
+    ft_attempts: null, ft_made: null,
   };
   if (r === "miss2" || r === "miss3") {
     return { ...cleared, end: "rebounded", outcome: "fg_missed", shot_type: r === "miss3" ? 3 : 2, shot_quality: l.shot_quality };
   }
   if (r === "missft") {
-    return { ...cleared, end: "rebounded", outcome: "ft_trip", ft_attempts: l.ft_attempts ?? 2, ft_made: l.ft_made ?? 0, shot_quality: "great", ft_rebound_chance: true };
+    return { ...cleared, end: "rebounded", outcome: "ft_trip", ft_attempts: l.ft_attempts ?? 2, ft_made: l.ft_made ?? 0, shot_quality: "great" };
   }
   return { ...cleared, end: r as LookEnd };
 }
@@ -491,7 +491,6 @@ function LooksCard({
     p.oreb_count ? `${p.oreb_count} offensive rebound${p.oreb_count === 1 ? "" : "s"}` : null,
     p.missed_fg_count ? `${p.missed_fg_count} rebounded miss${p.missed_fg_count === 1 ? "" : "es"}` : null,
     p.absorbed_ft_attempts ? `${p.absorbed_ft_made}/${p.absorbed_ft_attempts} other FTs` : null,
-    p.live_ft_misses ? `${p.live_ft_misses} live missed last FT` : null,
   ].filter(Boolean);
 
   return (
@@ -713,7 +712,6 @@ function LooksCard({
                         turnover_type: outcome === "turnover" ? l.turnover_type : null,
                         ft_attempts: outcome === "ft_trip" ? l.ft_attempts ?? 2 : null,
                         ft_made: outcome === "ft_trip" ? l.ft_made ?? 0 : null,
-                        ft_rebound_chance: outcome === "ft_trip" ? l.ft_rebound_chance : false,
                       });
                     }}
                     style={selectStyle}
@@ -787,13 +785,6 @@ function LooksCard({
                   <Field label="FT made">
                     <NumberField value={l.ft_made ?? 0} min={0} max={l.ft_attempts ?? 3} commitOn="blur" onChange={(n) => updateLook(i, { ft_made: n })} style={selectStyle} />
                   </Field>
-                  {isFinal && (
-                    <Field label="Last FT">
-                      <label style={checkboxLabelStyle}>
-                        <input type="checkbox" checked={l.ft_rebound_chance} onChange={(e) => updateLook(i, { ft_rebound_chance: e.target.checked })} /> missed, ball live
-                      </label>
-                    </Field>
-                  )}
                 </>
               )}
             </div>
