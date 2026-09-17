@@ -46,7 +46,7 @@ const LINEUP_EXPLAINERS: Record<string, { what: string; how: string }> = {
   on_net: { what: "Team net rating over the possessions {subject} was ON the floor.", how: "our points per 100 - their points per 100, while on" },
   off_net: { what: "Team net rating over the possessions {subject} was OFF the floor, counting only games they appeared in. For a PAIR this pools three situations — each one on without the other, and neither on — so expand the row for the four-way split.", how: "our points per 100 - their points per 100, while off" },
   onoff: { what: "Team net rating with {subject} on the floor, minus with them off. Off-court possessions only count games they appeared in. For a PAIR, “off” pools three situations — one on without the other, and neither on — so expand the row for the four-way split.", how: "net rating on - net rating off" },
-  oob_ppp: { what: "Points per possession on BLOB and SLOB trips. Which five you want out there for a sideline out with four seconds left.", how: "points on out-of-bounds trips / those trips" },
+  oob_ppp: { what: "Points per BLOB and SLOB look. Which five you want out there for a sideline out with four seconds left. An inbounds that flowed into a set scores nothing itself -- the set gets those points -- so this is whether the inbounds play worked.", how: "points scored in out-of-bounds looks / those looks" },
   three_rate: { what: "Share of field goal attempts that were threes. The clearest single expression of {subject}'s shot selection.", how: "3PA / FGA" },
   fouls: { what: "Foul trouble logged against {subject}, from the shift entry screen.", how: "count of foul-trouble events" },
 };
