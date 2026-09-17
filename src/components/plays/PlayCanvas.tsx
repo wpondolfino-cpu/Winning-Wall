@@ -9,7 +9,7 @@
 import { useRef, useState, useEffect, type MouseEvent as ReactMouseEvent } from "react";
 import type { CourtTemplate, PlayFrame, PlayPlayer, PlayAction, ActionType, PlayText, PlayZone, PlayPoint } from "../../lib/plays";
 import type { RosterPlayer } from "../../lib/plays";
-import { resolvePassEndpoint, localActionProgress, playerActionSequence, ballChainSequence } from "../../lib/plays";
+import { resolvePassEndpoint, localActionProgress, playerActionSequence, stepTimingUnits } from "../../lib/plays";
 import { genPlayerId } from "../../lib/plays";
 
 export const CANVAS_W = 600;
@@ -608,13 +608,10 @@ export default function PlayCanvas({
     // proportionally more real time, not just a slice of the same fixed
     // total, or it plays back looking sped up once it's correctly
     // sequenced instead of overlapping.
-    const maxChainLen = Math.max(
-      1,
-      ...frame.players.map((p) => (p.id ? playerActionSequence(frame, p.id).length : 1)),
-      ...frame.defenders.map((d) => (d.id ? playerActionSequence(frame, d.id).length : 1)),
-      ...frame.actions.filter((a) => a.type === "pass" || a.type === "lob").map((a) => ballChainSequence(frame, a).length)
-    );
-    const dur = (1400 * maxChainLen) / speed;
+    // stepTimingUnits also stretches a step that's split into screen
+    // waves (screen sets, then the cutter goes), so each wave plays at
+    // normal speed.
+    const dur = (1400 * stepTimingUnits(frame)) / speed;
     const start = performance.now();
     let raf = 0;
     function step(now: number) {
