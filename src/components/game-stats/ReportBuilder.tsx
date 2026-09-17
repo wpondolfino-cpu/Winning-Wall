@@ -25,10 +25,12 @@ const CATEGORY_LABEL: Record<CategoryFilter, string> = {
   blob: "BLOB",
   slob: "SLOB",
   press: "Press",
-  // A broken press has already become transition or half-court by the time
-  // it commits, so this filter catches the trips that ended against the
-  // press. Press break as a whole is a report block, not a filter.
-  press_break: "Press break (unbroken)",
+  // Filters are by what the TRIP counts as (see tripTypeOf): a press break
+  // trip stays a press break trip whatever it broke into, so this now
+  // catches every trip that started against the press. Transition is
+  // transition trips as classified after any rebound -- one that set up
+  // afterwards counts as half court.
+  press_break: "Press break",
   non_possession_ft: "Awarded FTs",
 };
 
