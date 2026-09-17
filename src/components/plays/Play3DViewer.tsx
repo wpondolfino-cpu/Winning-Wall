@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { Play, RosterPlayer, PlayFrame, PlayAction, resolvePassEndpoint, playerActionSequence, localActionProgress, ballChainSequence, activeSequenceIndex } from "../../lib/plays";
+import { Play, RosterPlayer, PlayFrame, PlayAction, resolvePassEndpoint, playerActionSequence, localActionProgress, ballChainSequence, activeSequenceIndex, stepTimingUnits } from "../../lib/plays";
 import { courtLines, hoopPositions } from "./courtGeometry";
 
 interface Props {
@@ -67,7 +67,7 @@ function plantedAtStepStart(frames: PlayFrame[], idx: number, playerId: string |
 
 /** How far into the set stance (0 = normal, 1 = planted, briefly a bit over 1 while settling) a player is at beat progress t. */
 function stanceAt(t: number, seq: PlayAction[], frame: PlayFrame, startsPlanted: boolean): number {
-  const activeIdx = seq.length > 0 ? activeSequenceIndex(t, seq) : -1;
+  const activeIdx = seq.length > 0 ? activeSequenceIndex(t, seq, frame) : -1;
   let mIdx = -1;
   for (let k = activeIdx; k >= 0; k--) if (isMovement(seq[k])) { mIdx = k; break; }
   if (mIdx < 0) return startsPlanted ? 1 : 0;           // hasn't moved yet this step
@@ -571,13 +571,9 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
         // SLICE of the same fixed total -- otherwise 2 hops sharing what
         // used to be one hop's time budget plays back looking sped up,
         // even though each hop is now correctly sequenced and paused.
-        const maxChainLen = Math.max(
-          1,
-          ...animFromFrame.players.map((p) => (p.id ? playerActionSequence(animFromFrame!, p.id).length : 1)),
-          ...animFromFrame.defenders.map((d) => (d.id ? playerActionSequence(animFromFrame!, d.id).length : 1)),
-          ...animFromFrame.actions.filter((a) => a.type === "pass" || a.type === "lob").map((a) => ballChainSequence(animFromFrame!, a).length)
-        );
-        const t = Math.min(1, elapsed / ((1500 * maxChainLen) / stateRef.current.speed));
+        // stepTimingUnits: longest chain, or enough time for each screen
+        // wave (screen sets, then the cutter goes) to play at normal speed.
+        const t = Math.min(1, elapsed / ((1500 * stepTimingUnits(animFromFrame)) / stateRef.current.speed));
         animFromFrame.players.forEach((fp, i) => {
           const tp = animToFrame!.players[i];
           if (!tp || !playerGroups[i]) return;
@@ -588,7 +584,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
             // now, then walk backward from there to find their most recent
             // movement (a non-movement action like a pass in between just
             // means they're standing still to make it, not gliding).
-            const activeIdx = activeSequenceIndex(t, fullSeq);
+            const activeIdx = activeSequenceIndex(t, fullSeq, animFromFrame!);
             let moveAction: PlayAction | undefined;
             let moveActionIdx = -1;
             for (let k = activeIdx; k >= 0; k--) {
@@ -676,7 +672,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           const fullSeq = fd.id ? playerActionSequence(animFromFrame!, fd.id) : [];
           let x: number, z: number;
           if (fullSeq.length > 0) {
-            const activeIdx = activeSequenceIndex(t, fullSeq);
+            const activeIdx = activeSequenceIndex(t, fullSeq, animFromFrame!);
             let moveAction: PlayAction | undefined;
             let moveActionIdx = -1;
             for (let k = activeIdx; k >= 0; k--) {
@@ -736,7 +732,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           const holder = animFromFrame.players.find((p) => p.id === holderId);
           if (holder?.id) {
             const holderSeq = playerActionSequence(animFromFrame, holder.id);
-            const activeHolderIdx = holderSeq.length > 0 ? activeSequenceIndex(t, holderSeq) : -1;
+            const activeHolderIdx = holderSeq.length > 0 ? activeSequenceIndex(t, holderSeq, animFromFrame) : -1;
             activeHolderAction = activeHolderIdx >= 0 ? holderSeq[activeHolderIdx] : undefined;
             if (activeHolderAction) {
               holderLocalT = localActionProgress(t, activeHolderAction, animFromFrame);
@@ -772,11 +768,19 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
             // just hadn't been given the same treatment until now.
             const lastPassLike = [...animFromFrame.actions].reverse().find((a) => a.type === "pass" || a.type === "lob");
             const chain = lastPassLike ? ballChainSequence(animFromFrame, lastPassLike) : [];
-            const activeChainIdx = chain.length > 0 ? activeSequenceIndex(t, chain) : -1;
+            const activeChainIdx = chain.length > 0 ? activeSequenceIndex(t, chain, animFromFrame!) : -1;
             const activeBallAction = activeChainIdx >= 0 ? chain[activeChainIdx] : undefined;
             const ballLocalT = activeBallAction ? localActionProgress(t, activeBallAction, animFromFrame!) : t;
             const passAction = activeBallAction?.type === "pass" ? activeBallAction : undefined;
-            const shotAction = [...animFromFrame.actions].reverse().find((a) => a.type === "shot");
+            const lastShot = [...animFromFrame.actions].reverse().find((a) => a.type === "shot");
+            // Only fly the shot once it's the shooter's current move -- if
+            // they dribble first (e.g. off a ball screen, which may now wait
+            // for the screen to set), the ball stays with the dribble until
+            // then. Timed on the shot's own slice rather than the raw step
+            // clock; for a lone shot that's identical to before.
+            const shotIsCurrent = !!lastShot && (!activeHolderAction || activeHolderAction === lastShot || activeHolderAction.sourcePlayerId !== lastShot.sourcePlayerId);
+            const shotAction = shotIsCurrent ? lastShot : undefined;
+            const shotT = shotAction ? localActionProgress(t, shotAction, animFromFrame!) : t;
             const lobAction = activeBallAction?.type === "lob" ? activeBallAction : undefined;
             if (passAction) {
               const mt = 1 - ballLocalT;
@@ -799,18 +803,18 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
               const w1 = toWorld(shotAction.x1, shotAction.y1), w2 = toWorld(shotAction.x2, shotAction.y2);
               let px: number, pz: number;
               if (shotAction.curve2 && shotAction.curve) {
-                const mt = 1 - t;
+                const mt = 1 - shotT;
                 const wc1 = toWorld(shotAction.curve.x, shotAction.curve.y), wc2 = toWorld(shotAction.curve2.x, shotAction.curve2.y);
-                px = mt * mt * mt * w1.x + 3 * mt * mt * t * wc1.x + 3 * mt * t * t * wc2.x + t * t * t * w2.x;
-                pz = mt * mt * mt * w1.z + 3 * mt * mt * t * wc1.z + 3 * mt * t * t * wc2.z + t * t * t * w2.z;
+                px = mt * mt * mt * w1.x + 3 * mt * mt * shotT * wc1.x + 3 * mt * shotT * shotT * wc2.x + shotT * shotT * shotT * w2.x;
+                pz = mt * mt * mt * w1.z + 3 * mt * mt * shotT * wc1.z + 3 * mt * shotT * shotT * wc2.z + shotT * shotT * shotT * w2.z;
               } else if (shotAction.curve) {
-                const mt = 1 - t;
+                const mt = 1 - shotT;
                 const wc = toWorld(shotAction.curve.x, shotAction.curve.y);
-                px = mt * mt * w1.x + 2 * mt * t * wc.x + t * t * w2.x;
-                pz = mt * mt * w1.z + 2 * mt * t * wc.z + t * t * w2.z;
+                px = mt * mt * w1.x + 2 * mt * shotT * wc.x + shotT * shotT * w2.x;
+                pz = mt * mt * w1.z + 2 * mt * shotT * wc.z + shotT * shotT * w2.z;
               } else {
-                px = w1.x + (w2.x - w1.x) * t;
-                pz = w1.z + (w2.z - w1.z) * t;
+                px = w1.x + (w2.x - w1.x) * shotT;
+                pz = w1.z + (w2.z - w1.z) * shotT;
               }
               ballMesh.position.x = px;
               ballMesh.position.z = pz;
@@ -822,7 +826,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
               // floor height by the time it got there, making it look like
               // it fell short instead of going through the rim.
               const startH = 1.4, rimH = 2.0, peakBump = 2.0;
-              ballMesh.position.y = startH + (rimH - startH) * t + Math.sin(t * Math.PI) * peakBump;
+              ballMesh.position.y = startH + (rimH - startH) * shotT + Math.sin(shotT * Math.PI) * peakBump;
             } else if (lobAction) {
               const w1 = toWorld(lobAction.x1, lobAction.y1), w2 = toWorld(lobAction.x2, lobAction.y2);
               let px: number, pz: number;
