@@ -228,6 +228,8 @@ export function ReportBody({
   const zonePlays = computePlayCallEffectiveness(possessions, playCalls.filter((p) => p.category === "zone"));
   const pressBreak = computePressBreakEffectiveness(possessions, playCalls);
   const inbounds = computeInboundsDefense(possessions);
+  // Their inbounds, split by what we were in -- the mirror of the block above.
+  const inboundsD = computeInboundsDefense(possessions, "opponent");
   const halfCourt = computeHalfCourtStructure(possessions);
   const paint = computePaintImpact(possessions);
   const qualityUs = computeQualityConversion(possessions, "us");
@@ -528,6 +530,18 @@ export function ReportBody({
               <DefenseSchemeRow row={defense.man} />
               <DefenseSchemeRow row={defense.zone} />
               <DefenseSchemeRow row={defense.press} />
+              {inboundsD.tagged > 0 && (
+                <>
+                  <div className="stat-grid" style={{ marginTop: 8 }}>
+                    <SplitCard label="Their inbounds vs our man" row={inboundsD.man} unit="looks" />
+                    <SplitCard label="Their inbounds vs our zone" row={inboundsD.zone} unit="looks" />
+                  </div>
+                  <div style={{ fontSize: 12, color: inboundsD.untagged ? "#8a6512" : "var(--muted)", marginTop: 4 }}>
+                    {inboundsD.tagged} of {inboundsD.total} of their inbounds looks tagged
+                    {inboundsD.untagged > 0 && " - the rest can be tagged in the possession editor"}
+                  </div>
+                </>
+              )}
               {defense.press.calls > 0 && (
                 <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
                   Press forced {defense.pressTurnovers} turnover{defense.pressTurnovers === 1 ? "" : "s"} · broke down to Man {defense.pressToMan}x, Zone {defense.pressToZone}x, transition {defense.pressToTransition}x · fouled/OOB {defense.pressToOob}x · to the line {defense.pressToFtTrip}x
