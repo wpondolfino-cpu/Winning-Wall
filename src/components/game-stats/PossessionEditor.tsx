@@ -403,7 +403,7 @@ const LOOK_TYPE_LABELS: Record<PossessionType, string> = {
   non_possession_ft: "Awarded FTs",
 };
 const DEFENSE_SCHEMES: DefenseScheme[] = ["man", "zone"];
-const PRESS_RESULTS: PressResult[] = ["turnover", "man", "zone"];
+const PRESS_RESULTS: PressResult[] = ["turnover", "man", "zone", "transition", "oob", "ft_trip"];
 
 /** How an earlier (non-final) look ended, as one pickable value. */
 type EarlierResult = "miss2" | "miss3" | "missft" | "flowed" | "broke_press" | "reset";
