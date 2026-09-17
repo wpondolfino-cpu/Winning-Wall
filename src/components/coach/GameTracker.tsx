@@ -31,10 +31,11 @@
 // half-court look; the latter is how an end-of-game trip converts into a
 // real possession.
 //
-// A free throw trip with some (not all) makes gets a third answer on the
-// rebound question, "Last one went in", since then there was no rebound
-// chance at all. Yes and No both record a live missed last free throw,
-// which OREB% counts as a rebound chance.
+// A missed free throw asks the same Yes/No question. OREB% leaves free
+// throws out on both sides -- telling a missed LAST free throw from a
+// missed first one would cost an extra tap -- so a rebounded free throw
+// keeps the trip alive and counts toward second chance points and extra
+// possessions, but not toward the rebounding percentage.
 //
 // action_branch: Shot / Turnover / Foul-Jump-OOB / (the four half-court
 // structures, us only). Shot skips straight to a reduced outcome grid.
@@ -177,8 +178,6 @@ interface PendingCommit {
   /** The result half of the look -- shot type, grade, free throws, points. */
   detail: Partial<Look>;
   label: string; // shown on the oreb_check screen, e.g. "missed 2" or "missed FT"
-  /** A free throw trip with some but not all makes: the last one may have gone in, so "Last one went in" is offered. */
-  ftPartial: boolean;
 }
 
 interface FlowSnapshot {
@@ -461,7 +460,6 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
         outcome: "fg_missed",
         detail: { shot_type: pendingShot.shotType, points: 0, shot_quality: quality },
         label: `missed ${pendingShot.shotType}`,
-        ftPartial: false,
       });
       setStep("oreb_check");
     }
@@ -489,19 +487,8 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
     setStep("shot_quality");
   }
 
-  /** "No" on the OREB question -- the pending miss (FG or FT) is the trip's
-      final result. A missed free throw here was still a live rebound
-      chance, just one the defence got. */
+  /** "No" on the OREB question -- the pending miss (FG or FT) is the trip's final result. */
   function declineOreb() {
-    if (pendingCommit) {
-      commit(pendingCommit.outcome, { ...pendingCommit.detail, ft_rebound_chance: pendingCommit.outcome === "ft_trip" });
-    }
-    setPendingCommit(null);
-  }
-
-  /** "Last one went in" -- only offered after a free throw trip with some
-      makes. No rebound chance happened, so the trip simply ends. */
-  function lastFtMade() {
     if (pendingCommit) commit(pendingCommit.outcome, pendingCommit.detail);
     setPendingCommit(null);
   }
@@ -517,11 +504,7 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
     if (!pendingCommit) return;
     pushHistory();
     const wasType = possessionType ?? "half_court";
-    closeLook("rebounded", {
-      outcome: pendingCommit.outcome,
-      ...pendingCommit.detail,
-      ft_rebound_chance: pendingCommit.outcome === "ft_trip",
-    });
+    closeLook("rebounded", { outcome: pendingCommit.outcome, ...pendingCommit.detail });
     const nextType: PossessionType = wasType === "press_break" || wasType === "non_possession_ft" ? "half_court" : wasType;
     startNextLook(nextType, { putback: true, defenseScheme });
     setOrebOccurred(true);
@@ -1139,11 +1122,6 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
             <Btn tone="success" subtitle={team === "us" ? "We got it" : "They got it"} onClick={confirmOreb}>Yes</Btn>
             <Btn subtitle={team === "us" ? "They got it" : "We got it"} onClick={declineOreb}>No</Btn>
           </Grid>
-          {pendingCommit?.ftPartial && (
-            <Grid cols={1} style={{ marginTop: 8 }}>
-              <Btn subtitle="No rebound" onClick={lastFtMade}>Last one went in</Btn>
-            </Grid>
-          )}
         </Section>
       )}
 
@@ -1176,9 +1154,7 @@ export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_
                       commit("ft_trip", detail);
                     } else {
                       pushHistory();
-                      // With some makes, the miss might not have been the
-                      // last shot -- the rebound screen asks.
-                      setPendingCommit({ outcome: "ft_trip", detail, label: "missed FT", ftPartial: n > 0 });
+                      setPendingCommit({ outcome: "ft_trip", detail, label: "missed FT" });
                       setStep("oreb_check");
                     }
                   }}
