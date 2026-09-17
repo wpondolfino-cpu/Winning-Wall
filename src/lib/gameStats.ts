@@ -86,8 +86,257 @@ export interface Possession {
   absorbed_ft_attempts: number;
   absorbed_ft_made: number;
   points: number;
+  /**
+   * Every look in the trip, in order (migration 134). Null on rows tracked
+   * before looks existed -- looksOf() works them out from the row's own
+   * fields, so every reader can treat old and new rows the same way.
+   * When present, the trip-level fields above are a summary of these
+   * (see summarizeLooks) and must agree with them.
+   */
+  looks: Look[] | null;
+  /** Missed last free throws with the ball live -- rebound chances, whoever got the board. Feeds OREB%. */
+  live_ft_misses: number;
   created_by: string;
   created_at: string;
+}
+
+// ── Looks ────────────────────────────────────────────────────────
+// A trip (one possession) is one or more LOOKS. A new look starts when:
+//   - an offensive rebound keeps the trip alive      -> previous look ends "rebounded"
+//   - a BLOB/SLOB flows into a half-court set        -> "flowed"
+//   - a press break turns into transition/half court -> "broke_press"
+//     (and on defence, our press breaking down into man/zone -> "flowed")
+//   - a foul/jump/OOB turns the trip into a BLOB/SLOB -> "reset"
+// The last look always ends "final" and carries the trip's outcome.
+//
+// Efficiency stats (PPP, possessions, TOV%, OREB%, shooting) stay per
+// POSSESSION. Stats about what was run -- look type, half-court structure,
+// play calls, paint touch, shot quality -- are per LOOK, and a look only
+// ever gets the points it scored itself, so look points always add up to
+// the trip's points and nothing is counted twice.
+//
+// A putback is a look that starts right after a rebound with no new
+// action picked. It takes the type of the look it came from (a putback
+// off a transition miss is still transition) and has no structure or
+// play call. Picking a half-court structure after the rebound turns it
+// into a normal half-court look instead.
+export type LookEnd = "final" | "rebounded" | "flowed" | "broke_press" | "reset";
+
+export interface Look {
+  type: PossessionType;
+  half_court_type: HalfCourtType | null;
+  play_call_id: string | null;
+  putback: boolean;
+  defense_scheme: DefenseScheme | null;
+  press_result: PressResult | null;
+  press_break_type_id: string | null;
+  press_break_result: PressBreakResult | null;
+  oob_result: OobResult | null;
+  oob_defense: OobDefense | null;
+  paint_touch: boolean;
+  paint_touch_both_sides: boolean;
+  end: LookEnd;
+  /** Final look: the trip's outcome. Rebounded look: fg_missed or ft_trip. Flowed/broke/reset: null. */
+  outcome: Outcome | null;
+  shot_type: 2 | 3 | null;
+  shot_quality: ShotQuality | null;
+  turnover_type: TurnoverType | null;
+  /** Free throws taken in this look -- an FT trip, or the bonus shot of an And-1. */
+  ft_attempts: number | null;
+  ft_made: number | null;
+  /** The last free throw of this look was missed with the ball live. */
+  ft_rebound_chance: boolean;
+  /** Points scored in this look only. */
+  points: number;
+}
+
+export const LOOK_END_LABELS: Record<LookEnd, string> = {
+  final: "Final",
+  rebounded: "Missed, rebounded",
+  flowed: "Flowed",
+  broke_press: "Broke the press",
+  reset: "Reset (foul/jump/OOB)",
+};
+
+export function emptyLook(type: PossessionType): Look {
+  return {
+    type, half_court_type: null, play_call_id: null, putback: false, defense_scheme: null,
+    press_result: null, press_break_type_id: null, press_break_result: null,
+    oob_result: null, oob_defense: null, paint_touch: false, paint_touch_both_sides: false,
+    end: "final", outcome: null, shot_type: null, shot_quality: null, turnover_type: null,
+    ft_attempts: null, ft_made: null, ft_rebound_chance: false, points: 0,
+  };
+}
+
+/**
+ * The looks of a trip. Rows tracked before looks existed get theirs worked
+ * out from the row: a BLOB/SLOB that flowed, a press break that broke, and
+ * (on defence) a press that fell back into man/zone each become two looks,
+ * with the first scoring nothing. What those rows can't give back is the
+ * detail of a look before an offensive rebound -- it was never saved.
+ */
+export function looksOf(p: Possession): Look[] {
+  if (p.looks && p.looks.length) return p.looks;
+  const base: Look = {
+    ...emptyLook(p.possession_type),
+    half_court_type: p.half_court_type,
+    play_call_id: p.play_call_id,
+    defense_scheme: p.defense_scheme,
+    press_result: p.press_result,
+    oob_result: p.oob_result,
+    oob_defense: p.oob_defense,
+    paint_touch: p.paint_touch,
+    paint_touch_both_sides: p.paint_touch_both_sides,
+    outcome: p.outcome,
+    shot_type: p.shot_type,
+    shot_quality: p.shot_quality,
+    turnover_type: p.turnover_type,
+    ft_attempts: p.outcome === "ft_trip" ? p.ft_attempts : null,
+    ft_made: p.outcome === "ft_trip" ? Math.max(0, p.points - (p.absorbed_ft_made ?? 0)) : null,
+    points: p.points,
+  };
+  if (p.press_break_type_id) {
+    if (p.possession_type === "press_break") {
+      return [{ ...base, press_break_type_id: p.press_break_type_id, press_break_result: p.press_break_result }];
+    }
+    const press: Look = {
+      ...emptyLook("press_break"),
+      press_break_type_id: p.press_break_type_id,
+      press_break_result: p.press_break_result,
+      end: "broke_press",
+    };
+    return [press, base];
+  }
+  if (p.possession_type === "press" && (p.press_result === "man" || p.press_result === "zone")) {
+    const press: Look = { ...emptyLook("press"), press_result: p.press_result, end: "flowed" };
+    return [press, { ...base, type: "half_court", press_result: null }];
+  }
+  if ((p.possession_type === "blob" || p.possession_type === "slob") && p.oob_result === "flowed_half_court") {
+    // The row only kept one play call, and the tracker overwrote the
+    // inbounds call with the set's, so it belongs to the half-court look.
+    const oob: Look = { ...emptyLook(p.possession_type), oob_result: "flowed_half_court", oob_defense: p.oob_defense, end: "flowed" };
+    return [oob, { ...base, type: "half_court", oob_result: null, oob_defense: null }];
+  }
+  return [base];
+}
+
+/**
+ * What kind of possession a trip counts as, from its looks.
+ *
+ * A trip keeps the type it started as, with two exceptions:
+ *   - A transition trip is classified by what happened after it: setting
+ *     up (a half-court look) makes it half court, a foul/OOB makes it a
+ *     BLOB/SLOB, and a putback, turnover or free throws keep it transition.
+ *   - An end-of-game free throw trip that got rebounded became a real
+ *     possession, classified the same way from the look after it.
+ */
+export function tripTypeOf(looks: Look[]): PossessionType {
+  let first = 0;
+  if (looks[0].type === "non_possession_ft") {
+    if (looks.length === 1) return "non_possession_ft";
+    first = 1;
+  }
+  const start = looks[first].type;
+  if (start !== "transition") return start;
+  for (let i = looks.length - 1; i > first; i--) {
+    if (!looks[i].putback) return looks[i].type;
+  }
+  return "transition";
+}
+
+/**
+ * The trip-level summary of a list of looks. The tracker and the
+ * possession editor both write through this, so the row can never
+ * disagree with its looks.
+ */
+export function summarizeLooks(looks: Look[]): Pick<Possession,
+  "possession_type" | "half_court_type" | "play_call_id" | "oob_result" | "oob_defense" | "defense_scheme" |
+  "press_result" | "press_break_type_id" | "press_break_result" | "paint_touch" | "paint_touch_both_sides" |
+  "oreb_count" | "missed_fg_count" | "missed_fg2_count" | "missed_fg3_count" | "absorbed_ft_attempts" |
+  "absorbed_ft_made" | "live_ft_misses" | "outcome" | "shot_type" | "shot_quality" | "turnover_type" |
+  "ft_attempts" | "points" | "looks"> {
+  const final = looks[looks.length - 1];
+  const firstWith = <K extends keyof Look>(k: K): Look[K] | null => {
+    const hit = looks.find((l) => l[k] != null);
+    return hit ? hit[k] : null;
+  };
+  const rebounded = looks.filter((l) => l.end === "rebounded");
+  const missedFg = rebounded.filter((l) => l.outcome === "fg_missed");
+  // Free throws the final row's own ft_attempts doesn't hold: every
+  // rebounded FT look, plus an And-1's bonus shot on the final look.
+  const finalOwnsFts = final.outcome === "ft_trip";
+  const otherFtLooks = looks.filter((l) => l.ft_attempts != null && !(l === final && finalOwnsFts));
+  const pressLook = looks.find((l) => l.type === "press");
+  const pressBreakLook = looks.find((l) => l.type === "press_break");
+  return {
+    possession_type: tripTypeOf(looks),
+    half_court_type: final.half_court_type,
+    play_call_id: final.play_call_id,
+    oob_result: firstWith("oob_result"),
+    oob_defense: firstWith("oob_defense"),
+    defense_scheme: final.defense_scheme ?? firstWith("defense_scheme"),
+    press_result: pressLook ? pressLook.press_result : null,
+    press_break_type_id: pressBreakLook ? pressBreakLook.press_break_type_id : null,
+    press_break_result: pressBreakLook ? pressBreakLook.press_break_result : null,
+    paint_touch: final.paint_touch,
+    paint_touch_both_sides: final.paint_touch_both_sides,
+    oreb_count: rebounded.length,
+    missed_fg_count: missedFg.length,
+    missed_fg2_count: missedFg.filter((l) => l.shot_type !== 3).length,
+    missed_fg3_count: missedFg.filter((l) => l.shot_type === 3).length,
+    absorbed_ft_attempts: otherFtLooks.reduce((s, l) => s + (l.ft_attempts ?? 0), 0),
+    absorbed_ft_made: otherFtLooks.reduce((s, l) => s + (l.ft_made ?? 0), 0),
+    live_ft_misses: looks.filter((l) => l.ft_rebound_chance).length,
+    outcome: final.outcome ?? "fg_missed",
+    shot_type: final.shot_type,
+    shot_quality: final.shot_quality,
+    turnover_type: final.turnover_type,
+    ft_attempts: finalOwnsFts ? ((final.ft_attempts as 1 | 2 | 3 | null) ?? null) : null,
+    points: looks.reduce((s, l) => s + l.points, 0),
+    looks,
+  };
+}
+
+export interface LookRow {
+  look: Look;
+  trip: Possession;
+  /** Position of this look within its trip. */
+  index: number;
+}
+
+/**
+ * Every look of every counted trip, optionally for one team. Awarded
+ * free throw looks are left out: they aren't a possession's look, even
+ * inside an end-of-game trip that converted off a rebound (their free
+ * throws still count in FT% and on the scoreboard through the row).
+ */
+export function countedLooks(possessions: Possession[], team?: Team): LookRow[] {
+  const out: LookRow[] = [];
+  for (const trip of countedPossessions(possessions)) {
+    if (team && trip.team !== team) continue;
+    looksOf(trip).forEach((look, index) => {
+      if (look.type !== "non_possession_ft") out.push({ look, trip, index });
+    });
+  }
+  return out;
+}
+
+/**
+ * Points scored after the trip's first offensive rebound.
+ *
+ * Rows without looks can't tell when the points came, so they keep the
+ * two old rules exactly: second-chance points counted a rebounded trip
+ * only if it ended in a make, while second-chance PPP counted every point
+ * on a rebounded trip (`legacyAnyOutcome`).
+ */
+export function secondChancePointsOf(p: Possession, legacyAnyOutcome = false): number {
+  if (p.looks && p.looks.length) {
+    const firstReb = p.looks.findIndex((l) => l.end === "rebounded");
+    if (firstReb < 0) return 0;
+    return p.looks.slice(firstReb + 1).reduce((s, l) => s + l.points, 0);
+  }
+  if (p.oreb_count <= 0) return 0;
+  return legacyAnyOutcome || p.outcome === "fg_made" ? p.points : 0;
 }
 
 export interface PlayCall {
@@ -188,8 +437,8 @@ export const DEFAULT_STAT_ORDER: StatDef[] = [
   { key: "ft_rate", label: "FT rate %", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "paint_touch_single", label: "Paint touch %", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "paint_touch_both", label: "Both sides %", kind: "number", inGame: true, defaultDirection: "higher_better" },
-  { key: "transition_ppp", label: "Transition PPP", kind: "number", inGame: true, defaultDirection: "higher_better" },
-  { key: "halfcourt_ppp", label: "Half-court PPP", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "transition_ppp", label: "Transition pts/look", kind: "number", inGame: true, defaultDirection: "higher_better" },
+  { key: "halfcourt_ppp", label: "Half-court pts/look", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "extra_possessions", label: "Extra Possessions", kind: "number", inGame: true, selfColored: true },
   { key: "points_off_live_to", label: "Points off Live TO", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "second_chance_points", label: "Second Chance Points", kind: "number", inGame: true, defaultDirection: "higher_better" },
@@ -234,28 +483,28 @@ export const STAT_EXPLAINERS: Record<string, { what: string; how: string }> = {
   ft_pct: { what: "Free throw percentage. Includes intentional-foul and technical free throws, since a free throw is a free throw.", how: "FTM / FTA" },
   ft_rate: { what: "How often we get to the line relative to how often we shoot. A proxy for attacking rather than settling. Intentional-foul and technical free throws are excluded, since the offense didn't earn them.", how: "earned FTA / FGA" },
   tov_pct: { what: "Share of possessions that ended in a turnover.", how: "turnovers / possessions" },
-  oreb_pct: { what: "Share of available offensive rebounds collected.", how: "OREB / (OREB + their defensive rebound chances)" },
-  transition_pct: { what: "Share of possessions that were transition rather than half court. A press break that got out and ran counts as transition.", how: "transition trips / all trips" },
-  transition_ppp: { what: "Points per possession in transition, including breaks against a press that pushed.", how: "transition points / transition trips" },
-  halfcourt_ppp: { what: "Points per possession in the half court. Includes BLOB and SLOB trips, and press breaks, that flowed into a set.", how: "half-court points / half-court trips" },
-  press_break: { what: "How we handled the press. Broken means we got out of it -- into transition, into a half-court look, to the line, or a foul that kept it our ball. Points off the break counts transition makes and free throws only: a break that becomes a half-court possession and scores is a half-court score.", how: "broken / press trips" },
+  oreb_pct: { what: "Share of available offensive rebounds collected. A missed last free throw with the ball live is a rebound chance too, not just a missed field goal.", how: "OREB / (missed FGs + live missed last FTs)" },
+  transition_pct: { what: "Share of looks that were transition. A press break that got out and ran is a transition look, and so is a putback off a transition miss.", how: "transition looks / all looks" },
+  transition_ppp: { what: "Points per transition look, including breaks against a press that pushed and putbacks off a transition miss. A transition miss that was rebounded and pulled out into a set is a transition look worth 0, and the set gets the points.", how: "points scored in transition looks / transition looks" },
+  halfcourt_ppp: { what: "Points per half-court look. A BLOB, SLOB or press break that flowed into a set is its own half-court look, so is every set run after an offensive rebound, and so is a putback off a half-court miss. Each look only brings the points scored in it.", how: "points scored in half-court looks / half-court looks" },
+  press_break: { what: "How we handled the press. Broken means we got out of it -- into transition, into a half-court look, to the line, or a foul that kept it our ball. Points off the break counts free throws straight off it and what the transition look it broke into scored: a break that becomes a half-court look and scores is a half-court score. PPP here is per press trip -- everything scored on a trip that started against the press.", how: "broken / press trips" },
   ts_pct: { what: "True shooting. One number for scoring efficiency that values a three above a two and gives credit for getting to the line, so it compares a volume three-point shooter and a post scorer fairly.", how: "points / (2 x (FGA + 0.44 x FTA))" },
   three_rate: { what: "Share of field goal attempts that were threes. A shot-diet number, not a quality one -- read it next to 3PT%.", how: "3PA / FGA" },
   ppp: { what: "Points per possession overall. Every other PPP row on this report is a slice of this one.", how: "points / possessions" },
-  second_chance_ppp: { what: "Points per offensive rebound. Says whether the boards you win actually turn into points, which the raw second-chance points total can't.", how: "points on trips with an OREB / offensive rebounds" },
+  second_chance_ppp: { what: "Points per offensive rebound. Says whether the boards you win actually turn into points, which the raw second-chance points total can't.", how: "points scored after an OREB / offensive rebounds" },
   possessions: { what: "Trips counted. Excludes intentional-foul, technical and flagrant free throws, since those aren't possessions.", how: "count" },
-  paint_impact: { what: "What a paint touch is worth, rather than just how often you get one. The gap between the two PPP figures is the argument for demanding it.", how: "PPP on half-court trips with a paint touch vs without" },
-  quality_conversion: { what: "How each grade of look actually converted. Two readings: whether the team finishes the shots it generates, and whether the grading itself is calibrated -- if great looks come back below your good looks, the grading is drifting.", how: "eFG% within each shot quality grade" },
+  paint_impact: { what: "What a paint touch is worth, rather than just how often you get one. The gap between the two figures is the argument for demanding it. Putbacks are left out, since the question isn't asked on them.", how: "points per half-court look with a paint touch vs without" },
+  quality_conversion: { what: "How each grade of shot actually converted, including misses that were rebounded. Two readings: whether the team finishes the shots it generates, and whether the grading itself is calibrated -- if great shots come back below your good shots, the grading is drifting.", how: "eFG% within each shot quality grade" },
   turnover_breakdown: { what: "Turnovers split by type. Live-ball giveaways are the expensive ones because they run the other way; dead balls and charges don't.", how: "count by turnover type" },
   period_splits: { what: "PPP for and against, and possessions, by period. Where a game was actually won or lost, and the number behind a habit like slow third quarters.", how: "points / possessions, per period" },
   prev_possession: { what: "How the offense responds to what just happened at the other end. Whether a bucket against you turns into two.", how: "PPP on trips following their score, their miss, or their turnover" },
-  half_court_structure: { what: "What we ran in the half court, and by extension what we ran it against. A zone set is also the record that they were in a zone, so man is everything else.", how: "points / trips, per structure" },
-  quality_shot_pct: { what: "Share of shots graded great or good. On the defensive side this is the looks we allowed, so lower is better.", how: "(great + good) / graded shots" },
+  half_court_structure: { what: "What we ran in the half court, and by extension what we ran it against. A zone set is also the record that they were in a zone, so man is everything else. Every set is counted each time it's run, including after an offensive rebound, and only gets the points scored in it.", how: "points / looks, per structure" },
+  quality_shot_pct: { what: "Share of shots graded great or good, including misses that were rebounded, so graded shots line up with attempts. On the defensive side this is the shots we allowed, so lower is better.", how: "(great + good) / graded shots" },
   extra_possessions: { what: "Net extra chances created, the possession-count version of winning the margins.", how: "(our OREB + their turnovers) - (their OREB + our turnovers)" },
   points_off_live_to: { what: "Points scored on possessions that followed a live-ball turnover.", how: "sum of points after live turnovers" },
-  second_chance_points: { what: "Points scored after an offensive rebound on the same trip.", how: "sum of points following an OREB" },
-  paint_touch_single: { what: "Share of half-court trips where the ball touched the paint.", how: "paint touches / half-court trips" },
-  paint_touch_both: { what: "Share of half-court trips where the ball changed sides of the floor.", how: "both-sides trips / half-court trips" },
+  second_chance_points: { what: "Points scored after an offensive rebound on the same trip -- putbacks, sets run after the board, and free throws.", how: "sum of points following an OREB" },
+  paint_touch_single: { what: "Share of half-court looks where the ball touched the paint. Each look is counted, so a trip that touched the paint, missed, and touched it again after the rebound counts twice. Putbacks are left out, since the question isn't asked on them.", how: "paint touches / half-court looks" },
+  paint_touch_both: { what: "Share of half-court looks where the ball changed sides of the floor. Putbacks are left out.", how: "both-sides looks / half-court looks" },
 };
 
 /**
@@ -275,7 +524,7 @@ export const LINEUP_GOAL_STATS: StatDef[] = [
   { key: "lineup_def_ppp", label: "Defensive PPP", kind: "number", inGame: true, defaultDirection: "lower_better", usOnly: true },
   { key: "lineup_net_rating", label: "Net rating (per 100)", kind: "number", inGame: true, defaultDirection: "higher_better", usOnly: true },
   { key: "lineup_onoff_diff", label: "On/off differential (per 100)", kind: "number", inGame: true, defaultDirection: "higher_better", usOnly: true },
-  { key: "lineup_oob_ppp", label: "BLOB / SLOB PPP", kind: "number", inGame: true, defaultDirection: "higher_better", usOnly: true },
+  { key: "lineup_oob_ppp", label: "BLOB / SLOB pts/look", kind: "number", inGame: true, defaultDirection: "higher_better", usOnly: true },
 ];
 
 /** Goal-settable stats, for the Goals tab -- "number" kind, excluding self-colored ones like Extra Possessions that don't compare against a target. Includes goalOnly stats, which get a target but no report row of their own. */
@@ -644,6 +893,8 @@ function normalizeLegacyPossession(p: any): Possession {
     oob_defense: p.oob_defense ?? null,
     ft_award_type: p.ft_award_type ?? null,
     oob_result: p.oob_result === "score" ? "direct_shot" : p.oob_result ?? null,
+    looks: p.looks ?? null,
+    live_ft_misses: p.live_ft_misses ?? 0,
   };
 }
 
@@ -836,11 +1087,15 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   const deadTov = trips.filter((p) => p.outcome === "turnover" && p.turnover_type === "dead").length;
   const chargeTov = trips.filter((p) => p.outcome === "turnover" && p.turnover_type === "charge").length;
   const oreb = trips.reduce((s, p) => s + p.oreb_count, 0);
-  // A trip can absorb multiple missed shots before it finally ends (each
-  // one rebounded and continued) -- missed_fg_count tallies the ones that
-  // got continued; the final row's own outcome catches the last one if
-  // *that* was also a miss (i.e. no OREB followed it, trip just ended).
-  const orebOpportunities = trips.reduce((s, p) => s + p.missed_fg_count + (p.outcome === "fg_missed" ? 1 : 0), 0);
+  // Rebound chances: every missed field goal (the rebounded ones in
+  // missed_fg_count, plus the final shot if the trip ended on a miss) and
+  // every missed LAST free throw with the ball live (live_ft_misses,
+  // rebounded or not). oreb_count already includes free-throw rebounds,
+  // so both halves of the fraction now count them.
+  const orebOpportunities = trips.reduce(
+    (s, p) => s + p.missed_fg_count + (p.outcome === "fg_missed" ? 1 : 0) + (p.live_ft_misses ?? 0),
+    0
+  );
   // FT makes/attempts from a trip that ended as an ft_trip itself, PLUS any
   // FT attempts that happened earlier in a trip but got absorbed into a
   // later, different final outcome (missed a FT, got the OREB, kept going)
@@ -853,24 +1108,19 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   const earnedFtTrips = trips.filter((p) => p.outcome === "ft_trip" && p.ft_attempts != null);
   const ftAttemptedEarned =
     earnedFtTrips.reduce((s, p) => s + (p.ft_attempts ?? 0), 0) + trips.reduce((s, p) => s + p.absorbed_ft_attempts, 0);
-  const paintTouchSingle = trips.filter((p) => p.paint_touch).length;
-  const paintTouchBoth = trips.filter((p) => p.paint_touch_both_sides).length;
-  // A press break that got out and ran has possession_type "transition"
-  // by the time it commits (press_break_type_id is what remembers it was
-  // a break), so it counts here without a special case -- breaking a
-  // press and pushing IS playing fast.
-  const transitionTripsArr = trips.filter((p) => p.possession_type === "transition");
-  // A blob/slob possession that flowed into a set/motion look (oob_result
-  // === "flowed_half_court") keeps possession_type "blob"/"slob" for BLOB
-  // effectiveness purposes -- but the actual shot came from a half-court
-  // action, so it belongs in half-court efficiency too, not just possessions
-  // that started half-court outright. A press break that flowed into a
-  // half-court look is already possession_type "half_court" and needs no
-  // clause of its own.
-  const halfCourtTripsArr = trips.filter((p) =>
-    p.possession_type === "half_court" ||
-    ((p.possession_type === "blob" || p.possession_type === "slob") && p.oob_result === "flowed_half_court")
-  );
+  // Type splits are per LOOK (see the Looks note near the top). A BLOB or
+  // press break that flowed into a set is its own half-court look, so
+  // half-court PPP needs no special case for them any more; a putback
+  // counts under the type of the look it came from.
+  const looks = countedLooks(possessions, team);
+  const transitionLooks = looks.filter((r) => r.look.type === "transition");
+  const halfCourtLooks = looks.filter((r) => r.look.type === "half_court");
+  // Paint touch is only asked on a half-court look that set up, never on a
+  // putback, so putbacks stay out of both halves of the percentage.
+  const paintLooks = halfCourtLooks.filter((r) => !r.look.putback);
+  const paintTouchSingle = paintLooks.filter((r) => r.look.paint_touch).length;
+  const paintTouchBoth = paintLooks.filter((r) => r.look.paint_touch_both_sides).length;
+  const lookPoints = (rows: LookRow[]) => rows.reduce((s, r) => s + r.look.points, 0);
 
   const efg = fgaCount ? ((made2 + made3) + 0.5 * made3) / fgaCount * 100 : 0;
   const fg2Pct = fga2Count ? (made2 / fga2Count) * 100 : 0;
@@ -883,16 +1133,16 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   const tsPct = tsAttempts ? (totalPoints / (2 * tsAttempts)) * 100 : 0;
   const threeRate = fgaCount ? (fga3Count / fgaCount) * 100 : 0;
   const ppp = trips.length ? totalPoints / trips.length : 0;
-  const secondChancePpp = oreb ? trips.filter((p) => p.oreb_count > 0).reduce((s, p) => s + p.points, 0) / oreb : 0;
+  const secondChancePpp = oreb ? trips.reduce((s, p) => s + secondChancePointsOf(p, true), 0) / oreb : 0;
   const ftPct = ftAttempted ? (ftMade / ftAttempted) * 100 : 0;
   const tovPct = trips.length ? (turnovers / trips.length) * 100 : 0;
   const orebPct = orebOpportunities ? (oreb / orebOpportunities) * 100 : 0;
   const ftRate = fgaCount ? ftAttemptedEarned / fgaCount : 0;
-  const paintTouchSinglePct = halfCourtTripsArr.length ? (paintTouchSingle / halfCourtTripsArr.length) * 100 : 0;
-  const paintTouchBothPct = halfCourtTripsArr.length ? (paintTouchBoth / halfCourtTripsArr.length) * 100 : 0;
-  const transitionPpp = transitionTripsArr.length ? transitionTripsArr.reduce((s, p) => s + p.points, 0) / transitionTripsArr.length : 0;
-  const halfCourtPpp = halfCourtTripsArr.length ? halfCourtTripsArr.reduce((s, p) => s + p.points, 0) / halfCourtTripsArr.length : 0;
-  const transitionPct = trips.length ? (transitionTripsArr.length / trips.length) * 100 : 0;
+  const paintTouchSinglePct = paintLooks.length ? (paintTouchSingle / paintLooks.length) * 100 : 0;
+  const paintTouchBothPct = paintLooks.length ? (paintTouchBoth / paintLooks.length) * 100 : 0;
+  const transitionPpp = transitionLooks.length ? lookPoints(transitionLooks) / transitionLooks.length : 0;
+  const halfCourtPpp = halfCourtLooks.length ? lookPoints(halfCourtLooks) / halfCourtLooks.length : 0;
+  const transitionPct = looks.length ? (transitionLooks.length / looks.length) * 100 : 0;
 
   const rows: { key: string; label: string; value: number; raw?: string; display?: string }[] = [
     { key: "efg_pct", label: "eFG%", value: round1(efg) },
@@ -904,14 +1154,14 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
     { key: "second_chance_ppp", label: "Second chance PPP", value: round2(secondChancePpp), display: secondChancePpp.toFixed(2) },
     { key: "possessions", label: "Possessions", value: trips.length },
     { key: "ft_pct", label: "FT%", value: round1(ftPct), raw: `${ftMade}/${ftAttempted}` },
-    { key: "transition_pct", label: "Transition %", value: round1(transitionPct), raw: `${transitionTripsArr.length}/${trips.length}` },
-    { key: "oreb_pct", label: "OREB%", value: round1(orebPct), raw: `${oreb}` },
+    { key: "transition_pct", label: "Transition %", value: round1(transitionPct), raw: `${transitionLooks.length}/${looks.length}` },
+    { key: "oreb_pct", label: "OREB%", value: round1(orebPct), raw: `${oreb}/${orebOpportunities}` },
     { key: "tov_pct", label: "TOV%", value: round1(tovPct), raw: `${liveTov}+${deadTov}+${chargeTov}=${turnovers}` },
     { key: "ft_rate", label: "FT rate %", value: round1(ftRate * 100) },
-    { key: "paint_touch_single", label: "Paint touch %", value: round1(paintTouchSinglePct), raw: `${paintTouchSingle}/${halfCourtTripsArr.length}` },
-    { key: "paint_touch_both", label: "Both sides %", value: round1(paintTouchBothPct), raw: `${paintTouchBoth}/${halfCourtTripsArr.length}` },
-    { key: "transition_ppp", label: "Transition PPP", value: round2(transitionPpp), display: transitionPpp.toFixed(2) },
-    { key: "halfcourt_ppp", label: "Half-court PPP", value: round2(halfCourtPpp), display: halfCourtPpp.toFixed(2) },
+    { key: "paint_touch_single", label: "Paint touch %", value: round1(paintTouchSinglePct), raw: `${paintTouchSingle}/${paintLooks.length}` },
+    { key: "paint_touch_both", label: "Both sides %", value: round1(paintTouchBothPct), raw: `${paintTouchBoth}/${paintLooks.length}` },
+    { key: "transition_ppp", label: "Transition pts/look", value: round2(transitionPpp), display: transitionPpp.toFixed(2) },
+    { key: "halfcourt_ppp", label: "Half-court pts/look", value: round2(halfCourtPpp), display: halfCourtPpp.toFixed(2) },
   ];
 
   return rows.map((r) => {
@@ -975,20 +1225,25 @@ export function computePointsOffLiveTurnovers(possessions: Possession[]): { us: 
   return { us, opponent };
 }
 
-/** Second chance points: made 2s/3s that happened on a possession that also had at least one OREB (oreb_count > 0) -- i.e. the score came after a rebound kept the trip alive. */
+/** Second chance points: everything scored after an offensive rebound kept the trip alive -- putbacks, sets run after the board, and free throws. */
 export function computeSecondChancePoints(possessions: Possession[]): { us: number; opponent: number } {
   const scoredAfterOreb = (team: Team) =>
     countedPossessions(possessions)
-      .filter((p) => p.team === team && p.oreb_count > 0 && p.outcome === "fg_made")
-      .reduce((s, p) => s + p.points, 0);
+      .filter((p) => p.team === team)
+      .reduce((s, p) => s + secondChancePointsOf(p), 0);
   return { us: scoredAfterOreb("us"), opponent: scoredAfterOreb("opponent") };
 }
 
-/** Weighted shot-quality score mapped back onto the great/good/live/tough label scale. Only meaningful for "us" -- we don't track the opponent's shot quality. */
+/**
+ * Shot quality mix, graded on both ends. Per look: a miss that was
+ * rebounded keeps its own grade, so graded shots line up with attempts
+ * rather than counting only the shot that ended each trip. (Free throw
+ * trips are graded great, rebounded or not.)
+ */
 export function computeShotQuality(possessions: Possession[], team: Team = "us") {
-  const rated = countedPossessions(possessions).filter((p) => p.team === team && p.shot_quality != null);
+  const rated = countedLooks(possessions, team).filter((r) => r.look.shot_quality != null);
   const counts: Record<ShotQuality, number> = { great: 0, good: 0, live: 0, tough: 0 };
-  rated.forEach((p) => counts[p.shot_quality as ShotQuality]++);
+  rated.forEach((r) => counts[r.look.shot_quality as ShotQuality]++);
   const total = rated.length;
   const pct = (k: ShotQuality) => (total ? round1((counts[k] / total) * 100) : 0);
 
@@ -1053,34 +1308,46 @@ function countRuns(trips: Possession[], hit: (p: Possession) => boolean) {
   return { count: runsOfThreePlus, best };
 }
 
-/** Most-called / most-effective breakdown per named play, within one category. */
+/**
+ * Most-called / most-effective breakdown per named play, within one
+ * category. Per look: each time a call was run is one run, and it only
+ * gets the points scored in that look -- a set that missed and was
+ * rebounded is a run with no points, and whatever scored after the board
+ * gets the credit. A BLOB call that flowed into a set scores nothing
+ * itself; the set does.
+ */
 export function computePlayCallEffectiveness(possessions: Possession[], playCalls: PlayCall[]) {
-  const counted = countedPossessions(possessions);
+  const looks = countedLooks(possessions);
   return playCalls.map((call) => {
-    const trips = counted.filter((p) => p.play_call_id === call.id);
-    const scored = trips.filter((p) => p.points > 0).length;
+    const runs = looks.filter((r) => r.look.play_call_id === call.id);
+    const scored = runs.filter((r) => r.look.points > 0).length;
     return {
       playCallId: call.id,
       name: call.name,
       category: call.category,
-      calls: trips.length,
+      calls: runs.length,
       scored,
-      conversionPct: trips.length ? round1((scored / trips.length) * 100) : 0,
-      ppp: trips.length ? round2(trips.reduce((s, p) => s + p.points, 0) / trips.length) : 0,
+      conversionPct: runs.length ? round1((scored / runs.length) * 100) : 0,
+      ppp: runs.length ? round2(runs.reduce((s, r) => s + r.look.points, 0) / runs.length) : 0,
     };
   }).sort((a, b) => b.calls - a.calls);
 }
 
-/** BLOB/SLOB breakdown: direct shot attempts (and makes), flowed into a half-court set (and how many of those still scored), or turned it over right off the action. */
+/**
+ * BLOB/SLOB breakdown, per inbounds look: direct shot attempts (and makes),
+ * flowed into a half-court set (and how many of those trips still scored
+ * afterwards), or turned it over right off the action. Putbacks after an
+ * inbounds miss aren't inbounds plays, so they're left out here.
+ */
 export function computeOobEffectiveness(possessions: Possession[], type: "blob" | "slob") {
-  const trips = countedPossessions(possessions).filter((p) => p.team === "us" && p.possession_type === type);
-  const directShots = trips.filter((p) => p.oob_result === "direct_shot");
-  const scored = directShots.filter((p) => p.points > 0).length;
-  const flowedTrips = trips.filter((p) => p.oob_result === "flowed_half_court");
-  const flowed = flowedTrips.length;
-  const scoredOnFlow = flowedTrips.filter((p) => p.points > 0).length;
-  const turnovers = trips.filter((p) => p.oob_result === "turnover").length;
-  return { total: trips.length, directAttempts: directShots.length, scored, flowed, scoredOnFlow, turnovers };
+  const looks = countedLooks(possessions, "us").filter((r) => r.look.type === type && !r.look.putback);
+  const directShots = looks.filter((r) => r.look.oob_result === "direct_shot");
+  const scored = directShots.filter((r) => r.look.points > 0).length;
+  const flowedLooks = looks.filter((r) => r.look.end === "flowed");
+  const pointsAfter = (r: LookRow) => looksOf(r.trip).slice(r.index + 1).reduce((s, l) => s + l.points, 0);
+  const scoredOnFlow = flowedLooks.filter((r) => pointsAfter(r) > 0).length;
+  const turnovers = looks.filter((r) => r.look.oob_result === "turnover").length;
+  return { total: looks.length, directAttempts: directShots.length, scored, flowed: flowedLooks.length, scoredOnFlow, turnovers };
 }
 
 export interface PressTypeRow {
@@ -1121,22 +1388,30 @@ export interface PressBreakSummary {
  * The id is what survives.
  */
 export function computePressBreakEffectiveness(possessions: Possession[], playCalls: PlayCall[]): PressBreakSummary {
-  const trips = countedPossessions(possessions).filter((p) => p.team === "us" && isPressBreak(p));
-  const countBy = (r: PressBreakResult) => trips.filter((p) => p.press_break_result === r).length;
+  // One press look per trip. The press look carries the result; points and
+  // PPP stay per press TRIP (everything scored on a trip that started
+  // against the press), which is the number a coach means by it -- the
+  // press look itself only ever scores free throws.
+  const pressLooks = countedLooks(possessions, "us").filter((r) => r.look.type === "press_break");
+  const trips = pressLooks.map((r) => r.trip);
+  const countBy = (r: PressBreakResult) => pressLooks.filter((x) => x.look.press_break_result === r).length;
   const turnovers = countBy("turnover");
-  const broken = trips.length - turnovers;
+  const broken = pressLooks.length - turnovers;
   const points = trips.reduce((s, p) => s + p.points, 0);
-  const pointsOffBreak = trips.reduce((s, p) => {
-    if (p.possession_type === "transition" && p.outcome === "fg_made") return s + p.points;
-    if (p.press_break_result === "ft_trip") return s + p.points;
-    return s;
+  // Points off the break: free throws straight off it, plus whatever the
+  // transition look it broke into scored. A break that became a half-court
+  // look and scored is a half-court score.
+  const pointsOffBreak = pressLooks.reduce((s, r) => {
+    const next = looksOf(r.trip)[r.index + 1];
+    return s + r.look.points + (next && next.type === "transition" ? next.points : 0);
   }, 0);
 
   const byType: PressTypeRow[] = playCalls
     .filter((c) => c.category === "press_type")
     .map((call) => {
-      const own = trips.filter((p) => p.press_break_type_id === call.id);
-      const tovs = own.filter((p) => p.press_break_result === "turnover").length;
+      const ownLooks = pressLooks.filter((r) => r.look.press_break_type_id === call.id);
+      const own = ownLooks.map((r) => r.trip);
+      const tovs = ownLooks.filter((r) => r.look.press_break_result === "turnover").length;
       const pts = own.reduce((s, p) => s + p.points, 0);
       return {
         id: call.id,
@@ -1180,6 +1455,12 @@ function splitRow(trips: Possession[], label: string): SplitRow {
   return { label, trips: trips.length, points, ppp: trips.length ? round2(points / trips.length) : 0 };
 }
 
+/** splitRow over looks. The `trips` field holds the look count -- each look only brings its own points. */
+function lookSplitRow(rows: LookRow[], label: string): SplitRow {
+  const points = rows.reduce((s, r) => s + r.look.points, 0);
+  return { label, trips: rows.length, points, ppp: rows.length ? round2(points / rows.length) : 0 };
+}
+
 /**
  * What they were in on our inbounds plays, and how many trips we actually
  * tagged.
@@ -1190,16 +1471,16 @@ function splitRow(trips: Possession[], label: string): SplitRow {
  * the untagged ones can be fixed in the possession editor.
  */
 export function computeInboundsDefense(possessions: Possession[]) {
-  const trips = countedPossessions(possessions).filter(
-    (p) => p.team === "us" && (p.possession_type === "blob" || p.possession_type === "slob")
+  const looks = countedLooks(possessions, "us").filter(
+    (r) => (r.look.type === "blob" || r.look.type === "slob") && !r.look.putback
   );
-  const tagged = trips.filter((p) => p.oob_defense != null);
+  const tagged = looks.filter((r) => r.look.oob_defense != null);
   return {
-    total: trips.length,
+    total: looks.length,
     tagged: tagged.length,
-    untagged: trips.length - tagged.length,
-    man: splitRow(trips.filter((p) => p.oob_defense === "man"), "vs man"),
-    zone: splitRow(trips.filter((p) => p.oob_defense === "zone"), "vs zone"),
+    untagged: looks.length - tagged.length,
+    man: lookSplitRow(looks.filter((r) => r.look.oob_defense === "man"), "vs man"),
+    zone: lookSplitRow(looks.filter((r) => r.look.oob_defense === "zone"), "vs zone"),
   };
 }
 
@@ -1208,20 +1489,21 @@ export function computeInboundsDefense(possessions: Possession[]) {
  * against. A zone set IS the record that they were in a zone, which is
  * why man is the sum of the other three rather than its own tag.
  *
- * Reads every trip carrying a half_court_type, so a BLOB that flowed into
- * a set and a press break that flowed into one both count here.
+ * Per half-court look: a BLOB or press break that flowed into a set is a
+ * look of its own, and so is every set run after an offensive rebound.
+ * Each look only gets the points it scored.
  */
 export function computeHalfCourtStructure(possessions: Possession[]) {
-  const trips = countedPossessions(possessions).filter((p) => p.team === "us" && p.half_court_type != null);
-  const of = (t: HalfCourtType) => trips.filter((p) => p.half_court_type === t);
+  const looks = countedLooks(possessions, "us").filter((r) => r.look.half_court_type != null);
+  const of = (t: HalfCourtType) => looks.filter((r) => r.look.half_court_type === t);
   return {
-    total: trips.length,
-    set: splitRow(of("set"), "Man set"),
-    motion: splitRow(of("motion"), "Motion"),
-    unscripted: splitRow(of("unscripted"), "Unscripted"),
-    zone: splitRow(of("zone"), "Zone set"),
-    vsMan: splitRow(trips.filter((p) => p.half_court_type !== "zone"), "vs man"),
-    vsZone: splitRow(of("zone"), "vs zone"),
+    total: looks.length,
+    set: lookSplitRow(of("set"), "Man set"),
+    motion: lookSplitRow(of("motion"), "Motion"),
+    unscripted: lookSplitRow(of("unscripted"), "Unscripted"),
+    zone: lookSplitRow(of("zone"), "Zone set"),
+    vsMan: lookSplitRow(looks.filter((r) => r.look.half_court_type !== "zone"), "vs man"),
+    vsZone: lookSplitRow(of("zone"), "vs zone"),
   };
 }
 
@@ -1243,17 +1525,15 @@ export function computeAwardedFts(possessions: Possession[]) {
   return { us: forTeam("us"), opponent: forTeam("opponent") };
 }
 
-/** What a paint touch is actually worth, not just how often it happens. Half-court trips only, since the flag is only asked there. */
+/** What a paint touch is actually worth, not just how often it happens. Half-court looks that set up only (not putbacks), since that's where the flag is asked. */
 export function computePaintImpact(possessions: Possession[]) {
-  const trips = countedPossessions(possessions).filter(
-    (p) => p.team === "us" && (p.possession_type === "half_court" || p.oob_result === "flowed_half_court")
-  );
+  const looks = countedLooks(possessions, "us").filter((r) => r.look.type === "half_court" && !r.look.putback);
   return {
-    total: trips.length,
-    withTouch: splitRow(trips.filter((p) => p.paint_touch), "With paint touch"),
-    withoutTouch: splitRow(trips.filter((p) => !p.paint_touch), "No paint touch"),
-    bothSides: splitRow(trips.filter((p) => p.paint_touch_both_sides), "Both sides"),
-    oneSide: splitRow(trips.filter((p) => p.paint_touch && !p.paint_touch_both_sides), "One side only"),
+    total: looks.length,
+    withTouch: lookSplitRow(looks.filter((r) => r.look.paint_touch), "With paint touch"),
+    withoutTouch: lookSplitRow(looks.filter((r) => !r.look.paint_touch), "No paint touch"),
+    bothSides: lookSplitRow(looks.filter((r) => r.look.paint_touch_both_sides), "Both sides"),
+    oneSide: lookSplitRow(looks.filter((r) => r.look.paint_touch && !r.look.paint_touch_both_sides), "One side only"),
   };
 }
 
@@ -1264,19 +1544,19 @@ export function computePaintImpact(possessions: Possession[]) {
  * whether the grading itself is calibrated -- if "great" converts below
  * "good", the grades are drifting rather than the shooters failing.
  *
- * Rebounded misses can't be included: missed_fg2/3_count records that a
- * miss happened but not what it was graded, so this is attempts that
- * ENDED a trip. Stated in the report rather than papered over.
+ * Per look, so a miss that was rebounded counts as a miss at its own
+ * grade. (Games tracked before looks existed never saved those grades,
+ * so for them only the shot that ended each trip is here.)
  */
 export function computeQualityConversion(possessions: Possession[], team: Team) {
-  const shots = countedPossessions(possessions).filter(
-    (p) => p.team === team && p.shot_quality != null && (p.outcome === "fg_made" || p.outcome === "fg_missed")
-  );
+  const shots = countedLooks(possessions, team)
+    .map((r) => r.look)
+    .filter((l) => l.shot_quality != null && (l.outcome === "fg_made" || l.outcome === "fg_missed"));
   const grades: ShotQuality[] = ["great", "good", "live", "tough"];
   return grades.map((g) => {
-    const own = shots.filter((p) => p.shot_quality === g);
-    const made = own.filter((p) => p.outcome === "fg_made");
-    const made3 = made.filter((p) => p.shot_type === 3).length;
+    const own = shots.filter((l) => l.shot_quality === g);
+    const made = own.filter((l) => l.outcome === "fg_made");
+    const made3 = made.filter((l) => l.shot_type === 3).length;
     return {
       grade: g,
       attempts: own.length,
@@ -1372,7 +1652,7 @@ export interface DefenseSchemeSummary {
   ppp: number;
 }
 
-function summarizeDefense(trips: Possession[], label: string): DefenseSchemeSummary {
+function summarizeDefense(trips: { points: number }[], label: string): DefenseSchemeSummary {
   const calls = trips.length;
   const pointsAllowed = trips.reduce((s, p) => s + p.points, 0);
   const stops = trips.filter((p) => p.points === 0).length;
@@ -1386,22 +1666,21 @@ function summarizeDefense(trips: Possession[], label: string): DefenseSchemeSumm
 }
 
 /**
- * Defensive scheme effectiveness -- Man and Zone are tagged by
- * defense_scheme regardless of whether the possession got there directly
- * (a fresh Man/Zone call) or via a press that broke down into one (same
- * "counts toward the category either way" precedent as a BLOB that flows
- * into a half-court Set counting toward Set effectiveness). Press itself
- * is tracked by possession_type, with a breakdown of what it turned into.
+ * Defensive scheme effectiveness. Man and Zone are per LOOK: a fresh
+ * Man/Zone call and a press that fell back into one are both a man or
+ * zone look, and each only carries the points scored in it. Press
+ * (overall) stays per TRIP -- everything they scored on a trip that
+ * started against our press -- with a breakdown of what it turned into.
  */
 export function computeDefenseEffectiveness(possessions: Possession[]) {
-  const oppTrips = countedPossessions(possessions).filter((p) => p.team === "opponent");
-  const man = summarizeDefense(oppTrips.filter((p) => p.defense_scheme === "man"), "Man");
-  const zone = summarizeDefense(oppTrips.filter((p) => p.defense_scheme === "zone"), "Zone");
-  const pressTrips = oppTrips.filter((p) => p.possession_type === "press");
-  const press = summarizeDefense(pressTrips, "Press (overall)");
-  const pressTurnovers = pressTrips.filter((p) => p.press_result === "turnover").length;
-  const pressToMan = pressTrips.filter((p) => p.press_result === "man").length;
-  const pressToZone = pressTrips.filter((p) => p.press_result === "zone").length;
+  const oppLooks = countedLooks(possessions, "opponent");
+  const man = summarizeDefense(oppLooks.filter((r) => r.look.defense_scheme === "man").map((r) => r.look), "Man");
+  const zone = summarizeDefense(oppLooks.filter((r) => r.look.defense_scheme === "zone").map((r) => r.look), "Zone");
+  const pressLooks = oppLooks.filter((r) => r.look.type === "press");
+  const press = summarizeDefense(pressLooks.map((r) => r.trip), "Press (overall)");
+  const pressTurnovers = pressLooks.filter((r) => r.look.press_result === "turnover").length;
+  const pressToMan = pressLooks.filter((r) => r.look.press_result === "man").length;
+  const pressToZone = pressLooks.filter((r) => r.look.press_result === "zone").length;
   return { man, zone, press, pressTurnovers, pressToMan, pressToZone };
 }
 
@@ -1410,7 +1689,8 @@ export function describePossession(p: Possession): string {
   const who = p.team === "us" ? "Us" : "Opponent";
   let type = p.possession_type.replace(/_/g, " ");
   if (p.possession_type === "non_possession_ft") type = `${p.ft_award_type ?? "awarded"} FT`;
-  else if (isPressBreak(p)) type = `press break → ${type}`;
+  else if (p.looks && p.looks.length > 1) type = p.looks.map((l) => (l.putback ? "putback" : l.type.replace(/_/g, " "))).join(" → ");
+  else if (isPressBreak(p) && p.possession_type !== "press_break") type = `press break → ${type}`;
   let action = p.outcome.replace("_", " ");
   if (p.outcome === "fg_made" || p.outcome === "fg_missed") action = `${p.outcome === "fg_made" ? "made" : "missed"} ${p.shot_type ?? "?"}pt`;
   if (p.outcome === "ft_trip") action = `FT trip (${p.points}/${p.ft_attempts ?? "?"})`;
