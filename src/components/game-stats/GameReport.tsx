@@ -507,7 +507,11 @@ export function ReportBody({
           return (
             <div key={s.key}>
               <SectionDivider label="Streaks" />
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              {/* Ours on top, theirs below — the same trips read from the
+                  other side, so a game where nothing went wrong shows two
+                  rows of zeros underneath and that's worth seeing. */}
+              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Us</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
                 <div className="stat-card">
                   <div style={{ fontSize: 12, color: "var(--muted)" }}>Scoring runs (3+)</div>
                   <div style={{ fontSize: 20, fontWeight: 500 }}>{streaks.scoringRuns.count}</div>
@@ -517,6 +521,19 @@ export function ReportBody({
                   <div style={{ fontSize: 12, color: "var(--muted)" }}>Stop runs (3+)</div>
                   <div style={{ fontSize: 20, fontWeight: 500 }}>{streaks.stopRuns.count}</div>
                   <div style={{ fontSize: 12, color: "var(--muted)" }}>best run: {streaks.stopRuns.best} straight</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Them</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div className="stat-card">
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Scoring runs (3+)</div>
+                  <div style={{ fontSize: 20, fontWeight: 500 }}>{streaks.theirScoringRuns.count}</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>best run: {streaks.theirScoringRuns.best} straight</div>
+                </div>
+                <div className="stat-card">
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Stop runs (3+)</div>
+                  <div style={{ fontSize: 20, fontWeight: 500 }}>{streaks.theirStopRuns.count}</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>best run: {streaks.theirStopRuns.best} straight</div>
                 </div>
               </div>
             </div>
@@ -619,8 +636,8 @@ function CopyReportButton({
       }
     }
     lines.push("");
-    lines.push(`Scoring runs (3+): ${streaks.scoringRuns.count}, best ${streaks.scoringRuns.best}`);
-    lines.push(`Stop runs (3+): ${streaks.stopRuns.count}, best ${streaks.stopRuns.best}`);
+    lines.push(`Scoring runs (3+): us ${streaks.scoringRuns.count} (best ${streaks.scoringRuns.best}), them ${streaks.theirScoringRuns.count} (best ${streaks.theirScoringRuns.best})`);
+    lines.push(`Stop runs (3+): us ${streaks.stopRuns.count} (best ${streaks.stopRuns.best}), them ${streaks.theirStopRuns.count} (best ${streaks.theirStopRuns.best})`);
     return lines.join("\n");
   }
 
