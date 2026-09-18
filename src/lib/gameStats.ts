@@ -1008,6 +1008,17 @@ export function isPressBreak(p: Possession): boolean {
   return p.press_break_type_id != null;
 }
 
+/** What each rate divides by, in words, for the thin-sample note. */
+export const SAMPLE_UNITS: Record<string, string> = {
+  efg_pct: "shot attempts", fg2_pct: "two-point attempts", fg3_pct: "three-point attempts",
+  ts_pct: "shot attempts", three_rate: "shot attempts", ppp: "possessions",
+  second_chance_ppp: "offensive rebounds", ft_pct: "free throws",
+  transition_pct: "looks", oreb_pct: "rebounding chances", tov_pct: "possessions",
+  ft_rate: "shot attempts", paint_touch_single: "half-court looks",
+  paint_touch_both: "half-court looks", transition_ppp: "transition looks",
+  halfcourt_ppp: "half-court looks",
+};
+
 export interface StatRow {
   key: string;
   label: string;
@@ -1017,6 +1028,20 @@ export interface StatRow {
   raw?: string; // e.g. "12/16" -- shown alongside the (colored) percentage, itself never colored
   signed?: boolean; // shows an explicit "+" on positive values (e.g. Extra Possessions)
   display?: string; // overrides how `value` renders (e.g. "1.00" instead of "1") without changing the underlying number used for coloring/goals
+  /**
+   * How many things this rate was computed from, and the point below
+   * which it's too few to act on.
+   *
+   * Every rate has a different denominator — PPP is per possession, FT%
+   * is per attempt, half-court PPP is per look — so there's no single
+   * gate the way there is for lineups. Each row carries its own.
+   *
+   * The thresholds are judgement, not derivation. They're set where a
+   * coach would stop trusting the number rather than at any statistical
+   * boundary, and a report shows the count so you can disagree with them.
+   */
+  sampleN?: number;
+  sampleMin?: number;
 }
 
 function colorRole(value: number, goal: number, direction: "higher_better" | "lower_better"): "success" | "warning" | "danger" {
@@ -1149,24 +1174,25 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
   const halfCourtPpp = halfCourtLooks.length ? lookPoints(halfCourtLooks) / halfCourtLooks.length : 0;
   const transitionPct = looks.length ? (transitionLooks.length / looks.length) * 100 : 0;
 
-  const rows: { key: string; label: string; value: number; raw?: string; display?: string }[] = [
-    { key: "efg_pct", label: "eFG%", value: round1(efg) },
-    { key: "fg2_pct", label: "2PT FG%", value: round1(fg2Pct), raw: `${made2}/${fga2Count}` },
-    { key: "fg3_pct", label: "3PT FG%", value: round1(fg3Pct), raw: `${made3}/${fga3Count}` },
-    { key: "ts_pct", label: "True shooting %", value: round1(tsPct) },
-    { key: "three_rate", label: "3PT rate %", value: round1(threeRate), raw: `${fga3Count}/${fgaCount}` },
-    { key: "ppp", label: "PPP", value: round2(ppp), display: ppp.toFixed(2) },
-    { key: "second_chance_ppp", label: "Second chance PPP", value: round2(secondChancePpp), display: secondChancePpp.toFixed(2) },
+  const rows: { key: string; label: string; value: number; raw?: string; display?: string; sampleN?: number; sampleMin?: number }[] = [
+    { key: "efg_pct", label: "eFG%", value: round1(efg), sampleN: fgaCount, sampleMin: 90 },
+    { key: "fg2_pct", label: "2PT FG%", value: round1(fg2Pct), raw: `${made2}/${fga2Count}`, sampleN: fga2Count, sampleMin: 55 },
+    { key: "fg3_pct", label: "3PT FG%", value: round1(fg3Pct), raw: `${made3}/${fga3Count}`, sampleN: fga3Count, sampleMin: 40 },
+    { key: "ts_pct", label: "True shooting %", value: round1(tsPct), sampleN: fgaCount, sampleMin: 90 },
+    { key: "three_rate", label: "3PT rate %", value: round1(threeRate), raw: `${fga3Count}/${fgaCount}`, sampleN: fgaCount, sampleMin: 90 },
+    { key: "ppp", label: "PPP", value: round2(ppp), display: ppp.toFixed(2), sampleN: trips.length, sampleMin: 100 },
+    { key: "second_chance_ppp", label: "Second chance PPP", value: round2(secondChancePpp), display: secondChancePpp.toFixed(2), sampleN: orebFg, sampleMin: 20 },
+    // Possessions IS the sample, so flagging it would be circular.
     { key: "possessions", label: "Possessions", value: trips.length },
-    { key: "ft_pct", label: "FT%", value: round1(ftPct), raw: `${ftMade}/${ftAttempted}` },
-    { key: "transition_pct", label: "Transition %", value: round1(transitionPct), raw: `${transitionLooks.length}/${looks.length}` },
-    { key: "oreb_pct", label: "OREB%", value: round1(orebPct), raw: `${orebFg}/${orebOpportunities}` },
-    { key: "tov_pct", label: "TOV%", value: round1(tovPct), raw: `${liveTov}+${deadTov}+${chargeTov}=${turnovers}` },
-    { key: "ft_rate", label: "FT rate %", value: round1(ftRate * 100) },
-    { key: "paint_touch_single", label: "Paint touch %", value: round1(paintTouchSinglePct), raw: `${paintTouchSingle}/${paintLooks.length}` },
-    { key: "paint_touch_both", label: "Both sides %", value: round1(paintTouchBothPct), raw: `${paintTouchBoth}/${paintLooks.length}` },
-    { key: "transition_ppp", label: "Transition pts/look", value: round2(transitionPpp), display: transitionPpp.toFixed(2) },
-    { key: "halfcourt_ppp", label: "Half-court pts/look", value: round2(halfCourtPpp), display: halfCourtPpp.toFixed(2) },
+    { key: "ft_pct", label: "FT%", value: round1(ftPct), raw: `${ftMade}/${ftAttempted}`, sampleN: ftAttempted, sampleMin: 30 },
+    { key: "transition_pct", label: "Transition %", value: round1(transitionPct), raw: `${transitionLooks.length}/${looks.length}`, sampleN: looks.length, sampleMin: 100 },
+    { key: "oreb_pct", label: "OREB%", value: round1(orebPct), raw: `${orebFg}/${orebOpportunities}`, sampleN: orebOpportunities, sampleMin: 50 },
+    { key: "tov_pct", label: "TOV%", value: round1(tovPct), raw: `${liveTov}+${deadTov}+${chargeTov}=${turnovers}`, sampleN: trips.length, sampleMin: 100 },
+    { key: "ft_rate", label: "FT rate %", value: round1(ftRate * 100), sampleN: fgaCount, sampleMin: 90 },
+    { key: "paint_touch_single", label: "Paint touch %", value: round1(paintTouchSinglePct), raw: `${paintTouchSingle}/${paintLooks.length}`, sampleN: paintLooks.length, sampleMin: 70 },
+    { key: "paint_touch_both", label: "Both sides %", value: round1(paintTouchBothPct), raw: `${paintTouchBoth}/${paintLooks.length}`, sampleN: paintLooks.length, sampleMin: 70 },
+    { key: "transition_ppp", label: "Transition pts/look", value: round2(transitionPpp), display: transitionPpp.toFixed(2), sampleN: transitionLooks.length, sampleMin: 30 },
+    { key: "halfcourt_ppp", label: "Half-court pts/look", value: round2(halfCourtPpp), display: halfCourtPpp.toFixed(2), sampleN: halfCourtLooks.length, sampleMin: 70 },
   ];
 
   return rows.map((r) => {
@@ -1179,6 +1205,8 @@ export function computeTeamStats(possessions: Possession[], team: Team, goals: S
       role,
       raw: r.raw,
       display: r.display,
+      sampleN: r.sampleN,
+      sampleMin: r.sampleMin,
     };
   });
 }
