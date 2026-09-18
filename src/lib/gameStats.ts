@@ -1284,6 +1284,11 @@ export function qualityShotStatus(qualityPct: number | null, goal: number | null
 export function computeStreaks(possessions: Possession[]) {
   const ordered = countedPossessions(possessions).sort((a, b) => a.sequence - b.sequence);
 
+  // Four runs, not two. The same trips read from both sides: our stop run
+  // IS them failing to score, and their stop run IS us coming up empty.
+  // The two added here are the uncomfortable half — a defence conceding
+  // three straight, an offence dry for three straight — which is the half
+  // that tells you where a game got away.
   const scoringRuns = countRuns(
     ordered.filter((p) => p.team === "us"),
     (p) => p.points > 0
@@ -1292,8 +1297,16 @@ export function computeStreaks(possessions: Possession[]) {
     ordered.filter((p) => p.team === "opponent"),
     (p) => p.points === 0
   );
+  const theirScoringRuns = countRuns(
+    ordered.filter((p) => p.team === "opponent"),
+    (p) => p.points > 0
+  );
+  const theirStopRuns = countRuns(
+    ordered.filter((p) => p.team === "us"),
+    (p) => p.points === 0
+  );
 
-  return { scoringRuns, stopRuns };
+  return { scoringRuns, stopRuns, theirScoringRuns, theirStopRuns };
 }
 
 function countRuns(trips: Possession[], hit: (p: Possession) => boolean) {
