@@ -41,6 +41,7 @@ import {
   qualityShotStatus,
   gameTypesForGroup,
   STAT_EXPLAINERS,
+  SAMPLE_UNITS,
   type GameGroup,
   type Possession,
   type PlayCall,
@@ -273,7 +274,7 @@ export function ReportBody({
         </div>
       </div>
 
-      <PairedStatRows usRows={usRows} oppRows={oppRows} opponentName={opponentName} />
+      <PairedStatRows usRows={usRows} oppRows={oppRows} opponentName={opponentName} variant={variant} />
 
       {specialStats.map((s) => {
         if (s.kind === "shot_quality") {
@@ -673,17 +674,25 @@ function SectionDivider({ label }: { label: string }) {
 // chips were hard to read at a glance, especially green and red.
 const roleBg: Record<string, string> = { success: "#1f7a4d", warning: "#a3690d", danger: "#b8342e" };
 
-function PairedStatRows({ usRows, oppRows, opponentName }: { usRows: StatRow[]; oppRows: StatRow[]; opponentName?: string }) {
+function PairedStatRows({ usRows, oppRows, opponentName, variant }: { usRows: StatRow[]; oppRows: StatRow[]; opponentName?: string; variant?: ReportVariant }) {
   // Tapping a stat name explains it. The definitions live in gameStats.ts
   // and are shared with the lineup reports, so a stat can't end up
   // explained two different ways in two places.
   const [explain, setExplain] = useState<string | null>(null);
+  const [sample, setSample] = useState<string | null>(null);
   if (!usRows.length) return <div style={{ fontSize: 13, color: "var(--muted)", padding: "6px 0" }}>No stats in this set yet.</div>;
   return (
     <div>
       <style>{`
         .gs-paired { grid-template-columns: 1fr 1fr 1fr; }
       `}</style>
+      {/* Said once at the top rather than repeated on every flagged row —
+          the icon needs a meaning, not an explanation each time. */}
+      {variant === "custom" && usRows.some(r => r.sampleMin != null && r.sampleN != null && r.sampleN < r.sampleMin) && (
+        <div style={{ fontSize: 11, color: "#e8a33d", marginBottom: 8, lineHeight: 1.5 }}>
+          ⚠ marks a number computed from too few to lean on. Tap it to see how many, and how close it is to reading reliably.
+        </div>
+      )}
       <div className="gs-paired" style={{ display: "grid", gap: 8, marginBottom: 6 }}>
         <span style={{ textAlign: "center", fontSize: 16, fontWeight: 600, color: "var(--text)" }}>Us</span>
         <span />
@@ -693,7 +702,7 @@ function PairedStatRows({ usRows, oppRows, opponentName }: { usRows: StatRow[]; 
         const opp = oppRows[i];
         return (
           <div key={us.key} className="gs-paired" style={{ display: "grid", alignItems: "center", gap: 8, padding: "8px 0", borderTop: "1px solid var(--border)" }}>
-            <StatChip row={us} />
+            <StatChip row={us} flagThin={variant === "custom"} onExplainSample={() => setSample(sample === us.key ? null : us.key)} />
             <span
               onClick={() => STAT_EXPLAINERS[us.key] && setExplain(explain === us.key ? null : us.key)}
               style={{
@@ -704,7 +713,24 @@ function PairedStatRows({ usRows, oppRows, opponentName }: { usRows: StatRow[]; 
             >
               {us.label}
             </span>
-            {opp ? <StatChip row={opp} /> : <span />}
+            {opp ? <StatChip row={opp} flagThin={variant === "custom"} onExplainSample={() => setSample(sample === us.key ? null : us.key)} /> : <span />}
+            {sample === us.key && us.sampleN != null && us.sampleMin != null && (
+              <div style={{ gridColumn: "1 / -1", padding: "8px 10px", marginTop: 4, background: "rgba(232,163,61,0.08)", border: "1px solid rgba(232,163,61,0.35)", borderRadius: 8 }}>
+                <div style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.6 }}>
+                  From <b>{us.sampleN}</b> {SAMPLE_UNITS[us.key] ?? "of them"}
+                  {opp?.sampleN != null && opp.sampleN !== us.sampleN && <> — {opp.sampleN} for {opponentName ?? "them"}</>}.
+                  {" "}Reads reliably from about <b>{us.sampleMin}</b>. Most rates clear that in two or three games; threes and free throws take longer, because fewer of them happen.
+                </div>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 5, lineHeight: 1.5 }}>
+                  {us.sampleN >= us.sampleMin * 0.8
+                    ? "Close enough to the mark to be worth something — treat it as a strong hint rather than a finding."
+                    : us.sampleN >= us.sampleMin * 0.4
+                      ? "Some way short. Fine for noticing a pattern, not for making a call on it."
+                      : "Far short — this number will move a lot as games are added."}
+                  {" "}Adding games to the report, or loosening a filter, fills it in.
+                </div>
+              </div>
+            )}
             {explain === us.key && STAT_EXPLAINERS[us.key] && (
               <div style={{ gridColumn: "1 / -1", padding: "8px 10px", marginTop: 4, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8 }}>
                 <div style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.6 }}>{STAT_EXPLAINERS[us.key].what}</div>
@@ -718,7 +744,20 @@ function PairedStatRows({ usRows, oppRows, opponentName }: { usRows: StatRow[]; 
   );
 }
 
-function StatChip({ row }: { row: StatRow }) {
+/**
+ * Thin samples are annotated, never hidden or dimmed.
+ *
+ * The number still shows exactly as it did — dimming it would read as
+ * broken rather than provisional. What's added is the count it came from,
+ * because "from 6 possessions" is a fact you can judge while "small
+ * sample" is a label you'd have to take on trust.
+ *
+ * Only on reports built in the Reports tab. A quarter is fifteen
+ * possessions by definition, so flagging one would paint the whole thing
+ * amber and teach you to ignore amber.
+ */
+function StatChip({ row, flagThin = false, onExplainSample }: { row: StatRow; flagThin?: boolean; onExplainSample?: () => void }) {
+  const thin = flagThin && row.sampleMin != null && row.sampleN != null && row.sampleN < row.sampleMin;
   return (
     <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
       <span
@@ -731,9 +770,17 @@ function StatChip({ row }: { row: StatRow }) {
           background: row.role ? roleBg[row.role] : "var(--surface2)",
           color: row.role ? "#fff" : "var(--text)",
         }}
-        title={row.goal != null ? `goal ${row.goal}` : undefined}
+        title={[
+          row.goal != null ? `goal ${row.goal}` : null,
+          thin ? `from ${row.sampleN} — under ${row.sampleMin}, so read it lightly` : null,
+        ].filter(Boolean).join(" · ") || undefined}
       >
         {row.display ?? (row.signed && row.value > 0 ? `+${row.value}` : row.value)}
+        {thin && (
+          <span onClick={(e: any) => { e.stopPropagation(); onExplainSample?.(); }}
+            title="Why this is flagged"
+            style={{ marginLeft: 4, fontSize: 11, cursor: onExplainSample ? "pointer" : "default" }}>⚠</span>
+        )}
       </span>
       {row.raw && <span style={{ fontSize: 10, color: "var(--muted)" }}>{row.raw}</span>}
     </span>
