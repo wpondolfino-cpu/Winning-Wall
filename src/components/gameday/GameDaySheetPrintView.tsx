@@ -1,6 +1,6 @@
 // src/components/gameday/GameDaySheetPrintView.tsx
 import { useState, useLayoutEffect, useRef } from "react";
-import { GameDaySheet, GameDayCall, GAMEDAY_SECTIONS, GameDaySection } from "../../lib/gameDaySheets";
+import { GameDaySheet, GameDayCall, GAMEDAY_SECTIONS, GameDaySection, sectionLabel, isSectionHidden } from "../../lib/gameDaySheets";
 
 interface Props {
   sheet: GameDaySheet;
@@ -32,35 +32,35 @@ function SectionBlock({ calls, section, label }: { calls: GameDayCall[]; section
   );
 }
 
-function OffenseBlobsColumn({ calls }: { calls: GameDayCall[] }) {
+function OffenseBlobsColumn({ calls, sheet }: { calls: GameDayCall[]; sheet: GameDaySheet }) {
   return (
     <div>
       <div style={{ background: "#e6f1fb", color: "#0c447c", fontWeight: 600, padding: "4px 8px", marginBottom: 6 }}>OFFENSE</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 10px" }}>
-        {GAMEDAY_SECTIONS.filter(s => s.group === "offense").map(s => <SectionBlock key={s.key} calls={calls} section={s.key} label={s.label} />)}
+        {GAMEDAY_SECTIONS.filter(s => s.group === "offense" && !isSectionHidden(sheet, s.key)).map(s => <SectionBlock key={s.key} calls={calls} section={s.key} label={sectionLabel(sheet, s.key)} />)}
       </div>
       <div style={{ background: "#eaf3de", color: "#27500a", fontWeight: 600, padding: "4px 8px", margin: "10px 0 6px" }}>BLOBS &amp; SLOBS</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 10px" }}>
-        {GAMEDAY_SECTIONS.filter(s => s.group === "blobsSlobs").map(s => <SectionBlock key={s.key} calls={calls} section={s.key} label={s.label} />)}
+        {GAMEDAY_SECTIONS.filter(s => s.group === "blobsSlobs" && !isSectionHidden(sheet, s.key)).map(s => <SectionBlock key={s.key} calls={calls} section={s.key} label={sectionLabel(sheet, s.key)} />)}
       </div>
     </div>
   );
 }
 
-function DefenseBlock({ calls }: { calls: GameDayCall[] }) {
+function DefenseBlock({ calls, sheet }: { calls: GameDayCall[]; sheet: GameDaySheet }) {
   return (
     <div>
       <div style={{ background: "#fcebeb", color: "#791f1f", fontWeight: 600, padding: "4px 8px", marginBottom: 6 }}>DEFENSE</div>
-      {GAMEDAY_SECTIONS.filter(s => s.group === "defense").map(s => <SectionBlock key={s.key} calls={calls} section={s.key} label={s.label} />)}
+      {GAMEDAY_SECTIONS.filter(s => s.group === "defense" && !isSectionHidden(sheet, s.key)).map(s => <SectionBlock key={s.key} calls={calls} section={s.key} label={sectionLabel(sheet, s.key)} />)}
     </div>
   );
 }
 
-function SpecialsBlock({ calls }: { calls: GameDayCall[] }) {
+function SpecialsBlock({ calls, sheet }: { calls: GameDayCall[]; sheet: GameDaySheet }) {
   return (
     <div>
       <div style={{ background: "#faeeda", color: "#633806", fontWeight: 600, padding: "4px 8px", marginBottom: 6 }}>SPECIALS</div>
-      {GAMEDAY_SECTIONS.filter(s => s.group === "specials").map(s => <SectionBlock key={s.key} calls={calls} section={s.key} label={s.label} />)}
+      {GAMEDAY_SECTIONS.filter(s => s.group === "specials" && !isSectionHidden(sheet, s.key)).map(s => <SectionBlock key={s.key} calls={calls} section={s.key} label={sectionLabel(sheet, s.key)} />)}
     </div>
   );
 }
@@ -122,10 +122,10 @@ export default function GameDaySheetPrintView({ sheet, calls }: Props) {
       {!resolved && (
         <div ref={measureRef} style={{ position: "absolute", visibility: "hidden", pointerEvents: "none", width: PAGE_WIDTH_PX }}>
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
-            <OffenseBlobsColumn calls={calls} />
+            <OffenseBlobsColumn calls={calls} sheet={sheet} />
             <div>
-              {page1IncludesDefense && <DefenseBlock calls={calls} />}
-              {page1IncludesSpecials && <div style={{ marginTop: page1IncludesDefense ? 10 : 0 }}><SpecialsBlock calls={calls} /></div>}
+              {page1IncludesDefense && <DefenseBlock calls={calls} sheet={sheet} />}
+              {page1IncludesSpecials && <div style={{ marginTop: page1IncludesDefense ? 10 : 0 }}><SpecialsBlock calls={calls} sheet={sheet} /></div>}
             </div>
           </div>
         </div>
@@ -135,25 +135,25 @@ export default function GameDaySheetPrintView({ sheet, calls }: Props) {
         <>
           <PageShell name={sheet.name}>
             <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
-              <OffenseBlobsColumn calls={calls} />
+              <OffenseBlobsColumn calls={calls} sheet={sheet} />
               <div>
-                {page1IncludesDefense && <DefenseBlock calls={calls} />}
-                {page1IncludesSpecials && <div style={{ marginTop: page1IncludesDefense ? 10 : 0 }}><SpecialsBlock calls={calls} /></div>}
+                {page1IncludesDefense && <DefenseBlock calls={calls} sheet={sheet} />}
+                {page1IncludesSpecials && <div style={{ marginTop: page1IncludesDefense ? 10 : 0 }}><SpecialsBlock calls={calls} sheet={sheet} /></div>}
               </div>
             </div>
           </PageShell>
 
           {assignment === "specials-moved" && (
             <PageShell name={`${sheet.name} — continued`}>
-              <SpecialsBlock calls={calls} />
+              <SpecialsBlock calls={calls} sheet={sheet} />
             </PageShell>
           )}
 
           {assignment === "defense-and-specials-moved" && (
             <PageShell name={`${sheet.name} — continued`}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                <DefenseBlock calls={calls} />
-                <SpecialsBlock calls={calls} />
+                <DefenseBlock calls={calls} sheet={sheet} />
+                <SpecialsBlock calls={calls} sheet={sheet} />
               </div>
             </PageShell>
           )}
