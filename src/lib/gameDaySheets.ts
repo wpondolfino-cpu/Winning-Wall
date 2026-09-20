@@ -31,6 +31,52 @@ export interface GameDaySheet {
   created_by: string;
   created_at: string;
   updated_at: string;
+  /**
+   * Per-sheet renames, keyed by section key. Absent = the built-in label.
+   *
+   * On the sheet rather than the section, so a varsity sheet and a
+   * freshman sheet can name the same section differently without one
+   * changing the other.
+   */
+  section_labels: Record<string, string>;
+  /**
+   * Sections this sheet doesn't show or print.
+   *
+   * Calls inside one are kept, not deleted — the key never changes, so
+   * unhiding brings everything back exactly as it was.
+   */
+  hidden_sections: string[];
+}
+
+/** This sheet's name for a section — its own, or the built-in one. */
+export function sectionLabel(sheet: GameDaySheet | null | undefined, key: GameDaySection): string {
+  const custom = sheet?.section_labels?.[key]?.trim();
+  if (custom) return custom;
+  return GAMEDAY_SECTIONS.find(s => s.key === key)?.label ?? key;
+}
+
+export function isSectionHidden(sheet: GameDaySheet | null | undefined, key: GameDaySection): boolean {
+  return (sheet?.hidden_sections ?? []).includes(key);
+}
+
+export async function renameSection(sheetId: string, key: GameDaySection, label: string): Promise<void> {
+  const { data } = await supabase.from("gameday_sheets").select("section_labels").eq("id", sheetId).single();
+  const next = { ...(((data as any)?.section_labels ?? {}) as Record<string, string>) };
+  const clean = label.trim();
+  // An empty name means "back to the built-in one" rather than a blank header.
+  if (clean) next[key] = clean; else delete next[key];
+  const { error } = await supabase.from("gameday_sheets")
+    .update({ section_labels: next, updated_at: new Date().toISOString() }).eq("id", sheetId);
+  if (error) throw error;
+}
+
+export async function setSectionHidden(sheetId: string, key: GameDaySection, hidden: boolean): Promise<void> {
+  const { data } = await supabase.from("gameday_sheets").select("hidden_sections").eq("id", sheetId).single();
+  const current = new Set<string>(((data as any)?.hidden_sections ?? []) as string[]);
+  if (hidden) current.add(key); else current.delete(key);
+  const { error } = await supabase.from("gameday_sheets")
+    .update({ hidden_sections: [...current], updated_at: new Date().toISOString() }).eq("id", sheetId);
+  if (error) throw error;
 }
 
 export interface GameDayCall {
