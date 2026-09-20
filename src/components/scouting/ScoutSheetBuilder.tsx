@@ -91,9 +91,72 @@ export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: 
     load();
   }
 
+  /**
+   * A change that isn't typed — a dropdown, a chip, a toggle.
+   *
+   * Reloading after the write is fine here because the value can't be
+   * mid-edit. It is NOT fine for a text field: every keystroke would
+   * write, reload, and hand the input a value from the server while you
+   * were still typing into it, which drops and reorders characters. Typed
+   * fields go through patchPlayerTyped instead.
+   */
+/** Positions, as a scout sheet uses them. */
+const POSITIONS = ["PG", "SG", "SF", "PF", "C", "G", "F", "G/F", "F/C"];
+const GRADES = ["9", "10", "11", "12"];
+
+/** Height is stored as one string — "6'2" — but typed as two numbers. */
+function splitHeight(h: string | null | undefined): { ft: string; inch: string } {
+  const m = (h ?? "").match(/(\d+)\D+(\d+)/);
+  if (m) return { ft: m[1], inch: m[2] };
+  // Also matches "6'" and "6 ft" — the half-typed state you pass through
+  // after filling the feet box but before the inches box. Without it,
+  // typing the feet and then the inches loses the feet.
+  const single = (h ?? "").match(/^\s*(\d+)\D*$/);
+  return single ? { ft: single[1], inch: "" } : { ft: "", inch: "" };
+}
+function joinHeight(ft: string, inch: string): string {
+  if (!ft && !inch) return "";
+  if (!inch) return `${ft}'`;
+  return `${ft}'${inch}`;
+}
+
   async function patchPlayer(id: string, patch: Partial<ScoutPlayer>) {
     await updateScoutPlayer(id, patch as any);
     load();
+  }
+
+  /**
+   * A typed change: shown immediately, saved shortly after, never
+   * reloaded underneath you.
+   *
+   * The local copy is what the input reads from while it has focus, so
+   * the cursor stays where you put it and nothing round-trips mid-word.
+   */
+  const [playerDraft, setPlayerDraft] = useState<Record<string, Partial<ScoutPlayer>>>({});
+  const typingTimers = useRef<Record<string, number>>({});
+
+  function patchPlayerTyped(id: string, patch: Partial<ScoutPlayer>) {
+    setPlayerDraft(d => ({ ...d, [id]: { ...(d[id] ?? {}), ...patch } }));
+    if (typingTimers.current[id]) window.clearTimeout(typingTimers.current[id]);
+    typingTimers.current[id] = window.setTimeout(async () => {
+      const pending = { ...(playerDraftRef.current[id] ?? {}) };
+      await updateScoutPlayer(id, pending as any);
+      // Drop the draft only after the write lands, so the field never
+      // flickers back to the old value in between.
+      setPlayerDraft(d => { const next = { ...d }; delete next[id]; return next; });
+      load();
+    }, 600);
+  }
+
+  // The timer closes over its own copy, so the latest draft has to be
+  // reachable from outside React's render cycle.
+  const playerDraftRef = useRef<Record<string, Partial<ScoutPlayer>>>({});
+  useEffect(() => { playerDraftRef.current = playerDraft; }, [playerDraft]);
+
+  /** What a field should show: the draft if one is pending, else saved. */
+  function shownValue<K extends keyof ScoutPlayer>(p: ScoutPlayer, key: K): ScoutPlayer[K] {
+    const draft = playerDraft[p.id];
+    return (draft && key in draft ? (draft as any)[key] : p[key]);
   }
 
   async function toggleMarker(p: ScoutPlayer, marker: ScoutMarker) {
@@ -267,20 +330,47 @@ export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: 
 
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {players.map(p => (
-                <div key={p.id} style={{ display: "grid", gridTemplateColumns: "1.4fr 0.5fr 0.7fr 0.5fr 0.5fr 0.5fr 1.1fr 0.6fr 0.6fr", alignItems: "center", gap: 8,
+                <div key={p.id} style={{ display: "grid", gridTemplateColumns: "1.4fr 0.5fr 0.7fr 0.8fr 0.55fr 0.5fr 1.1fr 0.6fr 0.6fr", alignItems: "center", gap: 8,
                   padding: "8px 10px", background: "var(--surface2)", borderRadius: 8, fontSize: 12 }}>
                   <span onClick={() => setDetailPlayerId(p.id)} style={{ cursor: "pointer", fontWeight: 600, color: "var(--text)" }}>{p.name}</span>
                   {canManage ? (
-                    <input value={p.number ?? ""} onChange={e => patchPlayer(p.id, { number: e.target.value })} placeholder="#" style={{ ...inputStyle, width: "100%", fontSize: 12, padding: "4px 6px" }} />
+                    <input value={(shownValue(p, "number") as string) ?? ""} inputMode="numeric"
+                      onChange={e => patchPlayerTyped(p.id, { number: e.target.value.replace(/[^0-9]/g, "") })}
+                      placeholder="#" style={{ ...inputStyle, width: "100%", fontSize: 12, padding: "4px 6px" }} />
                   ) : <span>{p.number ?? "—"}</span>}
                   {canManage ? (
-                    <input value={p.position ?? ""} onChange={e => patchPlayer(p.id, { position: e.target.value })} placeholder="Pos" style={{ ...inputStyle, width: "100%", fontSize: 12, padding: "4px 6px" }} />
+                    <select value={p.position ?? ""} onChange={e => patchPlayer(p.id, { position: e.target.value })}
+                      style={{ ...inputStyle, width: "100%", fontSize: 12, padding: "4px 6px" }}>
+                      <option value="">Pos</option>
+                      {POSITIONS.map(x => <option key={x} value={x}>{x}</option>)}
+                      {/* Anything typed before this was a dropdown still shows. */}
+                      {p.position && !POSITIONS.includes(p.position) && <option value={p.position}>{p.position}</option>}
+                    </select>
                   ) : <span>{p.position ?? "—"}</span>}
                   {canManage ? (
-                    <input value={p.height ?? ""} onChange={e => patchPlayer(p.id, { height: e.target.value })} placeholder="Ht" style={{ ...inputStyle, width: "100%", fontSize: 12, padding: "4px 6px" }} />
+                    <span style={{ display: "flex", gap: 3, alignItems: "center" }}>
+                      <input value={splitHeight(shownValue(p, "height") as string).ft} inputMode="numeric"
+                        onChange={e => {
+                          const ft = e.target.value.replace(/[^0-9]/g, "").slice(0, 1);
+                          patchPlayerTyped(p.id, { height: joinHeight(ft, splitHeight(shownValue(p, "height") as string).inch) });
+                        }}
+                        placeholder="ft" style={{ ...inputStyle, width: "100%", fontSize: 12, padding: "4px 4px", textAlign: "center" }} />
+                      <span style={{ color: "var(--muted)", fontSize: 11 }}>&rsquo;</span>
+                      <input value={splitHeight(shownValue(p, "height") as string).inch} inputMode="numeric"
+                        onChange={e => {
+                          const raw = e.target.value.replace(/[^0-9]/g, "").slice(0, 2);
+                          patchPlayerTyped(p.id, { height: joinHeight(splitHeight(shownValue(p, "height") as string).ft, raw) });
+                        }}
+                        placeholder="in" style={{ ...inputStyle, width: "100%", fontSize: 12, padding: "4px 4px", textAlign: "center" }} />
+                    </span>
                   ) : <span>{p.height ?? "—"}</span>}
                   {canManage ? (
-                    <input value={p.grade ?? ""} onChange={e => patchPlayer(p.id, { grade: e.target.value })} placeholder="Gr" style={{ ...inputStyle, width: "100%", fontSize: 12, padding: "4px 6px" }} />
+                    <select value={p.grade ?? ""} onChange={e => patchPlayer(p.id, { grade: e.target.value })}
+                      style={{ ...inputStyle, width: "100%", fontSize: 12, padding: "4px 6px" }}>
+                      <option value="">Gr</option>
+                      {GRADES.map(x => <option key={x} value={x}>{x}</option>)}
+                      {p.grade && !GRADES.includes(p.grade) && <option value={p.grade}>{p.grade}</option>}
+                    </select>
                   ) : <span>{p.grade ?? "—"}</span>}
                   <div style={{ display: "flex", gap: 3 }}>
                     {(["R", "L"] as const).map(h => (
