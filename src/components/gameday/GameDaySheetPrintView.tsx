@@ -1,6 +1,6 @@
 // src/components/gameday/GameDaySheetPrintView.tsx
-import { useState, useLayoutEffect, useRef } from "react";
-import { GameDaySheet, GameDayCall, GAMEDAY_SECTIONS, GameDaySection, sectionLabel, isSectionHidden } from "../../lib/gameDaySheets";
+import { useState, useLayoutEffect, useEffect, useRef } from "react";
+import { GameDaySheet, GameDayCall, GameDaySection, GameDaySectionRow, getSections } from "../../lib/gameDaySheets";
 
 interface Props {
   sheet: GameDaySheet;
@@ -32,35 +32,35 @@ function SectionBlock({ calls, section, label }: { calls: GameDayCall[]; section
   );
 }
 
-function OffenseBlobsColumn({ calls, sheet }: { calls: GameDayCall[]; sheet: GameDaySheet }) {
+function OffenseBlobsColumn({ calls, sections }: { calls: GameDayCall[]; sections: GameDaySectionRow[] }) {
   return (
     <div>
       <div style={{ background: "#e6f1fb", color: "#0c447c", fontWeight: 600, padding: "4px 8px", marginBottom: 6 }}>OFFENSE</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 10px" }}>
-        {GAMEDAY_SECTIONS.filter(s => s.group === "offense" && !isSectionHidden(sheet, s.key)).map(s => <SectionBlock key={s.key} calls={calls} section={s.key} label={sectionLabel(sheet, s.key)} />)}
+        {sections.filter(s => s.group === "offense" && !s.hidden).map(s => <SectionBlock key={s.id} calls={calls} section={s.key} label={s.label} />)}
       </div>
       <div style={{ background: "#eaf3de", color: "#27500a", fontWeight: 600, padding: "4px 8px", margin: "10px 0 6px" }}>BLOBS &amp; SLOBS</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 10px" }}>
-        {GAMEDAY_SECTIONS.filter(s => s.group === "blobsSlobs" && !isSectionHidden(sheet, s.key)).map(s => <SectionBlock key={s.key} calls={calls} section={s.key} label={sectionLabel(sheet, s.key)} />)}
+        {sections.filter(s => s.group === "blobsSlobs" && !s.hidden).map(s => <SectionBlock key={s.id} calls={calls} section={s.key} label={s.label} />)}
       </div>
     </div>
   );
 }
 
-function DefenseBlock({ calls, sheet }: { calls: GameDayCall[]; sheet: GameDaySheet }) {
+function DefenseBlock({ calls, sections }: { calls: GameDayCall[]; sections: GameDaySectionRow[] }) {
   return (
     <div>
       <div style={{ background: "#fcebeb", color: "#791f1f", fontWeight: 600, padding: "4px 8px", marginBottom: 6 }}>DEFENSE</div>
-      {GAMEDAY_SECTIONS.filter(s => s.group === "defense" && !isSectionHidden(sheet, s.key)).map(s => <SectionBlock key={s.key} calls={calls} section={s.key} label={sectionLabel(sheet, s.key)} />)}
+      {sections.filter(s => s.group === "defense" && !s.hidden).map(s => <SectionBlock key={s.id} calls={calls} section={s.key} label={s.label} />)}
     </div>
   );
 }
 
-function SpecialsBlock({ calls, sheet }: { calls: GameDayCall[]; sheet: GameDaySheet }) {
+function SpecialsBlock({ calls, sections }: { calls: GameDayCall[]; sections: GameDaySectionRow[] }) {
   return (
     <div>
       <div style={{ background: "#faeeda", color: "#633806", fontWeight: 600, padding: "4px 8px", marginBottom: 6 }}>SPECIALS</div>
-      {GAMEDAY_SECTIONS.filter(s => s.group === "specials" && !isSectionHidden(sheet, s.key)).map(s => <SectionBlock key={s.key} calls={calls} section={s.key} label={sectionLabel(sheet, s.key)} />)}
+      {sections.filter(s => s.group === "specials" && !s.hidden).map(s => <SectionBlock key={s.id} calls={calls} section={s.key} label={s.label} />)}
     </div>
   );
 }
@@ -77,6 +77,10 @@ function PageShell({ children, name }: { children: React.ReactNode; name: string
 }
 
 export default function GameDaySheetPrintView({ sheet, calls }: Props) {
+  // The sheet's own sections, in its own order — the thirteen are only a
+  // starting point now, and a sheet may have added to them.
+  const [sections, setSections] = useState<GameDaySectionRow[]>([]);
+  useEffect(() => { getSections(sheet.id).then(setSections).catch(console.error); }, [sheet.id]);
   const [assignment, setAssignment] = useState<Assignment>("all-fit");
   const [resolved, setResolved] = useState(false);
   const measureRef = useRef<HTMLDivElement>(null);
@@ -122,10 +126,10 @@ export default function GameDaySheetPrintView({ sheet, calls }: Props) {
       {!resolved && (
         <div ref={measureRef} style={{ position: "absolute", visibility: "hidden", pointerEvents: "none", width: PAGE_WIDTH_PX }}>
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
-            <OffenseBlobsColumn calls={calls} sheet={sheet} />
+            <OffenseBlobsColumn calls={calls} sections={sections} />
             <div>
-              {page1IncludesDefense && <DefenseBlock calls={calls} sheet={sheet} />}
-              {page1IncludesSpecials && <div style={{ marginTop: page1IncludesDefense ? 10 : 0 }}><SpecialsBlock calls={calls} sheet={sheet} /></div>}
+              {page1IncludesDefense && <DefenseBlock calls={calls} sections={sections} />}
+              {page1IncludesSpecials && <div style={{ marginTop: page1IncludesDefense ? 10 : 0 }}><SpecialsBlock calls={calls} sections={sections} /></div>}
             </div>
           </div>
         </div>
@@ -135,25 +139,25 @@ export default function GameDaySheetPrintView({ sheet, calls }: Props) {
         <>
           <PageShell name={sheet.name}>
             <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
-              <OffenseBlobsColumn calls={calls} sheet={sheet} />
+              <OffenseBlobsColumn calls={calls} sections={sections} />
               <div>
-                {page1IncludesDefense && <DefenseBlock calls={calls} sheet={sheet} />}
-                {page1IncludesSpecials && <div style={{ marginTop: page1IncludesDefense ? 10 : 0 }}><SpecialsBlock calls={calls} sheet={sheet} /></div>}
+                {page1IncludesDefense && <DefenseBlock calls={calls} sections={sections} />}
+                {page1IncludesSpecials && <div style={{ marginTop: page1IncludesDefense ? 10 : 0 }}><SpecialsBlock calls={calls} sections={sections} /></div>}
               </div>
             </div>
           </PageShell>
 
           {assignment === "specials-moved" && (
             <PageShell name={`${sheet.name} — continued`}>
-              <SpecialsBlock calls={calls} sheet={sheet} />
+              <SpecialsBlock calls={calls} sections={sections} />
             </PageShell>
           )}
 
           {assignment === "defense-and-specials-moved" && (
             <PageShell name={`${sheet.name} — continued`}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                <DefenseBlock calls={calls} sheet={sheet} />
-                <SpecialsBlock calls={calls} sheet={sheet} />
+                <DefenseBlock calls={calls} sections={sections} />
+                <SpecialsBlock calls={calls} sections={sections} />
               </div>
             </PageShell>
           )}
