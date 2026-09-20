@@ -1,23 +1,41 @@
 // src/lib/gameDaySheets.ts
 import { supabase } from "./supabase";
 
-export type GameDaySection =
-  | "offense_man_triggers" | "offense_man_sets" | "offense_zone"
-  | "blob_1st" | "blob_2nd" | "blob_zone"
-  | "slob_1st" | "slob_2nd"
-  | "defense_man" | "defense_zone" | "defense_press"
-  | "specials_press_break" | "specials_eog";
+/**
+ * A section key. Still text, and the thirteen built-ins keep the keys
+ * they have always had — which is why turning sections into rows moved no
+ * call data at all. A custom section gets a generated key.
+ */
+export type GameDaySection = string;
 
-// Fixed category structure — permanent shape, per design discussion.
-export const GAMEDAY_SECTIONS: { key: GameDaySection; group: "offense" | "blobsSlobs" | "defense" | "specials"; label: string }[] = [
+export type SectionGroup = "offense" | "blobsSlobs" | "defense" | "specials";
+
+export const SECTION_GROUPS: { key: SectionGroup; label: string }[] = [
+  { key: "offense", label: "Offense" },
+  { key: "blobsSlobs", label: "BLOBs & SLOBs" },
+  { key: "defense", label: "Defense" },
+  { key: "specials", label: "Specials" },
+];
+
+/**
+ * What a NEW sheet starts with. Eleven, not thirteen.
+ *
+ * Splitting BLOBs and SLOBs by half is one program's habit, not a
+ * universal one, and a base model shouldn't carry another staff's
+ * vocabulary. Anyone who works that way adds the halves themselves now
+ * that sections can be added.
+ *
+ * Existing sheets are untouched: they keep the thirteen they were seeded
+ * with in migration 135, including their calls. This list only decides
+ * what a sheet created from here gets.
+ */
+export const DEFAULT_SECTIONS: { key: string; group: SectionGroup; label: string }[] = [
   { key: "offense_man_triggers", group: "offense", label: "Man — triggers" },
   { key: "offense_man_sets", group: "offense", label: "Man — sets" },
   { key: "offense_zone", group: "offense", label: "Zone" },
-  { key: "blob_1st", group: "blobsSlobs", label: "BLOB — 1st half" },
-  { key: "blob_2nd", group: "blobsSlobs", label: "BLOB — 2nd half" },
+  { key: "blob_man", group: "blobsSlobs", label: "BLOB — man" },
   { key: "blob_zone", group: "blobsSlobs", label: "BLOB zone" },
-  { key: "slob_1st", group: "blobsSlobs", label: "SLOB — 1st half" },
-  { key: "slob_2nd", group: "blobsSlobs", label: "SLOB — 2nd half" },
+  { key: "slob", group: "blobsSlobs", label: "SLOB" },
   { key: "defense_man", group: "defense", label: "Man" },
   { key: "defense_zone", group: "defense", label: "Zone" },
   { key: "defense_press", group: "defense", label: "Press" },
@@ -25,58 +43,87 @@ export const GAMEDAY_SECTIONS: { key: GameDaySection; group: "offense" | "blobsS
   { key: "specials_eog", group: "specials", label: "End of game" },
 ];
 
+/** @deprecated The seed, not the set — read a sheet's own sections instead. */
+export const GAMEDAY_SECTIONS = DEFAULT_SECTIONS;
+
+export interface GameDaySectionRow {
+  id: string;
+  sheet_id: string;
+  key: string;
+  label: string;
+  group: SectionGroup;
+  sort_order: number;
+  hidden: boolean;
+  is_builtin: boolean;
+}
+
+export async function getSections(sheetId: string): Promise<GameDaySectionRow[]> {
+  const { data, error } = await supabase
+    .from("gameday_sections").select("*")
+    .eq("sheet_id", sheetId).order("sort_order", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as any[]).map(r => ({ ...r, group: r.group as SectionGroup }));
+}
+
+/** Give a sheet the default thirteen. Idempotent. */
+export async function seedSections(sheetId: string): Promise<void> {
+  const { error } = await supabase.from("gameday_sections").upsert(
+    DEFAULT_SECTIONS.map((d, i) => ({
+      sheet_id: sheetId, key: d.key, label: d.label, group: d.group,
+      sort_order: i, hidden: false, is_builtin: true,
+    })),
+    { onConflict: "sheet_id,key", ignoreDuplicates: true }
+  );
+  if (error) throw error;
+}
+
+export async function addSection(
+  sheetId: string, label: string, group: SectionGroup
+): Promise<GameDaySectionRow> {
+  const existing = await getSections(sheetId);
+  const { data, error } = await supabase.from("gameday_sections").insert({
+    sheet_id: sheetId,
+    // Generated so it can't collide with a built-in key or another custom one.
+    key: `custom_${crypto.randomUUID().slice(0, 8)}`,
+    label: label.trim(), group,
+    sort_order: Math.max(0, ...existing.map(s => s.sort_order)) + 1,
+    is_builtin: false,
+  }).select().single();
+  if (error) throw error;
+  return data as GameDaySectionRow;
+}
+
+export async function updateSection(
+  id: string, patch: Partial<Pick<GameDaySectionRow, "label" | "hidden" | "group" | "sort_order">>
+): Promise<void> {
+  const { error } = await supabase.from("gameday_sections").update(patch).eq("id", id);
+  if (error) throw error;
+}
+
+/**
+ * Delete a custom section, and the calls in it.
+ *
+ * Built-ins can't be deleted — only hidden. Their keys are shared by every
+ * other sheet, and a delete here would look local while orphaning calls
+ * elsewhere.
+ */
+export async function deleteSection(section: GameDaySectionRow): Promise<void> {
+  if (section.is_builtin) throw new Error("Built-in sections can be hidden, not deleted.");
+  await supabase.from("gameday_calls").delete().eq("sheet_id", section.sheet_id).eq("section", section.key);
+  const { error } = await supabase.from("gameday_sections").delete().eq("id", section.id);
+  if (error) throw error;
+}
+
 export interface GameDaySheet {
   id: string;
   name: string;
   created_by: string;
   created_at: string;
   updated_at: string;
-  /**
-   * Per-sheet renames, keyed by section key. Absent = the built-in label.
-   *
-   * On the sheet rather than the section, so a varsity sheet and a
-   * freshman sheet can name the same section differently without one
-   * changing the other.
-   */
-  section_labels: Record<string, string>;
-  /**
-   * Sections this sheet doesn't show or print.
-   *
-   * Calls inside one are kept, not deleted — the key never changes, so
-   * unhiding brings everything back exactly as it was.
-   */
-  hidden_sections: string[];
-}
-
-/** This sheet's name for a section — its own, or the built-in one. */
-export function sectionLabel(sheet: GameDaySheet | null | undefined, key: GameDaySection): string {
-  const custom = sheet?.section_labels?.[key]?.trim();
-  if (custom) return custom;
-  return GAMEDAY_SECTIONS.find(s => s.key === key)?.label ?? key;
-}
-
-export function isSectionHidden(sheet: GameDaySheet | null | undefined, key: GameDaySection): boolean {
-  return (sheet?.hidden_sections ?? []).includes(key);
-}
-
-export async function renameSection(sheetId: string, key: GameDaySection, label: string): Promise<void> {
-  const { data } = await supabase.from("gameday_sheets").select("section_labels").eq("id", sheetId).single();
-  const next = { ...(((data as any)?.section_labels ?? {}) as Record<string, string>) };
-  const clean = label.trim();
-  // An empty name means "back to the built-in one" rather than a blank header.
-  if (clean) next[key] = clean; else delete next[key];
-  const { error } = await supabase.from("gameday_sheets")
-    .update({ section_labels: next, updated_at: new Date().toISOString() }).eq("id", sheetId);
-  if (error) throw error;
-}
-
-export async function setSectionHidden(sheetId: string, key: GameDaySection, hidden: boolean): Promise<void> {
-  const { data } = await supabase.from("gameday_sheets").select("hidden_sections").eq("id", sheetId).single();
-  const current = new Set<string>(((data as any)?.hidden_sections ?? []) as string[]);
-  if (hidden) current.add(key); else current.delete(key);
-  const { error } = await supabase.from("gameday_sheets")
-    .update({ hidden_sections: [...current], updated_at: new Date().toISOString() }).eq("id", sheetId);
-  if (error) throw error;
+  /** @deprecated Superseded by the gameday_sections table. */
+  section_labels?: Record<string, string>;
+  /** @deprecated Superseded by the gameday_sections table. */
+  hidden_sections?: string[];
 }
 
 export interface GameDayCall {
@@ -106,6 +153,7 @@ export async function createGameDaySheet(name: string): Promise<GameDaySheet> {
   if (!user) throw new Error("Not signed in");
   const { data, error } = await supabase.from("gameday_sheets").insert({ name: name.trim(), created_by: user.id }).select().single();
   if (error) throw error;
+  await seedSections(data.id);
   return data;
 }
 
