@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { GameDaySheet, getGameDaySheets, createGameDaySheet, renameGameDaySheet, deleteGameDaySheet, duplicateGameDaySheet, gameDaySheetToExportPayload, importGameDaySheetFromExportPayload, GAMEDAY_SHEET_EXPORT_SCHEMA_VERSION } from "../../lib/gameDaySheets";
 import { embedJsonInPdf, extractJsonFromPdf, drawTextDocument } from "../../lib/pdfDataExport";
-import { GAMEDAY_SECTIONS } from "../../lib/gameDaySheets";
+import { getSections } from "../../lib/gameDaySheets";
 import { inputStyle } from "../../lib/inputStyle";
 import GameDaySheetEditor from "./GameDaySheetEditor";
 
@@ -30,7 +30,11 @@ export default function GameDaySheetsList(props: Props) {
     setError(null);
     try {
       const payload = await gameDaySheetToExportPayload(sheetId);
-      const sections = GAMEDAY_SECTIONS.map(s => ({
+      // The sheet's own sections, so a custom one exports and a renamed
+      // one exports under its name. Hidden ones are left out, matching
+      // what the printed sheet shows.
+      const sheetSections = await getSections(sheetId);
+      const sections = sheetSections.filter(s => !s.hidden).map(s => ({
         heading: s.label,
         lines: payload.calls.filter((c: any) => c.section === s.key).map((c: any) => c.call_name),
       })).filter(s => s.lines.length > 0);
