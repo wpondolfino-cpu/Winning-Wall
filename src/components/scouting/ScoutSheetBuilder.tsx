@@ -165,14 +165,66 @@ export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: 
     if (!sheet) return;
     saveKeys(sheet.keys_to_game.filter((_, idx) => idx !== i));
   }
+  /**
+   * Bold something, without making you select it first.
+   *
+   * The old version only handled a selection: type a word, click B with
+   * the caret sitting after it, and you'd get "pressure **word**" — then
+   * you'd delete the placeholder and retype what you meant. Which is
+   * exactly the work the button was supposed to save.
+   *
+   * So: a selection wins, then the word the caret is in or next to, then
+   * the last word in the field. The placeholder is only for an empty box,
+   * and even then it's selected afterwards so typing replaces it.
+   */
   function wrapKeyBold(i: number) {
     if (!sheet) return;
     const el = keyInputRefs.current[i];
     const val = sheet.keys_to_game[i] ?? "";
-    const start = el?.selectionStart;
-    const end = el?.selectionEnd;
-    if (start == null || end == null || start === end) { updateKey(i, val + " **word**"); return; }
-    updateKey(i, val.slice(0, start) + "**" + val.slice(start, end) + "**" + val.slice(end));
+
+    let start = el?.selectionStart ?? null;
+    let end = el?.selectionEnd ?? null;
+
+    if (start == null || end == null || start === end) {
+      const caret = start ?? val.length;
+      // The word the caret is inside, or touching on either side.
+      let a = caret, b = caret;
+      while (a > 0 && !/\s/.test(val[a - 1])) a--;
+      while (b < val.length && !/\s/.test(val[b])) b++;
+      if (a === b) {
+        // Between words or at the end — take the last word instead.
+        const trimmed = val.replace(/\s+$/, "");
+        const lastSpace = trimmed.lastIndexOf(" ");
+        if (trimmed.length > 0) { a = lastSpace + 1; b = trimmed.length; }
+      }
+      start = a; end = b;
+    }
+
+    if (start === end) {
+      // Nothing to bold — leave a placeholder and select it so the next
+      // keystroke replaces it rather than landing beside it.
+      const next = val + (val && !val.endsWith(" ") ? " " : "") + "**word**";
+      updateKey(i, next);
+      const from = next.length - 8, to = next.length;
+      requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(from + 2, to - 2); });
+      return;
+    }
+
+    const chosen = val.slice(start, end);
+    // Clicking B on something already bold takes the asterisks off again.
+    const already = chosen.startsWith("**") && chosen.endsWith("**") && chosen.length > 4;
+    const wider = val.slice(Math.max(0, start - 2), end + 2);
+    const wrappedOutside = wider.startsWith("**") && wider.endsWith("**") && start >= 2;
+
+    if (already) {
+      updateKey(i, val.slice(0, start) + chosen.slice(2, -2) + val.slice(end));
+      return;
+    }
+    if (wrappedOutside) {
+      updateKey(i, val.slice(0, start - 2) + chosen + val.slice(end + 2));
+      return;
+    }
+    updateKey(i, val.slice(0, start) + "**" + chosen + "**" + val.slice(end));
   }
 
   async function saveDefenseSlot(slot: DefenseSlot, data: any) {
@@ -335,7 +387,7 @@ export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: 
                           <span style={{ fontSize: 12, color: "var(--muted)", width: 16 }}>{idx + 1}.</span>
                           <input ref={el => { keyInputRefs.current[idx] = el; }} value={k} disabled={!canManage}
                             onChange={e => updateKey(idx, e.target.value)} placeholder="Key point…" style={{ ...inputStyle, flex: 1, fontSize: 13 }} />
-                          {canManage && <button type="button" onClick={() => wrapKeyBold(idx)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "4px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>B</button>}
+                          {canManage && <button type="button" onMouseDown={e => e.preventDefault()} title="Bold the selected text, or the word by the cursor" onClick={() => wrapKeyBold(idx)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "4px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>B</button>}
                           {canManage && <button type="button" onClick={() => removeKey(idx)} style={{ background: "none", border: "none", color: "#ff7b7b", cursor: "pointer", fontSize: 14 }}>×</button>}
                         </div>
                       );
