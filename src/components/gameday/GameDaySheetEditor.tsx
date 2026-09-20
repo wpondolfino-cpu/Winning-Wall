@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   GameDaySheet, GameDayCall, GameDaySection, GAMEDAY_SECTIONS,
+  sectionLabel, isSectionHidden, renameSection, setSectionHidden,
   getGameDaySheet, getGameDayCalls, createGameDayCall, updateGameDayCall, deleteGameDayCall, deleteGameDayCalls, reorderGameDayCalls,
   bulkCreateGameDayCalls,
 } from "../../lib/gameDaySheets";
@@ -21,6 +22,36 @@ export default function GameDaySheetEditor({ sheetId, onClose }: Props) {
   const [calls, setCalls] = useState<GameDayCall[]>([]);
   const [myPlays, setMyPlays] = useState<Play[]>([]);
   const [addingSection, setAddingSection] = useState<GameDaySection | null>(null);
+  const [renamingSection, setRenamingSection] = useState<GameDaySection | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+
+  async function commitRename(section: GameDaySection) {
+    if (!sheet) return;
+    await renameSection(sheet.id, section, renameDraft);
+    setRenamingSection(null);
+    await load();
+  }
+
+  /**
+   * Hiding a section that holds calls would otherwise drop them from the
+   * sheet you carry, silently — and you'd find out in a timeout. The
+   * calls survive either way; the warning is so you know the section is
+   * parked rather than empty.
+   */
+  async function hideSection(section: GameDaySection, callCount: number) {
+    if (!sheet) return;
+    if (callCount > 0 && !window.confirm(
+      `Hide "${sectionLabel(sheet, section)}"? It has ${callCount} call${callCount === 1 ? "" : "s"} in it. They'll stay exactly where they are, but the section won't print until you show it again.`
+    )) return;
+    await setSectionHidden(sheet.id, section, true);
+    await load();
+  }
+
+  async function showSection(section: GameDaySection) {
+    if (!sheet) return;
+    await setSectionHidden(sheet.id, section, false);
+    await load();
+  }
   const [addName, setAddName] = useState("");
   const [addPlayId, setAddPlayId] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -185,11 +216,37 @@ export default function GameDaySheetEditor({ sheetId, onClose }: Props) {
     );
   }
 
-  function renderSection(section: GameDaySection, label: string) {
+  function renderSection(section: GameDaySection, _builtInLabel: string) {
+    // A hidden section keeps its calls — it just isn't shown or printed,
+    // so unhiding restores it exactly.
+    if (isSectionHidden(sheet, section)) return null;
     const sectionCalls = callsFor(section);
+    const label = sectionLabel(sheet, section);
     return (
       <div key={section} style={{ marginBottom: 10 }}>
-        <div style={{ fontWeight: 600, fontSize: 12, margin: "6px 0 3px" }}>{label}</div>
+        {renamingSection === section ? (
+          <div style={{ display: "flex", gap: 4, margin: "6px 0 3px" }}>
+            <input value={renameDraft} onChange={e => setRenameDraft(e.target.value)} autoFocus
+              placeholder={_builtInLabel}
+              onKeyDown={e => { if (e.key === "Enter") void commitRename(section); if (e.key === "Escape") setRenamingSection(null); }}
+              style={{ ...inputStyle, flex: 1, fontSize: 12, padding: "3px 6px" }} />
+            <button type="button" onClick={() => void commitRename(section)}
+              style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 6, padding: "3px 9px", fontSize: 11, cursor: "pointer" }}>Save</button>
+            <button type="button" onClick={() => setRenamingSection(null)}
+              style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 9px", fontSize: 11, cursor: "pointer" }}>Cancel</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "6px 0 3px" }}>
+            <span style={{ fontWeight: 600, fontSize: 12 }}>{label}</span>
+            <span style={{ flex: 1 }} />
+            <button type="button" title="Rename this section on this sheet"
+              onClick={() => { setRenamingSection(section); setRenameDraft(sheet?.section_labels?.[section] ?? ""); }}
+              style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11, cursor: "pointer", padding: 2 }}>✎</button>
+            <button type="button" title="Hide this section on this sheet"
+              onClick={() => void hideSection(section, sectionCalls.length)}
+              style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 12, cursor: "pointer", padding: 2 }}>✕</button>
+          </div>
+        )}
         {sectionCalls.map(renderCallRow)}
         {addingSection === section ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4, padding: 6, background: "var(--surface2)", borderRadius: 6 }}>
@@ -301,6 +358,26 @@ export default function GameDaySheetEditor({ sheetId, onClose }: Props) {
           <div style={{ background: "rgba(240,192,64,0.12)", color: "var(--gold)", fontWeight: 700, padding: "5px 10px", borderRadius: 6, margin: "14px 0 4px" }}>SPECIALS</div>
           {GAMEDAY_SECTIONS.filter(s => s.group === "specials").map(s => renderSection(s.key, s.label))}
         </div>
+
+        {/* Parked sections, with a count so one holding calls isn't
+            invisible. */}
+        {(sheet?.hidden_sections ?? []).length > 0 && (
+            <div style={{ marginTop: 14, paddingTop: 10, borderTop: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>Hidden on this sheet — click to bring back</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {GAMEDAY_SECTIONS.filter(sec => isSectionHidden(sheet, sec.key)).map(sec => {
+                  const n = callsFor(sec.key).length;
+                  return (
+                    <button key={sec.key} type="button" onClick={() => void showSection(sec.key)}
+                      style={{ background: "none", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 10px", fontSize: 11.5, color: "var(--muted)", cursor: "pointer", fontFamily: "inherit" }}>
+                      {sectionLabel(sheet, sec.key)}
+                      {n > 0 && <span style={{ color: "var(--gold)" }}> · {n}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
       </div>
     </div>
   );
