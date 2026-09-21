@@ -224,12 +224,19 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
    * before its week existed still lands correctly, and a mis-filed one
    * self-corrects.
    */
-  /** Monday of the ISO week containing a date — the grouping key. */
+  /**
+   * The Sunday a game's week starts on — the grouping key.
+   *
+   * Sunday to Saturday, matching practice weeks and the schedule. This was
+   * Monday-start, which put a Sunday game in the PREVIOUS week here while
+   * the schedule filed it in the next one: the same game under two week
+   * labels depending on the screen.
+   */
   function weekKeyFor(dateStr: string): string {
     const d = new Date(dateStr + "T12:00:00");
-    const monday = new Date(d);
-    monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-    return monday.toISOString().slice(0, 10);
+    const sunday = new Date(d);
+    sunday.setDate(d.getDate() - d.getDay());
+    return sunday.toISOString().slice(0, 10);
   }
   function weekLabelFor(key: string): string {
     const start = new Date(key + "T12:00:00");
