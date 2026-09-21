@@ -125,6 +125,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   // Local, editable copies of date/time/roster before saving.
   const [date, setDate]         = useState("");
   const [startTime, setStartTime] = useState("14:00");
+  const [expectedEnd, setExpectedEnd] = useState("");
   const [rosterIds, setRosterIds] = useState<string[]>([]);
   const [weekId, setWeekId]       = useState<string | null>(null);
 
@@ -191,7 +192,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
       if (pr) {
         setPractice(pr);
         setTryoutDraft(Boolean((pr as any)?.is_tryout));
-        setDate(pr.practice_date); setStartTime(pr.start_time.slice(0, 5));
+        setDate(pr.practice_date); setStartTime(pr.start_time.slice(0, 5)); setExpectedEnd(pr.expected_end_time?.slice(0, 5) ?? "");
         setRosterIds(pr.roster_ids); setWeekId(pr.week_id);
         const ov = await getAttendanceOverrides(pr.id);
         setOverrides(ov);
@@ -233,7 +234,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
       const { id } = await createPracticeWeek(newWeekName, date || undefined);
       finalWeekId = id;
     }
-    const { id, error } = await createPractice({ practice_date: date, start_time: startTime, roster_ids: rosterIds, week_id: finalWeekId, is_tryout: tryoutDraft });
+    const { id, error } = await createPractice({ practice_date: date, start_time: startTime, expected_end_time: expectedEnd || null, roster_ids: rosterIds, week_id: finalWeekId, is_tryout: tryoutDraft });
     if (error || !id) { alert("Couldn't create practice: " + error); return null; }
     const pr = await getPractice(id);
     setPractice(pr); setWeekId(finalWeekId);
@@ -251,7 +252,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   // practice already exists — matches how every other edit in this
   // builder behaves, so there's nothing left that only saves on a
   // manual button click.
-  async function autosaveMeta(patch: Partial<Pick<Practice, "practice_date" | "start_time" | "roster_ids" | "week_id">>) {
+  async function autosaveMeta(patch: Partial<Pick<Practice, "practice_date" | "start_time" | "expected_end_time" | "roster_ids" | "week_id">>) {
     if (!practice) return; // brand-new practice — needs "Create practice" first
     const { error } = await updatePractice(practice.id, patch);
     if (error) alert("Couldn't save: " + error);
@@ -631,6 +632,30 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
         <div>
           <div style={fieldLabel}>Start time</div>
           <input type="time" value={startTime} onChange={e => { setStartTime(e.target.value); autosaveMeta({ start_time: e.target.value }); }} style={inputStyle} />
+        </div>
+        <div>
+          {/* Expected, not fixed: it's what parents are told for pickup on
+              Sunday, and a follow-up email covers it if things move. When
+              set, it wins over the end worked out from the blocks — a plan
+              rarely counts the warm-up before it or the talk after it. */}
+          <div style={fieldLabel}>Expected end</div>
+          <input type="time" value={expectedEnd}
+            onChange={e => { setExpectedEnd(e.target.value); autosaveMeta({ expected_end_time: e.target.value || null }); }}
+            style={inputStyle} />
+          {(() => {
+            const planned = blocks.reduce((n, b) => n + (b.duration_minutes || 0), 0);
+            if (!planned || !startTime) return null;
+            const [h, m] = startTime.split(":").map(Number);
+            const end = h * 60 + m + planned;
+            const planEnd = `${String(Math.floor(end / 60) % 24).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}`;
+            if (expectedEnd && expectedEnd === planEnd) return null;
+            const t = (x: string) => { const [a, b] = x.split(":").map(Number); return `${a % 12 || 12}:${String(b).padStart(2, "0")} ${a < 12 ? "AM" : "PM"}`; };
+            return (
+              <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3 }}>
+                {expectedEnd ? `Plan ends ${t(planEnd)}` : `Plan ends ${t(planEnd)} — used if left blank`}
+              </div>
+            );
+          })()}
         </div>
         <div style={{ minWidth: 220 }}>
           <div style={fieldLabel}>Team(s)</div>
