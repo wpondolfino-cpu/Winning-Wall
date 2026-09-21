@@ -36,6 +36,32 @@ const KIND_COLOR: Record<string, string> = {
   event: "#8A7FE8",
 };
 
+/**
+ * Colour says whose, shape says what.
+ *
+ * The team's colour goes on the left stripe — split when a practice is
+ * shared — so it works for any team colour at all, including a near-white
+ * or a grey that would vanish if it had to be shaded three ways. The kind
+ * is carried by the row itself: a game is filled, an event is dashed, a
+ * practice is a plain outline. And a small label says it in words, so
+ * nothing depends on telling two shades apart in a gym.
+ */
+function stripeFor(rosterIds: string[] | undefined, colours: Record<string, string>): string {
+  const cs = (rosterIds ?? []).map(id => colours[id]).filter(Boolean);
+  if (cs.length === 0) return "var(--border)";
+  if (cs.length === 1) return cs[0];
+  const at = (k: number) => Math.round((k * 100) / cs.length * 100) / 100;
+  return `linear-gradient(to bottom, ${cs.map((c, i) => `${c} ${at(i)}%, ${c} ${at(i + 1)}%`).join(", ")})`;
+}
+
+/** A team colour at low strength, for filling a game row. */
+function tint(hex: string | undefined, alpha: number): string {
+  const m = (hex ?? "").match(/^#?([0-9a-f]{6})$/i);
+  if (!m) return `rgba(255,255,255,${alpha * 0.6})`;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
 export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
   const isCoach = role === "coach" || role === "admin";
   const [weeks, setWeeks] = useState<ScheduleWeek[]>([]);
@@ -68,7 +94,9 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
   const [draft, setDraft] = useState<any>({});
   const [seasonId, setSeasonId] = useState<string | null>(null);
   const [seasonLabel, setSeasonLabel] = useState<string>("");
-  const [rosters, setRosters] = useState<{ id: string; name: string }[]>([]);
+  const [rosters, setRosters] = useState<{ id: string; name: string; color: string }[]>([]);
+  // Coaches only: which team to show. Null is every team.
+  const [teamFilter, setTeamFilter] = useState<string | null>(null);
   const [userId, setUserId] = useState<string>("");
   const [showEvent, setShowEvent] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -89,10 +117,12 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
     const season = await getCurrentSeason();
     setSeasonId(season?.id ?? null);
     setSeasonLabel((season as any)?.name ?? String(new Date().getFullYear()));
+    // Everyone needs the roster colours — a player's rows carry their own
+    // team's stripe too, not just a coach's.
+    getRosters().then(rs => setRosters(rs.map((r: any) => ({ id: r.id, name: r.name, color: r.color })))).catch(() => {});
     if (isCoach) {
-      const [{ data: u }, rs] = await Promise.all([supabase.auth.getUser(), getRosters()]);
+      const { data: u } = await supabase.auth.getUser();
       setUserId(u.user?.id ?? "");
-      setRosters(rs.map((r: any) => ({ id: r.id, name: r.name })));
       // Play sheets are reusable — the same one can be attached to any
       // number of games — so the whole list is offered rather than one
       // per game.
@@ -125,14 +155,20 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
     return d.toISOString().slice(0, 10);
   }
 
+  const teamColour: Record<string, string> = Object.fromEntries(rosters.map(r => [r.id, r.color]));
+
   const filtered = weeks
     .map(w => ({
       ...w,
       items: w.items
         .filter(i => filter === "all" || i.kind === filter)
-        // A player only sees practices for a roster they're on. Coaches see
-        // everything, since they're often planning across teams.
-        .filter(i => isCoach || !i.rosterIds?.length || !homeRosterId || i.rosterIds.includes(homeRosterId))
+        // A coach picks a team, or sees them all. Something with no team
+        // recorded shows under every team rather than none.
+        .filter(i => !isCoach || !teamFilter || !i.rosterIds?.length || i.rosterIds.includes(teamFilter))
+        // A player sees their own team. Practices are left to the database,
+        // which already returns their team's plus any they've been called
+        // up to — filtering by home roster here would hide the call-ups.
+        .filter(i => isCoach || i.kind === "practice" || !i.rosterIds?.length || !homeRosterId || i.rosterIds.includes(homeRosterId))
         .filter(i => showPast || i.date >= today),
     }))
     .filter(w => w.items.length > 0);
@@ -275,6 +311,19 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
           onClose={() => setShowExport(false)}
         />
       )}
+      {/* Players only ever see their own team, so this row would be one
+          button that does nothing — it's for coaches. */}
+      {isCoach && rosters.length > 1 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+          <button onClick={() => setTeamFilter(null)} style={teamFilter === null ? chipActive : chip}>All teams</button>
+          {rosters.map(r => (
+            <button key={r.id} onClick={() => setTeamFilter(r.id)} style={teamFilter === r.id ? chipActive : chip}>
+              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: r.color, marginRight: 6, verticalAlign: "middle", boxShadow: "0 0 0 1px rgba(255,255,255,0.25)" }} />
+              {r.name}
+            </button>
+          ))}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
         {(["all", "game", "practice", "event"] as const).map(f => (
           <button key={f} onClick={() => setFilter(f)} style={f === filter ? chipActive : chip}>
@@ -400,23 +449,39 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
                 <div
                   onClick={() => openRow(item)}
                   style={{
+                    position: "relative", overflow: "hidden",
                     display: "flex", gap: 12, alignItems: "center",
-                    background: "var(--surface)", border: "1px solid var(--border)",
-                    borderLeft: `4px solid ${KIND_COLOR[item.kind]}`,
-                    borderRadius: 10, padding: "10px 12px", marginBottom: 6,
+                    background: item.kind === "game"
+                      ? tint(teamColour[(item.rosterIds ?? [])[0]], 0.18)
+                      : "var(--surface)",
+                    border: item.kind === "event" ? "1px dashed var(--border)" : "1px solid var(--border)",
+                    borderRadius: 10, padding: "10px 12px 10px 16px", marginBottom: 6,
                     cursor: planReady ? "pointer" : "default",
                   }}
                 >
+                  <span aria-hidden style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 5, background: stripeFor(item.rosterIds, teamColour) }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 600 }}>{item.title}</div>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                      <span style={{ fontSize: 15, fontWeight: item.kind === "game" ? 700 : 600 }}>{item.title}</span>
+                      <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: KIND_COLOR[item.kind] }}>
+                        {item.kind}
+                      </span>
+                      {/* On a combined practice the stripe splits, but the
+                          names are what you'd actually read. */}
+                      {(item.rosterIds ?? []).length > 1 && (
+                        <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                          {(item.rosterIds ?? []).map(id => rosters.find(r => r.id === id)?.name).filter(Boolean).join(" + ")}
+                        </span>
+                      )}
+                    </div>
                     <div style={{ fontSize: 12, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 2 }}>
                       {/* Bus time leads on an away game: it's the one you
                           have to be somewhere for, and missing it means
                           missing the game. */}
                       {item.busTime && (
-                        <span style={{ color: KIND_COLOR[item.kind], fontWeight: 600 }}>Bus {fmtTime(item.busTime)}</span>
+                        <span style={{ color: "var(--gold)", fontWeight: 700 }}>Bus {fmtTime(item.busTime)}</span>
                       )}
-                      <span style={{ color: item.busTime ? "var(--muted)" : KIND_COLOR[item.kind], fontWeight: item.busTime ? 400 : 600 }}>
+                      <span style={{ color: item.busTime ? "var(--muted)" : "var(--text)", fontWeight: item.busTime ? 400 : 600 }}>
                         {item.busTime ? `Tip ${fmtTime(item.time)}` : fmtTime(item.time)}
                       </span>
                       {item.kind === "game" && item.homeAway && (
