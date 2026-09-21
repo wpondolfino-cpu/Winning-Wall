@@ -214,12 +214,15 @@ export async function updateScheduleFields(item: ScheduleItem, patch: {
   opponent?: string; home_away?: string; title?: string;
   gameday_sheet_id?: string | null;
   bus_time?: string | null;
+  /** Practices only. Empty clears it, handing the end back to the plan. */
+  expected_end_time?: string | null;
 }): Promise<{ error: string | null }> {
   const stamp = new Date().toISOString();
   if (item.kind === "practice") {
     const { error } = await supabase.from("practices").update({
       ...(patch.date ? { practice_date: patch.date } : {}),
       ...(patch.time !== undefined ? { start_time: patch.time } : {}),
+      ...(patch.expected_end_time !== undefined ? { expected_end_time: patch.expected_end_time } : {}),
       updated_at: stamp,
     }).eq("id", item.id);
     return { error: error?.message ?? null };
