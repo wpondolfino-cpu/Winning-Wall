@@ -25,6 +25,7 @@ interface Props {
 export default function QuickPracticeEditor({ rosters, defaultDate, onClose, onSaved }: Props) {
   const [date, setDate] = useState(defaultDate ?? new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState("15:00");
+  const [endTime, setEndTime] = useState("");
   const [rosterIds, setRosterIds] = useState<string[]>(rosters.length === 1 ? [rosters[0].id] : []);
   const [repeatWeeks, setRepeatWeeks] = useState(1);
   const [saving, setSaving] = useState(false);
@@ -42,6 +43,9 @@ export default function QuickPracticeEditor({ rosters, defaultDate, onClose, onS
       const { error } = await createPractice({
         practice_date: d.toISOString().slice(0, 10),
         start_time: time,
+        // The practices made here usually have no plan yet, so this is the
+        // only end a parent email can show for them.
+        expected_end_time: endTime || null,
         roster_ids: rosterIds,
       });
       if (error) { setErr(error); setSaving(false); return; }
@@ -70,6 +74,10 @@ export default function QuickPracticeEditor({ rosters, defaultDate, onClose, onS
           <div>
             <label style={label}>Start time</label>
             <input type="time" value={time} onChange={e => setTime(e.target.value)} style={input} />
+          </div>
+          <div>
+            <label style={label}>Expected end</label>
+            <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} style={input} />
           </div>
         </div>
 
