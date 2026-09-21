@@ -14,7 +14,8 @@ import { useState, useEffect } from "react";
 import {
   ScheduleWeek, ScheduleItem, getSchedule, updateScheduleFields, deleteScheduleItem,
 } from "../../lib/schedule";
-import { getCurrentSeason, getRosters } from "../../lib/practicePlanner";
+import { getCurrentSeason, getRosters, renamePracticeWeek } from "../../lib/practicePlanner";
+import ScheduleExport from "./ScheduleExport";
 import { supabase } from "../../lib/supabase";
 import EventEditor from "./EventEditor";
 import PracticeSchedulePlayerView from "../PracticeSchedulePlayerView";
@@ -38,6 +39,27 @@ const KIND_COLOR: Record<string, string> = {
 export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
   const isCoach = role === "coach" || role === "admin";
   const [weeks, setWeeks] = useState<ScheduleWeek[]>([]);
+  const [showExport, setShowExport] = useState(false);
+  // Renaming here writes the same week row the practice builder reads,
+  // so a name set on either screen shows on both.
+  const [renamingWeek, setRenamingWeek] = useState<string | null>(null);
+  const [weekDraft, setWeekDraft] = useState("");
+
+  async function commitWeekName(weekId: string) {
+    // An empty name would blank the heading here and on the practices page,
+    // which shows the name alone. Clearing it restores the dates instead —
+    // the same form the app gives a week it creates itself.
+    let name = weekDraft.trim();
+    if (!name) {
+      const w = weeks.find(x => x.id === weekId);
+      const f = (d: string) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "2-digit" });
+      name = w?.start_date && w?.end_date ? `${f(w.start_date)} - ${f(w.end_date)}` : "";
+    }
+    const { error } = await renamePracticeWeek(weekId, name);
+    setRenamingWeek(null);
+    if (error) { alert("Couldn't rename the week: " + error); return; }
+    await load();
+  }
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "game" | "practice" | "event">("all");
   const [showPast, setShowPast] = useState(false);
@@ -82,10 +104,19 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
 
   const today = new Date().toISOString().slice(0, 10);
 
-  /** Monday of the ISO week containing a date. */
-  function mondayOf(iso: string): string {
+  /**
+   * The Sunday a date's week starts on.
+   *
+   * Weeks run Sunday to Saturday since migration 125. This used to find
+   * the Monday instead, and after that change a week's start date (a
+   * Sunday) could never equal it — so "This week" and "Next week"
+   * silently stopped appearing, the current week stopped opening by
+   * default, and an empty week's placeholder heading ran Monday to
+   * Sunday beside Sunday-to-Saturday weeks.
+   */
+  function weekStartOf(iso: string): string {
     const d = new Date(iso + "T12:00:00");
-    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    d.setDate(d.getDate() - d.getDay());
     return d.toISOString().slice(0, 10);
   }
   function addDays(iso: string, n: number): string {
@@ -120,7 +151,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
    */
   const scaffold = showPast ? filtered : (() => {
     const out = [...filtered];
-    const thisMon = mondayOf(today);
+    const thisMon = weekStartOf(today);
     for (const start of [thisMon, addDays(thisMon, 7)]) {
       const end = addDays(start, 6);
       const covered = out.some(w =>
@@ -149,7 +180,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
    */
   function relativeWeekLabel(w: ScheduleWeek): string | null {
     if (!w.start_date) return null;
-    const thisMon = mondayOf(today);
+    const thisMon = weekStartOf(today);
     if (w.start_date === thisMon) return "This week";
     if (w.start_date === addDays(thisMon, 7)) return "Next week";
     return null;
@@ -159,7 +190,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
     const k = weekKey(w);
     if (collapsed.has(k)) return true;
     if (!w.start_date || !w.end_date) return false;
-    const thisMon = mondayOf(today);
+    const thisMon = weekStartOf(today);
     return !(w.start_date <= addDays(thisMon, 13) && w.end_date >= thisMon);
   }
 
@@ -236,6 +267,14 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
 
   return (
     <div>
+      {showExport && (
+        <ScheduleExport
+          items={weeks.flatMap(w => w.items)}
+          rosters={rosters}
+          defaultRosterId={homeRosterId ?? null}
+          onClose={() => setShowExport(false)}
+        />
+      )}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
         {(["all", "game", "practice", "event"] as const).map(f => (
           <button key={f} onClick={() => setFilter(f)} style={f === filter ? chipActive : chip}>
@@ -253,6 +292,9 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
           <button onClick={() => setShowPractice(true)} style={chip}>+ Practice</button>
           <button onClick={() => setShowEvent(true)} style={chip}>+ Event</button>
           <button onClick={() => setShowImport(true)} style={chip}>Import</button>
+          {/* The Sunday email to parents — the next two weeks, shaped to
+              paste straight into a message. */}
+          <button onClick={() => setShowExport(true)} style={{ ...chip, marginLeft: "auto" }}>✉ Share</button>
         </div>
       )}
 
@@ -297,12 +339,27 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
             }}
           >
             <span style={{ fontSize: 12, color: "var(--muted)", width: 12 }}>{isCollapsed(w) ? "▸" : "▾"}</span>
+            {renamingWeek === w.id && w.id ? (
+              // The header toggles the week open and shut, so clicks inside
+              // the editor mustn't reach it.
+              <span onClick={e => e.stopPropagation()} style={{ display: "flex", gap: 5, flex: 1 }}>
+                <input value={weekDraft} onChange={e => setWeekDraft(e.target.value)} autoFocus
+                  placeholder="Week 1 – Foxboro & Sharon"
+                  onKeyDown={e => { if (e.key === "Enter") void commitWeekName(w.id!); if (e.key === "Escape") setRenamingWeek(null); }}
+                  style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", color: "var(--text)", fontSize: 13, fontFamily: "inherit" }} />
+                <button onClick={() => void commitWeekName(w.id!)}
+                  style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                <button onClick={() => setRenamingWeek(null)}
+                  style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+              </span>
+            ) : (
             <span style={{ fontSize: 14, fontWeight: 700 }}>
-              {relativeWeekLabel(w) ?? w.name ?? (w.start_date && w.end_date ? fmtRange(w.start_date, w.end_date) : "")}
+              {relativeWeekLabel(w) ?? (w.name || (w.start_date && w.end_date ? fmtRange(w.start_date, w.end_date) : ""))}
             </span>
+            )}
             {/* A coach's own week title still shows, just after the
                 relative one — "This week · Week 1 - Foxboro & Sharon". */}
-            {relativeWeekLabel(w) && w.name && (
+            {renamingWeek !== w.id && relativeWeekLabel(w) && w.name && (
               <span style={{ fontSize: 13, color: "var(--text)" }}>{w.name}</span>
             )}
             {w.start_date && w.end_date && (relativeWeekLabel(w) || w.name) && (
@@ -311,6 +368,10 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
             <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>
               {w.items.length === 0 ? "—" : `${w.items.length} item${w.items.length === 1 ? "" : "s"}`}
             </span>
+            {isCoach && w.id && renamingWeek !== w.id && (
+              <button title="Name this week" onClick={e => { e.stopPropagation(); setRenamingWeek(w.id); setWeekDraft(w.name ?? ""); }}
+                style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 12, cursor: "pointer", padding: "0 2px" }}>✎</button>
+            )}
           </div>
           {!isCollapsed(w) && w.items.length === 0 && (
             <div style={{ fontSize: 12, color: "var(--muted)", border: "1px dashed var(--border)", borderRadius: 10, padding: "14px 12px", marginBottom: 6 }}>
