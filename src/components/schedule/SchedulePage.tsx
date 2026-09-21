@@ -455,7 +455,17 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
                       <Field label="Date"><input type="date" value={draft.date ?? ""} onChange={e => setDraft({ ...draft, date: e.target.value })} style={input} /></Field>
-                      <Field label="Time"><input type="time" value={(draft.time ?? "").slice(0, 5)} onChange={e => setDraft({ ...draft, time: e.target.value || null })} style={input} /></Field>
+                      <Field label={item.kind === "practice" ? "Start" : "Time"}><input type="time" value={(draft.time ?? "").slice(0, 5)} onChange={e => setDraft({ ...draft, time: e.target.value || null })} style={input} /></Field>
+                      {/* The end parents are told, fixed without leaving the
+                          schedule. Cleared, it falls back to the plan. */}
+                      {item.kind === "practice" && (
+                        <Field label="Expected end">
+                          <input type="time"
+                            value={(draft.expected_end_time !== undefined ? (draft.expected_end_time ?? "") : (item.expectedEndTime ?? "")).slice(0, 5)}
+                            onChange={e => setDraft({ ...draft, expected_end_time: e.target.value || null })}
+                            style={input} />
+                        </Field>
+                      )}
                       {item.kind !== "practice" && (
                         <Field label="Location"><input value={draft.location ?? ""} onChange={e => setDraft({ ...draft, location: e.target.value })} placeholder="Gym" style={input} /></Field>
                       )}
