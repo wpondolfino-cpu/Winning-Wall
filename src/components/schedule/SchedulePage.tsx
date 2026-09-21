@@ -318,7 +318,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
       )}
 
       {showPractice && (
-        <QuickPracticeEditor rosters={rosters} onClose={() => setShowPractice(false)} onSaved={load} />
+        <QuickPracticeEditor rosters={rosters} existing={weeks.flatMap(w => w.items)} onClose={() => setShowPractice(false)} onSaved={load} />
       )}
 
       {showEvent && (
