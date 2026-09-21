@@ -33,6 +33,8 @@ export interface ScheduleItem {
   busTime?: string | null;
   homeAway?: string | null;
   rosterIds?: string[];
+  /** Practices only: the coach's expected end, if they've set one. */
+  expectedEndTime?: string | null;
 }
 
 export interface ScheduleWeek {
@@ -66,8 +68,8 @@ export interface ScheduleEvent {
 export async function getSchedule(seasonId: string | null, opts: { playerVisibleOnly?: boolean } = {}): Promise<ScheduleWeek[]> {
   const [weeksRes, practicesRes, gamesRes, eventsRes, sheetsRes] = await Promise.all([
     supabase.from("practice_weeks").select("*").order("start_date", { ascending: true, nullsFirst: false }),
-    supabase.from("practices").select("id, practice_date, start_time, week_id, status, roster_ids, is_tryout"),
-    supabase.from("games").select("id, game_date, tip_time, location, opponent, home_away, week_id, final_score_us, final_score_them, status, gameday_sheet_id, bus_time"),
+    supabase.from("practices").select("id, practice_date, start_time, expected_end_time, week_id, status, roster_ids, is_tryout").eq("is_template", false),
+    supabase.from("games").select("id, game_date, tip_time, location, opponent, home_away, week_id, final_score_us, final_score_them, status, gameday_sheet_id, bus_time, roster_id"),
     supabase.from("schedule_events").select("*"),
     supabase.from("scout_sheets").select("game_id, status"),
   ]);
@@ -92,6 +94,7 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
       title: p.is_tryout ? "Tryout" : "Practice",
       subtitle: "", week_id: p.week_id, published: p.status === "published",
       rosterIds: p.roster_ids ?? [],
+      expectedEndTime: p.expected_end_time ?? null,
     });
   }
 
@@ -112,6 +115,7 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
       busTime: g.bus_time ?? null,
       homeAway: g.home_away ?? null,
       played,
+      rosterIds: g.roster_id ? [g.roster_id] : [],
     });
   }
 
@@ -140,12 +144,14 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
     const w = grouped.find(g => g.start_date && g.end_date && item.date >= g.start_date && item.date <= g.end_date);
     if (w) w.items.push(item); else loose.push(item);
   }
-  // Loose rows are grouped into their own ISO weeks so they still read as
-  // weeks rather than one undifferentiated pile.
+  // Loose rows are grouped into their own weeks so they still read as
+  // weeks rather than one undifferentiated pile — Sunday to Saturday, to
+  // match every real week (migration 125). These were still Monday-start,
+  // so a stray item sat under "Sep 21 - 27" beside a real "Sep 20 - 26".
   const looseByWeek = new Map<string, ScheduleItem[]>();
   for (const item of loose) {
     const d = new Date(item.date + "T12:00:00");
-    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    d.setDate(d.getDate() - d.getDay());
     const key = d.toISOString().slice(0, 10);
     (looseByWeek.get(key) ?? looseByWeek.set(key, []).get(key)!).push(item);
   }
@@ -167,6 +173,41 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
 //
 // Scheduling fields only. Anything structural stays in the owning editor,
 // so a practice is still defined in exactly one place.
+
+/**
+ * When each practice is expected to finish.
+ *
+ * The coach's expected end wins when set — a plan rarely includes the
+ * warm-up before it or the talk after it. Otherwise it's the start plus
+ * the blocks. A practice with neither returns nothing, and shows its start
+ * alone rather than inventing an end.
+ *
+ * Only asked for the practices actually being exported, since working out
+ * the plan's length means reading every block of every one.
+ */
+export async function getPracticeEndTimes(items: ScheduleItem[]): Promise<Record<string, string>> {
+  const practices = items.filter(i => i.kind === "practice");
+  const out: Record<string, string> = {};
+  const needPlan = practices.filter(p => !p.expectedEndTime && p.time);
+  for (const p of practices) if (p.expectedEndTime) out[p.id] = p.expectedEndTime;
+  if (!needPlan.length) return out;
+
+  const { data: blocks } = await supabase
+    .from("practice_blocks").select("practice_id, duration_minutes")
+    .in("practice_id", needPlan.map(p => p.id));
+  const total = new Map<string, number>();
+  for (const b of (blocks ?? []) as any[]) {
+    total.set(b.practice_id, (total.get(b.practice_id) ?? 0) + (b.duration_minutes ?? 0));
+  }
+  for (const p of needPlan) {
+    const mins = total.get(p.id);
+    if (!mins || !p.time) continue;
+    const [h, m] = p.time.split(":").map(Number);
+    const end = h * 60 + m + mins;
+    out[p.id] = `${String(Math.floor(end / 60) % 24).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}:00`;
+  }
+  return out;
+}
 
 export async function updateScheduleFields(item: ScheduleItem, patch: {
   date?: string; time?: string | null; location?: string | null;
