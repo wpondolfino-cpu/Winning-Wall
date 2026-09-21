@@ -366,9 +366,13 @@ export function lastNameKey(name: string): string {
 }
 
 // Computes who actually shows up to a practice: home-roster members
-// of the practice's roster_ids, minus anyone excused, plus any
-// call-ups. Mirrors the public.is_effective_attendee() SQL function
-// so the UI can show this list before saving.
+// of the practice's roster_ids, minus anyone absent, plus any call-ups.
+// This drives groups, headcounts and the warning badge.
+//
+// It does NOT mirror public.is_effective_attendee(), though it used to
+// claim to. That SQL function decides who may SEE a practice's plan, and
+// deliberately keeps absent players in — a player off sick should still
+// be able to read what they missed. Same inputs, different question.
 export function computeEffectiveAttendees<
   P extends { id: string; home_roster_id: string | null }
 >(allPlayers: P[], practiceRosterIds: string[], overrides: AttendanceOverride[]): P[] {
