@@ -60,6 +60,8 @@ export interface Practice {
   week_id: string | null;
   practice_date: string;
   start_time: string; // "HH:MM:SS"
+  /** Coach-set, for parents. Wins over the end worked out from the blocks. */
+  expected_end_time?: string | null;
   roster_ids: string[];
   status: "draft" | "published";
   /** Set by the explicit "Complete attendance" action on the Practice Day screen. Overwritten (not logged) on every later re-completion — null means attendance hasn't been taken yet. */
@@ -708,6 +710,7 @@ export async function startNewSeason(name: string): Promise<{ id: string | null;
 export async function createPractice(input: {
   practice_date: string;
   start_time: string;
+  expected_end_time?: string | null;
   roster_ids: string[];
   week_id?: string | null;
   is_tryout?: boolean;
@@ -734,6 +737,9 @@ export async function createPractice(input: {
     .insert({
       practice_date: input.practice_date,
       start_time: input.start_time,
+      // Listed explicitly because this insert names its columns — a field
+      // left out here is dropped without any error.
+      expected_end_time: input.expected_end_time ?? null,
       roster_ids: input.roster_ids,
       week_id: weekId,
       is_tryout: input.is_tryout ?? false,
