@@ -17,7 +17,7 @@
 // behind it.
 
 import { useState, useEffect } from "react";
-import { createGame } from "../../lib/gameStats";
+import { createGame, defaultGameFeatures } from "../../lib/gameStats";
 import { getOpponents, createOpponent, Opponent } from "../../lib/scoutSheets";
 
 interface RosterLite { id: string; name: string; }
@@ -36,10 +36,21 @@ export default function QuickGameEditor({ rosters, onClose, onSaved }: {
   const [homeAway, setHomeAway] = useState<"home" | "away" | "neutral">("home");
   const [location, setLocation] = useState("");
   const [rosterId, setRosterId] = useState<string>(rosters.length === 1 ? rosters[0].id : "");
+  const [features, setFeatures] = useState({ track_stats: true, uses_scout_sheet: true, uses_play_sheet: true });
+  // Set from the team's last game, and then only by you — picking a team
+  // again mustn't wipe a box you've just changed.
+  const [touched, setTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => { getOpponents().then(setOpponents).catch(console.error); }, []);
+
+  // Whatever this team did last time is the likely answer now — freshmen
+  // untracked once stays untracked, varsity stays tracked.
+  useEffect(() => {
+    if (!rosterId || touched) return;
+    defaultGameFeatures(rosterId).then(setFeatures).catch(console.error);
+  }, [rosterId, touched]);
 
   const addingNew = opponentId === "__new";
 
@@ -68,6 +79,7 @@ export default function QuickGameEditor({ rosters, onClose, onSaved }: {
       // Only an away game has a bus worth recording.
       bus_time: homeAway === "away" ? (bus || null) : null,
       home_away: homeAway, location, roster_id: rosterId,
+      ...features,
     });
     setSaving(false);
     if (error) { setErr(error); return; }
@@ -83,7 +95,7 @@ export default function QuickGameEditor({ rosters, onClose, onSaved }: {
           <button onClick={onClose} style={btn}>Cancel</button>
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14, lineHeight: 1.5 }}>
-          Puts it on the schedule, in the game tracker and in the scout sheets list. The game's format can be set in the tracker.
+          Puts it on the schedule — and in the game tracker and scout sheets list, if you're using them for this game.
         </div>
 
         <label style={label}>Opponent</label>
@@ -132,6 +144,24 @@ export default function QuickGameEditor({ rosters, onClose, onSaved }: {
             </div>
           </>
         )}
+
+        <label style={{ ...label, marginTop: 12 }}>For this game</label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {([
+            ["track_stats", "Track stats", "In the game tracker and in reports. Off, you type the final score on the schedule."],
+            ["uses_scout_sheet", "Scout sheet", "Offer a scout sheet on the schedule."],
+            ["uses_play_sheet", "Play sheet", "Offer a game day play sheet on the schedule."],
+          ] as const).map(([key, title, hint]) => (
+            <label key={key} style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: "pointer" }}>
+              <input type="checkbox" checked={features[key]} style={{ marginTop: 2 }}
+                onChange={e => { setTouched(true); setFeatures(f => ({ ...f, [key]: e.target.checked })); }} />
+              <span>
+                <span style={{ fontSize: 13, color: "var(--text)" }}>{title}</span>
+                <span style={{ display: "block", fontSize: 11, color: "var(--muted)" }}>{hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
 
         {err && <div style={{ fontSize: 12, color: "#ff7b7b", marginTop: 10 }}>{err}</div>}
 
