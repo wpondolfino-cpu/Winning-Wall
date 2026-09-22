@@ -35,6 +35,13 @@ export interface ScheduleItem {
   rosterIds?: string[];
   /** Practices only: the coach's expected end, if they've set one. */
   expectedEndTime?: string | null;
+  /** Games only: which of the optional features this game uses. */
+  trackStats?: boolean;
+  usesScoutSheet?: boolean;
+  usesPlaySheet?: boolean;
+  /** Games only: the final score, typed or worked out by the tracker. */
+  scoreUs?: number | null;
+  scoreThem?: number | null;
 }
 
 export interface ScheduleWeek {
@@ -69,7 +76,7 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
   const [weeksRes, practicesRes, gamesRes, eventsRes, sheetsRes] = await Promise.all([
     supabase.from("practice_weeks").select("*").order("start_date", { ascending: true, nullsFirst: false }),
     supabase.from("practices").select("id, practice_date, start_time, expected_end_time, week_id, status, roster_ids, is_tryout").eq("is_template", false),
-    supabase.from("games").select("id, game_date, tip_time, location, opponent, home_away, week_id, final_score_us, final_score_them, status, gameday_sheet_id, bus_time, roster_id"),
+    supabase.from("games").select("id, game_date, tip_time, location, opponent, home_away, week_id, final_score_us, final_score_them, status, gameday_sheet_id, bus_time, roster_id, track_stats, uses_scout_sheet, uses_play_sheet"),
     supabase.from("schedule_events").select("*"),
     supabase.from("scout_sheets").select("game_id, status"),
   ]);
@@ -116,6 +123,11 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
       homeAway: g.home_away ?? null,
       played,
       rosterIds: g.roster_id ? [g.roster_id] : [],
+      trackStats: g.track_stats ?? true,
+      usesScoutSheet: g.uses_scout_sheet ?? true,
+      usesPlaySheet: g.uses_play_sheet ?? true,
+      scoreUs: g.final_score_us ?? null,
+      scoreThem: g.final_score_them ?? null,
     });
   }
 
@@ -216,11 +228,24 @@ export async function updateScheduleFields(item: ScheduleItem, patch: {
   bus_time?: string | null;
   /** Practices only. Empty clears it, handing the end back to the plan. */
   expected_end_time?: string | null;
+  /** Games only. How an untracked game gets its score. */
+  final_score_us?: number | null;
+  final_score_them?: number | null;
+  track_stats?: boolean;
+  uses_scout_sheet?: boolean;
+  uses_play_sheet?: boolean;
 }): Promise<{ error: string | null }> {
   const stamp = new Date().toISOString();
+  // Moving a date has to move the week too. The schedule places rows by
+  // date, so it looked right here — but Practice Builder lists practices
+  // by their stored week, so a practice moved to next Monday stayed filed
+  // under last week there.
+  const weekFor = patch.date ? { week_id: await resolveWeek(patch.date, null) } : {};
+
   if (item.kind === "practice") {
     const { error } = await supabase.from("practices").update({
       ...(patch.date ? { practice_date: patch.date } : {}),
+      ...weekFor,
       ...(patch.time !== undefined ? { start_time: patch.time } : {}),
       ...(patch.expected_end_time !== undefined ? { expected_end_time: patch.expected_end_time } : {}),
       updated_at: stamp,
@@ -236,12 +261,19 @@ export async function updateScheduleFields(item: ScheduleItem, patch: {
       ...(patch.home_away ? { home_away: patch.home_away } : {}),
       ...(patch.gameday_sheet_id !== undefined ? { gameday_sheet_id: patch.gameday_sheet_id } : {}),
       ...(patch.bus_time !== undefined ? { bus_time: patch.bus_time } : {}),
+      ...(patch.date ? weekFor : {}),
+      ...(patch.final_score_us !== undefined ? { final_score_us: patch.final_score_us } : {}),
+      ...(patch.final_score_them !== undefined ? { final_score_them: patch.final_score_them } : {}),
+      ...(patch.track_stats !== undefined ? { track_stats: patch.track_stats } : {}),
+      ...(patch.uses_scout_sheet !== undefined ? { uses_scout_sheet: patch.uses_scout_sheet } : {}),
+      ...(patch.uses_play_sheet !== undefined ? { uses_play_sheet: patch.uses_play_sheet } : {}),
       updated_at: stamp,
     }).eq("id", item.id);
     return { error: error?.message ?? null };
   }
   const { error } = await supabase.from("schedule_events").update({
     ...(patch.date ? { event_date: patch.date } : {}),
+    ...weekFor,
     ...(patch.time !== undefined ? { start_time: patch.time } : {}),
     ...(patch.location !== undefined ? { location: patch.location } : {}),
     ...(patch.title ? { title: patch.title } : {}),
