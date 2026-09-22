@@ -127,6 +127,9 @@ export default function GameReport({ scope, title, variant = "full", canManage =
       const { data: games } = await supabase
         .from("games")
         .select("id, final_score_us, final_score_them")
+        // An untracked game has no possessions and counts for nothing here —
+        // not as a game played, and not toward the record.
+        .eq("track_stats", true)
         .eq("season", scope.season)
         .in("game_type", gameTypesForGroup(scope.gameGroup ?? "games"));
       // Win/loss isn't a stored column -- it's derived from the final score,
