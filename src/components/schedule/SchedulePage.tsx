@@ -180,6 +180,38 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
 
   const teamColour: Record<string, string> = Object.fromEntries(rosters.map(r => [r.id, r.color]));
 
+  /**
+   * Who a row is for, in words — the stripe says it in colour, but colour
+   * alone needs a legend.
+   *
+   * Shown only when it tells you something. Viewing every team, each row
+   * names its team. Viewing one team — a coach's filter, or any player —
+   * every row would repeat that team's name, so it drops away, and a
+   * shared practice says who ELSE is in the gym instead ("With JV"): a
+   * practice with another team in it runs differently, and that's worth
+   * knowing from your own side.
+   */
+  function teamLabel(item: ScheduleItem): string {
+    const ids = item.rosterIds ?? [];
+    const nameOf = (id: string) => rosters.find(r => r.id === id)?.name;
+    const everyTeam = rosters.length > 1 && rosters.every(r => ids.includes(r.id));
+    const viewing = isCoach ? teamFilter : homeRosterId;
+
+    if (!viewing) {
+      if (!ids.length) return "Everyone";
+      if (everyTeam) return "All teams";
+      return ids.map(nameOf).filter(Boolean).join(" + ");
+    }
+    // Not your team's practice at all — you've been called up to it. It's
+    // theirs you're joining, so name them plainly; "With Varsity" would read
+    // as a joint session.
+    if (ids.length && !ids.includes(viewing)) return ids.map(nameOf).filter(Boolean).join(" + ");
+    const others = ids.filter(id => id !== viewing);
+    if (!others.length) return "";
+    if (everyTeam) return "All teams";
+    return "With " + others.map(nameOf).filter(Boolean).join(" + ");
+  }
+
   const filtered = weeks
     .map(w => ({
       ...w,
@@ -530,16 +562,9 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
                       <span style={{ fontSize: 15, fontWeight: item.kind === "game" ? 700 : 600 }}>{item.title}</span>
-                      <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: KIND_COLOR[item.kind] }}>
-                        {item.kind}
+                      <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: item.kind === "game" ? "var(--text)" : "var(--muted)", whiteSpace: "nowrap" }}>
+                        {[teamLabel(item), item.kind].filter(Boolean).join(" · ")}
                       </span>
-                      {/* On a combined practice the stripe splits, but the
-                          names are what you'd actually read. */}
-                      {(item.rosterIds ?? []).length > 1 && (
-                        <span style={{ fontSize: 11, color: "var(--muted)" }}>
-                          {(item.rosterIds ?? []).map(id => rosters.find(r => r.id === id)?.name).filter(Boolean).join(" + ")}
-                        </span>
-                      )}
                     </div>
                     <div style={{ fontSize: 12, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 2 }}>
                       {/* Bus time leads on an away game: it's the one you
