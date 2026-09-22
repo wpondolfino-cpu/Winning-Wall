@@ -101,7 +101,9 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
     supabase.from("opponents").select("id,name").order("name")
       .then(({ data }) => setOpponents((data as any[]) ?? []));
     setLoading(true);
-    const { data } = await supabase.from("games").select("*").order("game_date", { ascending: false });
+    // An untracked game lives on the schedule, not here. Switch tracking on
+    // from its Edit and it appears.
+    const { data } = await supabase.from("games").select("*").eq("track_stats", true).order("game_date", { ascending: false });
     setGames((data as Game[]) ?? []);
     setLoading(false);
   }
