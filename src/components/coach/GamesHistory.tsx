@@ -19,7 +19,7 @@ import { supabase } from "../../lib/supabase";
 import { resolveWeek } from "../../lib/schedule";
 import NumberField from "../game-stats/NumberField";
 import { getRosters } from "../../lib/practicePlanner";
-import { finishGame, isGameFinal, computeFinalScore, syncQueue, listSeasons, GAME_STRUCTURES, buildGameFormat, structuresForGameType, defaultStructureForGameType, GAME_TYPES, GAME_GROUPS, gameTypesForGroup, type Game, type GameType, type GameGroup, type PeriodFormat, type Possession } from "../../lib/gameStats";
+import { createGame, finishGame, isGameFinal, computeFinalScore, syncQueue, listSeasons, GAME_STRUCTURES, buildGameFormat, structuresForGameType, defaultStructureForGameType, GAME_TYPES, GAME_GROUPS, gameTypesForGroup, type Game, type GameType, type GameGroup, type PeriodFormat, type Possession } from "../../lib/gameStats";
 
 interface Props {
   userId: string;
@@ -126,38 +126,26 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
       .then(({ data }) => setGamesWithShifts(new Set(((data ?? []) as any[]).map((r) => r.game_id))));
   }, [games]);
 
-  async function createGame() {
+  async function handleCreateGame() {
     // A practice doesn't have an opponent to name, so let the field be
     // blank there and fall back to a label built from the date.
     const label = opponent.trim() || (gameType === "practice" ? `Practice ${gameDate}` : "");
     if (!label) return;
-    const season = seasonForDate(gameDate);
     // ot_minutes is only the prefill for the "+ OT" prompt, so it takes the
     // structure's default rather than being typed at creation.
     const otDefault = GAME_STRUCTURES.find((g) => g.value === structure)?.otMinutes ?? 4;
-    const fmt = buildGameFormat(structure, periods, minutes, otDefault);
-    const { data, error } = await supabase
-      .from("games")
-      .insert({
-        opponent: label,
-        game_date: gameDate,
-        season,
-        created_by: userId,
-        period_format: fmt.period_format,
-        regulation_periods: fmt.regulation_periods,
-        period_lengths: fmt.period_lengths,
-        ot_minutes: fmt.ot_minutes,
-        game_type: gameType,
-        roster_id: rosterId || null,
-        opponent_id: opponentId,
-        tip_time: tipTime || null,
-        bus_time: busTime || null,
-        location: location.trim() || null,
-        home_away: homeAway,
-        week_id: await resolveWeek(gameDate, null),
-      })
-      .select()
-      .single();
+    const { game: data, error } = await createGame({
+      opponent: label,
+      game_date: gameDate,
+      opponent_id: opponentId,
+      roster_id: rosterId || null,
+      tip_time: tipTime || null,
+      bus_time: busTime || null,
+      location,
+      home_away: homeAway,
+      game_type: gameType,
+      format: buildGameFormat(structure, periods, minutes, otDefault),
+    });
     if (!error && data) {
       setGames((g) => [data as Game, ...g]);
       setCreating(false);
@@ -409,7 +397,7 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
             <NumberField value={minutes} min={1} max={30} onChange={setMinutes} style={{ ...newGameField, width: 76 }} />
           </Field>
 
-          <button className="btn-primary" style={{ width: "auto", padding: "8px 14px" }} onClick={createGame}>Start</button>
+          <button className="btn-primary" style={{ width: "auto", padding: "8px 14px" }} onClick={handleCreateGame}>Start</button>
         </div>
       )}
 
@@ -540,14 +528,6 @@ const actionBtn: React.CSSProperties = {
   cursor: "pointer",
 };
 
-function seasonForDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  const year = d.getFullYear();
-  // Basketball season spans Nov-Mar-ish; games from Aug-Dec count as
-  // "start year - start year+1", games Jan-Jul count as the prior split.
-  const month = d.getMonth() + 1;
-  return month >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
-}
 
 const newGameField: CSSProperties = {
   padding: "8px 10px",
