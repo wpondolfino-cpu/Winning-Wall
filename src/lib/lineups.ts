@@ -165,7 +165,7 @@ export async function removeCallUp(gameId: string, playerId: string): Promise<{ 
  * last season's varsity starters are no help for a JV game.
  */
 export async function lastStartingFive(rosterId: string | null, excludeGameId: string): Promise<string[] | null> {
-  let q = supabase.from("games").select("id, game_date").order("game_date", { ascending: false }).limit(25);
+  let q = supabase.from("games").select("id, game_date").eq("track_stats", true).order("game_date", { ascending: false }).limit(25);
   if (rosterId) q = q.eq("roster_id", rosterId);
   const { data: games } = await q;
   const ids = (games ?? []).map((g: any) => g.id).filter((id: string) => id !== excludeGameId);
