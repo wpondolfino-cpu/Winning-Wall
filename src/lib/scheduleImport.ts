@@ -9,6 +9,7 @@
 // Pasted table text and iCal are both structured enough to fail loudly.
 
 import { supabase } from "./supabase";
+import { createGame, seasonForDate } from "./gameStats";
 import { resolveWeek } from "./schedule";
 
 export interface ImportRow {
@@ -162,17 +163,23 @@ export async function commitImport(rows: ImportRow[], season: string, seasonId: 
   let created = 0, updated = 0;
   for (const r of rows) {
     if (r.status === "problem" || r.status === "unchanged" || !r.date) continue;
-    const weekId = await resolveWeek(r.date, seasonId);
-    const payload = {
-      opponent: r.opponent, game_date: r.date, tip_time: r.time,
-      location: r.location, home_away: r.home_away, game_type: r.game_type,
-      week_id: weekId, external_uid: r.external_uid, season,
-    };
     if (r.existingId) {
-      await supabase.from("games").update(payload).eq("id", r.existingId);
+      // The season follows the game's date, not the label passed in — that
+      // label is the practice season's name ("2025-26"), a different format
+      // from the one reports group games by.
+      const weekId = await resolveWeek(r.date, seasonId);
+      await supabase.from("games").update({
+        opponent: r.opponent, game_date: r.date, tip_time: r.time,
+        location: r.location, home_away: r.home_away, game_type: r.game_type,
+        week_id: weekId, external_uid: r.external_uid, season: seasonForDate(r.date),
+      }).eq("id", r.existingId);
       updated++;
     } else {
-      await supabase.from("games").insert({ ...payload, created_by: userId });
+      await createGame({
+        opponent: r.opponent, game_date: r.date, tip_time: r.time,
+        location: r.location, home_away: r.home_away ?? "home", game_type: r.game_type ?? "regular",
+        external_uid: r.external_uid,
+      });
       created++;
     }
   }
