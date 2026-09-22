@@ -72,6 +72,7 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
     const { data } = await supabase
       .from("games")
       .select("id, opponent, game_date, final_score_us, final_score_them")
+      .eq("track_stats", true)
       .eq("season", season)
       .in("game_type", gameTypesForGroup(gameGroup))
       .order("game_date", { ascending: false });
