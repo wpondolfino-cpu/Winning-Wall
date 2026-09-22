@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../../lib/supabase";
 import { formatDateOnly } from "../../lib/schedule";
+import { createGame } from "../../lib/gameStats";
 import { deleteScoutSheet, renameOpponent, deleteOpponent,
   Opponent, getOpponents, createOpponent, uploadOpponentLogo,
   getOpponentLastGames, getScoutSheetsForOpponent,
@@ -214,16 +215,15 @@ export default function ScoutSheetsHub(props: Props) {
         await supabase.from("games").update({ opponent_id: activeOpponent.id }).eq("id", game.id);
       }
     } else {
-      const { data: created, error: gameErr } = await supabase.from("games").insert({
+      // Through the shared path, so it gets a school-year season, a week
+      // and a format like every other game — it used to get the calendar
+      // year, no week, and nothing for the tracker to run with.
+      const { game: created, error: gameErr } = await createGame({
         opponent: activeOpponent.name,
         opponent_id: activeOpponent.id,
         game_date: newGameDate,
-        season: new Date(newGameDate).getFullYear().toString(),
-        home_away: "home",
-        status: "draft",
-        created_by: user.id,
-      }).select().single();
-      if (gameErr) { setError(gameErr.message); return; }
+      });
+      if (gameErr || !created) { setError(gameErr ?? "Couldn't create the game."); return; }
       game = created;
     }
 
