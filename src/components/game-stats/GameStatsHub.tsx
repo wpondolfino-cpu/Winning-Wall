@@ -585,6 +585,7 @@ function PlayerGamesList({ userId }: { userId: string }) {
     supabase
       .from("games")
       .select("id, opponent, game_date, final_score_us, final_score_them")
+      .eq("track_stats", true)
       .order("game_date", { ascending: false })
       .then(({ data }) => setGames(data ?? []));
   }, []);
