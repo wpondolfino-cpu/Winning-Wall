@@ -39,7 +39,7 @@ export default function RotationPanel({ gameIds, userId, rosterId }: { gameIds: 
     // Upcoming and recent games on this roster, newest first -- a plan is
     // usually for the next one, occasionally a review of the last.
     (async () => {
-      let q = supabase.from("games").select("id, opponent, game_date, game_type").order("game_date", { ascending: false }).limit(30);
+      let q = supabase.from("games").select("id, opponent, game_date, game_type").eq("track_stats", true).order("game_date", { ascending: false }).limit(30);
       if (rosterId) q = q.eq("roster_id", rosterId);
       const { data } = await q;
       const list = ((data ?? []) as any[])
