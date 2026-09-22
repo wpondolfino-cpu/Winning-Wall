@@ -667,6 +667,34 @@ export interface NewGame {
   format?: GameFormat;
   external_uid?: string | null;
   status?: "draft" | "published";
+  /** Off: out of the tracker and every report; its score is typed on the schedule. */
+  track_stats?: boolean;
+  uses_scout_sheet?: boolean;
+  uses_play_sheet?: boolean;
+}
+
+/**
+ * What a new game for this team should switch on, going by that team's
+ * last game.
+ *
+ * Untick tracking once for a freshman game and every freshman game after
+ * it starts unticked, while varsity stays ticked — without a per-team
+ * settings screen. A team with no games yet gets everything on.
+ */
+export async function defaultGameFeatures(rosterId: string | null): Promise<{ track_stats: boolean; uses_scout_sheet: boolean; uses_play_sheet: boolean }> {
+  const all = { track_stats: true, uses_scout_sheet: true, uses_play_sheet: true };
+  if (!rosterId) return all;
+  const { data } = await supabase.from("games")
+    .select("track_stats, uses_scout_sheet, uses_play_sheet")
+    .eq("roster_id", rosterId)
+    .order("created_at", { ascending: false })
+    .limit(1).maybeSingle();
+  if (!data) return all;
+  return {
+    track_stats: (data as any).track_stats ?? true,
+    uses_scout_sheet: (data as any).uses_scout_sheet ?? true,
+    uses_play_sheet: (data as any).uses_play_sheet ?? true,
+  };
 }
 
 /**
@@ -703,6 +731,9 @@ export async function createGame(input: NewGame): Promise<{ id: string | null; g
     ot_minutes: fmt.ot_minutes,
     external_uid: input.external_uid ?? null,
     status: input.status ?? "draft",
+    track_stats: input.track_stats ?? true,
+    uses_scout_sheet: input.uses_scout_sheet ?? true,
+    uses_play_sheet: input.uses_play_sheet ?? true,
     created_by: user?.id,
   }).select("*").single();
   return { id: (data as any)?.id ?? null, game: (data as Game) ?? null, error: error?.message ?? null };
@@ -1838,7 +1869,9 @@ export async function finishGame(gameId: string, finalScoreUs: number, finalScor
 
 /** Distinct seasons that have any games, most recent first -- drives the season selector so past seasons stay reachable instead of everything silently defaulting to "today's season." */
 export async function listSeasons(): Promise<string[]> {
-  const { data } = await supabase.from("games").select("season");
+  // Tracked games only — a season holding nothing but untracked games
+  // would otherwise appear in the selector and open to an empty report.
+  const { data } = await supabase.from("games").select("season").eq("track_stats", true);
   const seasons = Array.from(new Set((data ?? []).map((g: any) => g.season as string)));
   return seasons.sort().reverse();
 }
