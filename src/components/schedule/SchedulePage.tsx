@@ -16,6 +16,7 @@ import {
 } from "../../lib/schedule";
 import { getCurrentSeason, getRosters, renamePracticeWeek } from "../../lib/practicePlanner";
 import ScheduleExport from "./ScheduleExport";
+import QuickGameEditor from "./QuickGameEditor";
 import { supabase } from "../../lib/supabase";
 import EventEditor from "./EventEditor";
 import PracticeSchedulePlayerView from "../PracticeSchedulePlayerView";
@@ -66,6 +67,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
   const isCoach = role === "coach" || role === "admin";
   const [weeks, setWeeks] = useState<ScheduleWeek[]>([]);
   const [showExport, setShowExport] = useState(false);
+  const [showGame, setShowGame] = useState(false);
   // Renaming here writes the same week row the practice builder reads,
   // so a name set on either screen shows on both.
   const [renamingWeek, setRenamingWeek] = useState<string | null>(null);
@@ -303,6 +305,9 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
 
   return (
     <div>
+      {showGame && (
+        <QuickGameEditor rosters={rosters} onClose={() => setShowGame(false)} onSaved={load} />
+      )}
       {showExport && (
         <ScheduleExport
           items={weeks.flatMap(w => w.items)}
@@ -337,7 +342,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
 
       {isCoach && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-          <button onClick={() => onOpenTab?.("gamestats", { view: "new" })} style={primary}>+ Game</button>
+          <button onClick={() => setShowGame(true)} style={primary}>+ Game</button>
           <button onClick={() => setShowPractice(true)} style={chip}>+ Practice</button>
           <button onClick={() => setShowEvent(true)} style={chip}>+ Event</button>
           <button onClick={() => setShowImport(true)} style={chip}>Import</button>
