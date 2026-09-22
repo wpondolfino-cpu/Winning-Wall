@@ -65,6 +65,7 @@ export default function LineupsTab({ userId }: { userId: string }) {
       let q = supabase
         .from("games")
         .select("id, opponent, game_date, final_score_us, final_score_them")
+        .eq("track_stats", true)
         .in("game_type", gameTypesForGroup(gameGroup))
         .order("game_date", { ascending: false });
       if (rosterId) q = q.eq("roster_id", rosterId);
