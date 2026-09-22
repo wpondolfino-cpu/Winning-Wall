@@ -68,6 +68,27 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
   const [weeks, setWeeks] = useState<ScheduleWeek[]>([]);
   const [showExport, setShowExport] = useState(false);
   const [showGame, setShowGame] = useState(false);
+  const [pickingSheetFor, setPickingSheetFor] = useState<ScheduleItem | null>(null);
+
+  /** One side of a typed final score. Empty clears it. */
+  function scoreBox(key: "final_score_us" | "final_score_them", saved: number | null | undefined) {
+    const v = draft[key] !== undefined ? draft[key] : saved;
+    return (
+      <input inputMode="numeric" value={v == null ? "" : String(v)}
+        onChange={e => {
+          const d = e.target.value.replace(/[^0-9]/g, "");
+          setDraft({ ...draft, [key]: d === "" ? null : parseInt(d, 10) });
+        }}
+        style={{ width: 64, textAlign: "center", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 6px", color: "var(--text)", fontSize: 14, fontFamily: "inherit" }} />
+    );
+  }
+
+  async function attachSheet(item: ScheduleItem, sheetId: string) {
+    const { error } = await updateScheduleFields(item, { gameday_sheet_id: sheetId });
+    setPickingSheetFor(null);
+    if (error) { setMsg(error); return; }
+    await load();
+  }
   // Renaming here writes the same week row the practice builder reads,
   // so a name set on either screen shows on both.
   const [renamingWeek, setRenamingWeek] = useState<string | null>(null);
@@ -266,19 +287,33 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
   function GameButtons({ item }: { item: ScheduleItem }) {
     // Fixed order, pre-game and post-game alike. A button that moves
     // between visits is one you have to look for every time.
-    const buttons = isCoach
+    // A game only offers what it uses. A freshman game with tracking and
+    // both sheets switched off shows none of those links, rather than a row
+    // of faded buttons that will never light up.
+    const tracked = item.trackStats !== false;
+    const scout = item.usesScoutSheet !== false;
+    const play = item.usesPlaySheet !== false;
+    const all = isCoach
       ? [
-          { label: "Tracker", live: true, go: () => onOpenTab?.("gamestats", { gameId: item.id, view: "track" }) },
-          { label: "Scout sheet", live: true, go: () => onOpenTab?.("scoutsheets", { gameId: item.id }) },
-          // Coach-only, and before the report because it's a pre-game
-          // thing. Faded when no sheet is attached, same rule as the rest.
-          { label: "Play sheet", live: Boolean(item.gamedaySheetId), go: () => onOpenTab?.("gameday", { sheetId: item.gamedaySheetId ?? undefined }) },
-          { label: "Game report", live: Boolean(item.played), go: () => onOpenTab?.("gamestats", { gameId: item.id, view: "report" }) },
+          tracked && { label: "Tracker", live: true, go: () => onOpenTab?.("gamestats", { gameId: item.id, view: "track" }) },
+          scout && { label: "Scout sheet", live: true, go: () => onOpenTab?.("scoutsheets", { gameId: item.id }) },
+          // With nothing attached, this used to open the play sheets page
+          // and leave you to work out how to attach one. It opens a picker
+          // instead: choose a sheet and it's attached.
+          play && {
+            label: "Play sheet", live: Boolean(item.gamedaySheetId),
+            go: () => item.gamedaySheetId
+              ? onOpenTab?.("gameday", { sheetId: item.gamedaySheetId })
+              : setPickingSheetFor(item),
+          },
+          tracked && { label: "Game report", live: Boolean(item.played), go: () => onOpenTab?.("gamestats", { gameId: item.id, view: "report" }) },
         ]
       : [
-          { label: "Scout sheet", live: Boolean(item.scoutPublished), go: () => onOpenTab?.("scoutsheets", { gameId: item.id }) },
-          { label: "Game report", live: Boolean(item.played && item.published), go: () => onOpenTab?.("gamestats", { gameId: item.id, view: "report" }) },
+          scout && { label: "Scout sheet", live: Boolean(item.scoutPublished), go: () => onOpenTab?.("scoutsheets", { gameId: item.id }) },
+          tracked && { label: "Game report", live: Boolean(item.played && item.published), go: () => onOpenTab?.("gamestats", { gameId: item.id, view: "report" }) },
         ];
+    const buttons = all.filter(Boolean) as { label: string; live: boolean; go: () => void }[];
+    if (!buttons.length) return null;
     return (
       <div style={{ padding: "2px 0 10px 16px" }}>
         {buttons.map(b => (
@@ -305,6 +340,33 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
 
   return (
     <div>
+      {pickingSheetFor && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}
+          onClick={() => setPickingSheetFor(null)}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 18, width: "100%", maxWidth: 400 }}>
+            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Attach a play sheet</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>For {pickingSheetFor.title}.</div>
+            {sheets.length === 0 ? (
+              <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
+                You haven't made a play sheet yet. Make one on the Game Day Sheets page, then attach it here.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                {sheets.map(sh => (
+                  <button key={sh.id} onClick={() => void attachSheet(pickingSheetFor, sh.id)}
+                    style={{ textAlign: "left", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 11px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>
+                    {sh.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button onClick={() => setPickingSheetFor(null)}
+              style={{ marginTop: 12, background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
       {showGame && (
         <QuickGameEditor rosters={rosters} onClose={() => setShowGame(false)} onSaved={load} />
       )}
@@ -561,6 +623,38 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
                             <option value="">— none —</option>
                             {sheets.map(sh => <option key={sh.id} value={sh.id}>{sh.name}</option>)}
                           </select>
+                        </Field>
+                      )}
+                      {/* How an untracked game gets its score — it has no
+                          possessions for the tracker to add up. A tracked
+                          game can be corrected here too. */}
+                      {item.kind === "game" && (
+                        <Field label="Final score — us / them">
+                          <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            {scoreBox("final_score_us", item.scoreUs)}
+                            <span style={{ color: "var(--muted)" }}>–</span>
+                            {scoreBox("final_score_them", item.scoreThem)}
+                          </span>
+                        </Field>
+                      )}
+                      {item.kind === "game" && (
+                        <Field label="For this game">
+                          <span style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            {([
+                              ["track_stats", "trackStats", "Track stats"],
+                              ["uses_scout_sheet", "usesScoutSheet", "Scout sheet"],
+                              ["uses_play_sheet", "usesPlaySheet", "Play sheet"],
+                            ] as const).map(([k, itemKey, title]) => {
+                              const v = draft[k] !== undefined ? draft[k] : (item[itemKey] !== false);
+                              return (
+                                <label key={k} style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 13, cursor: "pointer" }}>
+                                  <input type="checkbox" checked={Boolean(v)}
+                                    onChange={e => setDraft({ ...draft, [k]: e.target.checked })} />
+                                  {title}
+                                </label>
+                              );
+                            })}
+                          </span>
                         </Field>
                       )}
                       {item.kind === "event" && (
