@@ -5,6 +5,7 @@
 // supabase-js, no business logic beyond what the DB/RLS already enforces.
 
 import { supabase } from "./supabase";
+import { createGame } from "./gameStats";
 
 // ── Opponents ────────────────────────────────────────────────
 export interface Opponent {
@@ -438,16 +439,12 @@ export async function importScoutSheetFromExportPayload(payload: Awaited<ReturnT
 
   // Games aren't a reusable entity the way opponents/rosters are — a
   // fresh one is created every time, dated using the exported game date.
-  const { data: game, error: gameErr } = await supabase.from("games").insert({
+  const { game, error: gameErr } = await createGame({
     opponent: payload.opponentName,
     opponent_id: opponentId,
     game_date: payload.gameDate ?? new Date().toISOString().split("T")[0],
-    season: new Date(payload.gameDate ?? Date.now()).getFullYear().toString(),
-    home_away: "home",
-    status: "draft",
-    created_by: user.id,
-  }).select().single();
-  if (gameErr) throw gameErr;
+  });
+  if (gameErr || !game) throw new Error(gameErr ?? "Couldn't create the game.");
 
   const sheet = await createScoutSheet(game.id, opponentId);
   await updateScoutSheet(sheet.id, {
