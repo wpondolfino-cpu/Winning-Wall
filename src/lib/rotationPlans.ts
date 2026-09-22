@@ -97,7 +97,7 @@ export async function savePlan(plan: RotationPlan, userId: string): Promise<{ er
 
 /** The most recent plan on another game, for copy-forward. */
 export async function lastPlan(excludeGameId: string, rosterId: string | null): Promise<RotationPlan | null> {
-  let q = supabase.from("games").select("id, game_date").order("game_date", { ascending: false }).limit(25);
+  let q = supabase.from("games").select("id, game_date").eq("track_stats", true).order("game_date", { ascending: false }).limit(25);
   if (rosterId) q = q.eq("roster_id", rosterId);
   const { data: games } = await q;
   const ids = ((games ?? []) as any[]).map((g) => g.id).filter((id: string) => id !== excludeGameId);
