@@ -9,6 +9,7 @@
 // whenever a connection is available.
 
 import { supabase } from "./supabase";
+import { resolveWeek } from "./schedule";
 
 // ── Types ────────────────────────────────────────────────────
 export type Team = "us" | "opponent";
@@ -632,6 +633,79 @@ export function buildGameFormat(structure: PeriodFormat, periods: number, minute
     period_lengths: Array.from({ length: n }, () => Math.max(1, Math.min(30, minutes))),
     ot_minutes: Math.max(1, Math.min(30, otMinutes)),
   };
+}
+
+/**
+ * Which season a game belongs to, from its date alone.
+ *
+ * August onwards starts a new school year, so a November game and the
+ * following February's are both "2026-2027". Worked out from the date
+ * rather than looked up, so it can't disagree with itself.
+ *
+ * This used to live inside the tracker, while the scout hub used the
+ * calendar year ("2026", then "2027" in January) and the schedule import
+ * used the practice season's name ("2025-26"). One season's games could
+ * carry three different labels, and reports group by that label.
+ */
+export function seasonForDate(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00");
+  const year = d.getFullYear();
+  return d.getMonth() + 1 >= 8 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+}
+
+export interface NewGame {
+  opponent: string;
+  game_date: string;
+  opponent_id?: string | null;
+  roster_id?: string | null;
+  tip_time?: string | null;
+  bus_time?: string | null;
+  location?: string | null;
+  home_away?: string;
+  game_type?: GameType | string;
+  /** Omitted: the standard four eight-minute quarters, editable in the tracker. */
+  format?: GameFormat;
+  external_uid?: string | null;
+  status?: "draft" | "published";
+}
+
+/**
+ * The one way a game gets made.
+ *
+ * Games were created in four places — the tracker, the scout hub, the
+ * scout import and the schedule import — each with its own idea of the
+ * season, and only some filing into a week, setting a team or giving the
+ * tracker a format to run with. A game made in the scout hub showed to
+ * every team and opened in the tracker with no periods set.
+ *
+ * Everything that creates a game calls this, so they can't drift again.
+ * It's the same lesson as the week-start bug: one rule, one place.
+ */
+export async function createGame(input: NewGame): Promise<{ id: string | null; game: Game | null; error: string | null }> {
+  const { data: { user } } = await supabase.auth.getUser();
+  const std = GAME_STRUCTURES[0];
+  const fmt = input.format ?? buildGameFormat(std.value, std.periods, std.minutes, std.otMinutes);
+  const { data, error } = await supabase.from("games").insert({
+    opponent: input.opponent.trim(),
+    opponent_id: input.opponent_id ?? null,
+    game_date: input.game_date,
+    season: seasonForDate(input.game_date),
+    week_id: await resolveWeek(input.game_date, null),
+    roster_id: input.roster_id ?? null,
+    tip_time: input.tip_time || null,
+    bus_time: input.bus_time || null,
+    location: input.location?.trim() || null,
+    home_away: input.home_away ?? "home",
+    game_type: input.game_type ?? "regular",
+    period_format: fmt.period_format,
+    regulation_periods: fmt.regulation_periods,
+    period_lengths: fmt.period_lengths,
+    ot_minutes: fmt.ot_minutes,
+    external_uid: input.external_uid ?? null,
+    status: input.status ?? "draft",
+    created_by: user?.id,
+  }).select("*").single();
+  return { id: (data as any)?.id ?? null, game: (data as Game) ?? null, error: error?.message ?? null };
 }
 
 export const GAME_TYPES: { value: GameType; label: string }[] = [
