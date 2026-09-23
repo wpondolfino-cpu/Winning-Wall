@@ -43,6 +43,16 @@ export interface Season {
   name: string;
   is_current: boolean;
   created_at: string;
+  /** When it begins. It runs until the next season starts — there's no end
+   *  date, so no date can fall outside every season. */
+  start_date: string | null;
+}
+
+/** A season plus what's in it, for the list in Settings. */
+export interface SeasonSummary extends Season {
+  games: number;
+  practices: number;
+  archived: boolean;
 }
 
 export interface PracticeWeek {
@@ -689,6 +699,23 @@ export async function getCurrentSeason(): Promise<Season | null> {
 }
 
 /** "2026-27"-style default for the upcoming season, based on today's date — a season is assumed to start mid-year (around July), so a suggestion made anytime from July through December proposes thisYear-nextYear, and January through June proposes lastYear-thisYear. Always just a starting point in the "Start new season" prompt, not enforced. */
+/**
+ * The season after this one, by name.
+ *
+ * Derived from the season that's ending rather than from today's date:
+ * a rollover in March closes 2026-27 and opens 2027-28, whereas anything
+ * reading the calendar would say 2026-27 again. Falls back to the date
+ * when there's no season to count from, or its name isn't a school year.
+ */
+export function nextSeasonNameAfter(currentName?: string | null): string {
+  const m = (currentName ?? "").match(/^(\d{4})\s*-\s*(\d{2,4})$/);
+  if (m) {
+    const start = parseInt(m[1], 10) + 1;
+    return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
+  }
+  return suggestNextSeasonName();
+}
+
 export function suggestNextSeasonName(): string {
   const now = new Date();
   const y = now.getFullYear();
@@ -697,13 +724,80 @@ export function suggestNextSeasonName(): string {
 }
 
 /** Closes out whatever season is current and opens a new one. Existing weeks keep whatever season_id they already had — only weeks created after this point pick up the new season. */
-export async function startNewSeason(name: string): Promise<{ id: string | null; error: string | null }> {
+/**
+ * Every season with what it holds.
+ *
+ * The counts are here so an accidental rollover is visible — an empty
+ * season made by mistake reads as empty — and so a real season can be
+ * told from a test one before anything is deleted.
+ */
+export async function getSeasonSummaries(): Promise<SeasonSummary[]> {
+  const seasons = await getSeasons();
+  const [{ data: games }, { data: weeks }, { data: arch }, { data: archIn }] = await Promise.all([
+    supabase.from("games").select("season_id"),
+    supabase.from("practice_weeks").select("id, season_id"),
+    supabase.from("season_history").select("season_id"),
+    supabase.from("inseason_history").select("season_id"),
+  ]);
+  const weekIds = new Map<string, string | null>(((weeks ?? []) as any[]).map(w => [w.id, w.season_id]));
+  const { data: practices } = await supabase.from("practices").select("week_id").eq("is_template", false);
+
+  const gameCount = new Map<string, number>();
+  for (const g of (games ?? []) as any[]) if (g.season_id) gameCount.set(g.season_id, (gameCount.get(g.season_id) ?? 0) + 1);
+  const practiceCount = new Map<string, number>();
+  for (const p of (practices ?? []) as any[]) {
+    const sid = p.week_id ? weekIds.get(p.week_id) : null;
+    if (sid) practiceCount.set(sid, (practiceCount.get(sid) ?? 0) + 1);
+  }
+  const archived = new Set<string>([...((arch ?? []) as any[]), ...((archIn ?? []) as any[])]
+    .map(a => a.season_id).filter(Boolean));
+
+  return seasons.map(s => ({
+    ...s,
+    games: gameCount.get(s.id) ?? 0,
+    practices: practiceCount.get(s.id) ?? 0,
+    archived: archived.has(s.id),
+  }));
+}
+
+/** Make an earlier season current again — the way back the app never had. */
+export async function setCurrentSeason(id: string): Promise<{ error: string | null }> {
+  // Cleared first: the database allows only one current season at a time.
+  const { error: clear } = await supabase.from("seasons").update({ is_current: false }).eq("is_current", true);
+  if (clear) return { error: clear.message };
+  const { error } = await supabase.from("seasons").update({ is_current: true }).eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+export async function updateSeason(id: string, patch: { name?: string; start_date?: string | null }): Promise<{ error: string | null }> {
+  const clean: any = {};
+  if (patch.name !== undefined) clean.name = patch.name.trim();
+  if (patch.start_date !== undefined) clean.start_date = patch.start_date || null;
+  const { error } = await supabase.from("seasons").update(clean).eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+/**
+ * Delete a season.
+ *
+ * Games and archives fall back to no season rather than being deleted —
+ * losing a season shouldn't lose a year of games. They show as unassigned
+ * in Settings until they're placed.
+ */
+export async function deleteSeason(id: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("seasons").delete().eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+export async function startNewSeason(name: string, startDate?: string): Promise<{ id: string | null; error: string | null }> {
   const { data: { user } } = await supabase.auth.getUser();
   const { error: clearError } = await supabase.from("seasons").update({ is_current: false }).eq("is_current", true);
   if (clearError) return { id: null, error: clearError.message };
   const { data, error } = await supabase
     .from("seasons")
-    .insert({ name: name.trim(), is_current: true, created_by: user?.id })
+    // Starts today unless told otherwise. The date is what everything else
+    // files against, so a season without one would swallow nothing.
+    .insert({ name: name.trim(), is_current: true, start_date: startDate ?? new Date().toISOString().slice(0, 10), created_by: user?.id })
     .select("id")
     .single();
   return { id: data?.id ?? null, error: error?.message ?? null };
