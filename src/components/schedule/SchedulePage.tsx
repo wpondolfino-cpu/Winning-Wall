@@ -411,9 +411,10 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
           <button onClick={() => setShowPractice(true)} style={chip}>+ Practice</button>
           <button onClick={() => setShowEvent(true)} style={chip}>+ Event</button>
           <button onClick={() => setShowImport(true)} style={chip}>Import</button>
-          {/* The Sunday email to parents — the next two weeks, shaped to
-              paste straight into a message. */}
-          <button onClick={() => setShowExport(true)} style={{ ...chip, marginLeft: "auto" }}>✉ Share</button>
+          {/* Named for both things it does. "Share" with an envelope read as
+              if it sent something — it doesn't; it fills your clipboard or
+              opens a print dialog. */}
+          <button onClick={() => setShowExport(true)} style={{ ...chip, marginLeft: "auto" }}>🖨 Print / Email</button>
         </div>
       )}
 
