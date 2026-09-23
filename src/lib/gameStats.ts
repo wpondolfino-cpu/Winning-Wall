@@ -636,6 +636,10 @@ export function buildGameFormat(structure: PeriodFormat, periods: number, minute
 }
 
 /**
+ * @deprecated The season a game belongs to is season_id now, found from the
+ * seasons list by date. This only keeps the old text column populated for a
+ * client that hasn't been updated yet.
+ *
  * Which season a game belongs to, from its date alone.
  *
  * August onwards starts a new school year, so a November game and the
@@ -717,6 +721,9 @@ export async function createGame(input: NewGame): Promise<{ id: string | null; g
     opponent: input.opponent.trim(),
     opponent_id: input.opponent_id ?? null,
     game_date: input.game_date,
+    // The real season, found by date. The text label is written too so an
+    // older client keeps working; season_id is what's read.
+    season_id: (await supabase.rpc("season_for_date", { p_date: input.game_date })).data ?? null,
     season: seasonForDate(input.game_date),
     week_id: await resolveWeek(input.game_date, null),
     roster_id: input.roster_id ?? null,
@@ -1869,11 +1876,21 @@ export async function finishGame(gameId: string, finalScoreUs: number, finalScor
 
 /** Distinct seasons that have any games, most recent first -- drives the season selector so past seasons stay reachable instead of everything silently defaulting to "today's season." */
 export async function listSeasons(): Promise<string[]> {
-  // Tracked games only — a season holding nothing but untracked games
-  // would otherwise appear in the selector and open to an empty report.
+  // From the seasons list, narrowed to those with a tracked game in them.
+  // It used to read the text label off games, which — with three different
+  // labelling rules in play — could list "2026", "2027" and "2026-2027" as
+  // separate seasons holding pieces of the same year.
+  const [{ data: seasons }, { data: games }] = await Promise.all([
+    supabase.from("seasons").select("id, name, start_date").order("start_date", { ascending: false }),
+    supabase.from("games").select("season_id").eq("track_stats", true),
+  ]);
+  const withGames = new Set(((games ?? []) as any[]).map(g => g.season_id).filter(Boolean));
+  const named = ((seasons ?? []) as any[]).filter(s => withGames.has(s.id)).map(s => s.name as string);
+  if (named.length) return named;
+  // Nothing filed yet — fall back to the old labels so a report isn't empty
+  // before the backfill has run.
   const { data } = await supabase.from("games").select("season").eq("track_stats", true);
-  const seasons = Array.from(new Set((data ?? []).map((g: any) => g.season as string)));
-  return seasons.sort().reverse();
+  return Array.from(new Set((data ?? []).map((g: any) => g.season as string))).sort().reverse();
 }
 
 /** Undoes finishGame -- clears the final score so the game goes back to being trackable. The escape hatch for "finished too early." */
