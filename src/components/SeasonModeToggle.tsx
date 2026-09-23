@@ -3,19 +3,34 @@ import { useState, useEffect } from "react";
 import { SeasonMode, getSeasonMode, loadSeasonMode, saveSeasonMode } from "../lib/seasonMode";
 import { archiveAndResetOffseason, archiveAndResetInSeason } from "../lib/seasonReset";
 import { inputStyle } from "../lib/inputStyle";
+import { getCurrentSeason, startNewSeason, nextSeasonNameAfter, Season } from "../lib/practicePlanner";
 
 export default function SeasonModeToggle() {
   const [mode, setMode] = useState<SeasonMode>(getSeasonMode());
   const [showPopup, setShowPopup] = useState(false);
   const [wantsReset, setWantsReset] = useState(false);
-  const [seasonLabel, setSeasonLabel] = useState(() => {
-    const y = new Date().getFullYear();
-    return `${y}-${(y + 1).toString().slice(2)}`;
-  });
+  // The season that's ending, read rather than typed. Its name is the
+  // archive's label, so the archive and the season list can't disagree.
+  const [current, setCurrent] = useState<Season | null>(null);
+  const [seasonLabel, setSeasonLabel] = useState("");
+  // Going to offseason ends a season, so this is where a new one starts.
+  // Never on the way in: that would make two seasons in one year for a
+  // coach who flips both ways.
+  const [startNext, setStartNext] = useState(true);
+  const [nextName, setNextName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { loadSeasonMode().then(setMode); }, []);
+  useEffect(() => {
+    getCurrentSeason().then(cur => {
+      setCurrent(cur ?? null);
+      // Falls back to a typed label if no season exists yet, so an app
+      // that's never had one can still archive.
+      setSeasonLabel(cur?.name ?? "");
+      setNextName(nextSeasonNameAfter(cur?.name));
+    }).catch(console.error);
+  }, []);
 
   const target: SeasonMode = mode === "offseason" ? "inseason" : "offseason";
   // Deferred-reset design: archiving only ever happens on the trip BACK
@@ -51,8 +66,14 @@ export default function SeasonModeToggle() {
     try {
       // Both archives must succeed before the mode flips or anything
       // resets — if either fails, nothing changes.
-      await archiveAndResetOffseason(seasonLabel.trim());
-      await archiveAndResetInSeason(seasonLabel.trim());
+      await archiveAndResetOffseason(seasonLabel.trim(), current?.id ?? null);
+      await archiveAndResetInSeason(seasonLabel.trim(), current?.id ?? null);
+      // Only after both archives land — a new season that opened while the
+      // archive failed would leave the old one closed and unrecorded.
+      if (startNext && nextName.trim()) {
+        const { error } = await startNewSeason(nextName);
+        if (error) throw new Error(error);
+      }
       await saveSeasonMode(target);
       setMode(target);
       setShowPopup(false);
@@ -104,9 +125,28 @@ export default function SeasonModeToggle() {
                 <p style={{ fontSize: 13, color: "#ff7b7b" }}>
                   This archives and resets <strong>both</strong> leaderboards for every player — rostered and non-rostered together. Personal bests and perks are untouched. This can't be undone.
                 </p>
-                <label style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>Archive label</label>
-                <input value={seasonLabel} onChange={e => setSeasonLabel(e.target.value)} style={{ ...inputStyle, width: "100%", marginTop: 6, marginBottom: 12 }} />
-                <button type="button" disabled={busy || !seasonLabel.trim()} onClick={confirmResetAndSwitch}
+                <label style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  {current ? "Season ending" : "Archive label"}
+                </label>
+                <input value={seasonLabel} onChange={e => setSeasonLabel(e.target.value)}
+                  placeholder="2026-27"
+                  style={{ ...inputStyle, width: "100%", marginTop: 6, marginBottom: 12 }} />
+
+                {/* The rollover, in the one place a season actually ends. */}
+                <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 10, cursor: "pointer" }}>
+                  <input type="checkbox" checked={startNext} onChange={e => setStartNext(e.target.checked)} style={{ marginTop: 3 }} />
+                  <span>
+                    <span style={{ fontSize: 13, color: "var(--text)" }}>Start the next season</span>
+                    <span style={{ display: "block", fontSize: 11, color: "var(--muted)" }}>
+                      It starts today. Practices and games from here belong to it.
+                    </span>
+                  </span>
+                </label>
+                {startNext && (
+                  <input value={nextName} onChange={e => setNextName(e.target.value)}
+                    placeholder="2027-28" style={{ ...inputStyle, width: "100%", marginBottom: 12 }} />
+                )}
+                <button type="button" disabled={busy || !seasonLabel.trim() || (startNext && !nextName.trim())} onClick={confirmResetAndSwitch}
                   style={{ width: "100%", background: "#c0392b", color: "#fff", border: "none", borderRadius: 8, padding: "10px", fontWeight: 700, fontSize: 13, cursor: "pointer", marginBottom: 8 }}>
                   {busy ? "Archiving…" : "Confirm — Archive, Reset & Switch"}
                 </button>
