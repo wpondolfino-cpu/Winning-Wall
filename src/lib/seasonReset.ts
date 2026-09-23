@@ -10,7 +10,7 @@ import { resetPlayerScores } from "./scores";
 // ── Offseason: extracted from AdminSettings' existing reset flow ──
 // (season_history snapshot + resetPlayerScores) so the new toggle and
 // the original Settings button can eventually share one implementation.
-export async function archiveAndResetOffseason(seasonLabel: string): Promise<void> {
+export async function archiveAndResetOffseason(seasonLabel: string, seasonId?: string | null): Promise<void> {
   const [{ data: profiles }, { data: allScores }, { data: chalWins }, { data: drillBests }] = await Promise.all([
     supabase.from("profiles").select("id,grade_category").eq("role", "player"),
     supabase.from("scores").select("player_id,points"),
@@ -50,6 +50,9 @@ export async function archiveAndResetOffseason(seasonLabel: string): Promise<voi
   const snapshots = profiles.map((p: any) => ({
     player_id: p.id,
     season_label: seasonLabel,
+    // The season this belongs to. The label stays for archives written
+    // before seasons were linked, which are matched by name instead.
+    season_id: seasonId ?? null,
     overall_rank: sorted.findIndex(([id]) => id === p.id) + 1 || null,
     group_rank: gradeRankMap[p.id] || null,
     grade_category: p.grade_category,
@@ -67,7 +70,7 @@ export async function archiveAndResetOffseason(seasonLabel: string): Promise<voi
 }
 
 // ── In-season: same shape, new data source ──
-export async function archiveAndResetInSeason(seasonLabel: string): Promise<void> {
+export async function archiveAndResetInSeason(seasonLabel: string, seasonId?: string | null): Promise<void> {
   const [{ data: wins }, { data: players }, { data: rosters }] = await Promise.all([
     supabase.from("practice_wins").select("player_id"),
     supabase.from("profiles").select("id, home_roster_id").eq("role", "player").not("home_roster_id", "is", null),
@@ -94,6 +97,9 @@ export async function archiveAndResetInSeason(seasonLabel: string): Promise<void
   const snapshots = players.map((p: any) => ({
     player_id: p.id,
     season_label: seasonLabel,
+    // The season this belongs to. The label stays for archives written
+    // before seasons were linked, which are matched by name instead.
+    season_id: seasonId ?? null,
     roster_id: p.home_roster_id,
     roster_name: p.home_roster_id ? rosterName.get(p.home_roster_id) ?? null : null,
     overall_rank: sorted.findIndex((sp: any) => sp.id === p.id) + 1 || null,
