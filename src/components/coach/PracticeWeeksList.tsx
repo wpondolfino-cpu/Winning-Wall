@@ -11,7 +11,6 @@ import {
   getPracticeAttentionCount, suggestNextWeekName, renamePracticeWeek,
   deletePracticeWeek, deletePractice, movePracticesToWeek, getRosters, getSeasons, getCurrentSeason,
   getTryoutPlayers, clearTryoutPool,
-  startNewSeason, suggestNextSeasonName,
   practiceToExportPayload, importPracticeFromExportPayload, PRACTICE_EXPORT_SCHEMA_VERSION,
 } from "../../lib/practicePlanner";
 import { embedJsonInPdf, extractJsonFromPdf, drawTextDocument } from "../../lib/pdfDataExport";
@@ -53,7 +52,6 @@ export default function PracticeWeeksList(props: Props) {
   const [showArchiveRow, setShowArchiveRow] = useState(false);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
-  const [startingSeason, setStartingSeason] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [weekToDelete, setWeekToDelete] = useState<{ week: PracticeWeek; count: number; others: PracticeWeek[] } | null>(null);
   const [deleteStage, setDeleteStage] = useState<"choose" | "move" | "confirm">("choose");
@@ -239,18 +237,6 @@ export default function PracticeWeeksList(props: Props) {
     await load();
   }
 
-  async function handleStartNewSeason() {
-    const suggested = suggestNextSeasonName();
-    const name = window.prompt("Name the new season:", suggested);
-    if (!name || !name.trim()) return;
-    if (!window.confirm(`Start "${name.trim()}" as the new season? Existing weeks stay right where they are — only new weeks will use it.`)) return;
-    setStartingSeason(true);
-    const { id, error } = await startNewSeason(name.trim());
-    setStartingSeason(false);
-    if (error) { alert("Error: " + error); return; }
-    setSelectedSeasonId(id);
-    await load();
-  }
 
   if (printIds) {
     return <PracticePrintView practiceIds={printIds} onClose={() => setPrintIds(null)} />;
@@ -411,9 +397,8 @@ export default function PracticeWeeksList(props: Props) {
             style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
             {seasons.map(s => <option key={s.id} value={s.id}>{s.name} season{s.is_current ? " (current)" : ""}</option>)}
           </select>
-          <button onClick={handleStartNewSeason} disabled={startingSeason} style={secondaryBtn}>
-            {startingSeason ? "Starting…" : "+ New season"}
-          </button>
+          {/* Starting a season now happens in Settings, or by flipping to
+              offseason — this picker is for looking at one. */}
         </div>
       )}
 
