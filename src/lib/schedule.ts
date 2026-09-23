@@ -197,6 +197,37 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
  * Only asked for the practices actually being exported, since working out
  * the plan's length means reading every block of every one.
  */
+/**
+ * Who a schedule row is for, in words.
+ *
+ * Shared by the schedule page and its printout so they can't disagree.
+ *
+ * Shown only when it tells you something. Viewing every team, each row
+ * names its team. Viewing one team, every row would repeat that name, so it
+ * drops away and a shared practice says who ELSE is there ("With JV"). A
+ * practice that isn't your team's at all — a call-up — names the team
+ * you're joining, since "With Varsity" would read as a joint session.
+ */
+export function teamLabelFor(
+  ids: string[] | undefined,
+  rosters: { id: string; name: string }[],
+  viewing: string | null | undefined,
+): string {
+  const list = ids ?? [];
+  const nameOf = (id: string) => rosters.find(r => r.id === id)?.name;
+  const everyTeam = rosters.length > 1 && rosters.every(r => list.includes(r.id));
+  if (!viewing) {
+    if (!list.length) return "Everyone";
+    if (everyTeam) return "All teams";
+    return list.map(nameOf).filter(Boolean).join(" + ");
+  }
+  if (list.length && !list.includes(viewing)) return list.map(nameOf).filter(Boolean).join(" + ");
+  const others = list.filter(id => id !== viewing);
+  if (!others.length) return "";
+  if (everyTeam) return "All teams";
+  return "With " + others.map(nameOf).filter(Boolean).join(" + ");
+}
+
 export async function getPracticeEndTimes(items: ScheduleItem[]): Promise<Record<string, string>> {
   const practices = items.filter(i => i.kind === "practice");
   const out: Record<string, string> = {};
