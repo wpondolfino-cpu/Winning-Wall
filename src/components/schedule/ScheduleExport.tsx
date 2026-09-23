@@ -13,9 +13,9 @@
 // one whose time is unknown, and the time is what a parent needs.
 
 import { useState, useMemo } from "react";
-import { ScheduleItem, getPracticeEndTimes } from "../../lib/schedule";
+import { ScheduleItem, getPracticeEndTimes, teamLabelFor } from "../../lib/schedule";
 
-interface RosterLite { id: string; name: string; }
+interface RosterLite { id: string; name: string; color?: string; }
 
 export default function ScheduleExport({ items, rosters, defaultRosterId, onClose }: {
   items: ScheduleItem[];
@@ -89,16 +89,35 @@ export default function ScheduleExport({ items, rosters, defaultRosterId, onClos
     return [...weeks.entries()];
   }
 
+  /**
+   * The team column, shown only when rows differ — the whole program on
+   * one sheet. On a single team's sheet every row would say the same thing.
+   *
+   * The NAME is what does the work: plenty of printers are black and white.
+   * The swatch is a bonus, and is a filled cell rather than a background
+   * colour on the row, because browsers drop background colours when
+   * printing unless told otherwise — see the print-colour rule in printIt.
+   */
+  const teamCol = (i: ScheduleItem) => teamLabelFor(i.rosterIds, rosters, rosterId || null);
+  const showTeams = chosen.some(i => teamCol(i));
+
+  function swatches(i: ScheduleItem): string {
+    const cs = (i.rosterIds ?? []).map(id => rosters.find(r => r.id === id)?.color).filter(Boolean) as string[];
+    return cs.map(c => `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${c};margin-right:3px;vertical-align:middle;border:1px solid rgba(0,0,0,0.2);"></span>`).join("");
+  }
+
   function buildHtml(ends: Record<string, string>) {
     const cell = "padding:6px 8px;border-bottom:1px solid #e5e5e5;";
     const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const cols = showTeams ? 4 : 3;
     let rows = "";
     for (const [wk, list] of groupByWeek()) {
-      rows += `<tr style="background:#f2f2f2;"><td colspan="3" style="padding:6px 8px;font-weight:bold;">Week of ${esc(dayLabel(wk).replace(/^\w+, /, ""))}</td></tr>`;
+      rows += `<tr style="background:#f2f2f2;"><td colspan="${cols}" style="padding:6px 8px;font-weight:bold;">Week of ${esc(dayLabel(wk).replace(/^\w+, /, ""))}</td></tr>`;
       for (const i of list) {
         const w = what(i);
-        rows += `<tr><td style="${cell}width:28%;">${esc(dayLabel(i.date))}</td>`
-          + `<td style="${cell}width:24%;">${esc(when(i, ends))}</td>`
+        rows += `<tr><td style="${cell}width:${showTeams ? 22 : 28}%;">${esc(dayLabel(i.date))}</td>`
+          + `<td style="${cell}width:${showTeams ? 20 : 24}%;">${esc(when(i, ends))}</td>`
+          + (showTeams ? `<td style="${cell}width:20%;white-space:nowrap;">${swatches(i)}${esc(teamCol(i))}</td>` : "")
           + `<td style="${cell}">${w.bold ? `<b>${esc(w.text)}</b>` : esc(w.text)}${w.extra ? ` · ${esc(w.extra)}` : ""}</td></tr>`;
       }
     }
@@ -119,7 +138,8 @@ export default function ScheduleExport({ items, rosters, defaultRosterId, onClos
       lines.push("", `Week of ${dayLabel(wk).replace(/^\w+, /, "")}`);
       for (const i of list) {
         const w = what(i);
-        lines.push(`  ${dayLabel(i.date)}  ${when(i, ends)}  ${w.text}${w.extra ? ` · ${w.extra}` : ""}`);
+        const t = teamCol(i);
+        lines.push(`  ${dayLabel(i.date)}  ${when(i, ends)}  ${t ? `[${t}] ` : ""}${w.text}${w.extra ? ` · ${w.extra}` : ""}`);
       }
     }
     if (chosen.some(i => i.kind === "practice" && ends[i.id])) lines.push("", "Practice end times are expected.");
@@ -150,7 +170,7 @@ export default function ScheduleExport({ items, rosters, defaultRosterId, onClos
     const w = window.open("", "_blank");
     if (!w) { alert("Your browser blocked the print window — allow pop-ups for this site."); return; }
     w.document.write(`<!doctype html><html><head><title>${teamName} schedule</title>`
-      + `<style>body{margin:32px;} @media print{body{margin:0.5in;}}</style></head><body>`
+      + `<style>body{margin:32px;} *{-webkit-print-color-adjust:exact;print-color-adjust:exact;} @media print{body{margin:0.5in;}}</style></head><body>`
       + buildHtml(ends) + `</body></html>`);
     w.document.close();
     w.focus();
