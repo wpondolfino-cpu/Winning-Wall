@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { supabase, currentPeriodStart, currentPeriodEnd, savePeriodAnchor, getPeriodAnchor } from "../lib/supabase";
 import SeasonModeToggle from "./SeasonModeToggle";
+import SeasonManager from "./SeasonManager";
 
 export default function AdminSettings() {
   const [exporting, setExporting]   = useState(false);
@@ -65,6 +66,12 @@ export default function AdminSettings() {
           Controls which nav and leaderboard rostered players see. Non-rostered players always stay in offseason mode regardless of this setting.
         </div>
         <SeasonModeToggle />
+
+      {/* Directly under the mode toggle: flipping to offseason is what
+          ends a season, so the list it changes belongs beside it. */}
+      <div style={{ marginTop: 12 }}>
+        <SeasonManager />
+      </div>
       </div>
 
       {/* ── Period Settings ── */}
