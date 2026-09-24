@@ -9,7 +9,7 @@
 // Pasted table text and iCal are both structured enough to fail loudly.
 
 import { supabase } from "./supabase";
-import { createGame, seasonForDate } from "./gameStats";
+import { createGame, seasonForDate, defaultGameFeatures } from "./gameStats";
 import { resolveWeek } from "./schedule";
 
 export interface ImportRow {
@@ -234,8 +234,9 @@ export async function reconcile(rows: ImportRow[], season: string): Promise<Impo
 }
 
 /** Writes only rows the coach can see and has approved. Weeks are created from dates as needed. */
-export async function commitImport(rows: ImportRow[], season: string, seasonId: string | null, userId: string) {
+export async function commitImport(rows: ImportRow[], season: string, seasonId: string | null, userId: string, rosterId?: string | null) {
   let created = 0, updated = 0;
+  const features = await defaultGameFeatures(rosterId ?? null);
   for (const r of rows) {
     if (r.status === "problem" || r.status === "unchanged" || !r.date) continue;
     if (r.existingId) {
@@ -247,6 +248,7 @@ export async function commitImport(rows: ImportRow[], season: string, seasonId: 
         opponent: r.opponent, game_date: r.date, tip_time: r.time,
         location: r.location, home_away: r.home_away, game_type: r.game_type,
         week_id: weekId, external_uid: r.external_uid, season: seasonForDate(r.date),
+        ...(rosterId ? { roster_id: rosterId } : {}),
       }).eq("id", r.existingId);
       updated++;
     } else {
@@ -264,6 +266,10 @@ export async function commitImport(rows: ImportRow[], season: string, seasonId: 
         opponent: r.opponent, opponent_id: oppId, game_date: r.date, tip_time: r.time,
         location: r.location, home_away: r.home_away ?? "home", game_type: r.game_type ?? "regular",
         external_uid: r.external_uid,
+        roster_id: rosterId ?? null,
+        // A freshman schedule arrives set up like the rest of their games,
+        // rather than every imported game turning up tracked.
+        ...features,
       });
       created++;
     }
