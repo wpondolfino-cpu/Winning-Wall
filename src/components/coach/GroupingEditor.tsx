@@ -12,6 +12,7 @@ import {
   generateBalancedGroups, saveGeneratedGroups, assignSavedArrangementToSegmentDrill, createSavedArrangement,
   getSavedGroupingArrangement, deleteSavedGrouping, clearSegmentDrillGroups,
   movePlayerBetweenGroups, removeGroupMember, addGroupMember, updateSegmentDrill,
+  getCurrentSeason, splitGroupingsBySeason,
 } from "../../lib/practicePlanner";
 
 interface PlayerLite { id: string; name: string; home_roster_id: string | null; }
@@ -58,6 +59,13 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
   useEffect(() => () => { if (savedTimer.current) window.clearTimeout(savedTimer.current); }, []);
   const [showPicker, setShowPicker] = useState(false);
   const [previews, setPreviews] = useState<Record<string, string[][]>>({});
+  // This season's saved groups by default; older ones behind a toggle
+  // (migration 145). Last year's "3s Week 1" is graduated names.
+  const [currentSeasonId, setCurrentSeasonId] = useState<string | null>(null);
+  const [showEarlier, setShowEarlier] = useState(false);
+  useEffect(() => { getCurrentSeason().then(s => setCurrentSeasonId(s?.id ?? null)); }, []);
+  const { current: thisSeasonGroupings, previous: earlierGroupings } = splitGroupingsBySeason<SavedGrouping>(savedGroupings, currentSeasonId);
+  const visibleGroupings = showEarlier ? [...thisSeasonGroupings, ...earlierGroupings] : thisSeasonGroupings;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -210,19 +218,25 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
               <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Saved groups</div>
               <button onClick={() => setShowPicker(false)} style={{ ...inputStyle, padding: "4px 10px" }}>Close</button>
             </div>
-            {savedGroupings.length === 0 ? (
+            {visibleGroupings.length === 0 ? (
               <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                Nothing saved for this roster yet. Build some groups and hit "Save these groups".
+                {earlierGroupings.length > 0
+                  ? "Nothing saved for this roster this season yet."
+                  : <>Nothing saved for this roster yet. Build some groups and hit "Save these groups".</>}
               </div>
             ) : (
-              savedGroupings.map(g => {
+              visibleGroupings.map(g => {
+                const isEarlier = earlierGroupings.includes(g);
                 const preview = previews[g.id] ?? [];
                 const labels = (g as any).group_labels as (string | null)[] | null;
                 return (
                   <div key={g.id} style={{ borderTop: "1px solid var(--border)", padding: "8px 0" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <button onClick={() => handleAssignSaved(g.id)} style={{ ...primaryBtn, padding: "6px 12px" }}>Use</button>
-                      <div style={{ flex: 1, fontSize: 13, color: "var(--text)", fontWeight: 600 }}>{g.name}</div>
+                      <div style={{ flex: 1, fontSize: 13, color: "var(--text)", fontWeight: 600 }}>
+                        {g.name}
+                        {isEarlier && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 5, padding: "1px 5px" }}>earlier season</span>}
+                      </div>
                       <button onClick={() => handleDeleteSaved(g)} title="Delete this saved group" style={{ ...inputStyle, padding: "4px 9px", color: "var(--muted)" }}>✕</button>
                     </div>
                     {/* Names, not just a count -- "3s Week 1" and "3s Week 2"
@@ -237,6 +251,11 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
                   </div>
                 );
               })
+            )}
+            {earlierGroupings.length > 0 && (
+              <button onClick={() => setShowEarlier(v => !v)} style={{ ...inputStyle, padding: "4px 10px", marginTop: 8, fontSize: 12 }}>
+                {showEarlier ? "Hide earlier seasons" : `Show earlier seasons (${earlierGroupings.length})`}
+              </button>
             )}
             <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>
               Loading one replaces the groups on screen. You can still drag players afterwards.
