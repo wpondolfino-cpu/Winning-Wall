@@ -488,7 +488,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
         <EventEditor seasonId={seasonId} rosters={rosters} onClose={() => setShowEvent(false)} onSaved={load} />
       )}
       {showImport && (
-        <ScheduleImport season={seasonLabel} seasonId={seasonId} userId={userId} onClose={() => setShowImport(false)} onImported={load} />
+        <ScheduleImport season={seasonLabel} seasonId={seasonId} userId={userId} rosters={rosters} onClose={() => setShowImport(false)} onImported={load} />
       )}
 
       {visible.map(w => (
