@@ -1,6 +1,7 @@
 // src/pages/LoginPage.tsx
 import { useState } from "react";
 import { signIn, signUp, GRADE_CATEGORIES, GradeCategory } from "../lib/supabase";
+import { gradYearFromGrade, gradeCategoryFromGradYear, loadAcademicYear } from "../lib/teamDesigner";
 import { supabase } from "../lib/supabase";
 
 type Mode = "signin" | "signup" | "forgot";
@@ -14,7 +15,9 @@ export default function LoginPage() {
   const [email, setEmail]         = useState("");
   const [password, setPassword]   = useState("");
   const [name, setName]           = useState("");
-  const [gradeCategory, setGradeCategory] = useState<GradeCategory>(GRADE_CATEGORIES[0]);
+  // The year they're in, stored as a graduation year so it moves up with
+  // the season. The leaderboard group is derived from it.
+  const [schoolYear, setSchoolYear] = useState<string>("");
   const [error, setError]         = useState("");
   const [loading, setLoading]     = useState(false);
   const [resetSent, setResetSent] = useState(false);
@@ -24,6 +27,7 @@ export default function LoginPage() {
     if (!email.trim())    { setError("Please enter your email."); return; }
     if (mode !== "forgot" && !password.trim()) { setError("Please enter your password."); return; }
     if (mode === "signup" && !name.trim()) { setError("Please enter your name."); return; }
+    if (mode === "signup" && role === "player" && !schoolYear) { setError("Please pick your school year."); return; }
     if (mode !== "forgot" && password.length < 6) { setError("Password must be at least 6 characters."); return; }
     setLoading(true);
     try {
@@ -59,10 +63,16 @@ export default function LoginPage() {
         setResetSent(true);
         return;
       } else {
+        let gradYear: number | null = null;
+        if (role === "player") {
+          await loadAcademicYear();
+          gradYear = gradYearFromGrade(parseInt(schoolYear, 10));
+        }
         await signUp(email, password, {
           name,
           role,
-          grade_category: role === "player" ? gradeCategory : undefined,
+          grade_category: role === "player" ? (gradeCategoryFromGradYear(gradYear) ?? GRADE_CATEGORIES[0]) as GradeCategory : undefined,
+          graduation_year: gradYear,
         });
         try {
           const { data: staff } = await supabase.from("profiles").select("id").in("role", ["coach", "admin"]);
@@ -221,9 +231,11 @@ export default function LoginPage() {
             </div>
             {role === "player" && (
               <div className="form-group">
-                <label>Grade / Level</label>
-                <select value={gradeCategory} onChange={e => setGradeCategory(e.target.value as GradeCategory)}>
-                  {GRADE_CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}
+                <label>School year</label>
+                <select value={schoolYear} onChange={e => setSchoolYear(e.target.value)}>
+                  <option value="">— pick one —</option>
+                  {[9, 10, 11, 12].map(g => <option key={g} value={g}>{g}th grade</option>)}
+                  <option value="13">Graduated (alumni)</option>
                 </select>
               </div>
             )}
