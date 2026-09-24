@@ -1,12 +1,12 @@
 // src/components/PlayersPanel.tsx  (Coach view — manage players)
 import { useState, useEffect } from "react";
 import PlayerAttendanceRecord from "./coach/PlayerAttendanceRecord";
-import { supabase, Score, Workout, ScoreAttempt, GRADE_CATEGORIES, GradeCategory, approveUser, rejectUser, resetPlayerScores } from "../lib/supabase";
+import { supabase, Score, Workout, ScoreAttempt, GRADE_CATEGORIES, approveUser, rejectUser, resetPlayerScores } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 import { Roster, getRosters } from "../lib/practicePlanner";
 import RosterManager from "./coach/RosterManager";
 import TeamDesigner from "./coach/TeamDesigner";
-import { gradYearFromGrade, gradeFromGradYear, gradeCategoryFromGradYear } from "../lib/teamDesigner";
+import { gradYearFromGrade, gradeFromGradYear, gradeCategoryFromGradYear, loadAcademicYear } from "../lib/teamDesigner";
 
 interface Props {
   allScores: Score[];
@@ -17,7 +17,7 @@ interface EditPlayer {
   id: string;
   name: string;
   grade_category: string;
-  /** Stored instead of a grade so it advances on its own each August. Grade and alumni status derive from it. */
+  /** Stored instead of a grade so it moves up when a new season starts. Grade and alumni status derive from it. */
   graduation_year: number | null;
   home_roster_id: string | null;
   /** Coach-assigned, and only once a player is on a roster -- somebody who
@@ -161,6 +161,24 @@ function PlayerProgressModal({ playerId, playerName, workouts, allScores, onClos
   const [attempts, setAttempts]   = useState<ScoreAttempt[]>([]);
   const [loading, setLoading]     = useState(true);
   const [view, setView]           = useState<"calendar"|"history"|"chart">("calendar");
+  const [showAllHistory, setShowAllHistory] = useState(false);
+  const [deletingAttempt, setDeletingAttempt] = useState<string | null>(null);
+
+  /**
+   * Removes one logged attempt from History and the Chart.
+   *
+   * Separate from Edit Scores on purpose: that fixes the leaderboard row
+   * (one per drill); this removes the entry itself, so a 550 that was
+   * really 55 stops spiking the chart forever.
+   */
+  async function deleteAttempt(a: ScoreAttempt, title: string, raw: number) {
+    if (!window.confirm(`Delete this ${title} entry (${raw}, ${new Date(a.attempted_at).toLocaleDateString()})?\n\nIt comes out of their History and Chart. Their leaderboard score doesn't change — fix that in 📊 Scores.`)) return;
+    setDeletingAttempt(a.id);
+    const { error } = await supabase.from("score_attempts").delete().eq("id", a.id);
+    setDeletingAttempt(null);
+    if (error) { alert("Couldn't delete: " + error.message); return; }
+    setAttempts(prev => prev.filter(x => x.id !== a.id));
+  }
 
   useEffect(() => {
     (async () => {
@@ -215,7 +233,7 @@ function PlayerProgressModal({ playerId, playerName, workouts, allScores, onClos
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {attempts.length === 0 ? (
                     <div style={{ fontSize: 13, color: "var(--muted)", textAlign: "center", padding: "20px 0" }}>No attempts yet.</div>
-                  ) : attempts.slice(0, 30).map(a => {
+                  ) : (showAllHistory ? attempts : attempts.slice(0, 30)).map(a => {
                     const w = workouts.find(wk => wk.id === a.workout_id);
                     const raw = a.self_points > 0 ? a.self_points : (a.made + a.reps);
                     return (
@@ -225,9 +243,18 @@ function PlayerProgressModal({ playerId, playerName, workouts, allScores, onClos
                           <div style={{ fontSize: 10, color: "var(--muted)" }}>{new Date(a.attempted_at).toLocaleDateString()}</div>
                         </div>
                         <span style={{ fontSize: 13, fontWeight: 700, color: "#93b4ff" }}>{raw}</span>
+                        <button onClick={() => deleteAttempt(a, w?.title ?? "drill", raw)} disabled={deletingAttempt === a.id} title="Delete this entry"
+                          style={{ marginLeft: 10, background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff7b7b", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>
+                          {deletingAttempt === a.id ? "…" : "🗑"}
+                        </button>
                       </div>
                     );
                   })}
+                  {!showAllHistory && attempts.length > 30 && (
+                    <button onClick={() => setShowAllHistory(true)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "7px 0", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>
+                      Show all {attempts.length}
+                    </button>
+                  )}
                 </div>
               )}
               {view === "chart" && <PlayerChart attempts={attempts} workouts={workouts} />}
@@ -246,7 +273,9 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const [addName, setAddName]         = useState("");
   const [addEmail, setAddEmail]       = useState("");
   const [addPass, setAddPass]         = useState("");
-  const [addGrade, setAddGrade]       = useState<GradeCategory>(GRADE_CATEGORIES[0]);
+  // A school year, not a leaderboard group: stored as a graduation year so
+  // it moves up with the season like everyone else's.
+  const [addSchoolYear, setAddSchoolYear] = useState<string>("");
   const [addSaving, setAddSaving]     = useState(false);
   const [addError, setAddError]       = useState("");
   const [activeTab, setActiveTab]     = useState<"players"|"coaches"|"rosters"|"teams">("players");
@@ -416,11 +445,17 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   }
 
   async function addPlayer() {
-    if (!addName.trim() || !addEmail.trim() || !addPass.trim()) { setAddError("Please fill in name, email, and password."); return; }
+    if (!addName.trim() || !addEmail.trim() || !addPass.trim() || !addSchoolYear) { setAddError("Please fill in name, school year, email, and password."); return; }
     setAddSaving(true); setAddError("");
     try {
-      await supabase.auth.signUp({ email: addEmail, password: addPass, options: { data: { name: addName, role: "player", grade_category: addGrade, must_change_password: true } } });
-      setShowAdd(false); setAddName(""); setAddEmail(""); setAddPass(""); setAddGrade(GRADE_CATEGORIES[0]); refresh();
+      await loadAcademicYear();
+      const gradYear = gradYearFromGrade(parseInt(addSchoolYear, 10));
+      await supabase.auth.signUp({ email: addEmail, password: addPass, options: { data: {
+        name: addName, role: "player", must_change_password: true,
+        graduation_year: gradYear,
+        grade_category: gradeCategoryFromGradYear(gradYear) ?? GRADE_CATEGORIES[0],
+      } } });
+      setShowAdd(false); setAddName(""); setAddEmail(""); setAddPass(""); setAddSchoolYear(""); refresh();
     } catch (e: any) { setAddError(e.message); }
     finally { setAddSaving(false); }
   }
@@ -475,6 +510,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       // the two can't drift apart. grade_category stays the ranking key
       // because it's snapshotted as text into hall_of_fame and
       // season_history -- changing its VALUES would relabel past seasons.
+      await loadAcademicYear();
       const derived = gradeCategoryFromGradYear(editPlayer.graduation_year);
       await supabase.from("profiles").update({
         name: editPlayer.name,
@@ -494,6 +530,10 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       const workout = workouts.find(w => w.id === s.workout_id);
       return { id: s.id, workout_id: s.workout_id, workout_title: workout?.title ?? "Unknown", scoring_type: workout?.scoring_type ?? "competitive", made: s.made, reps: s.reps, sprint_secs: s.sprint_secs, self_points: s.self_points, first_place_pts: workout?.first_place_pts, second_place_pts: workout?.second_place_pts, third_place_pts: workout?.third_place_pts };
     });
+    // Alphabetical by drill. There's one row per drill (scores upserts on
+    // player + drill), so this list is as long as the drills they've
+    // logged, not their season of entries -- those are in History.
+    mapped.sort((a, b) => a.workout_title.localeCompare(b.workout_title));
     setPlayerScores(mapped);
     const { data: bonuses } = await supabase.from("streak_bonuses").select("*").eq("player_id", playerId).order("awarded_at", { ascending: false });
     setPlayerBonuses(bonuses ?? []);
@@ -642,7 +682,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
               <div className="card-title">Add Player Manually</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
                 <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label><input value={addName} onChange={e => setAddName(e.target.value)} placeholder="Player name" style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
-                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Grade</label><select value={addGrade} onChange={e => setAddGrade(e.target.value as any)} style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }}>{GRADE_CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
+                <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>School year</label><select value={addSchoolYear} onChange={e => setAddSchoolYear(e.target.value)} style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }}><option value="">— pick one —</option>{[9, 10, 11, 12].map(g => <option key={g} value={g}>{g}th grade</option>)}<option value="13">Alumni</option></select></div>
                 <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Email</label><input type="email" value={addEmail} onChange={e => setAddEmail(e.target.value)} placeholder="player@school.edu" style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
                 <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Temp Password</label><input type="password" value={addPass} onChange={e => setAddPass(e.target.value)} placeholder="••••••••" style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
               </div>
@@ -885,15 +925,20 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 {[9, 10, 11, 12].map(g => <option key={g} value={g}>{g}th grade</option>)}
                 <option value="13">Alumni</option>
               </select>
-              {/* Stored as a graduation year, so it advances on its own every
-                  August instead of needing a bulk update each summer. */}
+              {/* Stored as a graduation year, so it moves up when a new
+                  season starts instead of needing a bulk update. */}
               <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
                 {editPlayer.graduation_year
-                  ? `Class of ${editPlayer.graduation_year} — rolls forward automatically each year.`
-                  : "Needed for the Team Designer's grade colours and senior filter."}
+                  ? `Class of ${editPlayer.graduation_year} — moves up automatically when a new season starts. Sets their leaderboard group too.`
+                  : "Needed to move them up each season, and for the Team Designer's grade colours and senior filter."}
               </div>
             </div>
-            <div style={{ marginBottom: 16 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Leaderboard group</label><select value={editPlayer.grade_category} onChange={e => setEditPlayer({ ...editPlayer, grade_category: e.target.value })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }}>{GRADE_CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
+{/* Only while no school year is set. Once one is, the group is
+                derived from it on save and at every season start, so a
+                hand-picked group here was silently overwritten. */}
+            {!editPlayer.graduation_year && (
+            <div style={{ marginBottom: 16 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Leaderboard group <span style={{ color: "#ff8c42" }}>(set a school year instead)</span></label><select value={editPlayer.grade_category} onChange={e => setEditPlayer({ ...editPlayer, grade_category: e.target.value })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }}>{GRADE_CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
+            )}
             <div style={{ marginBottom: 12 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Roster</label><select value={editPlayer.home_roster_id ?? ""} onChange={e => setEditPlayer({ ...editPlayer, home_roster_id: e.target.value || null })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }}><option value="">— No roster —</option>{rosters.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
 
             {/* Only once they're on a roster -- a player who doesn't make
