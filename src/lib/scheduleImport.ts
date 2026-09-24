@@ -22,6 +22,10 @@ export interface ImportRow {
   external_uid: string | null;
   /** "new" | "unchanged" | "moved" | "problem" — decided against what's already in the database. */
   status: string;
+  /** Which opponent this will link to, decided during reconcile. */
+  opponentId?: string | null;
+  /** The name of that opponent, so the preview can show what you'll get. */
+  opponentMatch?: string | null;
   note: string | null;
   existingId?: string | null;
 }
@@ -48,18 +52,60 @@ function inferYear(month: number, seasonStartYear: number): number {
  * intact. Expected shape, matching what a public schedule page produces:
  *   Date/Time  |  @ or vs  |  Opponent  |  Location  |  Type
  */
+const DATE_START = /^(\w{3})[a-z]*\.?\s+(\w{3})[a-z]*\.?\s+(\d{1,2})\b/i;
+
+/**
+ * Gathers the lines of a paste into one record per game.
+ *
+ * A browser copying an HTML table gives one tab-separated line per row,
+ * but plenty of schedule pages are built from stacked blocks, and those
+ * paste as several lines per game:
+ *
+ *   Tue Dec 15 6:30 PM
+ *   @
+ *   Foxborough High School
+ *
+ * Read line by line, that's a row with a date and no opponent — which is
+ * what every row in such a paste used to report. A line beginning with a
+ * weekday and date starts a new game; everything after it belongs to that
+ * game until the next one starts.
+ *
+ * A single-line paste still comes out as one record, because the first
+ * line is a date line and no others follow it, so both shapes work.
+ */
+function toRecords(raw: string): string[][] {
+  const lines = raw.split("\n").map(l => l.trim()).filter(Boolean);
+  const records: string[][] = [];
+  for (const line of lines) {
+    // A tab-separated line is already a whole row.
+    const parts = line.split(/\t|\s{2,}/).map(c => c.trim()).filter(Boolean);
+    if (DATE_START.test(line)) { records.push(parts); continue; }
+    if (!records.length) { records.push(parts); continue; }
+    records[records.length - 1].push(...parts);
+  }
+  return records;
+}
+
 export function parsePastedTable(raw: string, seasonStartYear: number): ImportRow[] {
-  return raw.split("\n").map(l => l.trim()).filter(Boolean).map(line => {
-    const cols = line.split(/\t|\s{2,}/).map(c => c.trim());
+  return toRecords(raw).map(cols => {
+    const line = cols.join(" ");
     const dt = cols[0] ?? "";
-    const m = dt.match(/^(\w{3})[a-z]*\.?\s+(\w{3})[a-z]*\.?\s+(\d{1,2})(?:\s+(\d{1,2}):(\d{2})\s*(AM|PM))?/i);
+    const m = (dt.match(DATE_START) ? dt : line).match(/^(\w{3})[a-z]*\.?\s+(\w{3})[a-z]*\.?\s+(\d{1,2})(?:\s+(\d{1,2}):(\d{2})\s*(AM|PM))?/i);
+
+    // Everything after the date, read by what it looks like rather than by
+    // position: a stacked paste puts "@" on its own line, and a tab-copied
+    // table puts it in the second column.
+    const rest = cols.slice(1);
+    const marker = rest.find(c => /^(@|at|vs\.?|home|away)$/i.test(c)) ?? "";
+    const isType = (c: string) => /^[TN]$/i.test(c);
+    const words = rest.filter(c => c !== marker && !isType(c));
 
     const row: ImportRow = {
       date: null, time: null,
-      opponent: cols[2] ?? "",
-      location: cols[3] || null,
-      home_away: (cols[1] ?? "").trim() === "@" ? "away" : (cols[1] ?? "").trim().toLowerCase() === "vs" ? "home" : "neutral",
-      game_type: (cols[4] ?? "").trim().toUpperCase() === "T" ? "tournament" : "regular",
+      opponent: words[0] ?? "",
+      location: words[1] || null,
+      home_away: /^(@|at|away)$/i.test(marker) ? "away" : /^(vs\.?|home)$/i.test(marker) ? "home" : "neutral",
+      game_type: rest.some(c => c.trim().toUpperCase() === "T") ? "tournament" : "regular",
       external_uid: null,
       status: "new", note: null,
     };
@@ -134,12 +180,41 @@ export function parseICal(raw: string): ImportRow[] {
  * otherwise on opponent plus a nearby date, since a moved game keeps its
  * opponent but not its date.
  */
+/**
+ * Loose comparison of two opponent names.
+ *
+ * "Foxborough High School", "Foxborough HS" and "foxborough" are the same
+ * school written three ways, and a schedule page rarely writes it the way
+ * you did. Case, punctuation and the school-type words come off before
+ * comparing.
+ *
+ * Deliberately NOT fuzzy beyond that: "Foxboro" and "Foxborough" are
+ * different strings, and a rule loose enough to join them would also join
+ * two genuinely different schools. The preview shows which opponent each
+ * row will link to so that case is caught by eye.
+ */
+function normaliseOpponent(name: string): string {
+  return name.toLowerCase()
+    .replace(/[.,'"]/g, "")
+    .replace(/\b(high school|high|hs|school|academy|regional|the)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export async function reconcile(rows: ImportRow[], season: string): Promise<ImportRow[]> {
-  const { data } = await supabase
-    .from("games").select("id, opponent, game_date, tip_time, external_uid").eq("season", season);
+  const [{ data }, { data: opps }] = await Promise.all([
+    supabase.from("games").select("id, opponent, game_date, tip_time, external_uid").eq("season", season),
+    supabase.from("opponents").select("id, name"),
+  ]);
   const existing = (data ?? []) as any[];
+  const opponents = (opps ?? []) as { id: string; name: string }[];
 
   return rows.map(r => {
+    // Which opponent this row will link to — shown in the preview, because
+    // a schedule page writing "Foxboro" where your list says "Foxborough"
+    // is only catchable by eye.
+    const match = opponents.find(o => normaliseOpponent(o.name) === normaliseOpponent(r.opponent));
+    r = { ...r, opponentId: match?.id ?? null, opponentMatch: match?.name ?? null };
     if (r.status === "problem") return r;
     const byUid = r.external_uid ? existing.find(g => g.external_uid === r.external_uid) : null;
     const byName = byUid ?? existing.find(g =>
@@ -175,8 +250,18 @@ export async function commitImport(rows: ImportRow[], season: string, seasonId: 
       }).eq("id", r.existingId);
       updated++;
     } else {
+      // An opponent the list doesn't have yet is created, so the game is
+      // linked from the start — an imported game used to carry the name as
+      // text only, which meant a scout sheet for that opponent could never
+      // find it.
+      let oppId = r.opponentId ?? null;
+      if (!oppId) {
+        const { data: made } = await supabase.from("opponents")
+          .insert({ name: r.opponent.trim(), created_by: userId }).select("id").single();
+        oppId = (made as any)?.id ?? null;
+      }
       await createGame({
-        opponent: r.opponent, game_date: r.date, tip_time: r.time,
+        opponent: r.opponent, opponent_id: oppId, game_date: r.date, tip_time: r.time,
         location: r.location, home_away: r.home_away ?? "home", game_type: r.game_type ?? "regular",
         external_uid: r.external_uid,
       });
