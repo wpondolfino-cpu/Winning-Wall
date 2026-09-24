@@ -18,8 +18,9 @@
 import { useState, useEffect } from "react";
 import {
   SeasonSummary, getSeasonSummaries, setCurrentSeason, updateSeason,
-  deleteSeason, startNewSeason, nextSeasonNameAfter,
+  deleteSeason, startNewSeason, nextSeasonNameAfter, GradeSync,
 } from "../lib/practicePlanner";
+import SeasonRolloverSummary from "./SeasonRolloverSummary";
 import { inputStyle } from "../lib/inputStyle";
 
 export default function SeasonManager() {
@@ -29,6 +30,7 @@ export default function SeasonManager() {
   const [draftDate, setDraftDate] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [rollover, setRollover] = useState<{ name: string; sync: GradeSync | null | undefined } | null>(null);
 
   async function load() {
     try { setSeasons(await getSeasonSummaries()); }
@@ -51,9 +53,10 @@ export default function SeasonManager() {
     const name = window.prompt("Name the season", nextSeasonNameAfter(current?.name));
     if (!name?.trim()) return;
     setBusy(true);
-    const { error } = await startNewSeason(name);
+    const { error, sync } = await startNewSeason(name);
     setBusy(false);
     if (error) { setErr(error); return; }
+    setRollover({ name: name.trim(), sync });
     await load();
   }
 
@@ -142,6 +145,9 @@ export default function SeasonManager() {
           </div>
         ))}
       </div>
+      {rollover && (
+        <SeasonRolloverSummary sync={rollover.sync} seasonName={rollover.name} onClose={() => setRollover(null)} />
+      )}
     </div>
   );
 }
