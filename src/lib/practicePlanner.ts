@@ -5,6 +5,7 @@
 // so reordering or editing a duration reflows automatically.
 
 import { supabase } from "./supabase";
+import { loadAcademicYear } from "./teamDesigner";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -766,7 +767,11 @@ export async function setCurrentSeason(id: string): Promise<{ error: string | nu
   const { error: clear } = await supabase.from("seasons").update({ is_current: false }).eq("is_current", true);
   if (clear) return { error: clear.message };
   const { error } = await supabase.from("seasons").update({ is_current: true }).eq("id", id);
-  return { error: error?.message ?? null };
+  if (error) return { error: error.message };
+  // Grades follow the current season, so going back one moves them back.
+  // A correction, not a new year: graduates keep their rosters.
+  await syncGradesToSeason(false);
+  return { error: null };
 }
 
 export async function updateSeason(id: string, patch: { name?: string; start_date?: string | null }): Promise<{ error: string | null }> {
@@ -774,7 +779,11 @@ export async function updateSeason(id: string, patch: { name?: string; start_dat
   if (patch.name !== undefined) clean.name = patch.name.trim();
   if (patch.start_date !== undefined) clean.start_date = patch.start_date || null;
   const { error } = await supabase.from("seasons").update(clean).eq("id", id);
-  return { error: error?.message ?? null };
+  if (error) return { error: error.message };
+  // Moving the current season's start date can move which class is
+  // "seniors". Idempotent, so harmless when it doesn't.
+  if (patch.start_date !== undefined) await syncGradesToSeason(false);
+  return { error: null };
 }
 
 /**
@@ -789,7 +798,28 @@ export async function deleteSeason(id: string): Promise<{ error: string | null }
   return { error: error?.message ?? null };
 }
 
-export async function startNewSeason(name: string, startDate?: string): Promise<{ id: string | null; error: string | null }> {
+/** What starting a season did to players, for the summary shown afterwards. */
+export interface GradeSync {
+  academic_year: number;
+  grades_moved: number;
+  alumni_cleared: number;
+  missing_year: number;
+}
+
+/**
+ * Brings every player's leaderboard group in line with the current season
+ * (migration 144) and refreshes the cached grade boundary. Pass true only
+ * when a NEW season starts: it also takes graduates off their home roster
+ * and clears their jersey.
+ */
+export async function syncGradesToSeason(clearAlumniRosters: boolean): Promise<GradeSync | null> {
+  const { data, error } = await supabase.rpc("sync_grades_to_season", { p_clear_alumni_rosters: clearAlumniRosters });
+  await loadAcademicYear(true);
+  if (error) { console.error("Grade sync failed:", error); return null; }
+  return data as GradeSync;
+}
+
+export async function startNewSeason(name: string, startDate?: string): Promise<{ id: string | null; error: string | null; sync?: GradeSync | null }> {
   const { data: { user } } = await supabase.auth.getUser();
   const { error: clearError } = await supabase.from("seasons").update({ is_current: false }).eq("is_current", true);
   if (clearError) return { id: null, error: clearError.message };
@@ -800,7 +830,12 @@ export async function startNewSeason(name: string, startDate?: string): Promise<
     .insert({ name: name.trim(), is_current: true, start_date: startDate ?? new Date().toISOString().slice(0, 10), created_by: user?.id })
     .select("id")
     .single();
-  return { id: data?.id ?? null, error: error?.message ?? null };
+  if (error) return { id: null, error: error.message };
+  // Everyone moves up a grade the moment the season starts. Runs after the
+  // insert so it reads the new season; the leaderboard archive (when there
+  // is one) has already run by now, so past seasons keep their labels.
+  const sync = await syncGradesToSeason(true);
+  return { id: data?.id ?? null, error: null, sync };
 }
 
 // ── Practices CRUD ───────────────────────────────────────────
@@ -1580,6 +1615,35 @@ export interface SavedGrouping {
   name: string;
   roster_id: string;
   updated_at: string;
+  /** The season it was saved in (migration 145). Null only if no season existed. */
+  season_id?: string | null;
+}
+
+/**
+ * Splits saved groupings into this season's and older ones. Null counts
+ * as current -- it only happens when no season existed, and hiding those
+ * would hide everything.
+ */
+export function splitGroupingsBySeason<T extends { season_id?: string | null }>(list: T[], currentSeasonId: string | null): { current: T[]; previous: T[] } {
+  if (!currentSeasonId) return { current: list, previous: [] };
+  const current: T[] = [], previous: T[] = [];
+  for (const g of list) (g.season_id && g.season_id !== currentSeasonId ? previous : current).push(g);
+  return { current, previous };
+}
+
+/** Saved groupings from before the current season, across every roster -- what the new-season cleanup offers to delete. */
+export async function getPreviousSeasonGroupingIds(): Promise<string[]> {
+  const cur = await getCurrentSeason();
+  if (!cur) return [];
+  const { data, error } = await supabase.from("saved_groupings").select("id, season_id").neq("season_id", cur.id);
+  if (error) { console.error("Failed to load old groupings:", error); return []; }
+  return (data ?? []).map((r: any) => r.id);
+}
+
+export async function deleteSavedGroupings(ids: string[]): Promise<{ error: string | null }> {
+  if (!ids.length) return { error: null };
+  const { error } = await supabase.from("saved_groupings").delete().in("id", ids);
+  return { error: error?.message ?? null };
 }
 
 export async function getSavedGroupings(rosterId: string): Promise<SavedGrouping[]> {
