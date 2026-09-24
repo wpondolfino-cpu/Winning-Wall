@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../lib/supabase";
-import { Roster, SavedGrouping, getSavedGroupings, getSavedGroupingMembers, createSavedGrouping, updateSavedGroupingMembers, renameSavedGrouping, deleteSavedGrouping } from "../../lib/practicePlanner";
+import { Roster, SavedGrouping, getSavedGroupings, getSavedGroupingMembers, createSavedGrouping, updateSavedGroupingMembers, renameSavedGrouping, deleteSavedGrouping, getCurrentSeason, splitGroupingsBySeason } from "../../lib/practicePlanner";
 
 interface PlayerLite { id: string; name: string; }
 
@@ -25,18 +25,24 @@ export default function SavedGroupingsManager({ roster, onClose }: Props) {
   const [showNew, setShowNew]     = useState(false);
   const [newName, setNewName]     = useState("");
   const [error, setError]         = useState<string | null>(null);
+  // This season's first; earlier seasons' behind a toggle (migration 145).
+  const [currentSeasonId, setCurrentSeasonId] = useState<string | null>(null);
+  const [showEarlier, setShowEarlier] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [g, { data: p }] = await Promise.all([
+    const [g, { data: p }, season] = await Promise.all([
       getSavedGroupings(roster.id),
       supabase.from("profiles").select("id,name").eq("home_roster_id", roster.id).eq("role", "player"),
+      getCurrentSeason(),
     ]);
-    setGroupings(g); setPlayers(p ?? []);
+    setGroupings(g); setPlayers(p ?? []); setCurrentSeasonId(season?.id ?? null);
     setLoading(false);
   }, [roster.id]);
 
   useEffect(() => { load(); }, [load]);
+
+  const { current: thisSeason, previous: earlier } = splitGroupingsBySeason<SavedGrouping>(groupings, currentSeasonId);
 
   async function startEdit(g: SavedGrouping) {
     setEditingId(g.id); setEditName(g.name);
@@ -91,7 +97,7 @@ export default function SavedGroupingsManager({ roster, onClose }: Props) {
           <div style={{ color: "var(--muted)", fontSize: 13 }}>Loading…</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
-            {groupings.map(g => (
+            {(showEarlier ? [...thisSeason, ...earlier] : thisSeason).map(g => (
               <div key={g.id} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: 10 }}>
                 {editingId === g.id ? (
                   <div>
@@ -112,7 +118,10 @@ export default function SavedGroupingsManager({ roster, onClose }: Props) {
                 ) : (
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{g.name}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>
+                        {g.name}
+                        {earlier.includes(g) && <span style={{ marginLeft: 6, fontSize: 10, color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 5, padding: "1px 5px" }}>earlier season</span>}
+                      </div>
                     </div>
                     <div style={{ display: "flex", gap: 6 }}>
                       <button onClick={() => startEdit(g)} style={smallBtn}>Edit</button>
@@ -122,7 +131,12 @@ export default function SavedGroupingsManager({ roster, onClose }: Props) {
                 )}
               </div>
             ))}
-            {groupings.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>No saved groupings for {roster.name} yet.</div>}
+            {thisSeason.length === 0 && !showEarlier && <div style={{ fontSize: 12, color: "var(--muted)" }}>No saved groupings for {roster.name} this season yet.</div>}
+            {earlier.length > 0 && (
+              <button onClick={() => setShowEarlier(v => !v)} style={{ ...smallBtn, alignSelf: "flex-start" }}>
+                {showEarlier ? "Hide earlier seasons" : `Show earlier seasons (${earlier.length})`}
+              </button>
+            )}
           </div>
         )}
 
