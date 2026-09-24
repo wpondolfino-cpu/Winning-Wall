@@ -128,7 +128,21 @@ export default function ScheduleImport({ season, seasonId, userId, onClose, onIm
                       <td style={td}>{r.date ?? "—"}</td>
                       <td style={td}>{r.time ?? "—"}</td>
                       <td style={td}>{r.home_away}</td>
-                      <td style={td}>{r.opponent || "—"}</td>
+                      <td style={td}>
+                        {r.opponent || "—"}
+                        {/* Which opponent it'll attach to. A page writing
+                            "Foxboro" where your list says "Foxborough" is
+                            only catchable by eye, so it's shown before you
+                            commit rather than discovered later when a scout
+                            sheet won't connect. */}
+                        {r.status !== "problem" && (
+                          r.opponentMatch
+                            ? r.opponentMatch.trim().toLowerCase() !== r.opponent.trim().toLowerCase() && (
+                                <span style={{ display: "block", fontSize: 10.5, color: "var(--muted)" }}>→ {r.opponentMatch}</span>
+                              )
+                            : <span style={{ display: "block", fontSize: 10.5, color: "#e8a33d" }}>→ new opponent</span>
+                        )}
+                      </td>
                       <td style={{ ...td, color: "var(--muted)" }}>{r.location ?? "—"}</td>
                       <td style={{ ...td, color: statusColor(r.status) }}>
                         {r.status}{r.note ? ` · ${r.note}` : ""}
