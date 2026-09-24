@@ -1,8 +1,17 @@
-// ScheduleImport — paste a table or an iCal feed, review, then import.
+// ScheduleImport — paste a schedule, review it, then import.
 //
-// One preview for both paths. Nothing is written until the coach presses
-// Import, and every row shows what it was understood as, so a wrong guess
-// is caught on screen rather than in a parent's calendar.
+// Nothing is written until the coach presses Import, and every row shows
+// what it was understood as, so a wrong guess is caught on screen rather
+// than in a parent's calendar.
+//
+// There was a "Calendar feed" tab that took a URL. It failed on every site
+// a coach round here actually uses — a browser can't read those feeds, not
+// because the leagues withhold them but because they don't send the header
+// that permits a web page to fetch them. Fetching from a server would fix
+// that, but it would only save one copy-and-paste: the paste path already
+// reconciles, so re-importing applies just the changes either way. The tab
+// promised something it couldn't do, so it's gone. Pasted feed contents
+// still work.
 
 import { useState } from "react";
 import { ImportRow, parsePastedTable, parseICal, reconcile, commitImport } from "../../lib/scheduleImport";
@@ -11,14 +20,16 @@ interface Props {
   season: string;
   seasonId: string | null;
   userId: string;
+  rosters: { id: string; name: string }[];
   onClose: () => void;
   onImported: () => void;
 }
 
-export default function ScheduleImport({ season, seasonId, userId, onClose, onImported }: Props) {
-  const [mode, setMode] = useState<"paste" | "feed">("paste");
+export default function ScheduleImport({ season, seasonId, userId, rosters, onClose, onImported }: Props) {
   const [raw, setRaw] = useState("");
-  const [feedUrl, setFeedUrl] = useState("");
+  // Imported games inherit this team's last settings — import a freshman
+  // schedule and it arrives untracked, like the rest of their games.
+  const [rosterId, setRosterId] = useState<string>(rosters.length === 1 ? rosters[0].id : "");
   const [rows, setRows] = useState<ImportRow[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -31,25 +42,13 @@ export default function ScheduleImport({ season, seasonId, userId, onClose, onIm
   async function preview() {
     setErr(null); setBusy(true);
     try {
-      let parsed: ImportRow[];
-      if (mode === "paste") {
-        parsed = raw.trim().startsWith("BEGIN:VCALENDAR")
-          ? parseICal(raw)                       // pasted feed contents still work
-          : parsePastedTable(raw, seasonStartYear);
-      } else {
-        const res = await fetch(feedUrl);
-        if (!res.ok) throw new Error(`Feed returned ${res.status}`);
-        parsed = parseICal(await res.text());
-      }
+      const parsed: ImportRow[] = raw.trim().startsWith("BEGIN:VCALENDAR")
+        ? parseICal(raw)                       // pasted feed contents still work
+        : parsePastedTable(raw, seasonStartYear);
       if (!parsed.length) { setErr("Nothing to import — no rows found."); setRows(null); return; }
       setRows(await reconcile(parsed, season));
     } catch (e: any) {
-      // A feed fetched from the browser is subject to CORS, and many
-      // providers don't allow it. Saying so beats a bare network error,
-      // since the fix (paste the contents instead) isn't obvious.
-      setErr(mode === "feed"
-        ? `Couldn't read that feed (${e.message}). Some providers block browser access — open the URL, copy the contents, and paste them here instead.`
-        : e.message);
+      setErr(e.message);
       setRows(null);
     } finally { setBusy(false); }
   }
@@ -57,7 +56,7 @@ export default function ScheduleImport({ season, seasonId, userId, onClose, onIm
   async function commit() {
     if (!rows) return;
     setBusy(true);
-    const { created, updated } = await commitImport(rows, season, seasonId, userId);
+    const { created, updated } = await commitImport(rows, season, seasonId, userId, rosterId || null);
     setBusy(false);
     onImported();
     onClose();
@@ -68,6 +67,7 @@ export default function ScheduleImport({ season, seasonId, userId, onClose, onIm
     ? rows.reduce((a, r) => ({ ...a, [r.status]: (a[r.status] ?? 0) + 1 }), {} as Record<string, number>)
     : null;
   const willWrite = rows?.filter(r => r.status === "new" || r.status === "moved").length ?? 0;
+  const needsTeam = rosters.length > 1 && !rosterId;
 
   return (
     <div style={overlay}>
@@ -77,33 +77,33 @@ export default function ScheduleImport({ season, seasonId, userId, onClose, onIm
           <button onClick={onClose} style={btn}>Cancel</button>
         </div>
 
-        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-          <button onClick={() => { setMode("paste"); setRows(null); }} style={mode === "paste" ? chipActive : btn}>Paste rows</button>
-          <button onClick={() => { setMode("feed"); setRows(null); }} style={mode === "feed" ? chipActive : btn}>Calendar feed</button>
+        {/* Which team these games are for. Without it every imported game
+            showed on every team's schedule, since a game with no team is
+            treated as everyone's. */}
+        <label style={{ display: "block", fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>These games are for</label>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+          {rosters.map(r => (
+            <button key={r.id} onClick={() => { setRosterId(r.id); setRows(null); }}
+              style={rosterId === r.id ? chipActive : btn}>
+              {r.name}
+            </button>
+          ))}
         </div>
 
-        {mode === "paste" ? (
-          <>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6, lineHeight: 1.5 }}>
-              Select the schedule rows on your league or school site and paste them here. Feed contents work too.
-            </div>
-            <textarea
-              value={raw} onChange={e => setRaw(e.target.value)} rows={7}
-              placeholder={"Tue Dec 15 6:30 PM\t@\tFoxborough High School\tFoxboro HS — Gym\tL"}
-              style={{ ...input, fontFamily: "ui-monospace, monospace", fontSize: 12, resize: "vertical" }}
-            />
-          </>
-        ) : (
-          <>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6, lineHeight: 1.5 }}>
-              A subscribable calendar URL. Unlike a paste, a feed stays correct when a game moves — re-import any time and only the changes are applied.
-            </div>
-            <input value={feedUrl} onChange={e => setFeedUrl(e.target.value)} placeholder="https://…/schedule.ics" style={input} />
-          </>
-        )}
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6, lineHeight: 1.5 }}>
+          Select the schedule rows on your league or school site and paste them here. Calendar feed contents work too.
+        </div>
+        <textarea
+          value={raw} onChange={e => setRaw(e.target.value)} rows={7}
+          placeholder={"Tue Dec 15 6:30 PM\t@\tFoxborough High School\tFoxboro HS — Gym"}
+          style={{ ...input, fontFamily: "ui-monospace, monospace", fontSize: 12, resize: "vertical" }}
+        />
 
         <div style={{ marginTop: 10 }}>
-          <button onClick={preview} disabled={busy} style={primary}>{busy ? "Reading…" : "Preview"}</button>
+          <button onClick={preview} disabled={busy || needsTeam} style={{ ...primary, opacity: busy || needsTeam ? 0.5 : 1 }}>
+            {busy ? "Reading…" : "Preview"}
+          </button>
+          {needsTeam && <span style={{ fontSize: 11.5, color: "var(--muted)", alignSelf: "center" }}>Pick a team first.</span>}
         </div>
 
         {err && <div style={{ fontSize: 12, color: "#b8342e", marginTop: 10, lineHeight: 1.5 }}>{err}</div>}
