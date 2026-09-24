@@ -411,6 +411,16 @@ export default function App() {
     activeRole === "admin"  ? adminTab  : null;
   const currentTabRef = useRef<string | null>(currentTab);
   currentTabRef.current = currentTab;
+
+  // Every page shares one scrolling container (.main-content), and nothing
+  // used to reset it, so a new page opened wherever the last one was left
+  // -- at the bottom, if you'd scrolled down. New page, back to the top.
+  // window too, for any layout where the body is what scrolls.
+  const mainContentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (mainContentRef.current) mainContentRef.current.scrollTop = 0;
+    window.scrollTo(0, 0);
+  }, [currentTab]);
   const activeRoleRef = useRef(activeRole);
   activeRoleRef.current = activeRole;
   const lastSyncedTabRef = useRef<string | null>(null);
@@ -723,7 +733,7 @@ export default function App() {
         </div>
 
         {/* Main Content */}
-        <div className="main-content"
+        <div className="main-content" ref={mainContentRef}
           onTouchStart={isPlayer ? handleSwipeStart : undefined}
           onTouchMove={isPlayer ? handleSwipeMove : undefined}
           onTouchEnd={isPlayer ? handleSwipeEnd : undefined}
