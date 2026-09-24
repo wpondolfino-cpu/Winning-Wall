@@ -43,28 +43,61 @@ export const DEFAULT_LANES = ["Varsity", "JV", "Freshman"];
 // ── Grades ────────────────────────────────────────────────────
 //
 // Graduation year is stored; grade is derived. A stored grade is wrong
-// every June and would need a bulk update annually forever.
+// every year and would need a bulk update annually forever.
 //
-// The school year rolls in August, so anything from August onward counts
-// as the next academic year.
+// Grade moves up when a NEW SEASON STARTS, on the same timeline as
+// everything else: the current season's graduating class is the year
+// after it starts (migration 144, current_academic_year()). The server
+// value is cached here so these helpers stay synchronous; until it loads,
+// or with no season at all, the old August rule stands in. The two agree
+// for any season that starts on August 1.
 
-export function currentAcademicYear(now = new Date()): number {
+let serverAcademicYear: number | null = null;
+let loading: Promise<number | null> | null = null;
+
+/**
+ * Fetches the current season's graduating class. Cached; pass force after
+ * the current season changes. Safe to call signed out (the signup form
+ * needs it), and never throws -- a failure just leaves the fallback in place.
+ */
+export function loadAcademicYear(force = false): Promise<number | null> {
+  if (loading && !force) return loading;
+  loading = (async () => {
+    try {
+      const { data, error } = await supabase.rpc("current_academic_year");
+      if (!error && typeof data === "number") serverAcademicYear = data;
+    } catch { /* fallback stays */ }
+    return serverAcademicYear;
+  })();
+  return loading;
+}
+
+// Kick it off as soon as anything that shows a grade is imported.
+void loadAcademicYear();
+
+function augustRule(now: Date): number {
   return now.getMonth() >= 7 ? now.getFullYear() + 1 : now.getFullYear();
 }
 
+/** Pass a date only to ask about a past or future moment; with none, it's the current season. */
+export function currentAcademicYear(now?: Date): number {
+  if (!now && serverAcademicYear != null) return serverAcademicYear;
+  return augustRule(now ?? new Date());
+}
+
 /** 9-12 during high school, 13+ once graduated (treat as alumni), <9 for an incoming class. */
-export function gradeFromGradYear(gradYear: number | null, now = new Date()): number | null {
+export function gradeFromGradYear(gradYear: number | null, now?: Date): number | null {
   if (!gradYear) return null;
   return 12 - (gradYear - currentAcademicYear(now));
 }
 
-export function isAlumni(gradYear: number | null, now = new Date()): boolean {
+export function isAlumni(gradYear: number | null, now?: Date): boolean {
   const g = gradeFromGradYear(gradYear, now);
   return g != null && g > 12;
 }
 
-/** Derives the existing leaderboard grouping key, which is left as the source of truth for ranking. */
-export function gradeCategoryFromGradYear(gradYear: number | null, now = new Date()): string | null {
+/** Derives the existing leaderboard grouping key, which is left as the source of truth for ranking. Must match sync_grades_to_season() in migration 144. */
+export function gradeCategoryFromGradYear(gradYear: number | null, now?: Date): string | null {
   const g = gradeFromGradYear(gradYear, now);
   if (g == null) return null;
   if (g > 12) return "Alumni";
@@ -73,7 +106,7 @@ export function gradeCategoryFromGradYear(gradYear: number | null, now = new Dat
   return null;
 }
 
-export function gradYearFromGrade(grade: number, now = new Date()): number {
+export function gradYearFromGrade(grade: number, now?: Date): number {
   return currentAcademicYear(now) + (12 - grade);
 }
 
