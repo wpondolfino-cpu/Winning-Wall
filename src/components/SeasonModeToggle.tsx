@@ -3,7 +3,8 @@ import { useState, useEffect } from "react";
 import { SeasonMode, getSeasonMode, loadSeasonMode, saveSeasonMode } from "../lib/seasonMode";
 import { archiveAndResetOffseason, archiveAndResetInSeason } from "../lib/seasonReset";
 import { inputStyle } from "../lib/inputStyle";
-import { getCurrentSeason, startNewSeason, nextSeasonNameAfter, Season } from "../lib/practicePlanner";
+import { getCurrentSeason, startNewSeason, nextSeasonNameAfter, Season, GradeSync } from "../lib/practicePlanner";
+import SeasonRolloverSummary from "./SeasonRolloverSummary";
 
 export default function SeasonModeToggle() {
   const [mode, setMode] = useState<SeasonMode>(getSeasonMode());
@@ -20,6 +21,8 @@ export default function SeasonModeToggle() {
   const [nextName, setNextName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set once a new season has started, to show what moved with it.
+  const [rollover, setRollover] = useState<{ name: string; sync: GradeSync | null | undefined } | null>(null);
 
   useEffect(() => { loadSeasonMode().then(setMode); }, []);
   useEffect(() => {
@@ -71,8 +74,9 @@ export default function SeasonModeToggle() {
       // Only after both archives land — a new season that opened while the
       // archive failed would leave the old one closed and unrecorded.
       if (startNext && nextName.trim()) {
-        const { error } = await startNewSeason(nextName);
+        const { error, sync } = await startNewSeason(nextName);
         if (error) throw new Error(error);
+        setRollover({ name: nextName.trim(), sync });
       }
       await saveSeasonMode(target);
       setMode(target);
@@ -158,6 +162,9 @@ export default function SeasonModeToggle() {
             )}
           </div>
         </div>
+      )}
+      {rollover && (
+        <SeasonRolloverSummary sync={rollover.sync} seasonName={rollover.name} onClose={() => setRollover(null)} />
       )}
     </div>
   );
