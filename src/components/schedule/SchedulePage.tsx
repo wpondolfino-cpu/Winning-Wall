@@ -111,6 +111,18 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
   }
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "game" | "practice" | "event">("all");
+  /**
+   * How much of the season to show.
+   *
+   * "fortnight" is the working view — this week and next, which is what a
+   * coach is actually planning. Importing a season puts forty weeks on this
+   * page, and forty collapsed headers on a phone is not a schedule.
+   *
+   * "games" is the season's fixture list: every game, no practices, no week
+   * headings. It's a lens rather than a separate tab so there's one page to
+   * keep right and one place for a player to look.
+   */
+  const [lens, setLens] = useState<"fortnight" | "season" | "games">("fortnight");
   const [showPast, setShowPast] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [editing, setEditing] = useState<ScheduleItem | null>(null);
@@ -130,7 +142,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
   // Weeks the coach has collapsed. Current and next start open; the rest
   // start closed, because a season's worth of imported games otherwise
   // pushes this week off the screen.
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [toggled, setToggled] = useState<Set<string>>(new Set());
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => { load(); }, [role]);
@@ -195,7 +207,10 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
         // which already returns their team's plus any they've been called
         // up to — filtering by home roster here would hide the call-ups.
         .filter(i => isCoach || i.kind === "practice" || !i.rosterIds?.length || !homeRosterId || i.rosterIds.includes(homeRosterId))
-        .filter(i => showPast || i.date >= today),
+        .filter(i => showPast || i.date >= today)
+        // The games lens is the fixture list, whatever the kind filter says.
+        .filter(i => lens !== "games" || i.kind === "game")
+        .filter(i => lens !== "fortnight" || i.date <= addDays(weekStartOf(today), 13) || showPast),
     }))
     .filter(w => w.items.length > 0);
 
@@ -211,7 +226,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
    * rows: nothing should be written to the database just to render a
    * heading. A real week row takes over the moment one exists.
    */
-  const scaffold = showPast ? filtered : (() => {
+  const scaffold = (showPast || lens !== "fortnight") ? filtered : (() => {
     const out = [...filtered];
     const thisMon = weekStartOf(today);
     for (const start of [thisMon, addDays(thisMon, 7)]) {
@@ -247,13 +262,25 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
     if (w.start_date === addDays(thisMon, 7)) return "Next week";
     return null;
   }
-  /** Current and next week open by default; everything else closed. */
+  /**
+   * Current and next week open by default; everything else closed.
+   *
+   * `toggled` holds the weeks you've clicked, meaning "do the opposite of
+   * the default". It used to hold the weeks you'd collapsed, which worked
+   * for the two open weeks and not at all for the rest: a future week was
+   * already shut without being in the set, so clicking it added it — shut
+   * to shut — and it could never be opened.
+   */
   function isCollapsed(w: ScheduleWeek): boolean {
     const k = weekKey(w);
-    if (collapsed.has(k)) return true;
-    if (!w.start_date || !w.end_date) return false;
-    const thisMon = weekStartOf(today);
-    return !(w.start_date <= addDays(thisMon, 13) && w.end_date >= thisMon);
+    const byDefault = (() => {
+      // A fixture list shouldn't make you open forty weeks to read it.
+      if (lens === "games") return false;
+      if (!w.start_date || !w.end_date) return false;
+      const thisMon = weekStartOf(today);
+      return !(w.start_date <= addDays(thisMon, 13) && w.end_date >= thisMon);
+    })();
+    return toggled.has(k) ? !byDefault : byDefault;
   }
 
   function openRow(item: ScheduleItem) {
@@ -381,6 +408,22 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
           onClose={() => setShowExport(false)}
         />
       )}
+      {/* One page, three lenses. A separate games tab would drift from this
+          one and give players two places to look. */}
+      <div style={{ display: "flex", gap: 5, background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 3, marginBottom: 8 }}>
+        {([["fortnight", "Next 2 weeks"], ["season", "Whole season"], ["games", "Games only"]] as const).map(([v, labelText]) => (
+          <button key={v} onClick={() => setLens(v)}
+            style={{
+              flex: 1, textAlign: "center", fontSize: 11.5, padding: 7, borderRadius: 6, cursor: "pointer",
+              fontFamily: "inherit", border: "none", fontWeight: 600,
+              background: lens === v ? "var(--royal)" : "transparent",
+              color: lens === v ? "#fff" : "var(--muted)",
+            }}>
+            {labelText}
+          </button>
+        ))}
+      </div>
+
       {/* Players only ever see their own team, so this row would be one
           button that does nothing — it's for coaches. */}
       {isCoach && rosters.length > 1 && (
@@ -451,7 +494,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
       {visible.map(w => (
         <div key={w.id ?? "loose"}>
           <div
-            onClick={() => setCollapsed(c => { const n = new Set(c); const k = weekKey(w); n.has(k) ? n.delete(k) : n.add(k); return n; })}
+            onClick={() => setToggled(t => { const n = new Set(t); const k = weekKey(w); n.has(k) ? n.delete(k) : n.add(k); return n; })}
             style={{
               display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
               margin: "20px 0 10px", padding: "8px 12px",
