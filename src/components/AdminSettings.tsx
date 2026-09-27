@@ -1,25 +1,12 @@
 // src/components/AdminSettings.tsx
 import { useState, useEffect } from "react";
-import { supabase, currentPeriodStart, currentPeriodEnd, savePeriodAnchor, getPeriodAnchor } from "../lib/supabase";
+import { supabase } from "../lib/supabase";
+import CompetitionsCard from "./CompetitionsCard";
 import SeasonModeToggle from "./SeasonModeToggle";
 import SeasonManager from "./SeasonManager";
 
 export default function AdminSettings() {
   const [exporting, setExporting]   = useState(false);
-  const [anchorDate, setAnchorDate] = useState(() => {
-    const d = getPeriodAnchor(); return d.toISOString().split("T")[0];
-  });
-  const [anchorSaved, setAnchorSaved] = useState(false);
-
-  const periodStart = currentPeriodStart();
-  const periodEnd   = currentPeriodEnd();
-  const daysLeft    = Math.ceil((periodEnd.getTime() - Date.now()) / 86400000);
-
-  async function saveAnchor() {
-    await savePeriodAnchor(new Date(anchorDate));
-    setAnchorSaved(true);
-    setTimeout(() => { setAnchorSaved(false); window.location.reload(); }, 1000);
-  }
 
   async function exportLeaderboard() {
     setExporting(true);
@@ -74,34 +61,8 @@ export default function AdminSettings() {
       </div>
       </div>
 
-      {/* ── Period Settings ── */}
-      <div className="card">
-        <div className="card-title">📅 Biweekly Period Settings</div>
-        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16, lineHeight: 1.6 }}>
-          Set the start date of Period 1. All future 2-week periods calculate automatically from there.
-        </div>
-        <div style={{ background: "rgba(26,63,168,0.15)", border: "1px solid rgba(26,63,168,0.3)", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
-          <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Current Period</div>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)" }}>
-            {periodStart.toLocaleDateString()} – {periodEnd.toLocaleDateString()}
-          </div>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>{daysLeft} days remaining</div>
-        </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 140, maxWidth: 200 }}>
-            <label style={{ display: "block", fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Period 1 Start Date</label>
-            <input type="date" value={anchorDate} onChange={e => setAnchorDate(e.target.value)} style={inputStyle} />
-          </div>
-          <button onClick={saveAnchor} style={{
-            background: anchorSaved ? "#5de098" : "var(--royal)", color: anchorSaved ? "#051a0a" : "#fff",
-            border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 600,
-            fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap", width: "100%",
-          }}>{anchorSaved ? "✓ Saved!" : "Save Date"}</button>
-        </div>
-        <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>
-          💡 Set this to the first day of your offseason. The app handles everything else.
-        </div>
-      </div>
+      {/* ── Competitions ── replaces the biweekly anchor-date card */}
+      <CompetitionsCard />
 
       {/* ── Export ── */}
       <div className="card">
