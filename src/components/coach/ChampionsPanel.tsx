@@ -9,8 +9,8 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { getCompetitionStandings, crownCompetition } from "../../lib/leaderboard";
-import { Competition, useCompetition, loadCurrentCompetition, competitionRange, competitionLabel, daysLeft } from "../../lib/periods";
+import { getCompetitionStandings, crownCompetition, crownCompetitionByWins } from "../../lib/leaderboard";
+import { Competition, useCompetition, loadCurrentCompetition, competitionRange, competitionLabel, daysLeft, SCORING_LABEL } from "../../lib/periods";
 
 export default function ChampionsPanel() {
   const { current } = useCompetition();
@@ -38,11 +38,30 @@ export default function ChampionsPanel() {
   }
 
   async function handleCrown(c: Competition) {
-    if (!window.confirm(`Crown the champions of ${c.name}?\n\nThe top scorer in each leaderboard group gets the 👑, and the standings are saved to History.`)) return;
+    const byWins = c.scored_by === "practice_wins";
+    if (!window.confirm(byWins
+      ? `Crown the champions of ${c.name}?\n\nScored on practice wins: the most wins on each team gets the 👑, with ties crowned together. The standings are saved to History.`
+      : `Crown the champions of ${c.name}?\n\nScored on points: the top scorer in each leaderboard group gets the 👑, and the standings are saved to History.`)) return;
     setBusy(c.id);
     try {
-      const standings = await getCompetitionStandings(c);
-      const winnerIds = await crownCompetition(c, standings);
+      let winnerIds: Set<string>;
+      let snapshot: any[];
+      if (byWins) {
+        ({ crowned: winnerIds, snapshot } = await crownCompetitionByWins(c));
+      } else {
+        const standings = await getCompetitionStandings(c);
+        winnerIds = await crownCompetition(c, standings);
+        snapshot = standings.map((e, i) => ({
+          rank: i + 1,
+          player_id: e.id,
+          name: e.name,
+          grade_category: e.grade_category,
+          total_points: e.total_points,
+          workouts_completed: e.workouts_completed,
+          avatar_url: (e as any).avatar_url,
+          is_period_champion: winnerIds.has(e.id),
+        }));
+      }
 
       // Snapshot to History, marked with the freshly picked winners.
       try {
@@ -51,16 +70,8 @@ export default function ChampionsPanel() {
           period_start: c.starts_at.slice(0, 10),
           period_end: c.ends_at.slice(0, 10),
           competition_id: c.id,
-          snapshot: standings.map((e, i) => ({
-            rank: i + 1,
-            player_id: e.id,
-            name: e.name,
-            grade_category: e.grade_category,
-            total_points: e.total_points,
-            workouts_completed: e.workouts_completed,
-            avatar_url: (e as any).avatar_url,
-            is_period_champion: winnerIds.has(e.id),
-          })),
+          scored_by: c.scored_by,
+          snapshot,
         });
       } catch (snapErr) {
         console.error("Snapshot save failed (non-critical):", snapErr);
@@ -77,11 +88,19 @@ export default function ChampionsPanel() {
       } catch (e) { console.error("Push notification failed to send:", e); }
 
       alert(winnerIds.size
-        ? `👑 ${c.name} crowned, and the standings are saved to History.`
-        : `${c.name} is marked crowned. Nobody scored, so there were no champions to crown.`);
+        ? `👑 ${c.name} crowned${winnerIds.size > 1 ? ` (${winnerIds.size} champions)` : ""}, and the standings are saved to History.`
+        : `${c.name} is marked crowned. Nobody ${byWins ? "recorded a practice win" : "scored"}, so there were no champions to crown.`);
       await refreshAll();
     } catch (e: any) { alert("Error: " + e.message); }
     finally { setBusy(null); }
+  }
+
+  async function toggleScoring(c: Competition) {
+    const next = c.scored_by === "practice_wins" ? "points" : "practice_wins";
+    if (!window.confirm(`Score ${c.name} on ${SCORING_LABEL[next].toLowerCase()} instead?`)) return;
+    const { error } = await supabase.from("competitions").update({ scored_by: next }).eq("id", c.id);
+    if (error) { alert("Couldn't change it: " + error.message); return; }
+    await refreshAll();
   }
 
   async function handleSkip(c: Competition) {
@@ -135,7 +154,12 @@ export default function ChampionsPanel() {
             <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", background: "rgba(255,140,66,0.08)", border: "1px solid rgba(255,140,66,0.3)", borderRadius: 10, padding: "8px 12px" }}>
               <div style={{ flex: 1, minWidth: 140 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{c.name}</div>
-                {c.name !== competitionRange(c) && <div style={{ fontSize: 11, color: "var(--muted)" }}>{competitionRange(c)}</div>}
+                <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                  {c.name !== competitionRange(c) && <>{competitionRange(c)} · </>}
+                  <span onClick={() => toggleScoring(c)} title="Change how it's scored" style={{ cursor: "pointer", textDecoration: "underline dotted" }}>
+                    {SCORING_LABEL[c.scored_by ?? "points"]}
+                  </span>
+                </div>
               </div>
               <button onClick={() => handleSkip(c)} disabled={busy != null} style={btn("var(--surface2)", "var(--muted)", "1px solid var(--border)")}>Skip</button>
               <button onClick={() => handleCrown(c)} disabled={busy != null} style={btn("var(--gold)", "#0a0c14")}>
