@@ -48,7 +48,7 @@ export interface PracticeWinStanding {
 }
 
 // Standings for the in-season leaderboard. periodStart/periodEnd scope
-// to the current biweekly window (Current tab); omit both for the
+// to the running competition (Current tab); omit both for the
 // season-long cumulative total (Season tab). Filters to rostered
 // players only -- non-rostered players never appear on this
 // leaderboard, matching the nav/mode rules.
