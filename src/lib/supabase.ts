@@ -198,9 +198,9 @@ export interface XpPerk {
 export const DEFAULT_PERKS: XpPerk[] = [
   { perk_key: "challenges_unlocked", perk_name: "Challenges Unlocked",  xp_required: 150,  description: "Head-to-head challenges & avatar on leaderboard." },
   { perk_key: "team_eligible",       perk_name: "Team Eligible",         xp_required: 300,  description: "Can be picked for team competitions. Light gray avatar outline." },
-  { perk_key: "streak_shield",       perk_name: "Streak Shield",         xp_required: 750,  description: "One missed-day streak save per biweekly period. Silver avatar outline." },
+  { perk_key: "streak_shield",       perk_name: "Streak Shield",         xp_required: 750,  description: "One missed-day streak save per competition. Silver avatar outline." },
   { perk_key: "team_bonus",          perk_name: "Team Boost",            xp_required: 1250, description: "Your team starts with +3 pts. Blue avatar outline." },
-  { perk_key: "score_boost",         perk_name: "Score Boost",           xp_required: 2000, description: "+5 to one workout score per period. Gold avatar outline." },
+  { perk_key: "score_boost",         perk_name: "Score Boost",           xp_required: 2000, description: "+5 to one workout score per competition. Gold avatar outline." },
 ];
 
 // ── Re-export everything from split files ─────────────────────
