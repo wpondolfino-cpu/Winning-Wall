@@ -27,7 +27,12 @@ export interface Competition {
   repeats: boolean;
   crowned_at: string | null;
   skipped_at: string | null;
+  /** Which leaderboard crowns it (migration 148): offseason points, or in-season practice wins. */
+  scored_by: CompetitionScoring;
 }
+
+export type CompetitionScoring = "points" | "practice_wins";
+export const SCORING_LABEL: Record<CompetitionScoring, string> = { points: "Points", practice_wins: "Practice wins" };
 
 interface State { loaded: boolean; current: Competition | null; next: Competition | null; }
 
