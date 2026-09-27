@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { getPracticeWinStandings, PracticeWinStanding } from "../lib/practiceWins";
 import { getRosters, RosterWithCount } from "../lib/practicePlanner";
-import { currentPeriodStart, currentPeriodEnd } from "../lib/periods";
+import { useCompetition, competitionLabel, firstDay, shortDate } from "../lib/periods";
 
 const ALL_ROSTERS = "All Teams";
 
@@ -12,19 +12,27 @@ export default function InSeasonLeaderboard() {
   const [rosters, setRosters] = useState<RosterWithCount[]>([]);
   const [standings, setStandings] = useState<PracticeWinStanding[]>([]);
   const [loading, setLoading] = useState(true);
+  const competition = useCompetition();
+  const comp = competition.current;
+  // "Current" with no competition running shows the paused state -- it
+  // must not fall through to getPracticeWinStandings() with no dates,
+  // which is the whole season.
+  const paused = subTab === "current" && competition.loaded && !comp;
 
   const load = useCallback(async () => {
+    if (subTab === "current" && !competition.loaded) return; // wait for it; stays "Loading…"
+    if (subTab === "current" && !comp) { setStandings([]); setRosters(await getRosters()); setLoading(false); return; }
     setLoading(true);
     const [r, s] = await Promise.all([
       getRosters(),
-      subTab === "current"
-        ? getPracticeWinStandings(currentPeriodStart(), currentPeriodEnd())
+      subTab === "current" && comp
+        ? getPracticeWinStandings(new Date(comp.starts_at), new Date(comp.ends_at))
         : getPracticeWinStandings(),
     ]);
     setRosters(r);
     setStandings(s);
     setLoading(false);
-  }, [subTab]);
+  }, [subTab, comp?.id, competition.loaded]);
 
   useEffect(() => { load().catch(console.error); }, [load]);
 
@@ -58,11 +66,20 @@ export default function InSeasonLeaderboard() {
         })}
       </div>
 
-      {loading ? (
+      {subTab === "current" && comp && (
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>{competitionLabel(comp)}</div>
+      )}
+      {paused ? (
+        <div style={{ textAlign: "center", color: "var(--muted)", padding: "24px 0", fontSize: 13 }}>
+          <div style={{ fontSize: 22 }}>⏸️</div>
+          No competition running.{competition.next ? ` ${competition.next.name} starts ${shortDate(firstDay(competition.next))}.` : ""}
+          <div style={{ marginTop: 4 }}>Season totals are on the Season tab.</div>
+        </div>
+      ) : loading ? (
         <div style={{ textAlign: "center", color: "var(--muted)", padding: "20px 0", fontSize: 13 }}>Loading…</div>
       ) : ranked.length === 0 ? (
         <div style={{ textAlign: "center", color: "var(--muted)", padding: "20px 0", fontSize: 13 }}>
-          No practice wins logged yet{subTab === "current" ? " this period" : ""}.
+          No practice wins logged yet{subTab === "current" ? " this competition" : ""}.
         </div>
       ) : (
         <div>
