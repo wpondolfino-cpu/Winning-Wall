@@ -1,6 +1,6 @@
 // src/components/HallOfFame.tsx
 import { useState, useEffect } from "react";
-import { supabase, getRecords, getBestScoreRecords, currentPeriodStart, currentPeriodEnd } from "../lib/supabase";
+import { supabase, getRecords, getBestScoreRecords, useCompetition, competitionLabel } from "../lib/supabase";
 
 const SHORT: Record<string, string> = {
   "Underclassman (9th-10th)": "Underclassman",
@@ -13,8 +13,8 @@ const RECORD_META: Record<string, { label: string; icon: string; desc: string }>
   most_challenges_won:   { label: "Most Challenges Won",            icon: "⚔️", desc: "Most head-to-head challenge victories all-time" },
   best_win_rate:         { label: "Best Challenge Win Rate",        icon: "🎯", desc: "Highest win % with a minimum of 10 challenges completed" },
   longest_streak:        { label: "Longest Streak Ever",            icon: "🔥", desc: "Most consecutive days with at least one workout logged" },
-  most_points_period:    { label: "Most Points in a Single Period", icon: "📅", desc: "Highest points earned in one biweekly competition period" },
-  most_periods_won:      { label: "Most Biweekly Periods Won",      icon: "👑", desc: "Most total biweekly championship periods won all-time" },
+  most_points_period:    { label: "Most Points in a Competition",  icon: "📅", desc: "Highest points earned in one competition" },
+  most_periods_won:      { label: "Most Competitions Won",         icon: "👑", desc: "Most competitions won all-time" },
 };
 
 type HofTab = "champions" | "records";
@@ -33,15 +33,14 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [toast, setToast]           = useState("");
 
-  const periodStart = currentPeriodStart();
-  const periodEnd   = currentPeriodEnd();
+  const { current: comp, loaded: compLoaded } = useCompetition();
 
   useEffect(() => { loadAll(); }, []);
 
   async function loadAll() {
     setLoading(true);
     const [{ data: champs }, all, drills] = await Promise.all([
-      supabase.from("biweekly_champions").select("*").order("crowned_at", { ascending: false }),
+      supabase.from("biweekly_champions").select("*, competitions(name)").order("crowned_at", { ascending: false }),
       getRecords(),
       getBestScoreRecords(),
     ]);
@@ -99,7 +98,7 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
       {/* Header */}
       <div className="section-title">👑 Hall of Fame</div>
       <div className="section-sub">
-        Current period: {periodStart.toLocaleDateString()} – {periodEnd.toLocaleDateString()}
+        {comp ? `Running: ${competitionLabel(comp)}` : compLoaded ? "No competition running right now" : ""}
       </div>
 
       {/* Admin mode indicator */}
@@ -116,7 +115,7 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
           fontFamily: "inherit", fontSize: 13, fontWeight: 600,
           background: tab === "champions" ? "var(--royal)" : "transparent",
           color: tab === "champions" ? "#fff" : "var(--muted)", transition: "all .2s",
-        }}>👑 Biweekly Champions</button>
+        }}>👑 Champions</button>
         <button onClick={() => setTab("records")} style={{
           flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer",
           fontFamily: "inherit", fontSize: 13, fontWeight: 600,
@@ -129,7 +128,7 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
         <div style={{ textAlign: "center", color: "var(--muted)", padding: "40px 0" }}>Loading…</div>
       )}
 
-      {/* ── BIWEEKLY CHAMPIONS ── */}
+      {/* ── CHAMPIONS ── */}
       {!loading && tab === "champions" && (
         <div>
           {champions.length === 0 ? (
@@ -179,8 +178,9 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
                       </div>
                       <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
                         {c.grade_category && <span>{SHORT[c.grade_category] ?? c.grade_category} · </span>}
-                        {c.period_number ? `Period ${c.period_number} · ` : ""}
-                        {new Date(c.period_start).toLocaleDateString()} – {new Date(c.period_end).toLocaleDateString()}
+                        {c.competitions?.name
+                          ? <>{competitionLabel({ name: c.competitions.name, starts_at: c.period_start, ends_at: c.period_end })}</>
+                          : <>{c.period_number ? `Period ${c.period_number} · ` : ""}{new Date(c.period_start).toLocaleDateString()} – {new Date(c.period_end).toLocaleDateString()}</>}
                       </div>
                     </div>
 
