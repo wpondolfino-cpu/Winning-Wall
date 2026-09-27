@@ -1,7 +1,7 @@
 // src/components/ProfilePage.tsx
 import { useState, useEffect } from "react";
 import { supabase, Profile, getXpPerks, getPlayerXp, getPlayerTier, XpPerk,
-         hasPerkUsedThisPeriod, usePerk, currentPeriodStart, signOut } from "../lib/supabase";
+         hasPerkUsedThisPeriod, usePerk, signOut, useCompetition, firstDay, lastDay, shortDate } from "../lib/supabase";
 import { getActiveBadges, checkBadge, Badge, PlayerStats } from "../lib/badges";
 import ProfileEditor from "./ProfileEditor";
 
@@ -27,6 +27,12 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
   const [challengesWon, setChallengesWon] = useState(0);
   const [streakShieldUsed, setStreakShieldUsed] = useState(false);
   const [scoreBoostUsed, setScoreBoostUsed]   = useState(false);
+  // Perks reset with each competition and wait while none is running.
+  const competition = useCompetition();
+  const noCompetition = competition.loaded && !competition.current;
+  const perkNote = noCompetition
+    ? (competition.next ? `Usable once the next competition starts (${shortDate(firstDay(competition.next))})` : "Usable once a competition starts")
+    : competition.current ? `1 use this competition · resets after ${shortDate(lastDay(competition.current))}` : "";
   const [usingShield, setUsingShield]         = useState(false);
   const [editing, setEditing]                 = useState(false);
   const [profileTab, setProfileTab]           = useState<"xp"|"badges">("xp");
@@ -105,7 +111,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
       setMyStreak(current);
       setStreakShieldUsed(true);
     } else {
-      showToast("Already used this period.");
+      showToast(noCompetition ? "No competition is running right now." : "Already used this competition.");
     }
     setUsingShield(false);
   }
@@ -155,7 +161,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
       setShowBoostPicker(false);
       setSelectedBoostWorkout("");
     } else {
-      showToast("Already used this period.");
+      showToast(noCompetition ? "No competition is running right now." : "Already used this competition.");
     }
     setUsingBoost(false);
   }
@@ -354,17 +360,18 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
                   </div>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.description}</div>
                   {!unlocked && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>{p.xp_required - xp} XP to unlock</div>}
+                  {unlocked && (isShield || isBoost) && perkNote && <div style={{ fontSize: 11, color: noCompetition ? "#ff8c42" : "var(--muted)", marginTop: 3 }}>{perkNote}</div>}
                 </div>
                 {unlocked && isShield && (
-                  <button onClick={handleUseStreakShield} disabled={streakShieldUsed || usingShield}
+                  <button onClick={handleUseStreakShield} disabled={streakShieldUsed || usingShield || noCompetition}
                     style={{ background: streakShieldUsed ? "var(--surface)" : "rgba(192,192,192,0.15)", color: streakShieldUsed ? "var(--muted)" : "#c0c0c0", border: "1px solid #c0c0c0", borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: streakShieldUsed ? "default" : "pointer", whiteSpace: "nowrap" }}>
-                    {streakShieldUsed ? "Used" : usingShield ? "…" : "Use"}
+                    {noCompetition ? "Waiting" : streakShieldUsed ? "Used" : usingShield ? "…" : "Use"}
                   </button>
                 )}
                 {unlocked && isBoost && (
-                  <button onClick={handleUseScoreBoost} disabled={scoreBoostUsed || usingBoost}
+                  <button onClick={handleUseScoreBoost} disabled={scoreBoostUsed || usingBoost || noCompetition}
                     style={{ background: scoreBoostUsed ? "var(--surface)" : "rgba(240,192,64,0.15)", color: scoreBoostUsed ? "var(--muted)" : "var(--gold)", border: "1px solid var(--gold)", borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: scoreBoostUsed ? "default" : "pointer", whiteSpace: "nowrap" }}>
-                    {scoreBoostUsed ? "Used" : usingBoost ? "…" : "Use"}
+                    {noCompetition ? "Waiting" : scoreBoostUsed ? "Used" : usingBoost ? "…" : "Use"}
                   </button>
                 )}
               </div>
@@ -432,7 +439,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
             streak:          { label: "Streaks",             icon: "🔥" },
             challenges_won:  { label: "Head to Head",        icon: "⚔️" },
             team_wins:       { label: "Team Competition",    icon: "🏆" },
-            champion:        { label: "Period Champion",     icon: "👑" },
+            champion:        { label: "Competition Champion", icon: "👑" },
             top_score:       { label: "Top Score",           icon: "🥇" },
           };
           // Group ALL badges by trigger_type in fixed category order
