@@ -631,7 +631,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                         <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text)", marginBottom: 3 }}>{snap.period_name}</div>
                         <div style={{ fontSize: 12, color: "var(--muted)" }}>
                           {new Date(snap.period_start).toLocaleDateString("en-US", { month: "short", day: "numeric" })} – {new Date(snap.period_end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                          {" · "}{snap.snapshot.length} players
+                          {" · "}{snap.snapshot.length} players{snap.scored_by === "practice_wins" ? " · practice wins" : ""}
                         </div>
                         {/* Champions */}
                         {champions.length > 0 && (
@@ -658,10 +658,11 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                     {isOpen && (
                       <div style={{ borderTop: "1px solid var(--border)" }}>
                         <div style={{ display: "grid", gridTemplateColumns: "44px 1fr 80px", padding: "8px 16px", fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "1px", borderBottom: "1px solid var(--border)" }}>
-                          <div>RNK</div><div>PLAYER</div><div style={{ textAlign: "center" }}>PTS</div>
+                          <div>RNK</div><div>PLAYER</div><div style={{ textAlign: "center" }}>{snap.scored_by === "practice_wins" ? "WINS" : "PTS"}</div>
                         </div>
                         {snap.snapshot
-                          .filter((e: any) => gradeTab === ALL || e.grade_category === gradeTab)
+                          // Practice-win snapshots are per team, not per grade group.
+                          .filter((e: any) => snap.scored_by === "practice_wins" || gradeTab === ALL || e.grade_category === gradeTab)
                           .map((e: any, i: number) => (
                           <div key={e.player_id} style={{ display: "grid", gridTemplateColumns: "44px 1fr 80px", padding: "10px 16px", alignItems: "center", borderBottom: "1px solid rgba(176,184,200,0.05)", background: e.player_id === currentUserId ? "rgba(26,63,168,0.1)" : undefined }}>
                             <div className={`lb-rank ${rankClass(i + 1)}`}>{i + 1}</div>
@@ -675,7 +676,9 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                                   {e.is_period_champion && <span>👑 </span>}{e.name}
                                   {e.player_id === currentUserId && <span style={{ fontSize: 11, color: "#93b4ff" }}> (you)</span>}
                                 </div>
-                                {gradeTab === ALL && <div style={{ fontSize: 11, color: "var(--muted)" }}>{SHORT[e.grade_category] ?? e.grade_category}</div>}
+                                {e.team_name
+                                  ? <div style={{ fontSize: 11, color: "var(--muted)" }}>{e.team_name}</div>
+                                  : gradeTab === ALL && <div style={{ fontSize: 11, color: "var(--muted)" }}>{SHORT[e.grade_category] ?? e.grade_category}</div>}
                               </div>
                             </div>
                             <div style={{ textAlign: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)" }}>{e.total_points}</div>
