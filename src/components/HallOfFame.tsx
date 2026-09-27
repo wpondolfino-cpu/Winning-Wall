@@ -177,7 +177,9 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
                         )}
                       </div>
                       <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
-                        {c.grade_category && <span>{SHORT[c.grade_category] ?? c.grade_category} · </span>}
+                        {c.team_name
+                          ? <span>{c.team_name} · </span>
+                          : c.grade_category && <span>{SHORT[c.grade_category] ?? c.grade_category} · </span>}
                         {c.competitions?.name
                           ? <>{competitionLabel({ name: c.competitions.name, starts_at: c.period_start, ends_at: c.period_end })}</>
                           : <>{c.period_number ? `Period ${c.period_number} · ` : ""}{new Date(c.period_start).toLocaleDateString()} – {new Date(c.period_end).toLocaleDateString()}</>}
@@ -188,7 +190,7 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, flexShrink: 0 }}>
                       <div style={{ textAlign: "center" }}>
                         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: isReigning ? "var(--gold)" : "#93b4ff", lineHeight: 1 }}>{c.points}</div>
-                        <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>pts</div>
+                        <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>{c.team_name ? (c.points === 1 ? "win" : "wins") : "pts"}</div>
                       </div>
                       {canDelete && (
                         <button
