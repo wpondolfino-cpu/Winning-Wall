@@ -4,7 +4,7 @@
 // live in supabase.ts to avoid duplicate export conflicts.
 
 import { supabase, XpPerk, DEFAULT_PERKS } from "./supabase";
-import { currentPeriodStart } from "./periods";
+import { ensureCompetitionLoaded, currentPerkPeriodKey } from "./periods";
 
 // ── XP enabled state — database only, no localStorage ────────
 export async function getXpEnabled(): Promise<boolean> {
@@ -74,20 +74,32 @@ export function getPlayerTier(
   return { tier, perk: currentPerk, nextPerk, avatarOutline };
 }
 
+// Perks reset with each competition, whatever its length -- one use in a
+// one-day competition, one in a month-long one -- and can't be used while
+// no competition is running. Uses are recorded under the competition's
+// start date (currentPerkPeriodKey), the same dates the old 14-day periods
+// used, so uses from before the switch still count.
+
+/** True if used this competition. Also true when nothing is running, since there's nothing to use it on -- check getCurrentCompetition() to tell the two apart. */
 export async function hasPerkUsedThisPeriod(playerId: string, perkKey: string): Promise<boolean> {
-  const periodStart = currentPeriodStart().toISOString().split("T")[0];
+  await ensureCompetitionLoaded();
+  const periodStart = currentPerkPeriodKey();
+  if (!periodStart) return true;
   const { data } = await supabase
     .from("perk_usage").select("id")
-    .eq("player_id", playerId).eq("perk_key", perkKey).eq("period_start", periodStart).single();
+    .eq("player_id", playerId).eq("perk_key", perkKey).eq("period_start", periodStart).maybeSingle();
   return !!data;
 }
 
+/** False if no competition is running or the insert failed. */
 export async function usePerk(
   playerId: string,
   perkKey: string,
   workoutId?: string
 ): Promise<boolean> {
-  const periodStart = currentPeriodStart().toISOString().split("T")[0];
+  await ensureCompetitionLoaded();
+  const periodStart = currentPerkPeriodKey();
+  if (!periodStart) return false;
   const { error } = await supabase.from("perk_usage").insert({
     player_id:    playerId,
     perk_key:     perkKey,
