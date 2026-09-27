@@ -1,10 +1,9 @@
 // src/components/Leaderboard.tsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 import {
   supabase, LeaderboardEntry, GRADE_CATEGORIES, GradeCategory,
-  Workout, Score, currentPeriodStart, currentPeriodEnd,
-  getXpPerks,
+  Workout, Score, getXpPerks, useCompetition, competitionRange, competitionLabel, daysLeft, firstDay, shortDate,
 } from "../lib/supabase";
 import type { XpPerk } from "../lib/supabase";
 import ChampionsPanel from "./coach/ChampionsPanel";
@@ -54,8 +53,16 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
   const [savingSnap, setSavingSnap]     = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
 
-  const periodStart = currentPeriodStart();
-  const periodEnd   = currentPeriodEnd();
+  // The running competition, or none (paused). With none, the Current
+  // tab shows a "no competition" state and the period queries are skipped.
+  const competition = useCompetition();
+  const comp = competition.current;
+  const periodStart = comp ? new Date(comp.starts_at) : null;
+  const periodEnd   = comp ? new Date(comp.ends_at) : null;
+  // loadData also runs from a realtime subscription set up on mount; a ref
+  // keeps it reading the competition as it is now, not as it was then.
+  const compRef = useRef(comp);
+  compRef.current = comp;
 
   useEffect(() => {
     loadData();
@@ -66,6 +73,9 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, []);
+
+  // Reload once the competition has loaded, and whenever it changes.
+  useEffect(() => { if (competition.loaded) loadData(); }, [competition.loaded, comp?.id]);
 
   useEffect(() => { if (periodScores.length > 0 || profiles.length > 0) buildPeriodBoard(); }, [periodScores, profiles, periodBonuses, allScores]);
 
@@ -81,16 +91,23 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
   }
 
   async function loadData() {
+    const c = compRef.current;
+    const periodStart = c ? new Date(c.starts_at) : null;
+    const periodEnd   = c ? new Date(c.ends_at) : null;
     const [{ data: ws }, { data: sc }, { data: pr }, { data: psc }, { data: bon }, { data: bonAll }] = await Promise.all([
       supabase.from("workouts").select("*").eq("is_active", true).order("created_at", { ascending: false }),
       supabase.from("scores").select("*"),
       supabase.from("profiles").select("id,name,grade_category,is_period_champion,avatar_url").eq("role", "player"),
-      supabase.from("score_attempts").select("*")
-        .gte("attempted_at", periodStart.toISOString())
-        .lte("attempted_at", periodEnd.toISOString()),
-      supabase.from("streak_bonuses").select("*")
-        .gte("awarded_at", periodStart.toISOString())
-        .lte("awarded_at", periodEnd.toISOString()),
+      periodStart && periodEnd
+        ? supabase.from("score_attempts").select("*")
+            .gte("attempted_at", periodStart.toISOString())
+            .lt("attempted_at", periodEnd.toISOString())
+        : Promise.resolve({ data: [] as any[] }),
+      periodStart && periodEnd
+        ? supabase.from("streak_bonuses").select("*")
+            .gte("awarded_at", periodStart.toISOString())
+            .lt("awarded_at", periodEnd.toISOString())
+        : Promise.resolve({ data: [] as any[] }),
       supabase.from("streak_bonuses").select("*"), // unfiltered — every bonus ever, for the All-Time breakdown
     ]);
     const allWorkouts = ws ?? [];
@@ -134,8 +151,9 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
       }));
       await supabase.from("period_snapshots").insert({
         period_name: periodName,
-        period_start: periodStart.toISOString().split("T")[0],
+        period_start: (periodStart ?? new Date()).toISOString().split("T")[0],
         period_end: new Date().toISOString().split("T")[0],
+        competition_id: comp?.id ?? null,
         snapshot: snapshotData,
       });
       await loadSnapshots();
@@ -317,7 +335,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
 
       {canManage && <ChampionsPanel />}
 
-      {/* ── Main tabs: Overall | Current Period | History ── */}
+      {/* ── Main tabs: Overall | Current competition | History ── */}
       <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 12, padding: 4, marginBottom: 16, border: "1px solid var(--border)" }}>
         {([
           { key: "current", label: "📅 Current" },
@@ -426,18 +444,30 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
       )}
 
       {/* ══════════════════════════════════════════
-          CURRENT PERIOD TAB
+          CURRENT COMPETITION TAB
           Overall subtab + per-drill subtabs
           ══════════════════════════════════════════ */}
-      {mainTab === "current" && (
+      {mainTab === "current" && !comp && competition.loaded && (
+        <div style={{ textAlign: "center", padding: "36px 16px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12 }}>
+          <div style={{ fontSize: 28 }}>⏸️</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1, marginTop: 6 }}>No competition running</div>
+          {competition.next && (
+            <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 6 }}>{competition.next.name} starts {shortDate(firstDay(competition.next))}.</div>
+          )}
+          <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>Scores still count toward all-time.</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 14 }}>👑 Reigning champions keep their crowns until the next crowning.</div>
+        </div>
+      )}
+
+      {mainTab === "current" && comp && periodStart && periodEnd && (
         <>
           {/* Period banner */}
           <div style={{ marginBottom: 14, padding: "10px 16px", background: "linear-gradient(135deg, rgba(26,63,168,0.2), rgba(240,192,64,0.1))", border: "1px solid rgba(240,192,64,0.25)", borderRadius: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--gold)", letterSpacing: 1 }}>👑 Current Period</div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>{periodStart.toLocaleDateString()} – {periodEnd.toLocaleDateString()}</div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--gold)", letterSpacing: 1 }}>👑 {comp.name}</div>
+              {comp.name !== competitionRange(comp) && <div style={{ fontSize: 12, color: "var(--muted)" }}>{competitionRange(comp)}</div>}
             </div>
-            <div style={{ fontSize: 12, color: "var(--silver-light)" }}>{Math.ceil((periodEnd.getTime() - Date.now()) / 86400000)} days left</div>
+            <div style={{ fontSize: 12, color: "var(--silver-light)" }}>{daysLeft(comp) === 1 ? "Last day" : `${daysLeft(comp)} days left`}</div>
           </div>
 
           {/* Subtab: Overall + drills from active group only */}
@@ -461,8 +491,8 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
           {/* My period stats */}
           {currentUserId && drillView === "overall" && (
             <div className="stats-row">
-              <div className="stat-card"><div className="stat-label">Period Rank</div><div className="stat-value gold">{myPeriod ? `#${myPeriod.rank}` : "—"}</div></div>
-              <div className="stat-card"><div className="stat-label">Period Points</div><div className="stat-value blue">{myPeriod?.period_points ?? 0}</div></div>
+              <div className="stat-card"><div className="stat-label">Rank</div><div className="stat-value gold">{myPeriod ? `#${myPeriod.rank}` : "—"}</div></div>
+              <div className="stat-card"><div className="stat-label">Points</div><div className="stat-value blue">{myPeriod?.period_points ?? 0}</div></div>
               <div className="stat-card"><div className="stat-label">Workouts</div><div className="stat-value">{myPeriod?.workouts_logged ?? 0}</div></div>
             </div>
           )}
@@ -496,7 +526,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                   </div>
                   {expandedPlayer === entry.player_id && (
                     <div style={{ padding: "10px 16px 14px", background: "rgba(26,63,168,0.07)", borderTop: "1px solid var(--border)" }}>
-                      <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, fontWeight: 700 }}>This Period</div>
+                      <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, fontWeight: 700 }}>This Competition</div>
                       {allScores.filter(s => s.player_id === entry.player_id && (s.points ?? 0) > 0).sort((a, b) => (b.points ?? 0) - (a.points ?? 0)).map(s => {
                         const w = workouts.find(wk => wk.id === s.workout_id);
                         const raw = s.self_points > 0 ? s.self_points : (s.made + s.reps);
@@ -524,14 +554,14 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                         return <div key={bi} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}><div style={{ fontSize: 12, color: "#ff8c42" }}>{label}</div><span style={{ fontSize: 13, fontWeight: 700, color: "#ff8c42" }}>+{b.points}</span></div>;
                       })}
                       <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
-                        <span style={{ color: "var(--muted)" }}>Total This Period</span>
+                        <span style={{ color: "var(--muted)" }}>Total This Competition</span>
                         <span style={{ color: "var(--gold)" }}>{entry.period_points} pts</span>
                       </div>
                     </div>
                   )}
                 </div>
               ))}
-              {periodRanked.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", fontSize: 14 }}>No activity yet this period. Start logging! 🏀</div>}
+              {periodRanked.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", fontSize: 14 }}>No activity yet this competition. Start logging! 🏀</div>}
             </div>
           )}
 
@@ -546,7 +576,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                   <div style={{ fontSize: 36 }}>{w.emoji}</div>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 15, color: "var(--text)" }}>{w.title}</div>
-                    <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>This period · {periodStart.toLocaleDateString()} – {periodEnd.toLocaleDateString()}</div>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{competitionLabel(comp)}</div>
                   </div>
                 </div>
                 {renderWorkoutTable(board)}
@@ -564,7 +594,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
           {canManage && (
             <div style={{ marginBottom: 16, padding: "12px 16px", background: "rgba(26,63,168,0.08)", border: "1px solid rgba(26,63,168,0.25)", borderRadius: 10 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>📸 Save current leaderboard as a snapshot</div>
-              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Do this when closing out a period. The snapshot freezes the standings so you can audit them later.</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Crowning saves one automatically. Use this for an extra snapshot mid-competition. The snapshot freezes the standings so you can audit them later.</div>
               <div style={{ display: "flex", gap: 8 }}>
                 {groups.map(g => (
                   <button key={g} onClick={() => saveSnapshot(g)} disabled={savingSnap}
