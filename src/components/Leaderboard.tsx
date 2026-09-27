@@ -31,6 +31,9 @@ interface PeriodEntry {
 interface Snapshot {
   id: string; period_name: string; period_start: string;
   period_end: string; snapshot: any[]; created_at: string;
+  /** "points" or "practice_wins" (migration 148). Older snapshots are points. */
+  scored_by?: string;
+  competition_id?: string | null;
 }
 
 export default function Leaderboard({ currentUserId, canManage = false }: Props) {
