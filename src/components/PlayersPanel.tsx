@@ -450,11 +450,18 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     try {
       await loadAcademicYear();
       const gradYear = gradYearFromGrade(parseInt(addSchoolYear, 10));
-      await supabase.auth.signUp({ email: addEmail, password: addPass, options: { data: {
-        name: addName, role: "player", must_change_password: true,
+      // Sign-up only ever creates pending accounts (migration 150), so the
+      // account is approved from this coach's session straight after.
+      const { data, error } = await supabase.auth.signUp({ email: addEmail, password: addPass, options: { data: {
+        name: addName, role: "pending_player", must_change_password: true,
         graduation_year: gradYear,
         grade_category: gradeCategoryFromGradYear(gradYear) ?? GRADE_CATEGORIES[0],
       } } });
+      if (error) throw error;
+      if (data.user?.id) {
+        const { error: approveErr } = await supabase.from("profiles").update({ role: "player" }).eq("id", data.user.id);
+        if (approveErr) throw new Error(`Account created but not approved: ${approveErr.message}. Approve it from the pending list.`);
+      }
       setShowAdd(false); setAddName(""); setAddEmail(""); setAddPass(""); setAddSchoolYear(""); refresh();
     } catch (e: any) { setAddError(e.message); }
     finally { setAddSaving(false); }
@@ -588,7 +595,12 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   async function saveCoachEdit() {
     if (!editCoach) return;
     setEditCoachSaving(true);
-    try { await supabase.from("profiles").update({ name: editCoach.name, role: editCoach.role }).eq("id", editCoach.id); setEditCoach(null); await loadCoaches(); }
+    try {
+      // Changing a coach's role is admin-only (migration 150); say so rather than fail silently.
+      const { error } = await supabase.from("profiles").update({ name: editCoach.name, role: editCoach.role }).eq("id", editCoach.id);
+      if (error) throw new Error(/admin/i.test(error.message) ? "Only an admin can change a coach's role." : error.message);
+      setEditCoach(null); await loadCoaches();
+    }
     catch(e: any) { alert("Error: " + e.message); }
     finally { setEditCoachSaving(false); }
   }
@@ -620,7 +632,14 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     if (!addCoachName.trim() || !addCoachEmail.trim() || !addCoachPass.trim()) { alert("Please fill in name, email and password."); return; }
     setAddCoachSaving(true);
     try {
-      await supabase.auth.signUp({ email: addCoachEmail, password: addCoachPass, options: { data: { name: addCoachName, role: "coach" } } });
+      // Created pending, then promoted -- which only an admin can do
+      // (migration 150). For anyone else it stays in the pending list.
+      const { data, error } = await supabase.auth.signUp({ email: addCoachEmail, password: addCoachPass, options: { data: { name: addCoachName, role: "pending_coach" } } });
+      if (error) throw error;
+      if (data.user?.id) {
+        const { error: promoteErr } = await supabase.from("profiles").update({ role: "coach" }).eq("id", data.user.id);
+        if (promoteErr) alert("The coach account was created, but only an admin can approve coaches. It's waiting in the pending list.");
+      }
       setShowAddCoach(false); setAddCoachName(""); setAddCoachEmail(""); setAddCoachPass(""); await loadCoaches();
     } catch (e: any) { alert(e.message); }
     finally { setAddCoachSaving(false); }
@@ -628,7 +647,8 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
 
   async function handleApproveCoach(id: string) {
     setApprovingCoach(id);
-    await supabase.from("profiles").update({ role: "coach" }).eq("id", id);
+    const { error } = await supabase.from("profiles").update({ role: "coach" }).eq("id", id);
+    if (error) alert(/admin/i.test(error.message) ? "Only an admin can approve coaches." : "Couldn't approve: " + error.message);
     loadPending(); setApprovingCoach(null);
   }
 
