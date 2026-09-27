@@ -63,7 +63,7 @@ export const DEFAULT_BADGES = [
   { icon: "🥈", name: "Rising Star",    description: "Earned 25 total points",      trigger_type: "points",    trigger_value: 25,  is_active: true },
   { icon: "🥇", name: "Elite",          description: "Earned 50 total points",      trigger_type: "points",    trigger_value: 50,  is_active: true },
   { icon: "💎", name: "Century Club",   description: "Earned 100 total points",     trigger_type: "points",    trigger_value: 100, is_active: true },
-  { icon: "👑", name: "Champion",       description: "Won a biweekly period",       trigger_type: "champion",  trigger_value: 1,   is_active: true },
+  { icon: "👑", name: "Champion",       description: "Won a competition",           trigger_type: "champion",  trigger_value: 1,   is_active: true },
   { icon: "🎯", name: "Sharpshooter",   description: "Scored #1 on any drill",      trigger_type: "top_score", trigger_value: 1,   is_active: true },
   { icon: "🏆", name: "Team Player",     description: "Won your first team competition", trigger_type: "team_wins", trigger_value: 1,   is_active: true },
   { icon: "🤝", name: "Team Champion",   description: "Won 3 team competitions",        trigger_type: "team_wins", trigger_value: 3,   is_active: true },
