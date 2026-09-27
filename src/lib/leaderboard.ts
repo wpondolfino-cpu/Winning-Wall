@@ -3,6 +3,7 @@
 
 import { supabase, LeaderboardEntry, BiweeklyChampion } from "./supabase";
 import type { Competition } from "./periods";
+import { getPracticeWinStandings, PracticeWinStanding } from "./practiceWins";
 import { getCurrentSeason } from "./records";
 
 export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
@@ -134,4 +135,82 @@ export async function crownCompetition(c: Competition, leaderboard: LeaderboardE
 
   await supabase.from("competitions").update({ crowned_at: crownedAt, skipped_at: null }).eq("id", c.id);
   return crowned;
+}
+
+/**
+ * In-season crowning (migration 148): most practice wins on each team,
+ * counted inside the competition's dates. Ties are co-champions; a team
+ * with no wins gets no crown. The win count goes in `points`.
+ */
+export async function crownCompetitionByWins(c: Competition): Promise<{ crowned: Set<string>; snapshot: any[] }> {
+  const season = await getCurrentSeason();
+  const crownedAt = new Date().toISOString();
+  const standings: PracticeWinStanding[] = await getPracticeWinStandings(new Date(c.starts_at), new Date(c.ends_at));
+  const [{ data: rosters }, { data: profs }] = await Promise.all([
+    supabase.from("rosters").select("id, name"),
+    supabase.from("profiles").select("id, grade_category, avatar_url").eq("role", "player"),
+  ]);
+  const teamName = new Map<string, string>((rosters ?? []).map((r: any) => [r.id, r.name]));
+  const prof = new Map<string, { grade_category: string | null; avatar_url: string | null }>((profs ?? []).map((p: any) => [p.id, p]));
+
+  // Top win count on each team.
+  const best = new Map<string, number>();
+  for (const s of standings) {
+    if (!s.home_roster_id) continue;
+    best.set(s.home_roster_id, Math.max(best.get(s.home_roster_id) ?? 0, s.wins));
+  }
+  const winners = standings.filter(s => s.home_roster_id && s.wins > 0 && s.wins === best.get(s.home_roster_id));
+
+  await supabase.from("profiles").update({ is_period_champion: false }).neq("id", "none");
+
+  const crowned = new Set<string>();
+  for (const w of winners) {
+    crowned.add(w.player_id);
+    const p = prof.get(w.player_id);
+    await supabase.from("profiles")
+      .update({ is_period_champion: true, champion_since: crownedAt })
+      .eq("id", w.player_id);
+
+    const { count: periodsWon } = await supabase
+      .from("biweekly_champions")
+      .select("id", { count: "exact", head: true })
+      .eq("player_id", w.player_id);
+    try {
+      await supabase.rpc("upsert_record", {
+        p_type: "most_periods_won", p_workout_id: null, p_workout_title: null, p_workout_desc: null,
+        p_player_id: w.player_id, p_player_name: w.name, p_avatar_url: p?.avatar_url ?? null,
+        p_value: (periodsWon ?? 0) + 1,
+        p_display_value: `${(periodsWon ?? 0) + 1} competition${((periodsWon ?? 0) + 1) !== 1 ? "s" : ""}`,
+        p_season: season,
+      });
+    } catch (e) { console.error(e); }
+
+    await supabase.from("biweekly_champions").insert({
+      player_id: w.player_id,
+      player_name: w.name,
+      grade_category: p?.grade_category ?? null,
+      team_name: teamName.get(w.home_roster_id!) ?? null,
+      points: w.wins,
+      period_start: c.starts_at,
+      period_end: c.ends_at,
+      competition_id: c.id,
+      crowned_at: crownedAt,
+      avatar_url: p?.avatar_url ?? null,
+    });
+  }
+
+  await supabase.from("competitions").update({ crowned_at: crownedAt, skipped_at: null }).eq("id", c.id);
+
+  const snapshot = standings.filter(s => s.wins > 0).map((s, i) => ({
+    rank: i + 1,
+    player_id: s.player_id,
+    name: s.name,
+    grade_category: prof.get(s.player_id)?.grade_category ?? null,
+    team_name: s.home_roster_id ? teamName.get(s.home_roster_id) ?? null : null,
+    total_points: s.wins,
+    workouts_completed: 0,
+    avatar_url: prof.get(s.player_id)?.avatar_url ?? null,
+    is_period_champion: crowned.has(s.player_id),
+  }));
+  return { crowned, snapshot };
 }
