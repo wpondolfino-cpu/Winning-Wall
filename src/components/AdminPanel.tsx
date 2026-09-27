@@ -9,7 +9,7 @@ interface Props {
 
 
 interface Badge { id?: string; icon: string; name: string; description: string; trigger_type: "workouts"|"points"|"streak"|"champion"|"top_score"|"challenges_won"|"team_wins"; trigger_value: number; is_active: boolean; }
-const TRIGGER_LABELS: Record<string,string> = { workouts:"Workouts logged", points:"Total points earned", streak:"Day logging streak", champion:"Won a biweekly period", top_score:"Scored #1 on any drill", challenges_won:"Challenges won", team_wins:"Team competition wins" };
+const TRIGGER_LABELS: Record<string,string> = { workouts:"Workouts logged", points:"Total points earned", streak:"Day logging streak", champion:"Won a competition", top_score:"Scored #1 on any drill", challenges_won:"Challenges won", team_wins:"Team competition wins" };
 const EMOJI_GROUPS = [
   { label: "Basketball & Competition", emojis: ["🏀","⛹️","🏅","🥇","🥈","🥉","🎯","🏆","🥊","⚡"] },
   { label: "Achievement & Awards",     emojis: ["👑","💎","⭐","🌟","✨","🔥","💫","🎖️","🏵️","🎗️"] },
@@ -501,7 +501,7 @@ export default function AdminPanel({}: Props) {
               streak:         { label: "Streaks",          icon: "🔥" },
               challenges_won: { label: "Head to Head",     icon: "⚔️" },
               team_wins:      { label: "Team Competition", icon: "🏆" },
-              champion:       { label: "Period Champion",  icon: "👑" },
+              champion:       { label: "Competition Champion", icon: "👑" },
               top_score:      { label: "Top Score",        icon: "🥇" },
             };
             const groups: Record<string, Badge[]> = {};
