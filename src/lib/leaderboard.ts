@@ -1,8 +1,8 @@
 // src/lib/leaderboard.ts
-// Leaderboard queries and biweekly champion logic
+// Leaderboard queries and competition crowning
 
 import { supabase, LeaderboardEntry, BiweeklyChampion } from "./supabase";
-import { currentPeriodStart, currentPeriodEnd, getPeriodNumber } from "./periods";
+import type { Competition } from "./periods";
 import { getCurrentSeason } from "./records";
 
 export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
@@ -19,28 +19,24 @@ export async function getBiweeklyChampions(): Promise<BiweeklyChampion[]> {
   return data ?? [];
 }
 
-// Computes real Current Period standings (same math as the Leaderboard's
-// "Current" tab) — used for crowning and history snapshots, since those
-// should reflect the two-week period, not all-time totals. Returned in
-// the same shape as LeaderboardEntry so crownBiweeklyWinners and the
-// snapshot-save logic don't need to change at all — only the data
-// source feeding them does.
-export async function getCurrentPeriodStandings(): Promise<LeaderboardEntry[]> {
-  // Always targets the period that just concluded — not whatever period
-  // "now" happens to be in. If a coach crowns even a moment after the
-  // rollover boundary, currentPeriodStart()/End() would silently describe
-  // the brand-new (nearly empty) period instead of the one being crowned.
-  const periodEnd = currentPeriodStart();
-  const periodStart = new Date(periodEnd.getTime() - 14 * 24 * 60 * 60 * 1000);
+// Standings for one competition -- same math as the Leaderboard's
+// "Current" tab (drill points on drills logged in its window, plus streak
+// bonuses awarded in it). Used for crowning and the History snapshot.
+// Takes the competition explicitly: the old version worked out "the
+// period that just ended" as the 14 days before today's, which is wrong
+// for any other length.
+export async function getCompetitionStandings(c: Pick<Competition, "starts_at" | "ends_at">): Promise<LeaderboardEntry[]> {
+  const periodStart = new Date(c.starts_at);
+  const periodEnd = new Date(c.ends_at);
 
   const [{ data: psc }, { data: pr }, { data: bon }, { data: sc }] = await Promise.all([
     supabase.from("score_attempts").select("*")
       .gte("attempted_at", periodStart.toISOString())
-      .lte("attempted_at", periodEnd.toISOString()),
+      .lt("attempted_at", periodEnd.toISOString()),
     supabase.from("profiles").select("id,name,grade_category,is_period_champion,avatar_url").eq("role", "player"),
     supabase.from("streak_bonuses").select("*")
       .gte("awarded_at", periodStart.toISOString())
-      .lte("awarded_at", periodEnd.toISOString()),
+      .lt("awarded_at", periodEnd.toISOString()),
     supabase.from("scores").select("*"),
   ]);
 
@@ -73,37 +69,33 @@ export async function getCurrentPeriodStandings(): Promise<LeaderboardEntry[]> {
   return entries.sort((a, b) => b.total_points - a.total_points);
 }
 
-export async function crownBiweeklyWinners(leaderboard: LeaderboardEntry[]): Promise<Set<string>> {
-  // Same fix as getCurrentPeriodStandings — always the period that just
-  // concluded, not whatever period "now" happens to be in. This function
-  // previously computed its own separate (unfixed) dates independent of
-  // ChampionsPanel/getCurrentPeriodStandings, which is exactly how this
-  // bug slipped through the first fix.
-  const periodEndDate   = currentPeriodStart();
-  const periodStartDate = new Date(periodEndDate.getTime() - 14 * 24 * 60 * 60 * 1000);
-  const periodStart  = periodStartDate.toISOString();
-  const periodEnd    = periodEndDate.toISOString();
-  const periodNumber = getPeriodNumber();
-  const season       = await getCurrentSeason();
+/**
+ * Crowns the top scorer in each leaderboard group for one competition.
+ * Marks the competition crowned even when nobody scored -- the old
+ * version wrote no rows in that case, so the reminder never stopped.
+ */
+export async function crownCompetition(c: Competition, leaderboard: LeaderboardEntry[]): Promise<Set<string>> {
+  const season = await getCurrentSeason();
+  const crownedAt = new Date().toISOString();
 
   const winners: Record<string, LeaderboardEntry> = {};
   for (const entry of leaderboard) {
     const cat = entry.grade_category ?? "Unknown";
-    if (!winners[cat] || entry.total_points > winners[cat].total_points) {
-      winners[cat] = entry;
-    }
+    if (!winners[cat] || entry.total_points > winners[cat].total_points) winners[cat] = entry;
   }
 
   await supabase.from("profiles").update({ is_period_champion: false }).neq("id", "none");
 
+  const crowned = new Set<string>();
   for (const [grade, winner] of Object.entries(winners)) {
     if (!winner.total_points) continue;
+    crowned.add(winner.id);
 
     const { data: prof } = await supabase
       .from("profiles").select("avatar_url").eq("id", winner.id).single();
 
     await supabase.from("profiles")
-      .update({ is_period_champion: true, champion_since: new Date().toISOString() })
+      .update({ is_period_champion: true, champion_since: crownedAt })
       .eq("id", winner.id);
 
     const { count: periodsWon } = await supabase
@@ -121,27 +113,25 @@ export async function crownBiweeklyWinners(leaderboard: LeaderboardEntry[]): Pro
         p_player_name:   winner.name,
         p_avatar_url:    prof?.avatar_url ?? null,
         p_value:         (periodsWon ?? 0) + 1,
-        p_display_value: `${(periodsWon ?? 0) + 1} period${((periodsWon ?? 0) + 1) !== 1 ? "s" : ""}`,
+        p_display_value: `${(periodsWon ?? 0) + 1} competition${((periodsWon ?? 0) + 1) !== 1 ? "s" : ""}`,
         p_season:        season,
       });
     } catch (e) { console.error(e); }
 
+    // Table keeps its old name; renaming it would touch every query.
     await supabase.from("biweekly_champions").insert({
       player_id:      winner.id,
       player_name:    winner.name,
       grade_category: grade,
       points:         winner.total_points,
-      period_start:   periodStart,
-      period_end:     periodEnd,
-      period_number:  periodNumber,
-      crowned_at:     new Date().toISOString(),
+      period_start:   c.starts_at,
+      period_end:     c.ends_at,
+      competition_id: c.id,
+      crowned_at:     crownedAt,
       avatar_url:     prof?.avatar_url ?? null,
     });
   }
 
-  // Report back exactly who was picked, so callers (e.g. the History
-  // snapshot) can reflect the real, freshly-selected winners — instead of
-  // relying on each entry's is_period_champion flag, which is stale
-  // (captured before this function ran the actual update).
-  return new Set(Object.values(winners).map(w => w.id));
+  await supabase.from("competitions").update({ crowned_at: crownedAt, skipped_at: null }).eq("id", c.id);
+  return crowned;
 }
