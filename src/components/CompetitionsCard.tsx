@@ -13,7 +13,9 @@ import {
   Competition, CompetitionLength, useCompetition, loadCurrentCompetition,
   easternDate, easternMidnightISO, addDays, presetLastDay, defaultCompetitionName,
   competitionRange, firstDay, lastDay, daysLeft, LENGTH_LABEL, shortDate,
+  CompetitionScoring, SCORING_LABEL,
 } from "../lib/periods";
+import { getSeasonMode } from "../lib/seasonMode";
 import ChampionsPanel from "./coach/ChampionsPanel";
 
 const PRESETS: CompetitionLength[] = ["day", "week", "two_weeks", "month", "custom"];
@@ -38,6 +40,8 @@ export default function CompetitionsCard() {
   const [name, setName] = useState("");
   const [nameTouched, setNameTouched] = useState(false);
   const [repeats, setRepeats] = useState(true);
+  // Follows the offseason / in-season switch unless changed here.
+  const [scoring, setScoring] = useState<CompetitionScoring>(getSeasonMode() === "inseason" ? "practice_wins" : "points");
 
   // Changing the running one's last day
   const [editingEnd, setEditingEnd] = useState(false);
@@ -87,6 +91,7 @@ export default function CompetitionsCard() {
       ends_at: easternMidnightISO(addDays(last, 1)),
       length_kind: kind,
       repeats,
+      scored_by: scoring,
       created_by: user?.id ?? null,
     });
     setBusy(false);
@@ -108,19 +113,33 @@ export default function CompetitionsCard() {
     if (!current || !newLast) return;
     if (newLast < today) { setErr("The last day can't be in the past."); return; }
     if (newLast < firstDay(current)) { setErr("The last day is before it started."); return; }
-    if (await update(current.id, { ends_at: easternMidnightISO(addDays(newLast, 1)) })) setEditingEnd(false);
+    if (await update(current.id, { ends_at: easternMidnightISO(addDays(newLast, 1)), name: followDates(current, newLast) })) setEditingEnd(false);
+  }
+
+  /**
+   * A name that is just the dates ("Sep 21 – Oct 4") follows them when the
+   * dates change. A name you typed yourself ("Fall week 3") is left alone.
+   */
+  function followDates(c: Competition, newLastDay: string): string {
+    return c.name === competitionRange(c) ? defaultCompetitionName(firstDay(c), newLastDay) : c.name;
   }
 
   async function endEarly() {
     if (!current) return;
     if (!window.confirm(`End ${current.name} now?\n\nIt stops counting immediately and goes to the crown queue. Repeat is turned off, so nothing new starts until you schedule it.`)) return;
-    await update(current.id, { ends_at: new Date().toISOString(), repeats: false });
+    await update(current.id, { ends_at: new Date().toISOString(), repeats: false, name: followDates(current, today) });
   }
 
   async function rename(c: Competition) {
     const n = window.prompt("Rename competition:", c.name);
     if (n == null || !n.trim() || n.trim() === c.name) return;
     await update(c.id, { name: n.trim() });
+  }
+
+  async function toggleScoring(c: Competition) {
+    const next: CompetitionScoring = c.scored_by === "practice_wins" ? "points" : "practice_wins";
+    if (!window.confirm(`Score ${c.name} on ${SCORING_LABEL[next].toLowerCase()} instead?\n\nThis decides how its champions are crowned.`)) return;
+    await update(c.id, { scored_by: next });
   }
 
   async function removeUpcoming(c: Competition) {
@@ -170,6 +189,10 @@ export default function CompetitionsCard() {
               ? `Repeats: the next ${LENGTH_LABEL[current.length_kind].toLowerCase()} starts on its own`
               : "Doesn't repeat: competitions pause after this one"}
           </label>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
+            Crowned on: <b style={{ color: "var(--text)" }}>{SCORING_LABEL[current.scored_by ?? "points"]}</b>
+            {" · "}<span onClick={() => toggleScoring(current)} style={{ color: "#93b4ff", cursor: "pointer" }}>change</span>
+          </div>
           {editingEnd ? (
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>Last day</span>
@@ -200,7 +223,7 @@ export default function CompetitionsCard() {
               <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px" }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{c.name}</div>
-                  <div style={{ fontSize: 11, color: "var(--muted)" }}>{competitionRange(c)}{c.repeats ? " · repeats" : ""}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>{competitionRange(c)}{c.repeats ? " · repeats" : ""} · <span onClick={() => toggleScoring(c)} style={{ cursor: "pointer", textDecoration: "underline dotted" }}>{SCORING_LABEL[c.scored_by ?? "points"]}</span></div>
                 </div>
                 <button onClick={() => rename(c)} style={small()}>Rename</button>
                 <button onClick={() => removeUpcoming(c)} disabled={busy} style={{ ...small(), color: "#ff7b7b" }}>Delete</button>
@@ -235,6 +258,12 @@ export default function CompetitionsCard() {
             <input type="date" value={last} min={first} disabled={kind !== "custom"}
               onChange={e => setLast(e.target.value)} style={{ ...input, opacity: kind === "custom" ? 1 : 0.7 }} />
           </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>Crowned on</span>
+          {(["points", "practice_wins"] as CompetitionScoring[]).map(k => (
+            <button key={k} onClick={() => setScoring(k)} style={small(scoring === k)}>{SCORING_LABEL[k]}</button>
+          ))}
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text)", marginBottom: 12, cursor: "pointer" }}>
           <input type="checkbox" checked={repeats} onChange={e => setRepeats(e.target.checked)} />
