@@ -1,7 +1,8 @@
 // src/components/ProfileEditor.tsx
 // Reusable profile editor — works for players, coaches, and admins
 import { useState, useRef } from "react";
-import { Profile, updateProfileName, uploadAvatar, GRADE_CATEGORIES, supabase } from "../lib/supabase";
+import { Profile, updateProfileName, uploadAvatar, supabase } from "../lib/supabase";
+import { gradeFromGradYear } from "../lib/teamDesigner";
 import AvatarBuilder from "./AvatarBuilder";
 
 interface Props {
@@ -15,8 +16,6 @@ export default function ProfileEditor({ profile, onUpdated }: Props) {
   const [uploading, setUploading] = useState(false);
   const [toast, setToast]         = useState("");
   const [avatarPreview, setAvatarPreview] = useState<string | null>(profile.avatar_url ?? null);
-  const [grade, setGrade]             = useState<string>(profile.grade_category ?? GRADE_CATEGORIES[0]);
-  const [savingGrade, setSavingGrade] = useState(false);
   const [showAvatarBuilder, setShowAvatarBuilder] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -37,21 +36,6 @@ export default function ProfileEditor({ profile, onUpdated }: Props) {
       showToast("Error: " + e.message);
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handleSaveGrade() {
-    if (grade === profile.grade_category) return;
-    setSavingGrade(true);
-    try {
-      const { error } = await supabase.from("profiles").update({ grade_category: grade }).eq("id", profile.id);
-      if (error) throw error;
-      onUpdated({ grade_category: grade as any });
-      showToast("✅ Grade updated!");
-    } catch (e: any) {
-      showToast("Error: " + e.message);
-    } finally {
-      setSavingGrade(false);
     }
   }
 
@@ -269,51 +253,21 @@ export default function ProfileEditor({ profile, onUpdated }: Props) {
         </div>
       </div>
 
-      {/* Grade selector — players only */}
+      {/* Grade — read-only. It comes from the school year a coach sets and
+          moves up each season; players can't pick their own leaderboard
+          group (migration 150 enforces that). */}
       {profile.role === "player" && <div style={{ marginTop: 14 }}>
         <label style={{ display: "block", fontSize: 12, color: "var(--muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>
           Grade / Level
         </label>
-        <div style={{ display: "flex", gap: 8 }}>
-          <select
-            value={grade}
-            onChange={e => setGrade(e.target.value)}
-            style={{
-              flex: 1,
-              background: "var(--surface2)",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              padding: "9px 12px",
-              color: "var(--text)",
-              fontSize: 14,
-              fontFamily: "inherit",
-              outline: "none",
-            }}
-          >
-            {GRADE_CATEGORIES.map(g => (
-              <option key={g} value={g}>{g}</option>
-            ))}
-          </select>
-          <button
-            onClick={handleSaveGrade}
-            disabled={savingGrade || grade === profile.grade_category}
-            style={{
-              background: grade !== profile.grade_category ? "var(--royal)" : "var(--surface2)",
-              color: grade !== profile.grade_category ? "#fff" : "var(--muted)",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              padding: "9px 16px",
-              fontSize: 13,
-              fontWeight: 600,
-              fontFamily: "inherit",
-              cursor: savingGrade ? "wait" : "pointer",
-              whiteSpace: "nowrap",
-              transition: "all 0.15s",
-            }}
-          >
-            {savingGrade ? "Saving…" : "Save"}
-          </button>
+        <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 14 }}>
+          {(() => {
+            const g = gradeFromGradYear(profile.graduation_year ?? null);
+            const yr = g == null ? null : g > 12 ? "Alumni" : g >= 9 ? `${g}th grade` : null;
+            return yr ? `${yr} · Class of ${profile.graduation_year}` : (profile.grade_category ?? "Not set");
+          })()}
         </div>
+        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Set by your coach. It moves up on its own each season.</div>
       </div>}
 
       {toast && (
