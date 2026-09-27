@@ -316,7 +316,7 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
       <div className="section-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
         My Progress
         {champCount > 0 && (
-          <span style={{ fontSize: 20, letterSpacing: 2 }} title={`${champCount} biweekly championship${champCount !== 1 ? "s" : ""} won`}>
+          <span style={{ fontSize: 20, letterSpacing: 2 }} title={`${champCount} competition${champCount !== 1 ? "s" : ""} won`}>
             {"👑".repeat(champCount)}
           </span>
         )}
