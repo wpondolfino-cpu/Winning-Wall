@@ -71,13 +71,11 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
     if (match) setActiveWorkout(match);
     onDeepLinkHandled?.();
   }, [openWorkoutId, workouts]);
-  const [announcements, setAnnouncements] = useState<any[]>([]);
   const [rankedCompletion, setRankedCompletion] = useState({ completed: 0, total: 0, bonusEarned: false });
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const modalDragY = useRef(0);
   const [modalOffset, setModalOffset] = useState(0);
 
-  useEffect(() => { loadAnnouncements(); }, []);
   useEffect(() => { if (workouts.length > 0) loadRankedCompletion(); }, [workouts]);
 
   async function loadRankedCompletion() {
@@ -107,10 +105,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
     setRankedCompletion({ completed, total, bonusEarned: bonusEarned || (completed >= total && total > 0) });
   }
 
-  async function loadAnnouncements() {
-    const { data } = await supabase.from("announcements").select("*").order("is_pinned", { ascending: false }).order("created_at", { ascending: false }).limit(5);
-    setAnnouncements(data ?? []);
-  }
+
 
   const [made, setMade] = useState("");
   const [reps, setReps] = useState("");
@@ -480,19 +475,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
         <div className="section-title">Workouts</div>
         <div className="section-sub">Tap a card to log your score</div>
 
-        {announcements.length > 0 && (
-          <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-            {announcements.map(ann => (
-              <div key={ann.id} style={{ padding: "12px 16px", borderRadius: 12, background: ann.is_pinned ? "linear-gradient(135deg, rgba(240,192,64,0.15), rgba(240,100,50,0.1))" : "rgba(147,92,255,0.1)", border: `1px solid ${ann.is_pinned ? "rgba(240,192,64,0.5)" : "rgba(147,92,255,0.4)"}`, display: "flex", gap: 10, alignItems: "flex-start" }}>
-                <div style={{ fontSize: 20, flexShrink: 0 }}>{ann.is_pinned ? "📌" : "📣"}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: ann.is_pinned ? 600 : 400, color: ann.is_pinned ? "var(--gold)" : "#d4b4ff", lineHeight: 1.5 }}>{ann.message}</div>
-                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>{ann.coach_name} · {new Date(ann.created_at).toLocaleDateString()}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Announcements show at the top of every page now (AnnouncementsBanner). */}
 
         {(() => {
           const allVisible = workouts.filter(w => w.is_active !== false && (!(w as any).publish_date || (w as any).publish_date <= new Date().toISOString().split('T')[0]));
