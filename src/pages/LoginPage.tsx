@@ -128,7 +128,7 @@ export default function LoginPage() {
           <div className="app-logo" style={{ fontSize: 24 }}>Request Sent!</div>
           <div style={{ fontSize: 14, color: "var(--muted)", marginTop: 12, lineHeight: 1.7 }}>
             Your request has been sent to an admin.
-            <br/><br/>Once they reset your password, you'll be able to sign in with the temporary password <strong style={{ color: "var(--text)" }}>Bombardiers1!</strong> — then you'll be prompted to create your own.
+            <br/><br/>Once they reset it, your coach will give you a temporary password. Sign in with it and you'll be prompted to create your own.
           </div>
           <button onClick={() => { setResetSent(false); setMode("signin"); setEmail(""); }}
             style={{ marginTop: 20, background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "10px 24px", fontSize: 14, fontFamily: "inherit", cursor: "pointer", fontWeight: 600 }}>
