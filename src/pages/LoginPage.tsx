@@ -35,30 +35,17 @@ export default function LoginPage() {
         await signIn(email, password);
       } else if (mode === "forgot") {
         if (!name.trim()) { setError("Please enter your name."); setLoading(false); return; }
-        // Look up player profile by email
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("id, name")
-          .eq("email", email)
-          .single();
-        // Insert reset request (even if profile not found, to avoid leaking info)
+        // The database matches the request to an account by email
+        // (migration 151) -- the form can't read profiles while logged out,
+        // and doesn't need to.
         await supabase.from("password_reset_requests").insert({
-          player_id: profile?.id ?? null,
           name: name.trim(),
           email: email.trim(),
           status: "pending",
         });
         try {
-          const { data: staff } = await supabase.from("profiles").select("id").in("role", ["coach", "admin"]);
-          if (staff && staff.length > 0) {
-            await supabase.functions.invoke("send-push", {
-              body: {
-                title: "🔑 Password reset requested",
-                message: `${name.trim()} requested a password reset.`,
-                playerIds: staff.map(s => s.id),
-              },
-            });
-          }
+          // A fixed message the server sends to coaches itself.
+          await supabase.functions.invoke("send-push", { body: { notifyStaff: "reset_request", name: name.trim() } });
         } catch (e) { console.error("Push notification failed to send:", e); }
         setResetSent(true);
         return;
@@ -75,16 +62,8 @@ export default function LoginPage() {
           graduation_year: gradYear,
         });
         try {
-          const { data: staff } = await supabase.from("profiles").select("id").in("role", ["coach", "admin"]);
-          if (staff && staff.length > 0) {
-            await supabase.functions.invoke("send-push", {
-              body: {
-                title: "🆕 New signup needs approval",
-                message: `${name.trim()} signed up as a ${role} and is waiting for approval.`,
-                playerIds: staff.map(s => s.id),
-              },
-            });
-          }
+          // A fixed message the server sends to coaches itself.
+          await supabase.functions.invoke("send-push", { body: { notifyStaff: "new_signup", name: name.trim(), role } });
         } catch (e) { console.error("Push notification failed to send:", e); }
         setSubmitted(true);
         return;
