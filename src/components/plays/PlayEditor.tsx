@@ -83,9 +83,13 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     // players — assign one based on array position (the same assumption
     // the app already made implicitly elsewhere) so the new carry-forward
     // logic has something to work with going forward.
+    // Same for defenders: a Cut or Loop only moves a defender when it's
+    // linked to their id, so one without an id could never move. Keyed by
+    // position so the same defender gets the same id in every step.
     return initial.map((f) => ({
       ...f,
       players: f.players.map((p, i) => (p.id ? p : { ...p, id: `legacy-${i}` })),
+      defenders: (f.defenders ?? []).map((d, i) => (d.id ? d : { ...d, id: `legacy-def-${i}` })),
     }));
   });
   const [frameIdx, setFrameIdx] = useState(0);
@@ -251,7 +255,9 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   }, [frames, frameIdx]);
   const moveDefender = useCallback((idx: number, x: number, y: number) => {
     pushHistory();
-    updateFrame((f) => ({ ...f, defenders: f.defenders.map((d, i) => i === idx ? { x, y } : d) }));
+    // Keep the defender's id. Dropping it (as this used to) unlinked any Cut
+    // or Loop drawn afterwards, so a defender nudged into place never moved.
+    updateFrame((f) => ({ ...f, defenders: f.defenders.map((d, i) => i === idx ? { ...d, x, y } : d) }));
   }, [frames, frameIdx]);
   const moveBall = useCallback((x: number, y: number) => {
     pushHistory();
@@ -516,7 +522,9 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   function applyFormation(f: Formation) {
     pushHistory();
     if (f.side === "defense") {
-      updateFrame((fr) => ({ ...fr, defenders: f.data.defenders ?? [] }));
+      // Fresh ids, like players get: template defenders may have none, and
+      // Cut/Loop needs one to move them.
+      updateFrame((fr) => ({ ...fr, defenders: (f.data.defenders ?? []).map((d) => ({ ...d, id: genPlayerId() })) }));
     } else {
       // offense, blob, and slob templates all store player positions the same way.
       updateFrame((fr) => ({ ...fr, players: (f.data.players ?? []).map((p) => ({ ...p, id: genPlayerId() })) }));
@@ -695,7 +703,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       return { ...a, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, curve, sourcePlayerId, targetPlayerId };
     });
     updateFrame((f) => {
-      const transformedDefenders = d.defenders.map((def) => transform({ x: def.x, y: def.y }));
+      const transformedDefenders = d.defenders.map((def) => ({ ...transform({ x: def.x, y: def.y }), id: genPlayerId() }));
       const transformedBall = d.ball ? transform({ x: d.ball.x, y: d.ball.y }) : null;
       return {
         players: [...f.players, ...newPlayers],
