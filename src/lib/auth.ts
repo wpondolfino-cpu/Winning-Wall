@@ -119,3 +119,14 @@ export async function resetPasswordFor(playerId: string, requestId?: string): Pr
   }
   return json.temp_password as string;
 }
+
+/**
+ * Emails live in profile_emails (migration 151), readable by coaches and
+ * admins only. Select with `profile_emails(email)` and flatten here.
+ */
+export function withEmail<T extends { profile_emails?: any }>(rows: T[] | null): (T & { email: string | null })[] {
+  return (rows ?? []).map(r => {
+    const pe = Array.isArray(r.profile_emails) ? r.profile_emails[0] : r.profile_emails;
+    return { ...r, email: pe?.email ?? null };
+  });
+}
