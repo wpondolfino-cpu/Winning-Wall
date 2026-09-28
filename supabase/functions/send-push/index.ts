@@ -152,6 +152,12 @@ serve(async (req) => {
     });
     const result = await res.json();
     if (!res.ok) return reply({ error: "OneSignal error", detail: result }, 502);
+    // OneSignal answers 200 even when nobody received it, and says why in
+    // `errors` -- e.g. "All included players are not subscribed". Pass that
+    // on instead of calling it sent.
+    const errs = result?.errors;
+    const why = Array.isArray(errs) ? errs.join("; ") : errs && typeof errs === "object" ? JSON.stringify(errs) : null;
+    if (why || !result?.id) return reply({ sent: false, reason: why ?? "No notification was created", result });
     return reply({ sent: true, result });
   } catch (e) {
     return reply({ error: "Request failed", detail: String(e) }, 500);
