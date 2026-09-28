@@ -1,6 +1,6 @@
 // src/components/AdminPanel.tsx
 import { useState, useEffect } from "react";
-import { supabase, approveUser, rejectUser, Profile, TEAM_CATEGORIES, TEAM_COLORS, saveTeamCompetition, endTeamCompetition, getActiveTeamCompetition, TeamCompetition, getTeams, Team, getXpPerks, XpPerk } from "../lib/supabase";
+import { supabase, approveUser, rejectUser, withEmail, Profile, TEAM_CATEGORIES, TEAM_COLORS, saveTeamCompetition, endTeamCompetition, getActiveTeamCompetition, TeamCompetition, getTeams, Team, getXpPerks, XpPerk } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 import ClassClash from "./challenges/ClassClash";
 
@@ -323,10 +323,10 @@ export default function AdminPanel({}: Props) {
 
   async function loadPendingCoaches() {
     const { data } = await supabase.from("profiles")
-      .select("id,name,role,created_at,email")
+      .select("id,name,role,created_at,profile_emails(email)")
       .eq("role", "pending_coach")
       .order("created_at", { ascending: true });
-    setPendingCoaches(data ?? []);
+    setPendingCoaches(withEmail(data as any[]));
   }
 
   async function handleApproveCoach(id: string) {
