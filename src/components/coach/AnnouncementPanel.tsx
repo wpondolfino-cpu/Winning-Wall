@@ -14,6 +14,9 @@ export default function AnnouncementPanel({ isAdmin, coachId, coachName }: Props
   const [newMsg, setNewMsg]               = useState("");
   const [isPinned, setIsPinned]           = useState(false);
   const [posting, setPosting]             = useState(false);
+  // What happened to the push for the last post. functions.invoke doesn't
+  // throw on a failed request, so failures used to vanish silently.
+  const [pushStatus, setPushStatus]       = useState<string | null>(null);
 
   useEffect(() => { load(); }, []);
 
@@ -33,17 +36,29 @@ export default function AnnouncementPanel({ isAdmin, coachId, coachName }: Props
     });
 
     // Notify all subscribed players
+    // The announcement is posted either way; this reports on the push.
     try {
-      await supabase.functions.invoke("send-push", {
+      const { data, error } = await supabase.functions.invoke("send-push", {
         body: {
           title: isPinned ? "📌 New pinned announcement" : "📢 New announcement from Coach",
           message: newMsg.trim(),
           allPlayers: true,
         },
       });
-    } catch (e) {
-      console.error("Push notification failed to send:", e);
-      // Don't block the UI on push failure — the announcement itself still posted fine.
+      if (error) {
+        let detail = error.message;
+        try { const b = await (error as any).context?.json?.(); if (b?.error) detail = b.error + (b.detail ? ` — ${JSON.stringify(b.detail)}` : ""); } catch { /* keep message */ }
+        setPushStatus(`Posted, but the notification didn't send: ${detail}`);
+      } else if ((data as any)?.sent === false) {
+        setPushStatus(`Posted, but nobody was notified: ${(data as any).reason}`);
+      } else {
+        const recipients = (data as any)?.result?.recipients;
+        setPushStatus(typeof recipients === "number"
+          ? `Posted and sent to ${recipients} device${recipients === 1 ? "" : "s"}.`
+          : "Posted and sent.");
+      }
+    } catch (e: any) {
+      setPushStatus(`Posted, but the notification didn't send: ${e?.message ?? e}`);
     }
 
     setNewMsg(""); setIsPinned(false); setShowForm(false);
@@ -75,6 +90,9 @@ export default function AnnouncementPanel({ isAdmin, coachId, coachName }: Props
           {showForm ? "✕ Cancel" : "+ Post"}
         </button>
       </div>
+      {pushStatus && (
+        <div style={{ fontSize: 12, marginBottom: 12, color: pushStatus.startsWith("Posted and") ? "#5de098" : "#ff8c42" }}>{pushStatus}</div>
+      )}
 
       {showForm && (
         <div style={{ marginBottom: 16, padding: 14, background: "var(--surface)", borderRadius: 10, border: "1px solid var(--border)" }}>
