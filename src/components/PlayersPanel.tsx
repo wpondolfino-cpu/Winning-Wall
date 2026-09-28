@@ -1,7 +1,7 @@
 // src/components/PlayersPanel.tsx  (Coach view — manage players)
 import { useState, useEffect } from "react";
 import PlayerAttendanceRecord from "./coach/PlayerAttendanceRecord";
-import { supabase, Score, Workout, ScoreAttempt, GRADE_CATEGORIES, approveUser, rejectUser, resetPlayerScores } from "../lib/supabase";
+import { supabase, Score, Workout, ScoreAttempt, GRADE_CATEGORIES, approveUser, rejectUser, resetPlayerScores, createAccountForSomeoneElse } from "../lib/supabase";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 import { Roster, getRosters } from "../lib/practicePlanner";
 import RosterManager from "./coach/RosterManager";
@@ -451,12 +451,13 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       await loadAcademicYear();
       const gradYear = gradYearFromGrade(parseInt(addSchoolYear, 10));
       // Sign-up only ever creates pending accounts (migration 150), so the
-      // account is approved from this coach's session straight after.
-      const { data, error } = await supabase.auth.signUp({ email: addEmail, password: addPass, options: { data: {
+      // account is approved from this coach's session straight after. Created
+      // on a separate client so the coach stays signed in as themselves.
+      const { data, error } = await createAccountForSomeoneElse(addEmail, addPass, {
         name: addName, role: "pending_player", must_change_password: true,
         graduation_year: gradYear,
         grade_category: gradeCategoryFromGradYear(gradYear) ?? GRADE_CATEGORIES[0],
-      } } });
+      });
       if (error) throw error;
       if (data.user?.id) {
         const { error: approveErr } = await supabase.from("profiles").update({ role: "player" }).eq("id", data.user.id);
@@ -634,7 +635,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     try {
       // Created pending, then promoted -- which only an admin can do
       // (migration 150). For anyone else it stays in the pending list.
-      const { data, error } = await supabase.auth.signUp({ email: addCoachEmail, password: addCoachPass, options: { data: { name: addCoachName, role: "pending_coach" } } });
+      const { data, error } = await createAccountForSomeoneElse(addCoachEmail, addCoachPass, { name: addCoachName, role: "pending_coach", must_change_password: true });
       if (error) throw error;
       if (data.user?.id) {
         const { error: promoteErr } = await supabase.from("profiles").update({ role: "coach" }).eq("id", data.user.id);
