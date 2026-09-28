@@ -1,7 +1,8 @@
 // src/components/PlayersPanel.tsx  (Coach view — manage players)
 import { useState, useEffect } from "react";
 import PlayerAttendanceRecord from "./coach/PlayerAttendanceRecord";
-import { supabase, Score, Workout, ScoreAttempt, GRADE_CATEGORIES, approveUser, rejectUser, resetPlayerScores, createAccountForSomeoneElse } from "../lib/supabase";
+import { supabase, Score, Workout, ScoreAttempt, GRADE_CATEGORIES, approveUser, rejectUser, resetPlayerScores, createAccountForSomeoneElse, resetPasswordFor } from "../lib/supabase";
+import TempPasswordNotice from "./TempPasswordNotice";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 import { Roster, getRosters } from "../lib/practicePlanner";
 import RosterManager from "./coach/RosterManager";
@@ -316,6 +317,8 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   // ── Password reset requests ──
   const [passwordResets, setPasswordResets] = useState<PasswordResetRequest[]>([]);
   const [resetting, setResetting] = useState<string | null>(null);
+  // The one-time temporary password from the last reset, shown once.
+  const [tempPw, setTempPw] = useState<{ name: string; password: string } | null>(null);
 
   async function loadPasswordResets() {
     const { data } = await supabase
@@ -327,27 +330,12 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   }
 
   async function handlePasswordReset(req: PasswordResetRequest) {
-    if (!window.confirm(`Reset password for ${req.name} to Bombardiers1!?\n\nThey will be prompted to change it on next login.`)) return;
+    if (!window.confirm(`Reset ${req.name}'s password?\n\nYou'll get a one-time temporary password to give them. They'll set their own when they sign in.`)) return;
     setResetting(req.id);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-password`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${session?.access_token}`,
-          },
-          body: JSON.stringify({ player_id: req.player_id, request_id: req.id }),
-        }
-      );
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Reset failed");
-      // Update status client-side since Edge Function update may be unreliable
-      await supabase.from("password_reset_requests").update({ status: "done" }).eq("id", req.id);
+      const password = await resetPasswordFor(req.player_id, req.id);
       setPasswordResets(prev => prev.filter(r => r.id !== req.id));
-      alert(`✅ Password for ${req.name} has been reset to Bombardiers1!\n\nTell them to log in and they'll be prompted to set a new password.`);
+      setTempPw({ name: req.name, password });
       await loadPasswordResets();
     } catch (e: any) {
       alert("Error: " + e.message);
@@ -355,6 +343,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       setResetting(null);
     }
   }
+
 
   async function dismissResetRequest(id: string) {
     await supabase.from("password_reset_requests").update({ status: "dismissed" }).eq("id", id);
@@ -724,13 +713,14 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
           )}
 
           {/* ── Password Reset Requests ── */}
+          {tempPw && <TempPasswordNotice name={tempPw.name} password={tempPw.password} onClose={() => setTempPw(null)} />}
           {passwordResets.length > 0 && (
             <div style={{ background: "rgba(255,140,66,0.08)", border: "1px solid rgba(255,140,66,0.35)", borderRadius: 14, padding: "16px 20px", marginBottom: 20 }}>
               <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#ff8c42", letterSpacing: 1, marginBottom: 14 }}>
                 🔑 Password Reset Requests ({passwordResets.length})
               </div>
               <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
-                These players used "Forgot Password." Click Reset to set their password back to <strong style={{ color: "#ff8c42" }}>Bombardiers1!</strong> — they'll be prompted to change it on next login.
+                These players used "Forgot Password." Click Reset to get a one-time temporary password to give them — they'll be prompted to set their own on next login.
               </div>
               {passwordResets.map(req => (
                 <div key={req.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: "var(--surface2)", borderRadius: 10, marginBottom: 8, border: "1px solid var(--border)", flexWrap: "wrap", gap: 8 }}>
