@@ -8,6 +8,8 @@ import ProfileEditor from "./components/ProfileEditor";
 import AvatarOnboardingPrompt from "./components/AvatarOnboardingPrompt";
 import ProfilePage from "./components/ProfilePage";
 import NotificationOptIn from "./components/NotificationOptIn";
+import AnnouncementsBanner from "./components/AnnouncementsBanner";
+import NotificationToggle from "./components/NotificationToggle";
 import { ensurePushTag } from "./lib/onesignal";
 import LoginPage from "./pages/LoginPage";
 import WorkoutsPanel from "./components/WorkoutsPanel";
@@ -756,6 +758,10 @@ export default function App() {
 
           {(isPlayer || isCoach || isAdmin) && <NotificationOptIn playerId={user.id} />}
 
+          {/* Coach announcements on every player page; keyed by tab so it
+              refreshes as they move around. */}
+          {isPlayer && <AnnouncementsBanner key={playerTab} playerId={user.id} />}
+
 
           {/* Keyed by navNonce so a nav click always remounts the open tab
               at its main page -- see navigateFromNav. */}
@@ -860,6 +866,7 @@ export default function App() {
             <div className="panel active">
               <div className="section-title">My Profile</div>
               <div className="section-sub" style={{ marginBottom: 20 }}>Update your name and profile picture</div>
+              <NotificationToggle playerId={user.id} />
               <ProfileEditor profile={displayProfile} onUpdated={handleProfileUpdated} />
             </div>
           )}
@@ -898,6 +905,7 @@ export default function App() {
             <div className="panel active">
               <div className="section-title">My Profile</div>
               <div className="section-sub" style={{ marginBottom: 20 }}>Update your name and profile picture</div>
+              <NotificationToggle playerId={user.id} />
               <ProfileEditor profile={displayProfile} onUpdated={handleProfileUpdated} />
             </div>
           )}
