@@ -97,3 +97,25 @@ export async function rejectUser(userId: string): Promise<void> {
   const { error } = await supabase.rpc("delete_pending_user", { target_user_id: userId });
   if (error) throw error;
 }
+
+/**
+ * Resets someone's password through the reset-password edge function and
+ * returns the one-time temporary password to pass on to them. The function
+ * checks the caller: admins can reset anyone, coaches only players. The
+ * player is prompted to set their own at next login.
+ */
+export async function resetPasswordFor(playerId: string, requestId?: string): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session?.access_token}` },
+    body: JSON.stringify({ player_id: playerId, request_id: requestId }),
+  });
+  const json = await res.json().catch(() => ({} as any));
+  if (!res.ok) throw new Error(json.error ?? "Reset failed");
+  if (!json.temp_password) {
+    // The old function is still deployed: it reset to the old shared password.
+    throw new Error("The password was reset to the old shared password, because the reset-password function on Supabase hasn't been updated yet. Update it, then reset again.");
+  }
+  return json.temp_password as string;
+}
