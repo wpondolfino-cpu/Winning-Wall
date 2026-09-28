@@ -67,6 +67,34 @@ export default function ProfileEditor({ profile, onUpdated }: Props) {
     }
   }
 
+  // Back to no picture: initials in the circle, as for a brand-new
+  // account. Clears the photo and the saved avatar design, and deletes the
+  // image files. avatar_prompt_seen is left alone so the welcome prompt
+  // doesn't come back.
+  const [removing, setRemoving] = useState(false);
+  async function handleRemovePicture() {
+    if (!window.confirm("Remove your picture? You'll show your initials until you add a new one.")) return;
+    setRemoving(true);
+    try {
+      const { error } = await supabase.from("profiles")
+        .update({ avatar_url: null, avatar_config: null })
+        .eq("id", profile.id);
+      if (error) throw error;
+      // Best-effort file cleanup: the profile no longer points at them either way.
+      const { data: files } = await supabase.storage.from("avatars").list(profile.id);
+      if (files?.length) {
+        await supabase.storage.from("avatars").remove(files.map(f => `${profile.id}/${f.name}`));
+      }
+      setAvatarPreview(null);
+      onUpdated({ avatar_url: undefined, avatar_config: undefined });
+      showToast("Picture removed");
+    } catch (e: any) {
+      showToast("Couldn't remove it: " + e.message);
+    } finally {
+      setRemoving(false);
+    }
+  }
+
   const initials = profile.name
     .split(" ")
     .map(n => n[0])
@@ -172,6 +200,12 @@ export default function ProfileEditor({ profile, onUpdated }: Props) {
           >
             📷
           </div>
+          {avatarPreview && (
+            <button type="button" onClick={handleRemovePicture} disabled={removing || uploading}
+              style={{ display: "block", margin: "8px auto 0", background: "none", border: "none", padding: 0, color: "var(--muted)", fontSize: 11, textDecoration: "underline", cursor: "pointer", fontFamily: "inherit" }}>
+              {removing ? "Removing…" : "Remove picture"}
+            </button>
+          )}
         </div>
 
         {/* Name + role */}
