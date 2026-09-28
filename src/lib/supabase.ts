@@ -3,7 +3,7 @@
 // Re-exports everything from the split lib files so all existing
 // component imports from "../lib/supabase" continue to work unchanged.
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL      = (import.meta as any).env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = (import.meta as any).env.VITE_SUPABASE_ANON_KEY as string;
@@ -11,6 +11,23 @@ const SUPABASE_ANON_KEY = (import.meta as any).env.VITE_SUPABASE_ANON_KEY as str
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   realtime: { params: { eventsPerSecond: 10 } },
 });
+
+// ── Creating someone else's account ───────────────────────────
+// supabase.auth.signUp() signs the browser in as the account it just
+// created. That's right for the signup page, and wrong when a coach adds a
+// player or coach: the coach ended up signed in as the new player, looking
+// at their "set your password" screen. This uses a separate client that
+// keeps nothing, so the coach's own session is never touched.
+let accountCreator: SupabaseClient | null = null;
+
+export function createAccountForSomeoneElse(email: string, password: string, data: Record<string, unknown>) {
+  if (!accountCreator) {
+    accountCreator = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: "ww-account-creator" },
+    });
+  }
+  return accountCreator.auth.signUp({ email, password, options: { data } });
+}
 
 // ── Grade Categories ──────────────────────────────────────────
 export const GRADE_CATEGORIES = [
