@@ -4,6 +4,7 @@ import { supabase, Profile, getXpPerks, getPlayerXp, getPlayerTier, XpPerk,
          hasPerkUsedThisPeriod, usePerk, signOut, useCompetition, firstDay, lastDay, shortDate } from "../lib/supabase";
 import { getActiveBadges, checkBadge, Badge, PlayerStats } from "../lib/badges";
 import ProfileEditor from "./ProfileEditor";
+import NotificationToggle from "./NotificationToggle";
 
 interface Props {
   profile: Profile;
@@ -247,6 +248,10 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
           </div>
         )}
       </div>
+
+      {/* Notifications on/off for this device -- so a "Not now" on the
+          first prompt isn't permanent. */}
+      <NotificationToggle playerId={profile.id} />
 
       {/* ── Streak Bar ── */}
       {(() => {
