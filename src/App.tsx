@@ -400,8 +400,16 @@ export default function App() {
   }
   async function loadAllScores() { setAllScores(await getAllScores()); }
   function handleProfileUpdated(updates: Partial<Profile>) {
-    setLocalProfile(prev => ({ ...(prev ?? profile!), ...updates }));
+    // Only ever merge into THIS account's profile. A leftover edit from
+    // whoever was signed in before must never be the base.
+    setLocalProfile(prev => ({ ...(prev && prev.id === profile?.id ? prev : profile!), ...updates }));
   }
+
+  // Local edits belong to one account. Signing out and in as someone else
+  // in the same tab used to keep the previous account's edited profile on
+  // screen -- so every account showed the same name and avatar, and edits
+  // were sent against the wrong account's id.
+  useEffect(() => { setLocalProfile(null); }, [user?.id]);
 
   // ── Browser history sync (see the note above PLAYER_URL_TABS) ──
   const activeRole = profile?.role;
@@ -604,15 +612,17 @@ export default function App() {
     );
   }
 
-  if (profile.role === "player" && !(localProfile ?? profile).avatar_prompt_seen) {
-    return <AvatarOnboardingPrompt profile={localProfile ?? profile} onDone={handleProfileUpdated} />;
+  // A local copy only counts if it's this account's.
+  const ownLocalProfile = localProfile && localProfile.id === profile.id ? localProfile : null;
+  if (profile.role === "player" && !(ownLocalProfile ?? profile).avatar_prompt_seen) {
+    return <AvatarOnboardingPrompt profile={ownLocalProfile ?? profile} onDone={handleProfileUpdated} />;
   }
 
   const isPlayer = profile.role === "player";
   const isCoach  = profile.role === "coach";
   const isAdmin  = profile.role === "admin";
   const roleLabel      = isAdmin ? "👑 Admin" : isCoach ? "🏀 Coach" : "⚡ Player";
-  const displayProfile = localProfile ?? profile;
+  const displayProfile = ownLocalProfile ?? profile;
   const effectiveMode = effectiveModeFor(displayProfile);
 
   // Bottom nav always stays 4 feature tabs + More in both modes — just
