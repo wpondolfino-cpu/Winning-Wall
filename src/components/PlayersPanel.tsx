@@ -1,7 +1,7 @@
 // src/components/PlayersPanel.tsx  (Coach view — manage players)
 import { useState, useEffect } from "react";
 import PlayerAttendanceRecord from "./coach/PlayerAttendanceRecord";
-import { supabase, Score, Workout, ScoreAttempt, GRADE_CATEGORIES, approveUser, rejectUser, resetPlayerScores, createAccountForSomeoneElse, resetPasswordFor } from "../lib/supabase";
+import { supabase, Score, Workout, ScoreAttempt, GRADE_CATEGORIES, approveUser, rejectUser, resetPlayerScores, createAccountForSomeoneElse, resetPasswordFor, withEmail } from "../lib/supabase";
 import TempPasswordNotice from "./TempPasswordNotice";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 import { Roster, getRosters } from "../lib/practicePlanner";
@@ -410,10 +410,10 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
 
   async function loadPending() {
     const { data } = await supabase.from("profiles")
-      .select("id,name,role,grade_category,graduation_year,created_at,email")
+      .select("id,name,role,grade_category,graduation_year,created_at,profile_emails(email)")
       .in("role", ["pending_player", "pending_coach"])
       .order("created_at", { ascending: true });
-    const all = data ?? [];
+    const all = withEmail(data as any[]);
     setPendingPlayers(all.filter((p: any) => p.role === "pending_player"));
     setPendingCoaches(all.filter((p: any) => p.role === "pending_coach"));
   }
@@ -614,8 +614,8 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   }
 
   async function loadCoaches() {
-    const { data } = await supabase.from("profiles").select("id,name,email,role,avatar_url").in("role", ["coach","admin"]).order("name");
-    setCoaches(data ?? []);
+    const { data } = await supabase.from("profiles").select("id,name,role,avatar_url,profile_emails(email)").in("role", ["coach","admin"]).order("name");
+    setCoaches(withEmail(data as any[]));
   }
 
   async function addCoach() {
