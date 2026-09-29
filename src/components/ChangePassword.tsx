@@ -20,7 +20,7 @@ export default function ChangePassword({
 
   async function handleSubmit() {
     setError("");
-    if (newPass.length < 6) { setError("Password must be at least 6 characters."); return; }
+    if (newPass.length < 8) { setError("Password must be at least 8 characters."); return; }
     if (newPass !== confirm)  { setError("Passwords do not match."); return; }
     setSaving(true);
     try {
@@ -71,7 +71,7 @@ export default function ChangePassword({
             type="password"
             value={newPass}
             onChange={e => setNewPass(e.target.value)}
-            placeholder="At least 6 characters"
+            placeholder="At least 8 characters"
             style={{
               width: "100%", background: "#1a2235", border: "1px solid rgba(176,184,200,0.15)",
               borderRadius: 10, padding: "10px 13px", color: "#e8eaf2", fontSize: 14,
