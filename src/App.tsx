@@ -334,6 +334,16 @@ export default function App() {
     if (user && (profile?.role === "player" || profile?.role === "coach" || profile?.role === "admin")) ensurePushTag(user.id);
   }, [user, profile]);
 
+  // "Last seen": opening the app counts as checking in (migration 153).
+  // Written at most once a day, so it costs nothing noticeable.
+  useEffect(() => {
+    if (!user || !profile) return;
+    const today = new Date().toDateString();
+    if (profile.last_seen_at && new Date(profile.last_seen_at).toDateString() === today) return;
+    supabase.from("profiles").update({ last_seen_at: new Date().toISOString() }).eq("id", user.id)
+      .then(({ error }) => { if (error) console.error("Couldn't record last seen:", error); });
+  }, [user?.id, profile?.id]);
+
   const checkNewPerks = useCallback(async () => {
     if (!user || profile?.role !== "player") return;
     try {
