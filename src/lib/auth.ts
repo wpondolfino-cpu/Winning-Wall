@@ -2,6 +2,7 @@
 // Authentication — sign in, sign up, sign out, profile, avatar
 
 import { supabase, Profile } from "./supabase";
+import { unlinkDevice } from "./onesignal";
 
 export async function signUp(
   email: string,
@@ -39,6 +40,9 @@ export async function signIn(email: string, password: string) {
 }
 
 export async function signOut() {
+  // Unlink this device from the account first, so it stops receiving
+  // this player's notifications once they're signed out.
+  await unlinkDevice();
   await supabase.auth.signOut();
 }
 
