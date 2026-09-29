@@ -1,8 +1,10 @@
 // src/lib/seasonReset.ts
-// The highest-risk piece of the season-mode toggle: archiving snapshots
-// BEFORE any reset/delete proceeds, sequentially, so a failed snapshot
-// aborts before any data is touched. Both functions throw on any
-// failure rather than silently continuing partway.
+// The highest-risk piece of the season-mode toggle. archiveAndResetBoth()
+// writes BOTH archives (offseason and in-season) before clearing ANYTHING.
+// It used to archive-and-clear offseason, then archive-and-clear in-season,
+// so a failed in-season archive left offseason points already wiped with
+// the mode unswitched. Now any archive failure leaves every live number
+// exactly as it was.
 
 import { supabase } from "./supabase";
 import { resetPlayerScores } from "./scores";
@@ -10,7 +12,8 @@ import { resetPlayerScores } from "./scores";
 // ── Offseason: extracted from AdminSettings' existing reset flow ──
 // (season_history snapshot + resetPlayerScores) so the new toggle and
 // the original Settings button can eventually share one implementation.
-export async function archiveAndResetOffseason(seasonLabel: string, seasonId?: string | null): Promise<void> {
+/** Writes the offseason archive and returns the new rows' ids (for rollback). Clears nothing. */
+async function archiveOffseason(seasonLabel: string, seasonId?: string | null): Promise<string[]> {
   const [{ data: profiles }, { data: allScores }, { data: chalWins }, { data: drillBests }] = await Promise.all([
     supabase.from("profiles").select("id,grade_category").eq("role", "player"),
     supabase.from("scores").select("player_id,points"),
@@ -62,15 +65,14 @@ export async function archiveAndResetOffseason(seasonLabel: string, seasonId?: s
     team_wins: 0,
   }));
 
-  const { error: snapshotErr } = await supabase.from("season_history").insert(snapshots);
+  const { data: written, error: snapshotErr } = await supabase.from("season_history").insert(snapshots).select("id");
   if (snapshotErr) throw snapshotErr; // abort before touching live data
-
-  // Only reset once the archive is confirmed written.
-  await resetPlayerScores(null, { resetChampions: true });
+  return (written ?? []).map((r: any) => r.id);
 }
 
 // ── In-season: same shape, new data source ──
-export async function archiveAndResetInSeason(seasonLabel: string, seasonId?: string | null): Promise<void> {
+/** Writes the in-season archive. Clears nothing. */
+async function archiveInSeason(seasonLabel: string, seasonId?: string | null): Promise<void> {
   const [{ data: wins }, { data: players }, { data: rosters }] = await Promise.all([
     supabase.from("practice_wins").select("player_id"),
     supabase.from("profiles").select("id, home_roster_id").eq("role", "player").not("home_roster_id", "is", null),
@@ -109,8 +111,30 @@ export async function archiveAndResetInSeason(seasonLabel: string, seasonId?: st
 
   const { error: snapshotErr } = await supabase.from("inseason_history").insert(snapshots);
   if (snapshotErr) throw snapshotErr; // abort before touching live data
+}
 
-  // Only clear the log once the archive is confirmed written.
+/**
+ * Archive both leaderboards, then clear both. Throws before clearing
+ * anything if either archive fails.
+ */
+export async function archiveAndResetBoth(seasonLabel: string, seasonId?: string | null): Promise<void> {
+  // 1. Both archives first.
+  const offseasonArchiveIds = await archiveOffseason(seasonLabel, seasonId);
+  try {
+    await archiveInSeason(seasonLabel, seasonId);
+  } catch (e) {
+    // Take back the offseason archive so a retry doesn't write it twice.
+    if (offseasonArchiveIds.length) {
+      const { error } = await supabase.from("season_history").delete().in("id", offseasonArchiveIds);
+      if (error) {
+        throw new Error(`The in-season archive failed, so nothing was reset. The offseason archive was saved and couldn't be removed, so a retry will save it a second time. (${(e as any)?.message ?? e})`);
+      }
+    }
+    throw e;
+  }
+
+  // 2. Only now clear the live data.
+  await resetPlayerScores(null, { resetChampions: true });
   const { error: clearErr } = await supabase.from("practice_wins").delete().not("id", "is", null);
-  if (clearErr) throw clearErr;
+  if (clearErr) throw new Error(`Offseason data was reset, but practice wins couldn't be cleared: ${clearErr.message}. Both archives are saved.`);
 }
