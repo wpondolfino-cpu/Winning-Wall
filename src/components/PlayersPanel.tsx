@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import PlayerAttendanceRecord from "./coach/PlayerAttendanceRecord";
 import { supabase, Score, Workout, ScoreAttempt, GRADE_CATEGORIES, approveUser, rejectUser, resetPlayerScores, createAccountForSomeoneElse, resetPasswordFor, withEmail } from "../lib/supabase";
 import TempPasswordNotice from "./TempPasswordNotice";
+import { getSeasonMode } from "../lib/seasonMode";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 import { Roster, getRosters } from "../lib/practicePlanner";
 import RosterManager from "./coach/RosterManager";
@@ -388,24 +389,31 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   function showScoreToast(msg: string) { setScoreToast(msg); setTimeout(() => setScoreToast(""), 3000); }
 
   const now = Date.now();
-  const FOURTEEN_DAYS = 14 * 24 * 60 * 60 * 1000;
+  // Inactive = hasn't opened the app in 14 days (7 in-season) -- the same
+  // rule the daily nudges use (migration 153).
+  const inactiveDays = getSeasonMode() === "inseason" ? 7 : 14;
 
   const [pushStatus, setPushStatus] = useState<Record<string, boolean>>({});
+  const [lastSeen, setLastSeen] = useState<Record<string, string | null>>({});
 
   const playersWithStatus = leaderboard.map(entry => {
     const lastLog = entry.last_logged_at ? new Date(entry.last_logged_at).getTime() : 0;
     const daysInactive = lastLog > 0 ? Math.round((now - lastLog) / 86400000) : null;
-    const isInactive = !lastLog || (now - lastLog) > FOURTEEN_DAYS;
-    return { ...entry, daysInactive, isInactive, pushSubscribed: pushStatus[entry.id] ?? false };
+    const seen = lastSeen[entry.id] ? new Date(lastSeen[entry.id]!).getTime() : 0;
+    const daysSinceSeen = seen > 0 ? Math.floor((now - seen) / 86400000) : null;
+    const isInactive = daysSinceSeen == null ? !lastLog || daysInactive! >= inactiveDays : daysSinceSeen >= inactiveDays;
+    return { ...entry, daysInactive, daysSinceSeen, isInactive, pushSubscribed: pushStatus[entry.id] ?? false };
   });
 
   useState(() => { loadPending(); loadCoaches(); loadPasswordResets(); loadPushStatus(); getRosters().then(setRosters); });
 
   async function loadPushStatus() {
-    const { data } = await supabase.from("profiles").select("id,push_subscribed").eq("role", "player");
+    const { data } = await supabase.from("profiles").select("id,push_subscribed,last_seen_at").eq("role", "player");
     const map: Record<string, boolean> = {};
-    (data ?? []).forEach((p: any) => { map[p.id] = !!p.push_subscribed; });
+    const seen: Record<string, string | null> = {};
+    (data ?? []).forEach((p: any) => { map[p.id] = !!p.push_subscribed; seen[p.id] = p.last_seen_at ?? null; });
     setPushStatus(map);
+    setLastSeen(seen);
   }
 
   async function loadPending() {
@@ -785,7 +793,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
           {/* Active / Inactive tabs */}
           <div style={{ display: "flex", gap: 8, marginBottom: 16, borderBottom: "1px solid var(--border)", paddingBottom: 12 }}>
             <button onClick={() => setInactiveTab(false)} style={{ background: !inactiveTab ? "var(--royal)" : "var(--surface2)", color: !inactiveTab ? "#fff" : "var(--muted)", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Active</button>
-            <button onClick={() => setInactiveTab(true)} style={{ background: inactiveTab ? "var(--royal)" : "var(--surface2)", color: inactiveTab ? "#fff" : "var(--muted)", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>Inactive</button>
+            <button onClick={() => setInactiveTab(true)} style={{ background: inactiveTab ? "var(--royal)" : "var(--surface2)", color: inactiveTab ? "#fff" : "var(--muted)", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{`Not seen ${inactiveDays}+ days`}</button>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -800,7 +808,9 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                     <span style={{ fontWeight: 600, fontSize: 14, color: "#93b4ff", textDecoration: "underline dotted", cursor: "pointer" }} onClick={() => setViewingPlayer({ id: p.id, name: p.name })}>{p.name}</span>
                     <span title={p.pushSubscribed ? "Notifications on" : "Notifications not enabled"} style={{ fontSize: 12 }}>{p.pushSubscribed ? "🔔" : "🔕"}</span>
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.grade_category}{p.daysInactive ? ` · ${p.daysInactive}d ago` : ""}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.grade_category}
+                    {p.daysSinceSeen != null && ` · seen ${p.daysSinceSeen === 0 ? "today" : p.daysSinceSeen === 1 ? "yesterday" : `${p.daysSinceSeen}d ago`}`}
+                    {p.daysInactive ? ` · last workout ${p.daysInactive}d ago` : ""}</div>
                 </div>
                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
                   <button onClick={() => openEditPlayer(p)} style={{ background: "rgba(26,63,168,0.15)", border: "1px solid rgba(26,63,168,0.3)", color: "#93b4ff", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
