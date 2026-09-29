@@ -32,6 +32,34 @@ function setTurnedOffHere(off: boolean) {
   try { off ? localStorage.setItem(OFF_KEY, "true") : localStorage.removeItem(OFF_KEY); } catch { /* private mode */ }
 }
 
+// ── Linking the device to the signed-in account ───────────────
+// OneSignal's "external ID" ties this device to one account: pushes sent
+// to a player reach every device they're signed into, and signing out
+// unlinks the device so it stops getting their pushes. Before this, a
+// device was labelled with whoever signed in last and kept that label
+// after sign-out, so pushes could land on the wrong phone or none.
+// The player_id tag is still set: "all players" announcements and the
+// daily "days left" reminder target devices that carry it.
+async function linkTo(OneSignal: any, playerId: string) {
+  try {
+    if (OneSignal.User?.externalId !== playerId) await OneSignal.login(playerId);
+  } catch (e) {
+    console.error("Couldn't link this device to the account:", e);
+  }
+}
+
+/** Call on sign-out. The device keeps its permission but belongs to nobody until the next sign-in. */
+export function unlinkDevice(): Promise<void> {
+  return new Promise((resolve) => {
+    const t = setTimeout(resolve, 3000); // never hold up signing out
+    withOneSignal(async (OneSignal) => {
+      try { await OneSignal.logout(); } catch (e) { console.error("Couldn't unlink this device:", e); }
+      clearTimeout(t);
+      resolve();
+    });
+  });
+}
+
 function recordSubscribed(playerId: string, on: boolean) {
   supabase.from("profiles").update({ push_subscribed: on }).eq("id", playerId)
     .then(({ error }) => { if (error) console.error("Failed to record push_subscribed:", error); });
@@ -113,6 +141,7 @@ export function requestPushPermission(playerId: string): Promise<boolean> {
   return new Promise((resolve) => {
     withOneSignal(async (OneSignal) => {
       try {
+        await linkTo(OneSignal, playerId);
         await OneSignal.Notifications.requestPermission();
         const granted = !!OneSignal.Notifications.permission;
         if (granted) {
@@ -139,9 +168,12 @@ export function requestPushPermission(playerId: string): Promise<boolean> {
  * feature existed, and is a no-op if permission was never granted.
  */
 export function ensurePushTag(playerId: string) {
-  // Turned off with the My Profile switch on this device: leave it off.
-  if (turnedOffHere()) return;
   withOneSignal(async (OneSignal) => {
+    // Always link, even when notifications are off here: linking doesn't
+    // subscribe anyone, it just says whose device this is.
+    await linkTo(OneSignal, playerId);
+    // Turned off with the My Profile switch on this device: leave it off.
+    if (turnedOffHere()) return;
     try {
       if (OneSignal.Notifications.permission) {
         // Self-heal subscriptions that granted browser permission earlier
