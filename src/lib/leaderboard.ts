@@ -85,11 +85,15 @@ export async function crownCompetition(c: Competition, leaderboard: LeaderboardE
     if (!winners[cat] || entry.total_points > winners[cat].total_points) winners[cat] = entry;
   }
 
-  await supabase.from("profiles").update({ is_period_champion: false }).neq("id", "none");
+  // Nobody scored: leave the reigning champions their crowns. Only a
+  // crowning that actually crowns someone takes the old crowns away.
+  const scoring = Object.entries(winners).filter(([, w]) => w.total_points);
+  if (scoring.length) {
+    await supabase.from("profiles").update({ is_period_champion: false }).neq("id", "none");
+  }
 
   const crowned = new Set<string>();
-  for (const [grade, winner] of Object.entries(winners)) {
-    if (!winner.total_points) continue;
+  for (const [grade, winner] of scoring) {
     crowned.add(winner.id);
 
     const { data: prof } = await supabase
@@ -161,7 +165,10 @@ export async function crownCompetitionByWins(c: Competition): Promise<{ crowned:
   }
   const winners = standings.filter(s => s.home_roster_id && s.wins > 0 && s.wins === best.get(s.home_roster_id));
 
-  await supabase.from("profiles").update({ is_period_champion: false }).neq("id", "none");
+  // No wins anywhere: leave the reigning champions their crowns.
+  if (winners.length) {
+    await supabase.from("profiles").update({ is_period_champion: false }).neq("id", "none");
+  }
 
   const crowned = new Set<string>();
   for (const w of winners) {
