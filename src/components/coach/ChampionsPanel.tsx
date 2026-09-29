@@ -89,7 +89,7 @@ export default function ChampionsPanel() {
 
       alert(winnerIds.size
         ? `👑 ${c.name} crowned${winnerIds.size > 1 ? ` (${winnerIds.size} champions)` : ""}, and the standings are saved to History.`
-        : `${c.name} is marked crowned. Nobody ${byWins ? "recorded a practice win" : "scored"}, so there were no champions to crown.`);
+        : `${c.name} is marked crowned. Nobody ${byWins ? "recorded a practice win" : "scored"}, so there were no new champions — the current ones keep their crowns.`);
       await refreshAll();
     } catch (e: any) { alert("Error: " + e.message); }
     finally { setBusy(null); }
