@@ -435,6 +435,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
 
   async function addPlayer() {
     if (!addName.trim() || !addEmail.trim() || !addPass.trim() || !addSchoolYear) { setAddError("Please fill in name, school year, email, and password."); return; }
+    if (addPass.length < 8) { setAddError("The temporary password needs at least 8 characters."); return; }
     setAddSaving(true); setAddError("");
     try {
       await loadAcademicYear();
@@ -620,6 +621,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
 
   async function addCoach() {
     if (!addCoachName.trim() || !addCoachEmail.trim() || !addCoachPass.trim()) { alert("Please fill in name, email and password."); return; }
+    if (addCoachPass.length < 8) { alert("The temporary password needs at least 8 characters."); return; }
     setAddCoachSaving(true);
     try {
       // Created pending, then promoted -- which only an admin can do
