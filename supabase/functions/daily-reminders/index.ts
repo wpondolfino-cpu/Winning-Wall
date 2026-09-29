@@ -13,6 +13,8 @@
 //   3. Crown reminder -- one push a day to coaches while any ended
 //      competition is neither crowned nor skipped, escalating with the
 //      oldest one's wait.
+//   4. Inactivity nudges -- players who haven't opened the app in 14 days
+//      (7 in-season), and again at 28 (14), then not until they're back.
 //
 // Each section fails on its own; one breaking never stops the others.
 //
@@ -191,6 +193,41 @@ serve(async () => {
     }
   } catch (e) {
     results.crowningReminder = { error: String(e) };
+  }
+
+  // ── 4. Inactivity nudges ─────────────────────────────────
+  // Players who haven't opened the app in a while (migration 153):
+  // offseason 14 then 28 days, in-season 7 then 14, then nothing until
+  // they come back. Alumni and inactive/pending accounts are skipped by
+  // the database function. Each send is recorded, so a re-run never
+  // sends twice.
+  try {
+    const { data: due, error } = await supabase.rpc("inactivity_nudges_due");
+    if (error) throw error;
+    const rows = (due ?? []) as { player_id: string; nudge_days: number; mode: string }[];
+    if (rows.length === 0) {
+      results.inactivityNudges = { sent: false, reason: "nobody due" };
+    } else {
+      // One push per message (players at the same day count share it).
+      const byDays = new Map<string, { days: number; mode: string; ids: string[] }>();
+      for (const r of rows) {
+        const key = `${r.mode}:${r.nudge_days}`;
+        if (!byDays.has(key)) byDays.set(key, { days: r.nudge_days, mode: r.mode, ids: [] });
+        byDays.get(key)!.ids.push(r.player_id);
+      }
+      const sends: unknown[] = [];
+      for (const g of byDays.values()) {
+        const [title, message] = g.mode === "inseason"
+          ? ["🏀 Don't fall behind", `It's been ${g.days} days since you last checked in.`]
+          : ["🏀 Get back in the gym!", `It's been ${g.days} days since you checked in.`];
+        sends.push(await sendPushToPlayers(g.ids, title, message));
+        // Recorded even if a device wasn't reachable, so nobody is retried daily.
+        await supabase.from("inactivity_nudges").insert(g.ids.map((id) => ({ player_id: id, days: g.days, mode: g.mode })));
+      }
+      results.inactivityNudges = { players: rows.length, sends };
+    }
+  } catch (e) {
+    results.inactivityNudges = { error: String(e) };
   }
 
   return new Response(JSON.stringify(results), { status: 200 });
