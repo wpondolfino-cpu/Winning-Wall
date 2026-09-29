@@ -1,7 +1,7 @@
 // src/components/SeasonModeToggle.tsx
 import { useState, useEffect } from "react";
 import { SeasonMode, getSeasonMode, loadSeasonMode, saveSeasonMode } from "../lib/seasonMode";
-import { archiveAndResetOffseason, archiveAndResetInSeason } from "../lib/seasonReset";
+import { archiveAndResetBoth } from "../lib/seasonReset";
 import { inputStyle } from "../lib/inputStyle";
 import { getCurrentSeason, startNewSeason, nextSeasonNameAfter, Season, GradeSync } from "../lib/practicePlanner";
 import SeasonRolloverSummary from "./SeasonRolloverSummary";
@@ -67,10 +67,9 @@ export default function SeasonModeToggle() {
     setBusy(true);
     setError(null);
     try {
-      // Both archives must succeed before the mode flips or anything
-      // resets — if either fails, nothing changes.
-      await archiveAndResetOffseason(seasonLabel.trim(), current?.id ?? null);
-      await archiveAndResetInSeason(seasonLabel.trim(), current?.id ?? null);
+      // Both archives are written before anything is cleared; if either
+      // fails, nothing is reset and the mode doesn't flip.
+      await archiveAndResetBoth(seasonLabel.trim(), current?.id ?? null);
       // Only after both archives land — a new season that opened while the
       // archive failed would leave the old one closed and unrecorded.
       if (startNext && nextName.trim()) {
