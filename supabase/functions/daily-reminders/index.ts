@@ -35,6 +35,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 async function sendPush(filters: unknown[], title: string, message: string) {
+  return sendPushTo({ filters }, title, message);
+}
+
+async function sendPushTo(audience: Record<string, unknown>, title: string, message: string) {
   const res = await fetch("https://api.onesignal.com/notifications", {
     method: "POST",
     headers: {
@@ -45,7 +49,7 @@ async function sendPush(filters: unknown[], title: string, message: string) {
     body: JSON.stringify({
       app_id: ONE_SIGNAL_APP_ID,
       target_channel: "push",
-      filters,
+      ...audience,
       headings: { en: title },
       contents: { en: message },
       url: APP_URL,
@@ -56,13 +60,10 @@ async function sendPush(filters: unknown[], title: string, message: string) {
   return { sent: res.ok, result };
 }
 
+/** Every device signed into these accounts (OneSignal external ID = our user id). */
 async function sendPushToPlayers(playerIds: string[], title: string, message: string) {
   if (playerIds.length === 0) return { sent: false, reason: "no players" };
-  const filters = playerIds.flatMap((id, i) => {
-    const f = [{ field: "tag", key: "player_id", relation: "=", value: id }];
-    return i === 0 ? f : [{ operator: "OR" }, ...f];
-  });
-  return sendPush(filters, title, message);
+  return sendPushTo({ include_aliases: { external_id: playerIds } }, title, message);
 }
 
 function sendPushToAllPlayers(title: string, message: string) {
