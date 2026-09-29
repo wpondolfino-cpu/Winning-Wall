@@ -11,6 +11,7 @@
 //       is fixed; the server finds the coaches and sends it to them.
 //   * { title, message, playerIds }
 //       Any signed-in user (a challenge notifies its opponent, etc.).
+//       Reaches every device signed into those accounts.
 //   * { title, message, allPlayers: true }
 //       Coaches and admins only.
 //   * url: only links into the app are kept; anything else is replaced
@@ -129,15 +130,15 @@ serve(async (req) => {
   };
 
   if (allPlayers) {
-    payload.included_segments = ["Subscribed Users"];
-  } else if (playerIds!.length === 1) {
-    payload.filters = [{ field: "tag", key: "player_id", relation: "=", value: playerIds![0] }];
+    // Every device the app has tagged with a player_id -- the same targeting
+    // daily-reminders uses. Not the "Subscribed Users" segment: OneSignal
+    // renamed its default segments ("Total Subscriptions"), and a segment
+    // name that doesn't exist in the dashboard reaches nobody.
+    payload.filters = [{ field: "tag", key: "player_id", relation: "exists" }];
   } else {
-    // OR together a filter for each player_id
-    payload.filters = playerIds!.flatMap((id, i) => {
-      const f = [{ field: "tag", key: "player_id", relation: "=", value: id }];
-      return i === 0 ? f : [{ operator: "OR" }, ...f];
-    });
+    // Every device signed into these accounts (OneSignal external ID = our
+    // user id, set by the app at sign-in; cleared at sign-out).
+    payload.include_aliases = { external_id: playerIds };
   }
 
   try {
