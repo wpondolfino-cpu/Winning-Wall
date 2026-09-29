@@ -75,6 +75,8 @@ export interface Profile {
   grade_category?: GradeCategory;
   /** School year, stored as the year they graduate. Grade and alumni status are derived from it. */
   graduation_year?: number | null;
+  /** Last day they opened the app (migration 153); drives inactivity nudges. */
+  last_seen_at?: string | null;
   avatar_url?: string;
   is_period_champion?: boolean;
   champion_since?: string;
