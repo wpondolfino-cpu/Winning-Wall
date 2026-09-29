@@ -28,7 +28,9 @@ export default function LoginPage() {
     if (mode !== "forgot" && !password.trim()) { setError("Please enter your password."); return; }
     if (mode === "signup" && !name.trim()) { setError("Please enter your name."); return; }
     if (mode === "signup" && role === "player" && !schoolYear) { setError("Please pick your school year."); return; }
-    if (mode !== "forgot" && password.length < 6) { setError("Password must be at least 6 characters."); return; }
+    // New passwords need 8+ (Supabase enforces the same). Signing in has no
+    // length check, so older 6-7 character passwords keep working.
+    if (mode === "signup" && password.length < 8) { setError("Password must be at least 8 characters."); return; }
     setLoading(true);
     try {
       if (mode === "signin") {
