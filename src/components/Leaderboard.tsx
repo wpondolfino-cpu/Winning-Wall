@@ -4,6 +4,7 @@ import { useLeaderboard } from "../hooks/useLeaderboard";
 import {
   supabase, LeaderboardEntry, GRADE_CATEGORIES, GradeCategory,
   Workout, Score, getXpPerks, useCompetition, competitionRange, competitionLabel, daysLeft, firstDay, shortDate,
+  getCompetitionStandings, getCompetitionDrillRows, getOverallBreakdown, CompetitionDrillRow, OverallBreakdownRow,
 } from "../lib/supabase";
 import type { XpPerk } from "../lib/supabase";
 import ChampionsPanel from "./coach/ChampionsPanel";
@@ -46,6 +47,12 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
   const [periodScores, setPeriodScores] = useState<Score[]>([]);
   const [profiles, setProfiles]         = useState<any[]>([]);
   const [periodEntries, setPeriodEntries] = useState<PeriodEntry[]>([]);
+  // Competition standings and per-drill placings from the server: each
+  // player's best result logged INSIDE the competition (migration 154).
+  const [compStandings, setCompStandings] = useState<LeaderboardEntry[] | null>(null);
+  const [compDrills, setCompDrills] = useState<CompetitionDrillRow[]>([]);
+  // Overall dropdown: points by competition, loaded when a row opens.
+  const [overallRows, setOverallRows] = useState<Record<string, OverallBreakdownRow[]>>({});
   const [periodBonuses, setPeriodBonuses] = useState<any[]>([]);
   const [allBonuses, setAllBonuses] = useState<any[]>([]);
   const [expandedPlayer, setExpandedPlayer] = useState<string | null>(null);
@@ -80,7 +87,14 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
   // Reload once the competition has loaded, and whenever it changes.
   useEffect(() => { if (competition.loaded) loadData(); }, [competition.loaded, comp?.id]);
 
-  useEffect(() => { if (periodScores.length > 0 || profiles.length > 0) buildPeriodBoard(); }, [periodScores, profiles, periodBonuses, allScores]);
+  useEffect(() => { if (periodScores.length > 0 || profiles.length > 0 || compStandings) buildPeriodBoard(); }, [periodScores, profiles, periodBonuses, allScores, compStandings]);
+
+  // Overall dropdown rows, fetched the first time a player is opened.
+  useEffect(() => {
+    if (mainTab !== "overall" || !expandedPlayer || overallRows[expandedPlayer]) return;
+    const id = expandedPlayer;
+    getOverallBreakdown(id).then(rows => setOverallRows(prev => ({ ...prev, [id]: rows })));
+  }, [mainTab, expandedPlayer]);
 
   async function loadXpData() {
     const [perks, { data: profs }] = await Promise.all([
@@ -121,6 +135,18 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
     setPeriodScores(psc ?? []);
     setPeriodBonuses(bon ?? []);
     setAllBonuses(bonAll ?? []);
+    setOverallRows({});
+    if (c) {
+      const [st, drills] = await Promise.all([
+        getCompetitionStandings(c).catch(e => { console.error(e); return null; }),
+        getCompetitionDrillRows(c),
+      ]);
+      setCompStandings(st);
+      setCompDrills(drills);
+    } else {
+      setCompStandings(null);
+      setCompDrills([]);
+    }
   }
 
   async function loadSnapshots() {
@@ -165,6 +191,15 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
   }
 
   function buildPeriodBoard() {
+    // From the server's competition standings when available.
+    if (compStandings) {
+      setPeriodEntries(compStandings.map(e => ({
+        player_id: e.id, name: e.name, grade_category: e.grade_category,
+        period_points: e.total_points, workouts_logged: e.workouts_completed,
+        avatar_url: (e as any).avatar_url, is_period_champion: e.is_period_champion,
+      })));
+      return;
+    }
     const periodActivity: Record<string, Set<string>> = {};
     for (const s of periodScores) {
       if (!periodActivity[s.player_id]) periodActivity[s.player_id] = new Set();
@@ -406,6 +441,23 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                 </div>
                 {expandedPlayer === entry.id && (
                   <div style={{ padding: "10px 16px 14px", background: "rgba(26,63,168,0.07)", borderTop: "1px solid var(--border)" }}>
+                    {(overallRows[entry.id]?.length ?? 0) > 0 ? (
+                      <>
+                        <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, fontWeight: 700 }}>Points by competition</div>
+                        {overallRows[entry.id].map((r, ri) => (
+                          <div key={ri} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid rgba(176,184,200,0.06)", gap: 8 }}>
+                            <div style={{ fontSize: 12, color: r.competition_id ? "var(--silver-light)" : "var(--muted)" }}>
+                              {r.won && <span title="Won this competition">👑 </span>}
+                              {r.label}
+                              {r.running && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: "rgba(26,63,168,0.3)", color: "#93b4ff" }}>running</span>}
+                              {r.competition_id && r.starts_at && r.ends_at && <span style={{ color: "var(--muted)", fontSize: 11 }}> · {competitionRange({ starts_at: r.starts_at, ends_at: r.ends_at })}</span>}
+                            </div>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)", whiteSpace: "nowrap" }}>{r.points}</span>
+                          </div>
+                        ))}
+                      </>
+                    ) : (
+                      <>
                     <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, fontWeight: 700 }}>Score Breakdown</div>
                     {allScores.filter(s => s.player_id === entry.id && (s.points ?? 0) > 0).sort((a, b) => (b.points ?? 0) - (a.points ?? 0)).map(s => {
                       const w = workouts.find(wk => wk.id === s.workout_id);
@@ -433,6 +485,8 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                         : "⭐ Bonus";
                       return <div key={`bonus-${bi}`} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}><div style={{ fontSize: 12, color: "#ff8c42" }}>{label}</div><span style={{ fontSize: 13, fontWeight: 700, color: "#ff8c42" }}>+{b.points}</span></div>;
                     })}
+                      </>
+                    )}
                     <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
                       <span style={{ color: "var(--muted)" }}>Total</span>
                       <span style={{ color: "var(--gold)" }}>{entry.total_points} pts</span>
@@ -530,15 +584,15 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                   {expandedPlayer === entry.player_id && (
                     <div style={{ padding: "10px 16px 14px", background: "rgba(26,63,168,0.07)", borderTop: "1px solid var(--border)" }}>
                       <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8, fontWeight: 700 }}>This Competition</div>
-                      {allScores.filter(s => s.player_id === entry.player_id && (s.points ?? 0) > 0).sort((a, b) => (b.points ?? 0) - (a.points ?? 0)).map(s => {
-                        const w = workouts.find(wk => wk.id === s.workout_id);
-                        const raw = s.self_points > 0 ? s.self_points : (s.made + s.reps);
+                      {compDrills.filter(d => d.player_id === entry.player_id && d.points > 0).sort((a, b) => b.points - a.points).map(d => {
+                        const w = workouts.find(wk => wk.id === d.workout_id);
+                        const raw = d.best_raw == null ? "" : Number(d.best_raw) < 0 ? `${Math.abs(Number(d.best_raw))}s` : String(Number(d.best_raw));
                         return (
-                          <div key={s.workout_id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
-                            <div style={{ fontSize: 12, color: "var(--silver-light)" }}>{w?.emoji ?? "🏀"} {w?.title ?? "Unknown"}</div>
+                          <div key={d.workout_id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}>
+                            <div style={{ fontSize: 12, color: "var(--silver-light)" }}>{w?.emoji ?? "🏀"} {w?.title ?? "Unknown"}{d.place ? <span style={{ color: "var(--muted)", fontSize: 11 }}> · #{d.place}</span> : null}</div>
                             <div style={{ display: "flex", gap: 12 }}>
-                              <span style={{ fontSize: 11, color: "var(--muted)" }}>Score: {raw}</span>
-                              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>+{s.points} pts</span>
+                              <span style={{ fontSize: 11, color: "var(--muted)" }}>{d.source === "self_reported" ? "Self-reported" : `Best: ${raw}`}</span>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>+{d.points} pts</span>
                             </div>
                           </div>
                         );
