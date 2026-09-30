@@ -1,7 +1,7 @@
 // src/components/ProfilePage.tsx
 import { useState, useEffect } from "react";
 import { supabase, Profile, getXpPerks, getPlayerXp, getPlayerTier, XpPerk,
-         hasPerkUsedThisPeriod, usePerk, signOut, useCompetition, firstDay, lastDay, shortDate } from "../lib/supabase";
+         hasPerkUsedThisPeriod, signOut, useCompetition, firstDay, lastDay, shortDate } from "../lib/supabase";
 import { getActiveBadges, checkBadge, Badge, PlayerStats } from "../lib/badges";
 import ProfileEditor from "./ProfileEditor";
 import NotificationToggle from "./NotificationToggle";
@@ -93,26 +93,16 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
     setTimeout(() => setToast(""), 3000);
   }
 
+  // Both perks run on the server (migration 158): it checks the unlock,
+  // the running competition and "once per competition", and applies them.
   async function handleUseStreakShield() {
     setUsingShield(true);
-    const ok = await usePerk(profile.id, "streak_shield");
-    if (ok) {
-      // Add 1 day to current streak (counts as a logged day)
-      const { data: streak } = await supabase.from("streaks")
-        .select("current_streak,longest_streak").eq("player_id", profile.id).single();
-      const current = (streak?.current_streak ?? 0) + 1;
-      const longest = Math.max(current, streak?.longest_streak ?? 0);
-      await supabase.from("streaks").upsert({
-        player_id: profile.id,
-        current_streak: current,
-        longest_streak: longest,
-        last_logged_date: new Date().toLocaleDateString("en-CA"),
-      }, { onConflict: "player_id" });
-      showToast(`🛡️ Streak Freeze used! Streak is now ${current} days.`);
-      setMyStreak(current);
-      setStreakShieldUsed(true);
+    const { error } = await supabase.rpc("use_streak_shield");
+    if (error) {
+      showToast(error.message);
     } else {
-      showToast(noCompetition ? "No competition is running right now." : "Already used this competition.");
+      showToast("🛡️ Streak Shield used! Yesterday counts — log today to keep your streak going.");
+      setStreakShieldUsed(true);
     }
     setUsingShield(false);
   }
@@ -127,42 +117,15 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
     const workout = workouts.find((w: any) => w.id === selectedBoostWorkout);
     if (!workout) return;
     setUsingBoost(true);
-    const ok = await usePerk(profile.id, "score_boost");
-    if (ok) {
-      // Query DB directly to avoid stale myScores state
-      const { data: existing, error: fetchError } = await supabase.from("scores")
-        .select("*").eq("player_id", profile.id).eq("workout_id", workout.id).single();
-      if (fetchError) { showToast("Error fetching score: " + fetchError.message); setUsingBoost(false); return; }
-      if (existing) {
-        const updateFields: any = {};
-        if (existing.self_points > 0) {
-          updateFields.self_points = existing.self_points + 5;
-        } else {
-          updateFields.made = (existing.made || 0) + 5;
-        }
-        const { error: updateError } = await supabase.from("scores").update(updateFields).eq("id", existing.id);
-        if (updateError) { showToast("Error updating score: " + updateError.message); setUsingBoost(false); return; }
-        const { data: wk } = await supabase.from("workouts")
-          .select("first_place_pts,second_place_pts,third_place_pts,scoring_type")
-          .eq("id", workout.id).single();
-        if (wk?.scoring_type === "competitive") {
-          const { error: rankError } = await supabase.rpc("rerank_workout", {
-            p_workout_id: workout.id,
-            p_first_pts: wk.first_place_pts ?? 3,
-            p_second_pts: wk.second_place_pts ?? 2,
-            p_third_pts: wk.third_place_pts ?? 1,
-          });
-          if (rankError) { showToast("Error reranking: " + rankError.message); setUsingBoost(false); return; }
-        }
-        showToast(`⚡ +5 applied to ${workout.title}! Rankings updated.`);
-      } else {
-        showToast("No score found — log this workout first.");
-      }
+    // +5 on this competition's best for the drill -- counts toward placings.
+    const { error } = await supabase.rpc("use_score_boost", { p_workout_id: workout.id });
+    if (error) {
+      showToast(error.message);
+    } else {
+      showToast(`⚡ +5 applied to ${workout.title} for this competition!`);
       setScoreBoostUsed(true);
       setShowBoostPicker(false);
       setSelectedBoostWorkout("");
-    } else {
-      showToast(noCompetition ? "No competition is running right now." : "Already used this competition.");
     }
     setUsingBoost(false);
   }
@@ -337,7 +300,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
           <div style={{ height: "100%", borderRadius: 6, background: tier >= 4 ? "var(--gold)" : tier >= 3 ? "#2550d4" : tier >= 2 ? "#c0c0c0" : tier >= 1 ? "#9ca3af" : "var(--royal)", width: `${xpPct}%`, transition: "width 0.5s ease" }} />
         </div>
         <div style={{ fontSize: 11, color: "var(--muted)" }}>
-          {xpValues.workout} XP per workout · {xpValues.challenge_sent} XP per challenge sent · {xpValues.challenge_done} XP per challenge completed
+          {xpValues.workout} XP per workout (first 3 logs of a drill each day) · {xpValues.challenge_sent} XP for a challenge you sent, once it's played · {xpValues.challenge_done} XP for answering a challenge
         </div>
       </div>}
 
