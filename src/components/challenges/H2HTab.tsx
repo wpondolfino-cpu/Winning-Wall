@@ -90,6 +90,10 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
   const [sending, setSending]                 = useState(false);
   const [rematching, setRematching]           = useState<string | null>(null);
   const [needsScore, setNeedsScore]           = useState(false);
+  // An unused score from the last 24 hours that could be sent as-is, shown
+  // before sending so the player can choose to do the drill again instead
+  // (migration 160). Each attempt backs only one challenge.
+  const [recentScore, setRecentScore] = useState<{ score: number; attempted_at: string } | null>(null);
   const [challengeScore, setChallengeScore]   = useState("");
   const [responding, setResponding]           = useState<string | null>(null);
   const [myResponse, setMyResponse]           = useState("");
@@ -149,17 +153,36 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
   /** Server messages ("Waiting for Jordan to challenge you back."), shown as they are. */
   function friendly(e: any): string { return e?.message ?? "Something went wrong."; }
 
+  /** Ask the server for my unused best from the last 24 hours on this drill. */
+  async function lookUpRecentScore(workoutId: string) {
+    const { data } = await supabase.rpc("my_recent_challenge_score", { p_workout_id: workoutId });
+    const row = ((data ?? []) as any[])[0];
+    return row ? { score: Number(row.score), attempted_at: row.attempted_at as string } : null;
+  }
+
+  // Step 1: show the score that would be sent, or go straight to entering
+  // a fresh one if there isn't an unused one.
   async function sendChallenge() {
     if (!selectedOpponent || !selectedWorkout) return;
     setSending(true);
     try {
-      // No score given: the server uses my best on this drill from the last
-      // 24 hours, or tells us there isn't one so we can ask for a score.
+      const recent = await lookUpRecentScore(selectedWorkout);
+      if (recent) { setRecentScore(recent); setNeedsScore(false); }
+      else { setRecentScore(null); setNeedsScore(true); }
+    } finally { setSending(false); }
+  }
+
+  // Step 2a: send the unused recent score as it is.
+  async function sendRecentScore() {
+    if (!selectedOpponent || !selectedWorkout) return;
+    setSending(true);
+    try {
       const { error } = await supabase.rpc("send_challenge", { p_opponent: selectedOpponent, p_workout_id: selectedWorkout });
       if (error) {
-        if (error.code === "P0002") { setNeedsScore(true); return; }
+        if (error.code === "P0002") { setRecentScore(null); setNeedsScore(true); return; }
         showToast(friendly(error)); return;
       }
+      setRecentScore(null);
       await afterChallengeSent(selectedOpponent, selectedWorkout);
     } finally { setSending(false); }
   }
@@ -177,7 +200,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
         p_opponent: selectedOpponent, p_workout_id: selectedWorkout, p_score: score, p_tiebreak: myTb,
       });
       if (error) { showToast(friendly(error)); return; }
-      setNeedsScore(false); setChallengeScore(""); setChallengeTiebreak(""); onScoreLogged?.();
+      setNeedsScore(false); setRecentScore(null); setChallengeScore(""); setChallengeTiebreak(""); onScoreLogged?.();
       await afterChallengeSent(selectedOpponent, selectedWorkout);
     } finally { setSending(false); }
   }
@@ -200,25 +223,20 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
   }
 
 
+  // A rematch goes through the same steps as a new challenge: see the
+  // score that would be sent, or do the drill again. It never quietly
+  // reuses the score the rival has already seen -- that attempt is spent.
   async function sendRematch(c: Challenge) {
     setRematching(c.id);
     try {
-      const rivalId   = c.challenger_id === currentUserId ? c.opponent_id   : c.challenger_id;
-      const rivalName = c.challenger_id === currentUserId ? c.opponent_name : c.challenger_name;
-      // The server uses my best on this drill from the last 24 hours.
-      const { error } = await supabase.rpc("send_challenge", { p_opponent: rivalId, p_workout_id: c.workout_id });
-      if (error) {
-        showToast(error.code === "P0002" ? "Log this drill in the last 24 hours before rematching! 🏀" : friendly(error));
-        return;
-      }
-      showToast(`Rematch sent to ${rivalName}! 🔁`);
-      try {
-        await supabase.functions.invoke("send-push", {
-          body: { title: "🔁 Rematch!", message: `${currentUserName} sent you a rematch in ${c.workout_title}`, playerIds: [rivalId] },
-        });
-      } catch (e) { console.error("Push notification failed to send:", e); }
-      loadChallenges();
-      loadOpponents();
+      const rivalId = c.challenger_id === currentUserId ? c.opponent_id : c.challenger_id;
+      setShowNew(true);
+      setSelectedOpponent(rivalId);
+      setSelectedWorkout(c.workout_id);
+      const recent = await lookUpRecentScore(c.workout_id);
+      if (recent) { setRecentScore(recent); setNeedsScore(false); }
+      else { setRecentScore(null); setNeedsScore(true); }
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } finally { setRematching(null); }
   }
 
@@ -309,7 +327,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
           <div style={{ textAlign: "center", padding: "10px", background: "var(--surface)", borderRadius: 8 }}>
             <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>YOU</div>
             {c.status === "completed" ? <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: iWon ? "var(--gold)" : "var(--text)" }}>{myScore ?? "—"}</div>
-              : myScore !== null ? <div style={{ fontSize: 13, color: "#5de098", fontWeight: 600 }}>🔒 Logged</div>
+              : (myScore !== null || isChallenger) ? <div style={{ fontSize: 13, color: "#5de098", fontWeight: 600 }}>🔒 Logged</div>
               : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--muted)" }}>—</div>}
           </div>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--muted)" }}>VS</div>
@@ -317,11 +335,11 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
             <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>{theirName.split(" ")[0].toUpperCase()}</div>
             {c.status === "completed" ? <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: theyWon ? "var(--gold)" : "var(--text)" }}>{theirScore ?? "—"}</div>
               : theirScore === -1 ? <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic" }}>Forfeited</div>
-              : theirScore !== null ? <div style={{ fontSize: 13, color: "#5de098", fontWeight: 600 }}>🔒 Logged</div>
+              : (theirScore !== null || !isChallenger) ? <div style={{ fontSize: 13, color: "#5de098", fontWeight: 600 }}>🔒 Logged</div>
               : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--muted)" }}>—</div>}
           </div>
         </div>
-        {c.status === "pending" && (myScore !== null || theirScore !== null) && (
+        {c.status === "pending" && (
           <div style={{ textAlign: "center", fontSize: 12, color: "var(--muted)", marginBottom: 8, padding: "6px 10px", background: "rgba(255,255,255,0.04)", borderRadius: 8 }}>🔒 Scores hidden until both players submit</div>
         )}
         {c.status === "completed" && (
@@ -385,7 +403,7 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div>
               <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>Choose Opponent</label>
-              <select value={selectedOpponent} onChange={e => setSelectedOpponent(e.target.value)}
+              <select value={selectedOpponent} onChange={e => { setSelectedOpponent(e.target.value); setRecentScore(null); setNeedsScore(false); }}
                 style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
                 <option value="">Select a player…</option>
                 {opponents.map(o => (
@@ -398,15 +416,39 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
             </div>
             <div>
               <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>Choose Drill</label>
-              <select value={selectedWorkout} onChange={e => setSelectedWorkout(e.target.value)}
+              <select value={selectedWorkout} onChange={e => { setSelectedWorkout(e.target.value); setRecentScore(null); setNeedsScore(false); }}
                 style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
                 <option value="">Select a drill…</option>
                 {activeWorkouts.map(w => <option key={w.id} value={w.id}>{w.emoji} {w.title}</option>)}
               </select>
             </div>
-            {needsScore ? (
+            {recentScore && !needsScore ? (
               <div>
-                <div style={{ padding: "10px 12px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, fontSize: 12, color: "var(--silver-light)", marginBottom: 10 }}>⚠️ You haven't logged this drill in the last 24 hours. Enter your score to send the challenge:</div>
+                <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>Score that will be sent</div>
+                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--text)", lineHeight: 1.1 }}>{recentScore.score}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                    Your best unused score from the last 24 hours · logged {(() => {
+                      const mins = Math.round((Date.now() - Date.parse(recentScore.attempted_at)) / 60000);
+                      return mins < 60 ? `${Math.max(1, mins)}m ago` : `${Math.round(mins / 60)}h ago`;
+                    })()}
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <button onClick={sendRecentScore} disabled={sending} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                    {sending ? "Sending…" : `Send with ${recentScore.score}`}
+                  </button>
+                  <button onClick={() => { setRecentScore(null); setNeedsScore(true); }} disabled={sending} style={{ background: "var(--royal)", border: "none", color: "#fff", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                    Do it again
+                  </button>
+                </div>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>
+                  "Do it again" logs a new score like any drill and sends that one, even if it's lower.
+                </div>
+              </div>
+            ) : needsScore ? (
+              <div>
+                <div style={{ padding: "10px 12px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, fontSize: 12, color: "var(--silver-light)", marginBottom: 10 }}>🏀 Do the drill now, then enter your score. It's logged like any workout and sent as your challenge score.</div>
                 <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
                   <input type="number" value={challengeScore} onChange={e => setChallengeScore(e.target.value)} placeholder="Your score" min="0" style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 14, fontFamily: "inherit", outline: "none" }} />
                   {(() => {
