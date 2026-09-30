@@ -182,9 +182,9 @@ export default function AdminPanel({}: Props) {
 
   async function saveXpValue(key: string, val: number) {
     const names: Record<string,string> = {
-      "_xp_workout": "XP per workout attempt",
-      "_xp_challenge_sent": "XP per challenge sent",
-      "_xp_challenge_done": "XP per challenge completed",
+      "_xp_workout": "XP per workout log (first 3 logs of a drill per day)",
+      "_xp_challenge_sent": "XP to the challenger when their challenge is completed",
+      "_xp_challenge_done": "XP to the challenged player when they respond",
     };
     await supabase.from("xp_settings").upsert({
       perk_key: key, perk_name: names[key], xp_required: val,
@@ -581,9 +581,9 @@ export default function AdminPanel({}: Props) {
           <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px", marginBottom: 16 }}>
             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 14 }}>XP Per Action</div>
             {[
-              { key: "_xp_workout",        label: "🏀 Workout attempt",     field: "workout" as const },
-              { key: "_xp_challenge_sent", label: "⚔️ Challenge sent",      field: "challenge_sent" as const },
-              { key: "_xp_challenge_done", label: "✅ Challenge completed",  field: "challenge_done" as const },
+              { key: "_xp_workout",        label: "🏀 Workout log (first 3 per drill per day)",     field: "workout" as const },
+              { key: "_xp_challenge_sent", label: "⚔️ Challenger — challenge completed",      field: "challenge_sent" as const },
+              { key: "_xp_challenge_done", label: "✅ Challenged player — responded",  field: "challenge_done" as const },
             ].map(({ key, label, field }) => (
               <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
                 <div style={{ fontSize: 13, color: "var(--text)" }}>{label}</div>
