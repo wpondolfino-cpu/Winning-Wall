@@ -94,6 +94,35 @@ serve(async () => {
     results.competitionsStarted = { error: String(e) };
   }
 
+  // ── 0b. Total any competition or pause that has ended ─────
+  // (migration 154). The app also does this when leaderboards load; this
+  // makes sure it happens even on days nobody opens the app.
+  try {
+    const { error } = await supabase.rpc("finalize_scoring_windows");
+    if (error) throw error;
+    results.windowsTotalled = true;
+  } catch (e) {
+    results.windowsTotalled = { error: String(e) };
+  }
+
+  // ── 0c. Expire challenges unanswered for 5 days ──────────
+  // (migration 157) The challenger wins by default (+1, no XP) and can't
+  // challenge that player again until they challenge back.
+  try {
+    const { data: expired, error } = await supabase.rpc("expire_challenges");
+    if (error) throw error;
+    const rows = (expired ?? []) as { challenger_id: string; opponent_id: string; workout_title: string; challenger_name: string; opponent_name: string }[];
+    for (const r of rows) {
+      await sendPushToPlayers([r.challenger_id], "🏆 You won by default",
+        `${r.opponent_name} didn't answer your ${r.workout_title} challenge in 5 days.`);
+      await sendPushToPlayers([r.opponent_id], "⏰ Challenge expired",
+        `Your ${r.workout_title} challenge from ${r.challenger_name} expired. Challenge them back to settle it!`);
+    }
+    results.challengesExpired = rows.length;
+  } catch (e) {
+    results.challengesExpired = { error: String(e) };
+  }
+
   // ── 1. Streak reminders ──────────────────────────────────
   try {
     const today = new Date().toISOString().split("T")[0];
