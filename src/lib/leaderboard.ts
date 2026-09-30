@@ -7,10 +7,62 @@ import { getPracticeWinStandings, PracticeWinStanding } from "./practiceWins";
 import { getCurrentSeason } from "./records";
 
 export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
-  const { data, error } = await supabase
-    .from("leaderboard").select("*").order("rank", { ascending: true });
+  const [{ data, error }, { data: totals, error: totalsErr }] = await Promise.all([
+    supabase.from("leaderboard").select("*").order("rank", { ascending: true }),
+    // Overall = starting balance + every competition + bonuses (migration
+    // 154/155). Empty until go-live, when the view's totals still apply.
+    supabase.rpc("overall_points"),
+  ]);
   if (error) throw error;
-  return data ?? [];
+  const rows = (data ?? []) as LeaderboardEntry[];
+  if (totalsErr || !totals || (totals as any[]).length === 0) return rows;
+
+  const byId = new Map((totals as any[]).map(t => [t.player_id as string, Number(t.total)]));
+  const merged = rows.map(r => ({ ...r, total_points: byId.get(r.id) ?? 0 }));
+  merged.sort((x, y) => y.total_points - x.total_points);
+  // Standard ranking: tied totals share a rank.
+  let rank = 0;
+  merged.forEach((r, i) => {
+    if (i === 0 || r.total_points !== merged[i - 1].total_points) rank = i + 1;
+    (r as any).rank = rank;
+  });
+  return merged;
+}
+
+/** One drill's placing inside a competition (window_points). */
+export interface CompetitionDrillRow {
+  player_id: string;
+  workout_id: string;
+  points: number;
+  source: "placing" | "self_reported";
+  best_raw: number | null;
+  place: number | null;
+}
+
+/** The running (or any) competition's per-drill placings and self-reported points. */
+export async function getCompetitionDrillRows(c: Pick<Competition, "starts_at" | "ends_at">): Promise<CompetitionDrillRow[]> {
+  const { data, error } = await supabase.rpc("window_points", {
+    p_start: c.starts_at, p_end: c.ends_at, p_with_placings: true,
+  });
+  if (error) { console.error("Competition placings failed:", error); return []; }
+  return (data ?? []) as CompetitionDrillRow[];
+}
+
+/** A player's overall points split by competition (Overall dropdown). */
+export interface OverallBreakdownRow {
+  label: string;
+  competition_id: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  points: number;
+  running: boolean;
+  won: boolean;
+}
+
+export async function getOverallBreakdown(playerId: string): Promise<OverallBreakdownRow[]> {
+  const { data, error } = await supabase.rpc("overall_breakdown", { p_player: playerId });
+  if (error) { console.error("Overall breakdown failed:", error); return []; }
+  return ((data ?? []) as any[]).map(r => ({ ...r, points: Number(r.points) }));
 }
 
 export async function getBiweeklyChampions(): Promise<BiweeklyChampion[]> {
@@ -20,50 +72,31 @@ export async function getBiweeklyChampions(): Promise<BiweeklyChampion[]> {
   return data ?? [];
 }
 
-// Standings for one competition -- same math as the Leaderboard's
-// "Current" tab (drill points on drills logged in its window, plus streak
-// bonuses awarded in it). Used for crowning and the History snapshot.
-// Takes the competition explicitly: the old version worked out "the
-// period that just ended" as the 14 days before today's, which is wrong
-// for any other length.
-export async function getCompetitionStandings(c: Pick<Competition, "starts_at" | "ends_at">): Promise<LeaderboardEntry[]> {
-  const periodStart = new Date(c.starts_at);
-  const periodEnd = new Date(c.ends_at);
-
-  const [{ data: psc }, { data: pr }, { data: bon }, { data: sc }] = await Promise.all([
-    supabase.from("score_attempts").select("*")
-      .gte("attempted_at", periodStart.toISOString())
-      .lt("attempted_at", periodEnd.toISOString()),
+// Standings for one competition: each player's best result per drill
+// logged inside its dates, placed within grade group, plus self-reported
+// points and bonuses earned in it (competition_standings, migration 154).
+// The same numbers as the Current tab. Used for crowning and History.
+export async function getCompetitionStandings(c: Pick<Competition, "id" | "starts_at" | "ends_at">): Promise<LeaderboardEntry[]> {
+  const [{ data: st, error }, { data: pr }, { data: att }] = await Promise.all([
+    supabase.rpc("competition_standings", { p_competition_id: c.id }),
     supabase.from("profiles").select("id,name,grade_category,is_period_champion,avatar_url").eq("role", "player"),
-    supabase.from("streak_bonuses").select("*")
-      .gte("awarded_at", periodStart.toISOString())
-      .lt("awarded_at", periodEnd.toISOString()),
-    supabase.from("scores").select("*"),
+    supabase.from("score_attempts").select("player_id,workout_id")
+      .gte("attempted_at", c.starts_at).lt("attempted_at", c.ends_at),
   ]);
+  if (error) throw error;
 
-  const periodScores = psc ?? [];
-  const profiles = pr ?? [];
-  const periodBonuses = bon ?? [];
-  const allScores = sc ?? [];
-
-  const periodActivity: Record<string, Set<string>> = {};
-  for (const s of periodScores as any[]) {
-    if (!periodActivity[s.player_id]) periodActivity[s.player_id] = new Set();
-    periodActivity[s.player_id].add(s.workout_id);
-  }
+  const drills: Record<string, Set<string>> = {};
+  for (const a of (att ?? []) as any[]) { if (!drills[a.player_id]) drills[a.player_id] = new Set(); drills[a.player_id].add(a.workout_id); }
+  const profiles = new Map(((pr ?? []) as any[]).map(p => [p.id, p]));
 
   const entries: LeaderboardEntry[] = [];
-  for (const playerId of Object.keys(periodActivity)) {
-    const p = (profiles as any[]).find(pr => pr.id === playerId);
+  for (const row of (st ?? []) as any[]) {
+    const p = profiles.get(row.player_id);
     if (!p) continue;
-    const workoutIds = Array.from(periodActivity[playerId]);
-    const playerScores = (allScores as any[]).filter(s => s.player_id === playerId && workoutIds.includes(s.workout_id));
-    const drillPoints = playerScores.reduce((sum, s) => sum + (s.points ?? 0), 0);
-    const bonusPoints = (periodBonuses as any[]).filter(b => b.player_id === playerId).reduce((sum, b) => sum + (b.points ?? 0), 0);
     entries.push({
-      id: playerId, name: p.name, grade_category: p.grade_category,
-      total_points: drillPoints + bonusPoints,
-      workouts_completed: periodActivity[playerId].size,
+      id: row.player_id, name: p.name, grade_category: p.grade_category,
+      total_points: Number(row.points),
+      workouts_completed: drills[row.player_id]?.size ?? 0,
       avatar_url: p.avatar_url, is_period_champion: p.is_period_champion,
     } as unknown as LeaderboardEntry);
   }
