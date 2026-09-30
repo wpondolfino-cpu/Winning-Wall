@@ -1,20 +1,11 @@
 // src/lib/scores.ts
-// Complete rewrite — single source of truth for all scoring paths
-// Four scoring types: competitive, multi_spot, flat, self_reported
-// Hard rules:
-//   - Always strip local_date before any DB write
-//   - Always write to scores.points (what the leaderboard view sums)
-//   - Never call rerank_workout on flat or self_reported
-//   - Never accept a zero/null score on competitive, multi_spot, self_reported
-//   - Always log to score_attempts for streak tracking
-//   - Award XP on every attempt
-//   - Personal best +1 only on competitive/multi_spot when beating a real previous score
+// Scoring. Logging a workout or a Drill Library practice runs entirely on
+// the server (log_workout / log_library_practice, migration 154): the
+// browser sends what the player did and gets back what happened.
+// Four scoring types: competitive, multi_spot, flat, self_reported.
 
 import { supabase, Score, ScoreAttempt, PersonalBest, XP_PER_ATTEMPT } from "./supabase";
-import { awardXp } from "./xp";
-import { checkAndUpdateRecords, refreshGlobalRecords } from "./records";
 import { getLeaderboard } from "./leaderboard";
-import { updateStreak } from "./streaks";
 
 // ── Raw score calculation ─────────────────────────────────────
 // Single function used everywhere — never inline this logic
@@ -27,266 +18,41 @@ export function computeRawScore(s: {
   return s.made + s.reps;
 }
 
-// ── XP helper ─────────────────────────────────────────────────
-async function getXpPerAttempt(): Promise<number> {
-  const { data } = await supabase
-    .from("xp_settings").select("xp_required").eq("perk_key", "_xp_workout").single();
-  return data?.xp_required ?? XP_PER_ATTEMPT;
-}
+// ── Logging, on the server ──────────────────────────────────────
+// Option B (migrations 154/155): every scoring rule -- the saved result,
+// placings, personal bests and their bonus, the streak and its bonus,
+// XP (first 3 logs of a drill per day), flat points -- runs in one
+// server function. The browser only sends what the player did. Pushes
+// ("you were passed", "your best was beaten") are still sent from here
+// using what the server reports back.
 
-// ── Main submit function ──────────────────────────────────────
-export async function submitScore(
-  score: Omit<Score, "id" | "points" | "logged_at">
-): Promise<{ saved: Score; isPersonalBest: boolean; previousBest: number | null }> {
-
-  // Always strip local_date — it's not a DB column, just used for dedup logic
-  const { local_date: localDate, ...cleanScore } = score as any;
-  const today = localDate ?? new Date().toISOString().split("T")[0];
-
-  // Snapshot all-time standings before any writes — used at the end to
-  // detect if this submission caused the player to pass anyone.
-  let oldAllTimeTotal = 0;
-  try {
-    const beforeBoard = await getLeaderboard();
-    oldAllTimeTotal = beforeBoard.find(e => e.id === score.player_id)?.total_points ?? 0;
-  } catch (e) { console.error("Leaderboard snapshot (before) failed:", e); }
-
-  // Fetch workout to get scoring type and point values
-  const { data: workout } = await supabase
-    .from("workouts")
-    .select("scoring_type, flat_points, first_place_pts, second_place_pts, third_place_pts, current_run")
-    .eq("id", score.workout_id)
-    .single();
-
-  if (!workout) throw new Error("Workout not found");
-
-  // Read off the WORKOUT, not its group: many groups here are just a
-  // group_name string with no workout_groups row, so a group-based lookup
-  // returned null and the score went unstamped.
-  //
-  // Stamped at submit time so a later rerun can't retroactively pull this
-  // score into a competition it wasn't part of.
-  const runNo: number = (workout as any).current_run ?? 1;
-
-  const scoringType = workout.scoring_type ?? "competitive";
-  const flatPts     = workout.flat_points ?? 1;
-  const firstPts    = workout.first_place_pts ?? 5;
-  const secondPts   = workout.second_place_pts ?? 3;
-  const thirdPts    = workout.third_place_pts ?? 1;
-
-  const newRaw = computeRawScore(cleanScore);
-
-  // Guard: reject zero scores for non-flat types
-  // (flat always has a value, self_reported/competitive need real input)
-  if (scoringType !== "flat" && newRaw === 0) {
-    throw new Error("Please enter a score before submitting.");
-  }
-
-  // Fetch existing score row if any
-  const { data: existing } = await supabase
-    .from("scores")
-    .select("*")
-    .eq("player_id", score.player_id)
-    .eq("workout_id", score.workout_id)
-    .maybeSingle();
-
-  const previousBest: number | null =
-    existing && (existing.points ?? 0) > 0 ? (existing.points ?? 0) : null;
-
-  let saved: Score;
-  let isPersonalBest = false;
-
-  // ── Flat scoring ──────────────────────────────────────────
-  // Everyone gets flat_points per day. Points accumulate across days.
-  // No ranking, no competition.
-  if (scoringType === "flat") {
-    // Already logged today — return existing row, no double points
-    if (existing?.last_logged_date === today) {
-      saved = existing as Score;
-      isPersonalBest = false;
-    } else if (existing) {
-      // Logged before but not today — add flat points
-      const newPoints = (existing.points ?? 0) + flatPts;
-      const { data, error } = await supabase.from("scores")
-        .update({ points: newPoints, self_points: flatPts, last_logged_date: today })
-        .eq("player_id", score.player_id)
-        .eq("workout_id", score.workout_id)
-        .select().single();
-      if (error) throw error;
-      saved = data as Score;
-      isPersonalBest = true;
-    } else {
-      // First time logging this workout
-      const { data, error } = await supabase.from("scores")
-        .insert({ run: runNo, ...cleanScore, points: flatPts, self_points: flatPts, last_logged_date: today })
-        .select().single();
-      if (error) throw error;
-      saved = data as Score;
-      isPersonalBest = true;
-    }
-
-  // ── Self-reported scoring ─────────────────────────────────
-  // Player enters their own point value. Goes directly to points.
-  // No ranking. Most recent submission wins (upsert).
-  } else if (scoringType === "self_reported") {
-    const points = cleanScore.self_points ?? 0;
-    const { data, error } = await supabase.from("scores")
-      .upsert(
-        { ...cleanScore, points, last_logged_date: today },
-        { onConflict: "player_id,workout_id" }
-      )
-      .select().single();
-    if (error) throw error;
-    saved = data as Score;
-    isPersonalBest = previousBest === null || points > (previousBest ?? 0);
-
-  // ── Competitive and Multi-spot scoring ────────────────────
-  // Players compete against each other. Rank determines points.
-  // rerank_workout RPC assigns 1st/2nd/3rd place points to everyone.
-  } else {
-    isPersonalBest = previousBest === null || newRaw > (previousBest ?? 0);
-
-    if (isPersonalBest) {
-      // Upsert new best — points start at 0 until rerank assigns them
-      const { data, error } = await supabase.from("scores")
-        .upsert(
-          { ...cleanScore, tiebreak_value: cleanScore.tiebreak_value ?? null, points: 0, last_logged_date: today },
-          { onConflict: "player_id,workout_id" }
-        )
-        .select().single();
-      if (error) throw error;
-      saved = data as Score;
-    } else {
-      // Not a new best — keep existing score on leaderboard
-      saved = existing as Score;
-    }
-
-    // Only rerank if workout belongs to an active group (or has no group)
-    // Previous group workouts still accept logs + personal bests but don't affect ranking
-    const { data: groupData } = await supabase
-      .from("workouts")
-      .select("group_id, workout_groups(status)")
-      .eq("id", score.workout_id)
-      .maybeSingle();
-    const groupStatus = (groupData as any)?.workout_groups?.status ?? null;
-    const shouldRerank = groupStatus === null || groupStatus === "active";
-
-    if (shouldRerank) {
-      const { error: rankError } = await supabase.rpc("rerank_workout", {
-        p_workout_id: score.workout_id,
-        p_first_pts:  firstPts,
-        p_second_pts: secondPts,
-        p_third_pts:  thirdPts,
-      });
-      if (rankError) console.error("Re-rank error:", rankError);
-    }
-
-    // Personal best bonus point (+1) when genuinely beating a previous score
-    if (isPersonalBest && previousBest !== null) {
-      try {
-        await supabase.from("streak_bonuses").insert({
-          player_id:     score.player_id,
-          points:        1,
-          streak_length: 0,
-          awarded_at:    new Date().toISOString(),
-          reason:        "personal_best",
-          workout_id:    score.workout_id,
-        });
-      } catch (e) { console.error("Personal best bonus error:", e); }
-    }
-  }
-
-  // ── Always log attempt (used for streak tracking + history) ──
-  await supabase.from("score_attempts").insert({ run: runNo,
-    player_id:        score.player_id,
-    workout_id:       score.workout_id,
-    made:             cleanScore.made ?? 0,
-    reps:             cleanScore.reps ?? 0,
-    sprint_secs:      cleanScore.sprint_secs ?? 0,
-    self_points:      cleanScore.self_points ?? 0,
-    tiebreak_value:   cleanScore.tiebreak_value ?? null,
-    raw_score:        newRaw,
-    is_personal_best: isPersonalBest,
-    attempted_at:     new Date().toISOString(),
-  });
-
-  // ── Update personal_bests table (survives season resets) ──
-  if (isPersonalBest) {
-    // Snapshot the current #1 for this drill (excluding this player) and
-    // this player's own prior raw score, before we overwrite it — used to
-    // detect if this submission just took over the #1 spot from someone.
-    let ownPreviousRaw: number | null = null;
-    let topOther: { player_id: string; raw_score: number } | null = null;
+async function notifyAfterLog(workoutId: string, result: any, oldAllTimeTotal: number | null, playerId: string) {
+  // Their #1 on this drill was just taken.
+  if (result?.overtaken_player) {
     try {
-      const { data: ownRow } = await supabase.from("personal_bests")
-        .select("raw_score").eq("player_id", score.player_id).eq("workout_id", score.workout_id).maybeSingle();
-      ownPreviousRaw = ownRow?.raw_score ?? null;
-
-      const { data: topRow } = await supabase.from("personal_bests")
-        .select("player_id, raw_score").eq("workout_id", score.workout_id).neq("player_id", score.player_id)
-        .order("raw_score", { ascending: false }).limit(1).maybeSingle();
-      topOther = topRow ?? null;
-    } catch (e) { console.error("Drill PB snapshot failed:", e); }
-
-    await supabase.from("personal_bests").upsert({
-      player_id:   score.player_id,
-      workout_id:  score.workout_id,
-      raw_score:   newRaw,
-      achieved_at: new Date().toISOString(),
-    }, { onConflict: "player_id,workout_id" });
-
-    // Only notify if this submission is what pushed us past them — not if
-    // we were already #1 and just padded our own lead further.
-    if (topOther && newRaw > topOther.raw_score && (ownPreviousRaw === null || ownPreviousRaw <= topOther.raw_score)) {
-      try {
-        const { data: wo } = await supabase.from("workouts").select("title").eq("id", score.workout_id).single();
-        await supabase.functions.invoke("send-push", {
-          body: {
-            title: "😤 Personal best overtaken!",
-            message: `Someone just beat your personal best in ${wo?.title ?? "a drill"}!`,
-            playerIds: [topOther.player_id],
-          },
-        });
-      } catch (e) { console.error("Push notification failed to send:", e); }
-    }
+      const { data: wo } = await supabase.from("workouts").select("title").eq("id", workoutId).single();
+      await supabase.functions.invoke("send-push", {
+        body: {
+          title: "⚡ Personal best overtaken!",
+          message: `Someone just beat your personal best in ${wo?.title ?? "a drill"}!`,
+          playerIds: [result.overtaken_player],
+        },
+      });
+    } catch (e) { console.error("Push notification failed to send:", e); }
   }
 
-  // ── Award XP on every attempt ─────────────────────────────
-  const xpAmount = await getXpPerAttempt();
-  awardXp(score.player_id, xpAmount, "workout_attempt").catch(console.error);
-
-  // ── Update Hall of Fame records ───────────────────────────
-  if (isPersonalBest) {
-    const { data: prof } = await supabase
-      .from("profiles").select("name,avatar_url").eq("id", score.player_id).single();
-    const { data: wo } = await supabase
-      .from("workouts").select("title,description").eq("id", score.workout_id).single();
-    if (prof && wo) {
-      checkAndUpdateRecords(
-        score.player_id, prof.name, prof.avatar_url ?? null,
-        score.workout_id, wo.title, wo.description ?? "", newRaw
-      ).catch(console.error);
-      refreshGlobalRecords(
-        score.player_id, prof.name, prof.avatar_url ?? null
-      ).catch(console.error);
-    }
-  }
-
-  // ── All-time leaderboard overtaken check ──────────────────
+  // Passed anyone on the overall leaderboard?
+  if (oldAllTimeTotal == null) return;
   try {
     const afterBoard = await getLeaderboard();
-    const newAllTimeTotal = afterBoard.find(e => e.id === score.player_id)?.total_points ?? 0;
-    if (newAllTimeTotal > oldAllTimeTotal) {
-      const overtaken = afterBoard.filter(e =>
-        e.id !== score.player_id &&
-        e.total_points > oldAllTimeTotal &&
-        e.total_points < newAllTimeTotal
-      );
+    const newTotal = afterBoard.find(e => e.id === playerId)?.total_points ?? 0;
+    if (newTotal > oldAllTimeTotal) {
+      const overtaken = afterBoard.filter(e => e.id !== playerId && e.total_points > oldAllTimeTotal && e.total_points < newTotal);
       if (overtaken.length > 0) {
-        const { data: prof } = await supabase.from("profiles").select("name").eq("id", score.player_id).single();
+        const { data: prof } = await supabase.from("profiles").select("name").eq("id", playerId).single();
         await supabase.functions.invoke("send-push", {
           body: {
-            title: "😤 You've been passed!",
+            title: "📈 You've been passed!",
             message: `${prof?.name ?? "Someone"} just passed you on the All-Time leaderboard!`,
             playerIds: overtaken.map(e => e.id),
           },
@@ -294,8 +60,64 @@ export async function submitScore(
       }
     }
   } catch (e) { console.error("All-time overtaken check failed:", e); }
+}
 
-  return { saved, isPersonalBest, previousBest };
+/** A readable message from a server refusal ("Scores can't be negative..."). */
+function serverError(error: any): Error {
+  return new Error(error?.message ?? "Couldn't save that score.");
+}
+
+export interface LogResult {
+  saved: Score;
+  isPersonalBest: boolean;
+  previousBest: number | null;
+  newStreak: number;
+  streakBonus: boolean;
+  personalBestBonus: boolean;
+  xp: number;
+}
+
+export async function submitScore(
+  score: Omit<Score, "id" | "points" | "logged_at">
+): Promise<LogResult> {
+  const s = score as any;
+
+  let oldAllTimeTotal: number | null = null;
+  try {
+    const beforeBoard = await getLeaderboard();
+    oldAllTimeTotal = beforeBoard.find(e => e.id === s.player_id)?.total_points ?? 0;
+  } catch (e) { console.error("Leaderboard snapshot (before) failed:", e); }
+
+  const { data: result, error } = await supabase.rpc("log_workout", {
+    p_workout_id:     s.workout_id,
+    p_made:           s.made ?? 0,
+    p_reps:           s.reps ?? 0,
+    p_sprint_secs:    s.sprint_secs ?? 0,
+    p_self_points:    s.self_points ?? 0,
+    p_tiebreak_value: s.tiebreak_value ?? null,
+    p_spot_scores:    s.spot_scores ?? null,
+  });
+  if (error) throw serverError(error);
+  const r: any = result ?? {};
+
+  const { data: saved } = await supabase.from("scores").select("*")
+    .eq("player_id", s.player_id).eq("workout_id", s.workout_id).maybeSingle();
+
+  // Hall of Fame: worked out on the server from its own numbers.
+  if (r.is_personal_best) {
+    supabase.rpc("refresh_my_records", { p_workout_id: s.workout_id }).then(({ error: e }) => { if (e) console.error(e); });
+  }
+  notifyAfterLog(s.workout_id, r, oldAllTimeTotal, s.player_id).catch(console.error);
+
+  return {
+    saved: (saved ?? {}) as Score,
+    isPersonalBest: !!r.is_personal_best,
+    previousBest: r.previous_best ?? null,
+    newStreak: r.streak ?? 0,
+    streakBonus: !!r.streak_bonus,
+    personalBestBonus: !!r.personal_best_bonus,
+    xp: r.xp ?? 0,
+  };
 }
 
 // ── Unified score reset ───────────────────────────────────────
@@ -402,95 +224,19 @@ export async function submitLibraryPracticeScore(
   playerId: string,
   workoutId: string,
   perf: { made?: number; reps?: number; sprint_secs?: number; self_points?: number }
-): Promise<{ creditedToday: boolean; isPersonalBest: boolean }> {
-  const today = new Date().toISOString().split("T")[0];
-  const cleanPerf = {
-    made: perf.made ?? 0, reps: perf.reps ?? 0,
-    sprint_secs: perf.sprint_secs ?? 0, self_points: perf.self_points ?? 0,
-  };
-  const newRaw = computeRawScore(cleanPerf);
-
-  // Try to claim today's flat credit — the unique constraint on
-  // (player_id, workout_id, practice_date) enforces the once-per-day cap.
-  let creditedToday = false;
-  try {
-    const { error } = await supabase.from("library_practice_log").insert({
-      player_id: playerId, workout_id: workoutId, practice_date: today,
-    });
-    creditedToday = !error;
-  } catch (e) { console.error("Library practice credit check failed:", e); }
-
-  if (creditedToday) {
-    try {
-      await supabase.from("streak_bonuses").insert({
-        player_id: playerId, points: 1, streak_length: 0,
-        awarded_at: new Date().toISOString(),
-        reason: "extra_reps", workout_id: workoutId,
-      });
-    } catch (e) { console.error("Extra reps bonus error:", e); }
-  }
-
-  // Always log the attempt (streak tracking + history), regardless of
-  // whether today's flat credit was already used.
-  await supabase.from("score_attempts").insert({
-    player_id: playerId, workout_id: workoutId,
-    made: cleanPerf.made, reps: cleanPerf.reps,
-    sprint_secs: cleanPerf.sprint_secs, self_points: cleanPerf.self_points,
-    raw_score: newRaw, is_personal_best: false,
-    attempted_at: new Date().toISOString(),
+): Promise<{ creditedToday: boolean; isPersonalBest: boolean; newStreak: number; streakBonus: boolean }> {
+  const { data: result, error } = await supabase.rpc("log_library_practice", {
+    p_workout_id:  workoutId,
+    p_made:        perf.made ?? 0,
+    p_reps:        perf.reps ?? 0,
+    p_sprint_secs: perf.sprint_secs ?? 0,
+    p_self_points: perf.self_points ?? 0,
   });
-
-  await updateStreak(playerId).catch(console.error);
-
-  const xpAmount = await getXpPerAttempt();
-  awardXp(playerId, xpAmount, "library_practice").catch(console.error);
-
-  // Personal best check — always evaluated, never capped by the daily limit.
-  const { data: ownPB } = await supabase.from("personal_bests").select("raw_score")
-    .eq("player_id", playerId).eq("workout_id", workoutId).maybeSingle();
-  const ownPreviousRaw = ownPB?.raw_score ?? null;
-  const isPersonalBest = ownPreviousRaw === null || newRaw > ownPreviousRaw;
-
-  if (isPersonalBest) {
-    const { data: topRow } = await supabase.from("personal_bests")
-      .select("player_id, raw_score").eq("workout_id", workoutId).neq("player_id", playerId)
-      .order("raw_score", { ascending: false }).limit(1).maybeSingle();
-
-    await supabase.from("personal_bests").upsert({
-      player_id: playerId, workout_id: workoutId, raw_score: newRaw, achieved_at: new Date().toISOString(),
-    }, { onConflict: "player_id,workout_id" });
-
-    if (ownPreviousRaw !== null) {
-      try {
-        await supabase.from("streak_bonuses").insert({
-          player_id: playerId, points: 1, streak_length: 0, awarded_at: new Date().toISOString(),
-          reason: "personal_best", workout_id: workoutId,
-        });
-      } catch (e) { console.error("Personal best bonus error:", e); }
-    }
-
-    if (topRow && newRaw > topRow.raw_score && (ownPreviousRaw === null || ownPreviousRaw <= topRow.raw_score)) {
-      try {
-        const { data: wo } = await supabase.from("workouts").select("title").eq("id", workoutId).single();
-        await supabase.functions.invoke("send-push", {
-          body: {
-            title: "😤 Personal best overtaken!",
-            message: `Someone just beat your personal best in ${wo?.title ?? "a drill"}!`,
-            playerIds: [topRow.player_id],
-          },
-        });
-      } catch (e) { console.error("Push notification failed to send:", e); }
-    }
-
-    const { data: prof } = await supabase.from("profiles").select("name,avatar_url").eq("id", playerId).single();
-    const { data: wo } = await supabase.from("workouts").select("title,description").eq("id", workoutId).single();
-    if (prof && wo) {
-      checkAndUpdateRecords(
-        playerId, prof.name, prof.avatar_url ?? null,
-        workoutId, wo.title, wo.description ?? "", newRaw
-      ).catch(console.error);
-    }
+  if (error) throw serverError(error);
+  const r: any = result ?? {};
+  if (r.is_personal_best) {
+    supabase.rpc("refresh_my_records", { p_workout_id: workoutId }).then(({ error: e }) => { if (e) console.error(e); });
   }
-
-  return { creditedToday, isPersonalBest };
+  notifyAfterLog(workoutId, r, null, playerId).catch(console.error);
+  return { creditedToday: !!r.credited_today, isPersonalBest: !!r.is_personal_best, newStreak: r.streak ?? 0, streakBonus: !!r.streak_bonus };
 }
