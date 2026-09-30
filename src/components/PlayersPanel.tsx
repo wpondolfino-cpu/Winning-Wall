@@ -531,6 +531,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   }
 
   async function openEditScores(playerId: string) {
+    setScoreDrafts({});
     const scores = allScores.filter(s => s.player_id === playerId);
     const mapped: EditScore[] = scores.map(s => {
       const workout = workouts.find(w => w.id === s.workout_id);
@@ -663,6 +664,25 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   function getScoreValue(sc: EditScore): number {
     if (sc.scoring_type === "self_reported" || sc.scoring_type === "flat") return sc.self_points;
     return sc.made > 0 ? sc.made : sc.reps;
+  }
+
+  // What each box is editing, as typed. Kept as text so clearing the box
+  // leaves it empty (it used to snap to 0, and typing then gave "08"), and
+  // the field it edits is fixed on the first keystroke -- clearing "made"
+  // used to switch the box over to editing reps.
+  const [scoreDrafts, setScoreDrafts] = useState<Record<string, { text: string; field: "self_points" | "reps" | "made" }>>({});
+
+  function scoreField(sc: EditScore): "self_points" | "reps" | "made" {
+    if (sc.scoring_type === "self_reported" || sc.scoring_type === "flat") return "self_points";
+    return sc.reps > 0 && sc.made === 0 ? "reps" : "made";
+  }
+
+  function editScoreText(sc: EditScore, text: string) {
+    const field = scoreDrafts[sc.id]?.field ?? scoreField(sc);
+    setScoreDrafts(d => ({ ...d, [sc.id]: { text, field } }));
+    const n = parseInt(text, 10);
+    const val = Number.isNaN(n) ? 0 : n;
+    setPlayerScores(ps => ps.map(s => s.id === sc.id ? { ...s, [field]: val } : s));
   }
 
   function setScoreValue(sc: EditScore, val: number): EditScore {
@@ -1019,7 +1039,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>{sc.scoring_type === "self_reported" || sc.scoring_type === "flat" ? "Points" : "Score"}</label>
-                      <input type="number" value={getScoreValue(sc)} onChange={e => setPlayerScores(ps => ps.map(s => s.id === sc.id ? setScoreValue(sc, parseInt(e.target.value) || 0) : s))} style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 15, fontWeight: 600, textAlign: "center" }} />
+                      <input type="number" inputMode="numeric" value={scoreDrafts[sc.id]?.text ?? String(getScoreValue(sc))} onChange={e => editScoreText(sc, e.target.value)} style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 15, fontWeight: 600, textAlign: "center" }} />
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 20 }}>
                       <button onClick={() => saveScore(sc)} disabled={scoreSaving === sc.id} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>{scoreSaving === sc.id ? "Saving…" : "💾 Save"}</button>
