@@ -300,7 +300,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
           <div style={{ height: "100%", borderRadius: 6, background: tier >= 4 ? "var(--gold)" : tier >= 3 ? "#2550d4" : tier >= 2 ? "#c0c0c0" : tier >= 1 ? "#9ca3af" : "var(--royal)", width: `${xpPct}%`, transition: "width 0.5s ease" }} />
         </div>
         <div style={{ fontSize: 11, color: "var(--muted)" }}>
-          {xpValues.workout} XP per workout (first 3 logs of a drill each day) · {xpValues.challenge_sent} XP for a challenge you sent, once it's played · {xpValues.challenge_done} XP for answering a challenge
+          {xpValues.workout} XP per workout · {xpValues.challenge_sent} XP per challenge sent · {xpValues.challenge_done} XP per challenge completed
         </div>
       </div>}
 
