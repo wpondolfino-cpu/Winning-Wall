@@ -27,6 +27,13 @@ interface Props {
   onRandomDrillChangeFilters?: () => void; // sends the player back to the Library's Random Drill modal
   canChallengeFromLibrary?: boolean; // true once the player has the Challenges Unlocked perk
   onChallengeDrill?: (workoutId: string) => void; // opens H2H "new challenge" prefilled with this drill
+  // Closed without logging (✕, tapping outside, swiping down). The parent
+  // uses it to send a player back to Player Drills if they came from there.
+  onDismiss?: () => void;
+  // A score was saved: the message to show ("+1 point", "New personal
+  // best!"...). The parent shows it above whatever page the player ends up
+  // on, so it isn't lost when they go back to Player Drills.
+  onLogged?: (message: string) => void;
 }
 
 // ── Spot Personal Bests Display ───────────────────────────────
@@ -58,7 +65,7 @@ function SpotPBDisplay({ playerId, workoutId, spotConfig, totalBest, isTime = fa
   );
 }
 
-export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLogged, openWorkoutId, onDeepLinkHandled, randomDrillSession, onRandomDrillSessionChange, onRandomDrillChangeFilters, canChallengeFromLibrary, onChallengeDrill }: Props) {
+export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLogged, openWorkoutId, onDeepLinkHandled, randomDrillSession, onRandomDrillSessionChange, onRandomDrillChangeFilters, canChallengeFromLibrary, onChallengeDrill, onDismiss, onLogged }: Props) {
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
   const [keepPracticing, setKeepPracticing] = useState(false);
 
@@ -219,7 +226,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
         });
         setActiveWorkout(null);
         onScoreLogged();
-        showToast(
+        announce(
           libResult.isPersonalBest
             ? "🎯 New personal best! Great work."
             : libResult.creditedToday
@@ -264,12 +271,15 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
       else if (isPersonalBest && previousBest !== null) { msg = `🏆 New personal best! Your score was saved to the leaderboard.`; }
       else if (isPersonalBest && previousBest === null) { msg = `Score logged! 🏀 ${newStreak > 1 ? `🔥 ${newStreak}-day streak!` : "Keep grinding!"}`; }
       else { msg = `Attempt logged! Your best score (${previousBest}) stays on the leaderboard. ${newStreak >= 2 ? `🔥 ${newStreak}-day streak!` : "Keep grinding!"}`; }
-      showToast(msg);
+      announce(msg);
     } catch (e: any) { showToast("Error: " + e.message); }
     finally { setSaving(false); }
   }
 
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(""), 3500); }
+  // Success messages go to the parent when it wants them, so they follow
+  // the player to the page they land on. Errors stay here, by the form.
+  function announce(msg: string) { if (onLogged) onLogged(msg); else showToast(msg); }
 
   const TAG_COLORS: Record<string, string> = { Shooting: "tag-blue", Conditioning: "tag-red", Strength: "tag-green", Skills: "tag-gold" };
 
@@ -599,14 +609,14 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
       </div>
 
       {activeWorkout && (
-        <div className="modal-overlay open" onClick={() => setActiveWorkout(null)}>
+        <div className="modal-overlay open" onClick={() => { setActiveWorkout(null); onDismiss?.(); }}>
           <div className="log-modal" onClick={e => e.stopPropagation()}
             style={{ transform: `translateY(${modalOffset}px)`, transition: modalOffset === 0 ? "transform 0.2s ease" : "none" }}
             onTouchStart={e => { modalDragY.current = e.touches[0].clientY; }}
             onTouchMove={e => { const dy = e.touches[0].clientY - modalDragY.current; if (dy > 0) setModalOffset(dy); }}
-            onTouchEnd={e => { const dy = e.changedTouches[0].clientY - modalDragY.current; if (dy > 100) { setModalOffset(0); setActiveWorkout(null); } else setModalOffset(0); }}>
+            onTouchEnd={e => { const dy = e.changedTouches[0].clientY - modalDragY.current; if (dy > 100) { setModalOffset(0); setActiveWorkout(null); onDismiss?.(); } else setModalOffset(0); }}>
             <div style={{ width: 40, height: 4, background: "var(--border)", borderRadius: 2, margin: "-12px auto 16px", opacity: 0.6 }} />
-            <button className="modal-close" onClick={() => setActiveWorkout(null)}>✕</button>
+            <button className="modal-close" onClick={() => { setActiveWorkout(null); onDismiss?.(); }}>✕</button>
 
             <div className="modal-title" style={{ marginBottom: 4 }}>{activeWorkout.title}</div>
             {activeWorkout.category && (
