@@ -673,6 +673,7 @@ export default function App() {
     plays:       { label: "Plays",       emoji: "🏀", icon: <><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="12" cy="11" r="2.5"/><path d="M3 8h18"/></> },
     gamestats:   { label: "Analytics",   emoji: "📊", icon: <><line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="12" width="3" height="8"/><rect x="14" y="8" width="3" height="12"/><rect x="10" y="15" width="3" height="5"/></> },
     scoutsheets: { label: "Scout",       emoji: "🔎", icon: <><circle cx="10" cy="10" r="6.5"/><line x1="15" y1="15" x2="20.5" y2="20.5"/></> },
+    library:     { label: "Player Drills", emoji: "📚" },
     progress:    { label: "My Progress", emoji: "📈" },
     hof:         { label: "Hall of Fame", emoji: "👑" },
     profile:     { label: "My Profile",  emoji: "👤" },
@@ -681,7 +682,7 @@ export default function App() {
   // Order the sidebar and More both follow. Anything not in the bar for
   // the current mode lands in More, in this order.
   const PLAYER_TAB_ORDER: PlayerTab[] = [
-    "schedule", "workouts", "leaderboard", "h2h", "plays",
+    "schedule", "workouts", "library", "leaderboard", "h2h", "plays",
     "gamestats", "scoutsheets", "lifting", "progress", "hof", "profile",
   ];
 
@@ -815,26 +816,16 @@ export default function App() {
             <div className="panel active">
               <div className="section-title">More</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-                <div onClick={() => setPlayerTab("progress")} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>📈</span><span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>My Progress</span></div>
-                  <span style={{ color: "var(--muted)" }}>›</span>
-                </div>
-                <div onClick={() => setPlayerTab("library")} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>📚</span><span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>Player Drills</span></div>
-                  <span style={{ color: "var(--muted)" }}>›</span>
-                </div>
-                <div onClick={() => setPlayerTab("plays")} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>🏀</span><span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>Plays</span></div>
-                  <span style={{ color: "var(--muted)" }}>›</span>
-                </div>
-                <div onClick={() => setPlayerTab("hof")} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>👑</span><span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>Hall of Fame</span></div>
-                  <span style={{ color: "var(--muted)" }}>›</span>
-                </div>
-                <div onClick={() => { setPlayerTab("profile"); setNewPerkCount(0); }} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>👤</span><span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>My Profile</span></div>
-                  <span style={{ color: "var(--muted)" }}>›</span>
-                </div>
+                {/* Built from the same list as the sidebar: everything not in
+                    the bottom bar for this season mode. It used to be a
+                    hardcoded five, so Lifting, Analytics and Scout were
+                    missing on phones (and in-season, Workouts too). */}
+                {moreGroupTabs.filter(k => k !== "more").map(k => (
+                  <div key={k} onClick={() => { setPlayerTab(k); if (k === "profile") setNewPerkCount(0); }} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>{PLAYER_TAB_META[k]?.emoji}</span><span style={{ fontSize: 14, color: "var(--text)", fontWeight: 500 }}>{PLAYER_TAB_META[k]?.label}</span></div>
+                    <span style={{ color: "var(--muted)" }}>›</span>
+                  </div>
+                ))}
                 <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
                 <div onClick={signOut} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>🚪</span><span style={{ fontSize: 14, color: "#ff7b7b", fontWeight: 500 }}>Sign Out</span></div>
