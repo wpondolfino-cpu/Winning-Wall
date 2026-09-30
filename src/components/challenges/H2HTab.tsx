@@ -1,6 +1,6 @@
 // src/components/H2HTab.tsx
 import { useState, useEffect, useCallback } from "react";
-import { supabase, Score, Workout, submitScore, awardChallengeWinBonus, awardXp, XP_CHALLENGE_SENT, XP_CHALLENGE_DONE, getXpPerks, updateStreak } from "../../lib/supabase";
+import { supabase, Score, Workout, getXpPerks } from "../../lib/supabase";
 import { useLeaderboard } from "../../hooks/useLeaderboard";
 
 interface Props {
@@ -103,20 +103,17 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
   const activeWorkouts = getH2HEligibleWorkouts(workouts);
   const challengesThreshold = xpPerks.length > 0
     ? (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) : 150;
-  const opponents = leaderboard.filter((e: any) => e.id !== currentUserId && (e.total_xp ?? 0) >= challengesThreshold);
+  // Who I can challenge, decided on the server (migration 157): unlocked
+  // challenges, been on the app lately, and not waiting to challenge me back.
+  const [opponentList, setOpponentList] = useState<{ player_id: string; name: string; available: boolean; reason: string | null }[]>([]);
+  const opponents = opponentList.map(o => ({ id: o.player_id, name: o.name, available: o.available, reason: o.reason }));
+  const loadOpponents = useCallback(async () => {
+    const { data } = await supabase.rpc("challenge_opponents");
+    setOpponentList((data ?? []) as any[]);
+  }, []);
+  const selectedOpponentInfo = opponents.find(o => o.id === selectedOpponent);
 
-  const expireChallenges = useCallback(async () => {
-    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
-    const { data: expired } = await supabase
-      .from("challenges").select("*")
-      .eq("challenger_id", currentUserId).eq("status", "pending").lt("created_at", fiveDaysAgo);
-    if (expired && expired.length > 0) {
-      for (const c of expired) {
-        await supabase.from("challenges").update({ status: "completed", winner_id: currentUserId, opponent_score: -1 }).eq("id", c.id);
-        await awardChallengeWinBonus(currentUserId, c.id).catch(console.warn);
-      }
-    }
-  }, [currentUserId]);
+  // Expiry (5 days unanswered) runs in the daily job now, for everyone.
 
   const loadChallenges = useCallback(async () => {
     setLoading(true);
@@ -129,14 +126,15 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
     const unseen = all.filter((c: Challenge) => c.opponent_id === currentUserId && c.status === "pending" && !c.opponent_seen);
     onPendingCount(unseen.length);
     if (unseen.length > 0) {
-      await supabase.from("challenges").update({ opponent_seen: true }).in("id", unseen.map((c: Challenge) => c.id));
+      await supabase.rpc("mark_challenges_seen");
     }
   }, [currentUserId, onPendingCount]);
 
   useEffect(() => {
-    expireChallenges().then(() => loadChallenges());
+    loadChallenges();
+    loadOpponents();
     getXpPerks().then(setXpPerks).catch(console.error);
-  }, [loadChallenges, expireChallenges]);
+  }, [loadChallenges, loadOpponents]);
 
   useEffect(() => {
     if (prefillWorkoutId) {
@@ -148,25 +146,21 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
 
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(""), 3000); }
 
+  /** Server messages ("Waiting for Jordan to challenge you back."), shown as they are. */
+  function friendly(e: any): string { return e?.message ?? "Something went wrong."; }
+
   async function sendChallenge() {
     if (!selectedOpponent || !selectedWorkout) return;
     setSending(true);
     try {
-      const workout  = workouts.find(w => w.id === selectedWorkout);
-      const opponent = leaderboard.find((e: any) => e.id === selectedOpponent);
-      const since24h = new Date(Date.now() - 86400000).toISOString();
-      const { data: recentAttempts } = await supabase.from("score_attempts").select("*")
-        .eq("player_id", currentUserId).eq("workout_id", selectedWorkout).gte("attempted_at", since24h);
-      if (!recentAttempts || recentAttempts.length === 0) { setNeedsScore(true); setSending(false); return; }
-      const best24h = recentAttempts.reduce((best: any, s: any) => {
-        const score = s.self_points > 0 ? s.self_points : (s.made + s.reps);
-        const bestScore = best ? (best.self_points > 0 ? best.self_points : (best.made + best.reps)) : 0;
-        return score > bestScore ? s : best;
-      }, null);
-      const challengerScore = best24h ? (best24h.self_points > 0 ? best24h.self_points : (best24h.made + best24h.reps)) : 0;
-      // The score already on file carries its own tiebreak, so a challenge
-      // built from it inherits one without asking again.
-      await createChallenge(selectedOpponent, opponent?.name ?? "Unknown", selectedWorkout, workout?.title ?? "Unknown", challengerScore, (best24h as any)?.tiebreak_value ?? null);
+      // No score given: the server uses my best on this drill from the last
+      // 24 hours, or tells us there isn't one so we can ask for a score.
+      const { error } = await supabase.rpc("send_challenge", { p_opponent: selectedOpponent, p_workout_id: selectedWorkout });
+      if (error) {
+        if (error.code === "P0002") { setNeedsScore(true); return; }
+        showToast(friendly(error)); return;
+      }
+      await afterChallengeSent(selectedOpponent, selectedWorkout);
     } finally { setSending(false); }
   }
 
@@ -176,89 +170,62 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
     if (score <= 0) { showToast("Please enter a valid score."); return; }
     setSending(true);
     try {
-      const workout  = workouts.find(w => w.id === selectedWorkout);
-      const opponent = leaderboard.find((e: any) => e.id === selectedOpponent);
+      const workout = workouts.find(w => w.id === selectedWorkout);
       const myTb = (workout as any)?.tiebreak_mode && (workout as any)?.tiebreak_mode !== "spot" && challengeTiebreak.trim() !== "" ? parseFloat(challengeTiebreak) : null;
-      await submitScore({ player_id: currentUserId, workout_id: selectedWorkout, made: score, attempts: 0, sprint_secs: 0, reps: 0, self_points: 0, tiebreak_value: myTb } as any).catch(console.warn);
-      await updateStreak(currentUserId).catch(console.error);
-      await createChallenge(selectedOpponent, opponent?.name ?? "Unknown", selectedWorkout, workout?.title ?? "Unknown", score, myTb);
+      // The server logs the score like any drill, then creates the challenge.
+      const { error } = await supabase.rpc("send_challenge", {
+        p_opponent: selectedOpponent, p_workout_id: selectedWorkout, p_score: score, p_tiebreak: myTb,
+      });
+      if (error) { showToast(friendly(error)); return; }
       setNeedsScore(false); setChallengeScore(""); setChallengeTiebreak(""); onScoreLogged?.();
+      await afterChallengeSent(selectedOpponent, selectedWorkout);
     } finally { setSending(false); }
   }
 
-  async function createChallenge(opponentId: string, opponentName: string, workoutId: string, workoutTitle: string, challengerScore: number, challengerTiebreak: number | null = null) {
-    const { error } = await supabase.from("challenges").insert({
-      challenger_id: currentUserId, challenger_name: currentUserName,
-      opponent_id: opponentId, opponent_name: opponentName,
-      workout_id: workoutId, workout_title: workoutTitle,
-      challenger_score: challengerScore, opponent_score: null,
-      challenger_tiebreak: challengerTiebreak,
-      status: "pending", opponent_seen: false, winner_id: null,
-    });
-    if (!error) {
-      setShowNew(false); setSelectedOpponent(""); setSelectedWorkout("");
-      showToast("Challenge sent! ⚔️");
-      try { const { data } = await supabase.from("xp_settings").select("xp_required").eq("perk_key","_xp_challenge_sent").single(); await awardXp(currentUserId, data?.xp_required ?? XP_CHALLENGE_SENT, "challenge_sent"); } catch(e) { console.error(e); }
-      try {
-        await supabase.functions.invoke("send-push", {
-          body: {
-            title: "⚔️ You've been challenged!",
-            message: `${currentUserName} challenged you in ${workoutTitle}`,
-            playerIds: [opponentId],
-          },
-        });
-      } catch (e) { console.error("Push notification failed to send:", e); }
-      loadChallenges();
-    }
+  async function afterChallengeSent(opponentId: string, workoutId: string) {
+    const workoutTitle = workouts.find(w => w.id === workoutId)?.title ?? "a drill";
+    setShowNew(false); setSelectedOpponent(""); setSelectedWorkout("");
+    showToast("Challenge sent! ⚔️");
+    try {
+      await supabase.functions.invoke("send-push", {
+        body: {
+          title: "⚔️ You've been challenged!",
+          message: `${currentUserName} challenged you in ${workoutTitle}`,
+          playerIds: [opponentId],
+        },
+      });
+    } catch (e) { console.error("Push notification failed to send:", e); }
+    loadChallenges();
+    loadOpponents();
   }
+
 
   async function sendRematch(c: Challenge) {
     setRematching(c.id);
     try {
       const rivalId   = c.challenger_id === currentUserId ? c.opponent_id   : c.challenger_id;
       const rivalName = c.challenger_id === currentUserId ? c.opponent_name : c.challenger_name;
-      const since24h = new Date(Date.now() - 86400000).toISOString();
-      const { data: recentAttempts } = await supabase.from("score_attempts").select("*")
-        .eq("player_id", currentUserId).eq("workout_id", c.workout_id).gte("attempted_at", since24h);
-      let rematchScore = 0;
-      let bestAttempt: any = null;
-      if (recentAttempts && recentAttempts.length > 0) {
-        const best = recentAttempts.reduce((b: any, s: any) => {
-          const score = s.self_points > 0 ? s.self_points : (s.made + s.reps);
-          const bScore = b ? (b.self_points > 0 ? b.self_points : (b.made + b.reps)) : 0;
-          return score > bScore ? s : b;
-        }, null);
-        rematchScore = best ? (best.self_points > 0 ? best.self_points : (best.made + best.reps)) : 0;
-        bestAttempt = best;
+      // The server uses my best on this drill from the last 24 hours.
+      const { error } = await supabase.rpc("send_challenge", { p_opponent: rivalId, p_workout_id: c.workout_id });
+      if (error) {
+        showToast(error.code === "P0002" ? "Log this drill in the last 24 hours before rematching! 🏀" : friendly(error));
+        return;
       }
-      if (rematchScore === 0) { showToast("Log this drill in the last 24 hours before rematching! 🏀"); return; }
-      const { error } = await supabase.from("challenges").insert({
-        challenger_id: currentUserId, challenger_name: currentUserName,
-        opponent_id: rivalId, opponent_name: rivalName,
-        workout_id: c.workout_id, workout_title: c.workout_title,
-        challenger_score: rematchScore, opponent_score: null,
-        challenger_tiebreak: bestAttempt?.tiebreak_value ?? null,
-        status: "pending", opponent_seen: false, winner_id: null,
-      });
-      if (!error) {
-        showToast(`Rematch sent to ${rivalName}! 🔄`);
-        try {
-          await supabase.functions.invoke("send-push", {
-            body: {
-              title: "⚔️ Rematch!",
-              message: `${currentUserName} sent you a rematch in ${c.workout_title}`,
-              playerIds: [rivalId],
-            },
-          });
-        } catch (e) { console.error("Push notification failed to send:", e); }
-        loadChallenges();
-      }
+      showToast(`Rematch sent to ${rivalName}! 🔁`);
+      try {
+        await supabase.functions.invoke("send-push", {
+          body: { title: "🔁 Rematch!", message: `${currentUserName} sent you a rematch in ${c.workout_title}`, playerIds: [rivalId] },
+        });
+      } catch (e) { console.error("Push notification failed to send:", e); }
+      loadChallenges();
+      loadOpponents();
     } finally { setRematching(null); }
   }
 
   async function respondToChallenge(challenge: Challenge, accept: boolean) {
     if (!accept) {
-      await supabase.from("challenges").update({ status: "declined" }).eq("id", challenge.id);
+      const { error: declineErr } = await supabase.rpc("decline_challenge", { p_challenge_id: challenge.id });
+      if (declineErr) { showToast(friendly(declineErr)); return; }
       showToast("Challenge declined.");
       try {
         await supabase.functions.invoke("send-push", {
@@ -283,24 +250,14 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
       const myTiebreak = (respWorkout as any)?.tiebreak_mode && responseTiebreak.trim() !== "" ? parseFloat(responseTiebreak) : null;
       // decideChallengeWinner, not `finalScore > challenger_score` -- the
       // old comparison handed a fewest-wins drill to the higher score.
-      const winnerId = decideChallengeWinner(
-        respWorkout, challenge.challenger_id, currentUserId,
-        challenge.challenger_score, finalScore,
-        (challenge as any).challenger_tiebreak ?? null, myTiebreak
-      );
-      await supabase.from("challenges").update({
-        opponent_score: finalScore, opponent_tiebreak: myTiebreak,
-        status: "completed", winner_id: winnerId,
-      }).eq("id", challenge.id);
-      if (winnerId) await awardChallengeWinBonus(winnerId, challenge.id).catch(console.error);
-      try { const { data } = await supabase.from("xp_settings").select("xp_required").eq("perk_key","_xp_challenge_done").single(); await awardXp(currentUserId, data?.xp_required ?? XP_CHALLENGE_DONE, "challenge_completed"); } catch(e) { console.error(e); }
-      if (finalScore > 0) {
-        // Passes the tiebreak through: without it a score logged via a
-        // challenge landed on the leaderboard with a null tiebreak and
-        // could never win one, quietly penalising anyone who did the
-        // drill as a challenge rather than on their own.
-        try { await submitScore({ player_id: currentUserId, workout_id: challenge.workout_id, made: finalScore, attempts: 0, sprint_secs: 0, reps: 0, self_points: 0, tiebreak_value: myTiebreak } as any); await updateStreak(currentUserId).catch(console.error); onScoreLogged?.(); } catch(e) { console.warn(e); }
-      }
+      // The server logs the score, decides the winner (same rules as
+      // decideChallengeWinner), pays the +1 once and awards XP to both.
+      const { data: res, error: respErr } = await supabase.rpc("respond_challenge", {
+        p_challenge_id: challenge.id, p_score: finalScore, p_tiebreak: myTiebreak,
+      });
+      if (respErr) { showToast(friendly(respErr)); return; }
+      const winnerId: string | null = (res as any)?.winner_id ?? null;
+      if (finalScore > 0) onScoreLogged?.();
       try {
         const resultMsg = winnerId === challenge.challenger_id
           ? `You beat ${currentUserName} in ${challenge.workout_title}! 🏆`
@@ -431,9 +388,13 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
               <select value={selectedOpponent} onChange={e => setSelectedOpponent(e.target.value)}
                 style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
                 <option value="">Select a player…</option>
-                {opponents.map((o: any) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                {opponents.map(o => (
+                  <option key={o.id} value={o.id} disabled={!o.available}>
+                    {o.name}{o.available ? "" : o.reason?.startsWith("Waiting") ? " — waiting for them to challenge you back" : " — not active lately"}
+                  </option>
+                ))}
               </select>
-              {opponents.length === 0 && <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)", padding: "8px 12px", background: "rgba(255,107,107,0.08)", border: "1px solid rgba(255,107,107,0.2)", borderRadius: 8 }}>No eligible opponents yet — other players need to reach {challengesThreshold} XP to unlock challenges.</div>}
+              {opponents.filter(o => o.available).length === 0 && <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)", padding: "8px 12px", background: "rgba(255,107,107,0.08)", border: "1px solid rgba(255,107,107,0.2)", borderRadius: 8 }}>No eligible opponents yet — other players need to reach {challengesThreshold} XP to unlock challenges.</div>}
             </div>
             <div>
               <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>Choose Drill</label>
