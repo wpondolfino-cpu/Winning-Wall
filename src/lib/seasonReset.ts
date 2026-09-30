@@ -24,6 +24,13 @@ async function archiveOffseason(seasonLabel: string, seasonId?: string | null): 
 
   const ptMap: Record<string, number> = {};
   allScores.forEach((s: any) => { ptMap[s.player_id] = (ptMap[s.player_id] || 0) + (s.points || 0); });
+  // Once the new scoring is live, the season total is the overall total
+  // (every competition + bonuses) -- the number players actually saw.
+  const { data: overall } = await supabase.rpc("overall_points");
+  if (overall && (overall as any[]).length > 0) {
+    for (const k of Object.keys(ptMap)) delete ptMap[k];
+    (overall as any[]).forEach(o => { ptMap[o.player_id] = Number(o.total); });
+  }
   // Rank only among currently-active players -- a deactivated account's
   // old leftover scores must never occupy a rank slot and skew everyone
   // else's computed rank down by one.
@@ -135,6 +142,9 @@ export async function archiveAndResetBoth(seasonLabel: string, seasonId?: string
 
   // 2. Only now clear the live data.
   await resetPlayerScores(null, { resetChampions: true });
+  // Points record starts over from zero for the new season (migration 155).
+  const { error: restartErr } = await supabase.rpc("restart_scoring_season");
+  if (restartErr) throw new Error(`Scores were reset, but the new season's points couldn't be restarted: ${restartErr.message}. Both archives are saved.`);
   const { error: clearErr } = await supabase.from("practice_wins").delete().not("id", "is", null);
   if (clearErr) throw new Error(`Offseason data was reset, but practice wins couldn't be cleared: ${clearErr.message}. Both archives are saved.`);
 }
