@@ -211,6 +211,17 @@ export default function App() {
   const [navExpanded, setNavExpanded] = useState<{ inseason: boolean; offseason: boolean }>({ inseason: true, offseason: true });
   const [showReorderModal, setShowReorderModal] = useState(false);
   const [deepLinkWorkoutId, setDeepLinkWorkoutId] = useState<string | null>(null);
+  // Set when a drill was opened from Player Drills, so closing it without
+  // logging goes back there instead of leaving the player on Workouts.
+  const [returnToLibrary, setReturnToLibrary] = useState(false);
+  // The "score logged" message, shown above whichever page the player is on.
+  const [logToast, setLogToast] = useState("");
+  const logToastTimer = useRef<number | undefined>(undefined);
+  function showLogToast(msg: string) {
+    setLogToast(msg);
+    window.clearTimeout(logToastTimer.current);
+    logToastTimer.current = window.setTimeout(() => setLogToast(""), 3500);
+  }
   const [challengePrefillWorkoutId, setChallengePrefillWorkoutId] = useState<string | null>(null);
   const [pendingChallenges, setPendingChallenges] = useState(0);
   const [pendingApprovals, setPendingApprovals]   = useState(0);
@@ -219,6 +230,9 @@ export default function App() {
   const [xpPerks, setXpPerks]         = useState<any[]>([]);
   const [xpEnabled, setXpEnabled]     = useState(true);
   const [localProfile, setLocalProfile] = useState<Profile | null>(null);
+
+  // Leaving for any other page cancels the return trip.
+  useEffect(() => { if (playerTab !== "workouts" && playerTab !== "library") setReturnToLibrary(false); }, [playerTab]);
 
   useEffect(() => { loadPeriodAnchor().catch(console.error); }, []);
   const [seasonMode, setSeasonMode] = useState<SeasonMode>("offseason");
@@ -772,13 +786,22 @@ export default function App() {
           {/* Coach announcements on every player page; keyed by tab so it
               refreshes as they move around. */}
           {isPlayer && <AnnouncementsBanner key={playerTab} playerId={user.id} />}
+          {isPlayer && logToast && (
+            <div role="status" style={{
+              position: "fixed", left: "50%", bottom: "calc(88px + env(safe-area-inset-bottom, 0px))", transform: "translateX(-50%)",
+              zIndex: 1000, maxWidth: "min(92vw, 420px)", width: "max-content",
+              background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)",
+              borderRadius: 12, padding: "12px 16px", fontSize: 14, fontWeight: 600, textAlign: "center",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+            }}>{logToast}</div>
+          )}
 
 
           {/* Keyed by navNonce so a nav click always remounts the open tab
               at its main page -- see navigateFromNav. */}
           <Fragment key={navNonce}>
           {/* Player panels */}
-          {isPlayer && playerTab === "workouts" && <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} canChallengeFromLibrary={xpEnabled && xpPerks.length > 0 && playerXp >= (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150)} onChallengeDrill={(id) => { setChallengePrefillWorkoutId(id); setPlayerTab("h2h"); }} />}
+          {isPlayer && playerTab === "workouts" && <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} onDismiss={() => { if (returnToLibrary) { setReturnToLibrary(false); setPlayerTab("library"); } }} onLogged={(msg) => { showLogToast(msg); if (returnToLibrary) { setReturnToLibrary(false); setPlayerTab("library"); } }} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} canChallengeFromLibrary={xpEnabled && xpPerks.length > 0 && playerXp >= (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150)} onChallengeDrill={(id) => { setChallengePrefillWorkoutId(id); setPlayerTab("h2h"); }} />}
           {isPlayer && playerTab === "leaderboard" && <LeaderboardHub currentUserId={user.id} profile={displayProfile} />}
           {isPlayer && playerTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} />}
           {isPlayer && playerTab === "progress" && <ProgressPanel profile={displayProfile} myScores={myScores} workouts={workouts} />}
@@ -790,7 +813,7 @@ export default function App() {
               same practices plus games and events. The old key still routes
               here so a saved tab value doesn't dead-end. */}
           {isPlayer && (playerTab === "schedule" || playerTab === "practiceschedule") && <SchedulePage role="player" homeRosterId={displayProfile.home_roster_id} onOpenTab={(t, payload) => { setScheduleTarget(payload ?? null); setPlayerTab(t as any); }} />}
-          {isPlayer && playerTab === "library" && <DrillLibrary canManage={false} onPractice={(id) => { setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} canChallenge={xpEnabled && xpPerks.length > 0 && playerXp >= (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150)} onChallenge={(id) => { setChallengePrefillWorkoutId(id); setPlayerTab("h2h"); }} />}
+          {isPlayer && playerTab === "library" && <DrillLibrary canManage={false} onPractice={(id) => { setReturnToLibrary(true); setPlayerTab("workouts"); setDeepLinkWorkoutId(id); }} canChallenge={xpEnabled && xpPerks.length > 0 && playerXp >= (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150)} onChallenge={(id) => { setChallengePrefillWorkoutId(id); setPlayerTab("h2h"); }} />}
           {isPlayer && playerTab === "profile" && <ProfilePage profile={displayProfile} onUpdated={handleProfileUpdated} myScores={allScores.filter((s: any) => s.player_id === user?.id)} workouts={workouts} xpEnabled={xpEnabled} />}
           {isPlayer && playerTab === "h2h" && xpEnabled && xpPerks.length > 0 && playerXp < (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) ? (
             <div className="panel active" style={{ textAlign: "center", padding: "60px 20px" }}>
