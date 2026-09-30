@@ -1,6 +1,6 @@
 // src/components/WorkoutsPanel.tsx
 import { useState, useEffect, useRef } from "react";
-import { supabase, Workout, Score, submitScore as _submitScore, submitLibraryPracticeScore as _submitLibraryPracticeScore, getVideoId, updateStreak, STREAK_BONUS_DAYS, STREAK_BONUS_PTS } from "../lib/supabase";
+import { supabase, Workout, Score, submitScore as _submitScore, submitLibraryPracticeScore as _submitLibraryPracticeScore, getVideoId, computeRawScore, STREAK_BONUS_DAYS, STREAK_BONUS_PTS } from "../lib/supabase";
 import DrillTimer, { Stopwatch } from "./DrillTimer";
 import DurationInput from "./DurationInput";
 import { formatDuration } from "../lib/time";
@@ -95,13 +95,12 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
     const loggedToday = new Set((todayAttempts ?? []).map((a: any) => a.workout_id));
     const completed = rankedWorkouts.filter(w => loggedToday.has(w.id)).length;
     const total = rankedWorkouts.length;
-    const { data: bonusToday } = await supabase.from("streak_bonuses").select("id").eq("player_id", user.id).eq("reason", "daily_completion").gte("awarded_at", today + "T00:00:00.000Z").single();
-    const bonusEarned = !!bonusToday;
-    if (completed >= total && total > 0 && !bonusEarned) {
-      try {
-        await supabase.from("streak_bonuses").insert({ player_id: user.id, points: 1, streak_length: 0, awarded_at: new Date().toISOString(), reason: "daily_completion" });
-      } catch (e) { console.warn(e); }
-    }
+    // The server checks the same set of drills and awards the +1 itself
+    // (once a day, program timezone).
+    const { data: claim } = await supabase.rpc("claim_daily_completion");
+    const c: any = claim ?? {};
+    const { data: bonusToday } = await supabase.from("streak_bonuses").select("id").eq("player_id", user.id).eq("reason", "daily_completion").gte("awarded_at", today + "T00:00:00.000Z").limit(1);
+    const bonusEarned = !!c.awarded || (bonusToday?.length ?? 0) > 0;
     setRankedCompletion({ completed, total, bonusEarned: bonusEarned || (completed >= total && total > 0) });
   }
 
@@ -164,6 +163,27 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
     return spots.reduce((sum, _, i) => sum + ((isTime ? parseFloat(spotScores[i] ?? "") : parseInt(spotScores[i] ?? "")) || 0), 0);
   }
 
+  /**
+   * True to go ahead. Asks "is that right?" when the new result is more
+   * than 5x the player's all-time best on this drill -- the 550-for-55
+   * typo. Times and lower-is-better drills: 5x better means 5x smaller.
+   */
+  async function confirmIfWayOff(w: Workout, newRaw: number): Promise<boolean> {
+    if (w.scoring_type === "flat" || newRaw === 0) return true;
+    const { data: pb } = await supabase.from("personal_bests").select("raw_score")
+      .eq("player_id", playerId).eq("workout_id", w.id).maybeSingle();
+    const prev = pb?.raw_score != null ? Number(pb.raw_score) : null;
+    if (prev == null || prev === 0) return true;
+    const lowerBetter = !!(w as any).lower_is_better;
+    const a = Math.abs(newRaw), b = Math.abs(prev);
+    const isTime = newRaw < 0 && prev < 0;
+    const wayOff = (isTime || lowerBetter) ? a * 5 < b : a > b * 5;
+    if (!wayOff) return true;
+    const shown = isTime ? `${a}s` : String(newRaw);
+    const best = isTime ? `${b}s` : String(prev);
+    return window.confirm(`${shown} is way off your best of ${best}. Is that right?\n\nTap OK to save it, or Cancel to fix it.`);
+  }
+
   async function handleSubmitScore() {
     if (!activeWorkout) return;
     setSaving(true);
@@ -190,6 +210,10 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
       // group, so it goes through the flat-point practice pipeline instead
       // of the normal competitive/flat/self-reported scoring pipeline.
       if (activeWorkout.is_active === false) {
+        if (!(await confirmIfWayOff(activeWorkout, computeRawScore({ made: finalMade, reps: finalReps, sprint_secs: finalSprints, self_points: finalSelfPoints })))) {
+          setSaving(false);
+          return;
+        }
         const libResult = await _submitLibraryPracticeScore(playerId, activeWorkout.id, {
           made: finalMade, reps: finalReps, sprint_secs: finalSprints, self_points: finalSelfPoints,
         });
@@ -219,40 +243,19 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
         tbMode === "spot"
           ? (spotArray && starIndex != null ? spotArray[starIndex] ?? null : null)
           : (tbMode && tiebreakValue.trim() !== "" ? parseFloat(tiebreakValue) : null);
+      // Egregious-typo check: a result more than 5x their best asks first
+      // (a confirm, not a block -- a real breakthrough still goes through).
+      if (!(await confirmIfWayOff(activeWorkout, computeRawScore({ made: finalMade, reps: finalReps, sprint_secs: finalSprints, self_points: finalSelfPoints })))) {
+        setSaving(false);
+        return;
+      }
       const result = await _submitScore({ player_id: playerId, workout_id: activeWorkout.id, made: finalMade, attempts: 0, sprint_secs: finalSprints, reps: finalReps, self_points: finalSelfPoints, tiebreak_value: finalTiebreakValue, spot_scores: spotArray, local_date: localDate } as any);
 
-      // Save per-spot personal bests for multi-spot workouts
-      if (activeWorkout.scoring_type === "multi_spot") {
-        const spots: string[] = (activeWorkout as any).spot_config ?? [];
-        const isTime = isMultiSpotTime(activeWorkout);
-        for (let si = 0; si < spots.length; si++) {
-          const spotScore = (isTime ? parseFloat(spotScores[si] ?? "") : parseInt(spotScores[si] ?? "")) || 0;
-          if (spotScore > 0) {
-            // Check existing PB for this spot
-            const { data: existing } = await supabase
-              .from("spot_personal_bests")
-              .select("best_score")
-              .eq("player_id", playerId)
-              .eq("workout_id", activeWorkout.id)
-              .eq("spot_index", si)
-              .maybeSingle();
-            const isNewBest = !existing || (isTime ? spotScore < existing.best_score : spotScore > existing.best_score);
-            if (isNewBest) {
-              await supabase.from("spot_personal_bests").upsert({
-                player_id: playerId,
-                workout_id: activeWorkout.id,
-                spot_index: si,
-                spot_name: spots[si],
-                best_score: spotScore,
-                achieved_at: new Date().toISOString(),
-              }, { onConflict: "player_id,workout_id,spot_index" });
-            }
-          }
-        }
-      }
+      // Per-spot bests are saved on the server with the log.
       const isPersonalBest: boolean = result.isPersonalBest;
       const previousBest: number | null = result.previousBest;
-      const { newStreak, bonusAwarded } = await updateStreak(playerId);
+      const newStreak = result.newStreak;
+      const bonusAwarded = result.streakBonus;
       setActiveWorkout(null);
       onScoreLogged();
       if (randomDrillSession) setKeepPracticing(true);
