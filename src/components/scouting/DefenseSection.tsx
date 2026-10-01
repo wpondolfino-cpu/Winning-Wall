@@ -1,5 +1,6 @@
 // src/components/scouting/DefenseSection.tsx
 import ChipSection from "../shared/ChipSection";
+import { STRUCTURE_OPTS, STRUCTURE_PLAN_OPTS, OFF_BALL_OPTS, OFF_BALL_PLAN_OPTS, BALL_SCREEN_OPTS, BALL_SCREEN_PLAN_OPTS, ZONE_TYPE_OPTS, ZONE_STRUCTURE_OPTS, ZONE_PLAN_OPTS } from "../../lib/scoutOptions";
 
 export interface ManBranch {
   court: "full" | "half" | null;
@@ -24,15 +25,6 @@ export const emptyDefenseData: DefenseSectionData = {
   zone: { type: [], structure: [], plan: [] },
 };
 
-const STRUCTURE_OPTS = ["Good help", "Hugs", "High ball pressure", "Looks to double", "Overplays"];
-const STRUCTURE_PLAN_OPTS = ["Look skips", "Look 45", "Crash hard", "Look for backdoors", "Look to flash"];
-const OFF_BALL_OPTS = ["Switch", "Fight through", "Combo"];
-const OFF_BALL_PLAN_OPTS = ["Look for slips & screen your own", "Look for curls/refuses"];
-const BALL_SCREEN_OPTS = ["Ice", "Hedge", "Blitz"];
-const BALL_SCREEN_PLAN_OPTS = ["Look for flips/re-screens/ghosts/drive the roll", "Look to refuse", "Attack"];
-const ZONE_TYPE_OPTS = ["2-3", "1-2-2", "1-3-1", "3-2", "Box & 1", "Triangle & 2"];
-const ZONE_STRUCTURE_OPTS = ["Compact", "Extended", "Traps corners", "Traps wings"];
-const ZONE_PLAN_OPTS = ["Diamond"];
 
 interface Props {
   label: string;
