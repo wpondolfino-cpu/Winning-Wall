@@ -16,6 +16,10 @@ import ChipSection from "../shared/ChipSection";
 import DefenseSection, { DefenseSectionData, emptyDefenseData } from "./DefenseSection";
 import CallEntryCard from "./CallEntryCard";
 import ScoutSheetPrintView from "./ScoutSheetPrintView";
+import QuizManager from "../quizzes/QuizManager";
+import PlayerQuizList from "../quizzes/PlayerQuizList";
+import { getMyQuizzes, MyQuiz } from "../../lib/quizzes";
+import { OFF_STRENGTH_STARTERS, PLAN_TO_GUARD_STARTERS, DEF_STRENGTH_STARTERS, PLAN_TO_ATTACK_STARTERS, TEAM_OFF_STRENGTH_STARTERS, PRESS_OPTS, PRESS_PLAN_OPTS, BLOB_SLOB_D_OPTS, BLOB_SLOB_D_PLAN_OPTS } from "../../lib/scoutOptions";
 
 interface Props {
   scoutSheetId: string;
@@ -23,22 +27,11 @@ interface Props {
   onClose: () => void;
 }
 
-const OFF_STRENGTH_STARTERS = ["Shooter", "Driver", "Stud", "Post up", "Iso", "Cutter", "Screener", "Rebounder", "Playmaker"];
-const PLAN_TO_GUARD_STARTERS = ["Pressure", "Contain", "Long closeout", "Short closeout", "Must box", "Be physical"];
-const DEF_STRENGTH_STARTERS = ["Plays passing lanes well", "Shot blocker", "Takes charges", "Great on-ball defender"];
-const PLAN_TO_ATTACK_STARTERS = ["Weak on-ball defender", "Poor closeouts", "Doesn't box out", "Foul prone", "Gambles", "Can backdoor"];
-const TEAM_OFF_STRENGTH_STARTERS = ["Transition", "Ball screens", "Post ups", "Motion", "Iso-heavy", "Offensive rebounding", "3-point volume"];
-
 const MARKER_ICON: Record<ScoutMarker, string> = { star: "⭐", dart: "🎯", turtle: "🐢" };
-
-const PRESS_OPTS = ["Run & Jump", "1-2-1-1", "2-2-1", "1-2-2", "2-1-2", "Trapping"];
-const PRESS_PLAN_OPTS = ["Diamond", "1-4 zone", "1-4 man"];
-const BLOB_SLOB_D_OPTS = ["Fight through", "Switch", "2-3", "1-4", "Watch trap"];
-const BLOB_SLOB_D_PLAN_OPTS = ["Screen your own/slip", "Solid screens", "Screen the zone"];
 
 export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: Props) {
   const [sheet, setSheet] = useState<ScoutSheet | null>(null);
-  const [tab, setTab] = useState<"roster" | "offense" | "defense" | "specials" | "keys" | "print">("roster");
+  const [tab, setTab] = useState<"roster" | "offense" | "defense" | "specials" | "keys" | "print" | "quiz">("roster");
   const [players, setPlayers] = useState<ScoutPlayer[]>([]);
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
   const [offenseSets, setOffenseSets] = useState<ScoutOffenseSet[]>([]);
@@ -54,6 +47,8 @@ export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: 
   const [gameDate, setGameDate] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [detailPlayerId, setDetailPlayerId] = useState<string | null>(null);
+  // Players: this sheet's quiz, for the button at the top of the sheet.
+  const [myQuiz, setMyQuiz] = useState<MyQuiz | null>(null);
 
   const load = useCallback(async () => {
     const [s, p, r, sets, specialsData, plays, defense] = await Promise.all([
@@ -83,6 +78,15 @@ export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: 
   }, [scoutSheetId, canManage]);
 
   useEffect(() => { load().catch(console.error); }, [load]);
+
+  // Reloaded whenever the player leaves the Quiz tab, so the button shows
+  // their score straight after they finish.
+  useEffect(() => {
+    if (canManage || tab === "quiz") return;
+    getMyQuizzes()
+      .then(list => setMyQuiz(list.find(q => q.scout_sheet_id === scoutSheetId) ?? null))
+      .catch(() => setMyQuiz(null));
+  }, [canManage, scoutSheetId, tab]);
 
   async function addPlayer() {
     if (!newName.trim()) return;
@@ -301,6 +305,14 @@ function joinHeight(ft: string, inch: string): string {
   function toggleBlobSlobDChip(v: string) { const next = toggleArr(blobSlobDChips, v); setBlobSlobDChips(next); saveDefenseSlot("blob_slob_d", { chips: next, plan: blobSlobDPlan }); }
   function toggleBlobSlobDPlan(v: string) { const next = toggleArr(blobSlobDPlan, v); setBlobSlobDPlan(next); saveDefenseSlot("blob_slob_d", { chips: blobSlobDChips, plan: next }); }
 
+  async function togglePublished() {
+    if (!sheet) return;
+    const next = sheet.status === "published" ? "draft" : "published";
+    if (next === "draft" && !window.confirm("Unpublish this scout sheet? Players won't be able to open it until you publish it again. Its quiz is separate and stays as it is.")) return;
+    await updateScoutSheet(sheet.id, { status: next });
+    setSheet({ ...sheet, status: next });
+  }
+
   if (!sheet) return <div style={{ padding: 24 }}>Loading…</div>;
 
   return (
@@ -308,8 +320,58 @@ function joinHeight(ft: string, inch: string): string {
       <div className="log-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 720, width: "95%" }}>
         <button className="modal-close" onClick={onClose}>✕</button>
 
+        {/* Players: a clear way into this scout's quiz, so it isn't hidden
+            behind the last tab. Only shown when they have one. */}
+        {!canManage && myQuiz && tab !== "quiz" && (() => {
+          const done = myQuiz.attempts.filter(a => a.submitted_at);
+          const latest = done[done.length - 1];
+          const open = myQuiz.attempts.some(a => !a.submitted_at);
+          const action = open ? "Resume quiz" : latest ? "Quiz" : "Take the quiz";
+          return (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 28px 12px 0",
+              background: "rgba(37,80,212,0.12)", border: "1px solid var(--royal-light)", borderRadius: 10, padding: "10px 12px" }}>
+              <span style={{ fontSize: 20 }}>📝</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>Scout quiz</div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                  {latest
+                    ? `You got ${latest.correct_count ?? 0} of ${latest.total_count}`
+                    : open ? "You're partway through"
+                    : `${myQuiz.question_count} question${myQuiz.question_count === 1 ? "" : "s"} on this scout`}
+                </div>
+              </div>
+              <button type="button" onClick={() => setTab("quiz")}
+                style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px",
+                  fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                {action}
+              </button>
+            </div>
+          );
+        })()}
+
+        {/* Publishing. Sheets were created as drafts and nothing in the app
+            ever published one, so players (who can only read published
+            sheets) never saw any scout sheet, and the Schedule's Scout sheet
+            button stayed faded. */}
+        {canManage && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, paddingRight: 28 }}>
+            <span style={{
+              fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
+              background: sheet.status === "published" ? "rgba(40,180,80,0.15)" : "rgba(240,192,64,0.12)",
+              color: sheet.status === "published" ? "#5de098" : "var(--gold)",
+            }}>
+              {sheet.status === "published" ? "🌐 Published — players can see it" : "📝 Draft — players can't see it"}
+            </span>
+            <button type="button" onClick={togglePublished}
+              style={{ background: sheet.status === "published" ? "var(--surface2)" : "var(--royal)", color: sheet.status === "published" ? "var(--muted)" : "#fff",
+                border: sheet.status === "published" ? "1px solid var(--border)" : "none", borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+              {sheet.status === "published" ? "Unpublish" : "Publish"}
+            </button>
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, borderBottom: "1px solid var(--border)", paddingBottom: 10 }}>
-          {(["roster", "offense", "defense", "specials", "keys", "print"] as const).map(t => (
+          {(["roster", "offense", "defense", "specials", "keys", "print", "quiz"] as const).map(t => (
             <button key={t} type="button" onClick={() => setTab(t)}
               style={{ fontSize: 13, fontWeight: 600, padding: "6px 12px", borderRadius: 8, textTransform: "capitalize",
                 background: tab === t ? "var(--royal)" : "var(--surface2)", color: tab === t ? "#fff" : "var(--muted)", border: "none", cursor: "pointer" }}>
@@ -490,6 +552,10 @@ function joinHeight(ft: string, inch: string): string {
               <button type="button" onClick={addKey} style={{ marginTop: 6, background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>+ Add key point</button>
             )}
           </div>
+        )}
+
+        {tab === "quiz" && (
+          canManage ? <QuizManager scoutSheetId={sheet.id} /> : <PlayerQuizList scoutSheetId={sheet.id} />
         )}
 
         {tab === "print" && (
