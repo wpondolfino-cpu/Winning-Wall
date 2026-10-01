@@ -33,6 +33,7 @@ import SaveTemplateModal from "./SaveTemplateModal";
 import TryoutPoolManager from "./TryoutPoolManager";
 import PracticeDrillLibrary from "./PracticeDrillLibrary";
 import PracticePrintView from "./PracticePrintView";
+import PracticeCoverList from "../quizzes/PracticeCoverList";
 import type { PracticeDrillLibraryDrill } from "../../lib/practicePlanner";
 
 interface PlayerLite { id: string; name: string; home_roster_id: string | null; }
@@ -623,6 +624,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
           <button onClick={onClose} style={secondaryBtn}>Close</button>
         </div>
       </div>
+
+      {/* Re-teach items sent from a quiz's results. Renders nothing when empty. */}
+      {practice && <PracticeCoverList practiceId={practice.id} />}
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
         <div>
