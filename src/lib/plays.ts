@@ -635,6 +635,8 @@ export interface PlayPlayer {
   profile_id?: string | null;
   /** Marks this player as receiving a handoff at this point in the beat — stamp it on top of wherever a dribble/cut ends. */
   handoff?: boolean;
+  /** Only ever set in a quiz question's snapshot, never by the designer: the player the question is about, drawn in gold. */
+  quizFocus?: boolean;
 }
 
 export interface PlayDefender {
