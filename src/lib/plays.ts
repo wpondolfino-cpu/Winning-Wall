@@ -656,8 +656,10 @@ export interface PlayZone {
 }
 
 export interface PlayFrame {
-  /** Optional label for this step, e.g. "Screen sets" / "Cut and pass". */
+  /** Optional name for this step, e.g. "Screen sets" / "Cut and pass". Set in the designer; blank shows as "Step N". */
   label?: string;
+  /** Coaching notes for this step -- the reads and the why, e.g. "2 reads his man: curl if trailed, flare if he goes under." Shown under the court in the viewers and on prints, and what play-quiz AI drafts will read. Optional for backward compatibility. */
+  note?: string;
   players: PlayPlayer[];
   defenders: PlayDefender[];
   ball: PlayPoint | null;
@@ -696,6 +698,22 @@ export function resolvePassEndpoint(frame: PlayFrame, action: PlayAction): { x: 
     if (receiver) return { x: receiver.x, y: receiver.y };
   }
   return { x: action.x2, y: action.y2 };
+}
+
+/** Longest step name and note the designer accepts. */
+export const STEP_LABEL_MAX = 40;
+export const STEP_NOTE_MAX = 600;
+
+/** A step's display name: its own name if it has one, otherwise "Step N". */
+export function stepName(frame: PlayFrame | undefined, index: number): string {
+  const label = frame?.label?.trim();
+  return label ? label : `Step ${index + 1}`;
+}
+
+/** Short text for a step button: "3 · Screen sets", or "Step 3" when unnamed. */
+export function stepButtonText(frame: PlayFrame | undefined, index: number): string {
+  const label = frame?.label?.trim();
+  return label ? `${index + 1} · ${label}` : `Step ${index + 1}`;
 }
 
 export interface PlayData {
