@@ -128,6 +128,18 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
     setView("questions");
   });
 
+  // An empty draft (the sheet had nothing to build from): throw it away and
+  // build again from the sheet as it is now.
+  const rebuildEmptyDraft = () => run("rebuild", async () => {
+    if (!bundle || !scoutSheetId || bundle.quiz.status !== "draft" || bundle.questions.length) return;
+    await deleteQuiz(bundle.quiz.id);
+    const id = await createDraftForSheet(scoutSheetId);
+    await loadVersions(id);
+    const fresh = await getQuizBundle(id);
+    setBundle(fresh);
+    if (!fresh.questions.length) setNotice("Still nothing to build from. Fill in the sheet's Roster or Defense tabs first.");
+  });
+
   const removeQuiz = () => run("delete", async () => {
     if (!bundle) return;
     const isDraft = bundle.quiz.status === "draft";
@@ -338,9 +350,16 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
               </div>
               {bundle.questions.length === 0 && isDraft && (
                 <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>
-                  {scoutSheetId
-                    ? "The sheet's structured fields didn't produce any questions yet. Add your own or draft some with AI."
-                    : "No questions yet. Add your first one below."}
+                  {scoutSheetId ? (
+                    <>
+                      The scout sheet doesn't have enough filled in to build questions from yet (matchups, hands,
+                      strengths, defense). Fill in the sheet, then{" "}
+                      <button type="button" onClick={rebuildEmptyDraft} disabled={!!busy} style={smallBtn}>
+                        {busy === "rebuild" ? "Building…" : "Rebuild from sheet"}
+                      </button>
+                      , or add your own questions below.
+                    </>
+                  ) : "No questions yet. Add your first one below."}
                 </div>
               )}
               {bundle.questions.map((q, i) => editingId === q.id ? (
