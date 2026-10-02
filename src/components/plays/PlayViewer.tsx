@@ -9,6 +9,7 @@ import { getProfile } from "../../lib/auth";
 import PlayCanvas, { CANVAS_W, CANVAS_H } from "./PlayCanvas";
 import PlayPrintView from "./PlayPrintView";
 import StepNote from "./StepNote";
+import PlayerQuizList from "../quizzes/PlayerQuizList";
 import PlayCategoryManagerModal from "./PlayCategoryManagerModal";
 import RosterShareRows from "../shared/RosterShareRows";
 import { PlayCategory, getPlayCategories } from "../../lib/playCategories";
@@ -366,6 +367,8 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
         <button onClick={() => setOpenPlaybook(null)} style={{ marginBottom: 10 }}>← Back</button>
         <h2 style={{ fontSize: 18, marginBottom: 4 }}>{openPlaybook.pb.name}</h2>
         {openPlaybook.pb.description && <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>{openPlaybook.pb.description}</p>}
+        {/* Play quizzes built from this playbook, if any (players only see quizzes sent to them). */}
+        <PlayerQuizList playbookId={openPlaybook.pb.id} />
         {getYouTubeId(openPlaybook.pb.video_url) && (
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>🎬 Walkthrough</div>
