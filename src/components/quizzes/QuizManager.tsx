@@ -24,6 +24,7 @@ import { getRosters } from "../../lib/practicePlanner";
 import { inputStyle } from "../../lib/inputStyle";
 import QuizQuestionEditor from "./QuizQuestionEditor";
 import QuizResults from "./QuizResults";
+import QuizPreview from "./QuizPreview";
 import { QuizPlayVisual } from "./QuizPlayVisual";
 import { supabase } from "../../lib/supabase";
 import { card, pill, primaryBtn, secondaryBtn, dangerBtn, smallBtn, sectionTitle, label } from "./quizStyles";
@@ -47,6 +48,7 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
   const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
   const [view, setView] = useState<"results" | "questions">("results");
   const [editingId, setEditingId] = useState<string | null>(null);   // question id, or "new"
+  const [previewing, setPreviewing] = useState(false);
   const [aiCount, setAiCount] = useState(6);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +94,7 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
 
   useEffect(() => {
     setEditingId(null);
+    setPreviewing(false);
     loadBundle(selectedId).catch(e => setError(e?.message ?? "Couldn't load the quiz."));
   }, [selectedId, loadBundle]);
 
@@ -239,8 +242,17 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
         ))}
       </div>
 
-      {!quiz ? <div style={{ color: "var(--muted)", fontSize: 13 }}>Loading…</div> : (
+      {!quiz ? <div style={{ color: "var(--muted)", fontSize: 13 }}>Loading…</div> : previewing && bundle ? (
+        <QuizPreview bundle={bundle} roster={roster} onClose={() => setPreviewing(false)} />
+      ) : (
         <>
+          {bundle && bundle.questions.length > 0 && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+              <button type="button" onClick={() => { setEditingId(null); setPreviewing(true); }} style={secondaryBtn}>
+                ▶ Preview as a player
+              </button>
+            </div>
+          )}
           {isDraft && (
             <div style={{ ...card, fontSize: 13, marginBottom: 12, borderColor: "rgba(240,192,64,0.4)" }}>
               <span style={pill("warn")}>Draft</span>{" "}
