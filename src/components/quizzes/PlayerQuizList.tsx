@@ -15,6 +15,8 @@ import { card, pill, primaryBtn, secondaryBtn, sectionTitle } from "./quizStyles
 interface Props {
   /** Only this sheet's quiz (inside a scout sheet). Omit for the full Quizzes page. */
   scoutSheetId?: string;
+  /** Only this playbook's quizzes (at the top of a playbook). Shows nothing when there are none. */
+  playbookId?: string;
 }
 
 function tipLabel(q: MyQuiz): string | null {
@@ -29,7 +31,7 @@ function tipLabel(q: MyQuiz): string | null {
   return `Before tip-off · ${day} ${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
 }
 
-export default function PlayerQuizList({ scoutSheetId }: Props) {
+export default function PlayerQuizList({ scoutSheetId, playbookId }: Props) {
   const [quizzes, setQuizzes] = useState<MyQuiz[] | null>(null);
   const [deckCount, setDeckCount] = useState(0);
   const [taking, setTaking] = useState<MyQuiz | null>(null);
@@ -39,13 +41,16 @@ export default function PlayerQuizList({ scoutSheetId }: Props) {
 
   const load = useCallback(async () => {
     try {
-      const [list, n] = await Promise.all([getMyQuizzes(), scoutSheetId ? Promise.resolve(0) : getReviewDeckCount()]);
-      setQuizzes(scoutSheetId ? list.filter(q => q.scout_sheet_id === scoutSheetId) : list);
+      const filtered = !!(scoutSheetId || playbookId);
+      const [list, n] = await Promise.all([getMyQuizzes(), filtered ? Promise.resolve(0) : getReviewDeckCount()]);
+      setQuizzes(scoutSheetId ? list.filter(q => q.scout_sheet_id === scoutSheetId)
+        : playbookId ? list.filter(q => q.playbook_id === playbookId)
+        : list);
       setDeckCount(n);
     } catch (e: any) {
       setError(e?.message ?? "Couldn't load your quizzes.");
     }
-  }, [scoutSheetId]);
+  }, [scoutSheetId, playbookId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -72,7 +77,11 @@ export default function PlayerQuizList({ scoutSheetId }: Props) {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-              {!scoutSheetId && <span style={pill(q.kind === "scout" ? "info" : "plain")}>{q.kind === "scout" ? "Scout" : "Quiz"}</span>}
+              {!scoutSheetId && !playbookId && (
+                <span style={pill(q.kind === "scout" ? "info" : q.kind === "plays" ? "warn" : "plain")}>
+                  {q.kind === "scout" ? "Scout" : q.kind === "plays" ? "Plays" : "Quiz"}
+                </span>
+              )}
               <span style={{ fontSize: 14, fontWeight: 600 }}>{q.title}</span>
             </div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
@@ -95,6 +104,17 @@ export default function PlayerQuizList({ scoutSheetId }: Props) {
       </div>
     );
   };
+
+  // At the top of a playbook: its quizzes, or nothing at all.
+  if (playbookId) {
+    if (!quizzes.length) return null;
+    return (
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>📝 Test yourself on this playbook</div>
+        {quizzes.map(row)}
+      </div>
+    );
+  }
 
   // Inside a scout sheet: just that quiz.
   if (scoutSheetId) {
