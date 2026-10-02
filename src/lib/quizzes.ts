@@ -10,7 +10,7 @@
 import { supabase } from "./supabase";
 import {
   getScoutSheet, getScoutPlayers, getDefenseSections, getScoutSheetPrintContext,
-  ScoutPlayer,
+  ensureScoutSheetForGame, ScoutPlayer,
 } from "./scoutSheets";
 import {
   OFF_STRENGTH_STARTERS, PLAN_TO_GUARD_STARTERS, PLAN_TO_ATTACK_STARTERS, TEAM_OFF_STRENGTH_STARTERS,
@@ -453,6 +453,42 @@ export async function createDraftForSheet(scoutSheetId: string): Promise<string>
     throw e;
   }
   return quizId;
+}
+
+/** A game a scout quiz can be made for (the Quizzes page's game picker). */
+export interface QuizGameOption {
+  id: string;
+  game_date: string;
+  tip_time: string | null;
+  opponent: string | null;
+  roster_id: string | null;
+}
+
+/** Games from two weeks ago onward, soonest first. */
+export async function getGamesForScoutQuiz(): Promise<QuizGameOption[]> {
+  const d = new Date();
+  d.setDate(d.getDate() - 14);
+  const from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const { data, error } = await supabase.from("games")
+    .select("id, game_date, tip_time, opponent, roster_id")
+    .gte("game_date", from)
+    .order("game_date").order("tip_time");
+  if (error) throw error;
+  return (data ?? []) as QuizGameOption[];
+}
+
+/**
+ * A game's scout quiz, from the Quizzes page. Makes the game's scout
+ * sheet if it doesn't have one (same as the Schedule's Scout sheet
+ * button), then builds the quiz from it -- unless the sheet already has a
+ * quiz, in which case that one is returned rather than a second version.
+ * Returns the scout sheet id; the editor opens on the sheet's quiz.
+ */
+export async function createScoutQuizForGame(gameId: string): Promise<string> {
+  const { sheet } = await ensureScoutSheetForGame(gameId);
+  const existing = await getQuizzesForSheet(sheet.id);
+  if (!existing.length) await createDraftForSheet(sheet.id);
+  return sheet.id;
 }
 
 /** A quiz that isn't tied to a scout sheet (terms, rules, later plays). */
