@@ -42,45 +42,55 @@ export default function NavReorderModal({ userId, items, onSaved, onClose }: Pro
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  function findDragItem(): { section: NavSection; index: number; item: NavItemConfig } | null {
-    if (!dragKey) return null;
-    for (const section of ["inseason", "offseason", "always"] as NavSection[]) {
-      const index = zones[section].findIndex(i => i.key === dragKey);
-      if (index !== -1) return { section, index, item: zones[section][index] };
-    }
-    return null;
-  }
-
-  function moveDragItemTo(targetSection: NavSection, targetIndex: number) {
-    const found = findDragItem();
-    if (!found) return;
-    if (found.section === targetSection && found.index === targetIndex) return;
-
+  // Moves the dragged item. Everything is worked out from `prev` inside
+  // the updater, never from the `zones` this render saw.
+  //
+  // The old version looked the item up in `zones` and then spliced
+  // `prev` at that index. dragover fires many times a second, and one
+  // event over an item also bubbled to the zone's own "drop at the end"
+  // handler, so two moves ran per event against the same stale lookup:
+  // the second spliced out the WRONG item and inserted the dragged one
+  // again. That's what filled the list with copies of one item.
+  function moveDragItemTo(targetSection: NavSection, targetIndex: number | "end") {
+    if (!dragKey) return;
     setZones(prev => {
+      let fromSection: NavSection | null = null;
+      let fromIndex = -1;
+      for (const sec of ["inseason", "offseason", "always"] as NavSection[]) {
+        const i = prev[sec].findIndex(x => x.key === dragKey);
+        if (i !== -1) { fromSection = sec; fromIndex = i; break; }
+      }
+      if (!fromSection) return prev;
+      const to = targetIndex === "end" ? prev[targetSection].length : targetIndex;
+      if (fromSection === targetSection && (fromIndex === to || (targetIndex === "end" && fromIndex === to - 1))) return prev;
+
       const next: Record<NavSection, NavItemConfig[]> = {
         inseason: [...prev.inseason], offseason: [...prev.offseason], always: [...prev.always],
       };
-      next[found.section].splice(found.index, 1);
-      const updatedItem = { ...found.item, section: targetSection };
-      const insertAt = found.section === targetSection && found.index < targetIndex ? targetIndex - 1 : targetIndex;
-      next[targetSection].splice(Math.max(0, insertAt), 0, updatedItem);
+      const [item] = next[fromSection].splice(fromIndex, 1);
+      const insertAt = fromSection === targetSection && fromIndex < to ? to - 1 : to;
+      next[targetSection].splice(Math.max(0, insertAt), 0, { ...item, section: targetSection });
       return next;
     });
   }
 
   function handleDragOverItem(section: NavSection, index: number, e: React.DragEvent) {
     e.preventDefault();
+    e.stopPropagation();          // don't also trigger the zone's "move to end"
     moveDragItemTo(section, index);
   }
 
   function handleDragOverZoneEnd(section: NavSection, e: React.DragEvent) {
     e.preventDefault();
-    moveDragItemTo(section, zones[section].length);
+    // Only the zone's own empty space, not a bubbled event from an item.
+    if (e.target !== e.currentTarget) return;
+    moveDragItemTo(section, "end");
   }
 
   async function handleSave() {
     setSaving(true);
-    const order = [...zones.inseason, ...zones.offseason, ...zones.always].map(i => i.key);
+    // Belt and braces: never save the same item twice.
+    const order = Array.from(new Set([...zones.inseason, ...zones.offseason, ...zones.always].map(i => i.key)));
     const sections: Record<string, NavSection> = {};
     (["inseason", "offseason", "always"] as NavSection[]).forEach(sec => {
       zones[sec].forEach(i => { sections[i.key] = sec; });
@@ -97,10 +107,13 @@ export default function NavReorderModal({ userId, items, onSaved, onClose }: Pro
     }
   }
 
-  function Zone({ section }: { section: NavSection }) {
+  // A plain function, not a component defined inside this one: a nested
+  // component is a NEW type every render, so React threw away and rebuilt
+  // every row on each dragover -- including the row being dragged.
+  function renderZone(section: NavSection) {
     const list = zones[section];
     return (
-      <div>
+      <div key={section}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", letterSpacing: 0.5, marginBottom: 6 }}>{ZONE_LABELS[section]}</div>
         <div
           onDragOver={(e) => handleDragOverZoneEnd(section, e)}
@@ -110,7 +123,7 @@ export default function NavReorderModal({ userId, items, onSaved, onClose }: Pro
             <div
               key={item.key}
               draggable
-              onDragStart={() => setDragKey(item.key)}
+              onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", item.key); setDragKey(item.key); }}
               onDragOver={(e) => handleDragOverItem(section, i, e)}
               onDragEnd={() => setDragKey(null)}
               style={{
@@ -141,9 +154,9 @@ export default function NavReorderModal({ userId, items, onSaved, onClose }: Pro
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Drag items to reorder — drag across sections to move an item between IN-SEASON, OFFSEASON, or always-visible.</div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <Zone section="inseason" />
-            <Zone section="offseason" />
-            <Zone section="always" />
+            {renderZone("inseason")}
+            {renderZone("offseason")}
+            {renderZone("always")}
           </div>
 
           <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
