@@ -274,13 +274,13 @@ export default function App() {
     if (profile.role === "coach") {
       const validKeys = new Set(COACH_NAV_DEFAULT_ORDER);
       const merged = saved
-        ? [...saved.filter(k => validKeys.has(k)), ...COACH_NAV_DEFAULT_ORDER.filter(k => !saved.includes(k))]
+        ? [...new Set(saved.filter(k => validKeys.has(k))), ...COACH_NAV_DEFAULT_ORDER.filter(k => !saved.includes(k))]
         : COACH_NAV_DEFAULT_ORDER;
       setCoachNavOrder(merged);
     } else if (profile.role === "admin") {
       const validKeys = new Set(ADMIN_NAV_DEFAULT_ORDER);
       const merged = saved
-        ? [...saved.filter(k => validKeys.has(k)), ...ADMIN_NAV_DEFAULT_ORDER.filter(k => !saved.includes(k))]
+        ? [...new Set(saved.filter(k => validKeys.has(k))), ...ADMIN_NAV_DEFAULT_ORDER.filter(k => !saved.includes(k))]
         : ADMIN_NAV_DEFAULT_ORDER;
       setAdminNavOrder(merged);
     }
