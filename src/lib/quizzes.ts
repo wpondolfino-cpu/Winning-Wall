@@ -8,6 +8,7 @@
 // reaches the phone after the answer it belongs to is locked.
 
 import { supabase } from "./supabase";
+import { Play, PlayFrame, PlayAction, getPlaybookPlays, stepName } from "./plays";
 import {
   getScoutSheet, getScoutPlayers, getDefenseSections, getScoutSheetPrintContext,
   ensureScoutSheetForGame, ScoutPlayer,
@@ -38,6 +39,10 @@ export interface Quiz {
   show_time_to_coaches: boolean;
   roster_ids: string[];            // the teams "everyone" means (162)
   due_at: string | null;           // standalone quizzes; scout quizzes use tip-off
+  playbook_id: string | null;      // play quizzes (163)
+  source_play_ids: string[];
+  play_settings: PlayQuizSettings | Record<string, never>;
+  replaces_quiz_id: string | null;
   published_at: string | null;
   created_by: string | null;
   created_at: string;
@@ -47,8 +52,46 @@ export interface Quiz {
 export type QuizSettings = Pick<Quiz, "feedback_mode" | "allow_retakes" | "time_limit_seconds" | "show_time_to_coaches"
   | "title" | "roster_ids" | "due_at">;
 
-export type QuizKind = "scout" | "standalone";
-export const quizKind = (q: Pick<Quiz, "scout_sheet_id">): QuizKind => (q.scout_sheet_id ? "scout" : "standalone");
+export type QuizKind = "scout" | "plays" | "standalone";
+export const quizKind = (q: Pick<Quiz, "scout_sheet_id"> & Partial<Pick<Quiz, "playbook_id" | "source_play_ids">>): QuizKind =>
+  q.scout_sheet_id ? "scout"
+  : (q.playbook_id || (q.source_play_ids?.length ?? 0) > 0) ? "plays"
+  : "standalone";
+
+// ── Play quiz types (163) ─────────────────────────────────────
+
+export type PlayQType = "what_next" | "who_ball" | "name_play";
+export const PLAY_QTYPE_LABEL: Record<PlayQType, string> = {
+  what_next: "What happens next",
+  who_ball: "Who gets the ball",
+  name_play: "Name that play",
+};
+
+/** What a play quiz was built with, so Regenerate repeats it. */
+export interface PlayQuizSettings {
+  types: Partial<Record<PlayQType, number>>;   // type -> questions per play (0/absent = off)
+  maxQuestions: number;
+}
+
+/**
+ * The court shown WITH a question. Never contains the step that answers
+ * it: "what happens next" shows positions only; "name that play" shows
+ * the opening steps with no title.
+ */
+export interface QuizVisual {
+  court_template: string;
+  frames: PlayFrame[];
+  /** Animate these frames, then hide the court before answers appear. */
+  hide_after?: boolean;
+  caption?: string | null;
+}
+
+/** The answering step, sent only once the answer is locked. */
+export interface QuizReveal {
+  court_template: string;
+  frame: PlayFrame;
+  caption?: string | null;
+}
 
 export interface QuizOption { id: string; label: string; sort_order: number; }
 
@@ -64,6 +107,9 @@ export interface QuizQuestion {
   correct_option_id: string | null;
   explanation: string | null;
   assignee_ids: string[];          // empty = everyone on the game's roster
+  qtype: PlayQType | null;
+  visual: QuizVisual | null;
+  reveal: QuizReveal | null;
 }
 
 /** A question before it's saved: options by text, correct one by index. */
@@ -75,6 +121,9 @@ export interface QuestionDraft {
   source: QuestionSource;
   family: string | null;
   assigneeIds: string[];
+  qtype?: PlayQType | null;
+  visual?: QuizVisual | null;
+  reveal?: QuizReveal | null;
 }
 
 export interface QuizBundle { quiz: Quiz; questions: QuizQuestion[]; }
@@ -342,6 +391,9 @@ export async function getQuizBundle(quizId: string): Promise<QuizBundle> {
       correct_option_id: keyBy.get(q.id)?.correct_option_id ?? null,
       explanation: keyBy.get(q.id)?.explanation ?? null,
       assignee_ids: assignBy.get(q.id) ?? [],
+      qtype: q.qtype ?? null,
+      visual: q.visual ?? null,
+      reveal: q.reveal ?? null,
     })),
   };
 }
@@ -359,7 +411,10 @@ export async function addQuestions(quizId: string, drafts: QuestionDraft[], star
   if (!clean.length) return;
 
   const { data: qRows, error: qErr } = await supabase.from("quiz_questions")
-    .insert(clean.map((d, i) => ({ quiz_id: quizId, sort_order: startOrder + i, prompt: d.prompt, source: d.source, family: d.family })))
+    .insert(clean.map((d, i) => ({
+      quiz_id: quizId, sort_order: startOrder + i, prompt: d.prompt, source: d.source, family: d.family,
+      qtype: d.qtype ?? null, visual: d.visual ?? null, reveal: d.reveal ?? null,
+    })))
     .select("id, sort_order");
   if (qErr) throw qErr;
   const qIdByOrder = new Map<number, string>(((qRows ?? []) as any[]).map(r => [r.sort_order, r.id]));
@@ -455,6 +510,253 @@ export async function createDraftForSheet(scoutSheetId: string): Promise<string>
   return quizId;
 }
 
+// ── Play quizzes (163) ───────────────────────────────────────
+
+const ACTION_WORD: Record<string, string> = {
+  move: "Cut", screen: "Set a screen", pass: "Pass", dribble: "Dribble", shot: "Shoot", lob: "Throw a lob",
+};
+const ACTION_SENTENCE: Record<string, string> = {
+  move: "cuts", screen: "sets a screen", pass: "passes", dribble: "dribbles", shot: "shoots", lob: "throws a lob",
+};
+
+/** A frame stripped to what a question may show: positions only. The
+ *  player the question is about is marked so the court draws them gold. */
+function positionsOnly(f: PlayFrame, focusId?: string): PlayFrame {
+  return {
+    players: f.players.map(p => ({ ...p, profile_id: null, handoff: false, quizFocus: !!focusId && p.id === focusId })),
+    defenders: f.defenders.map(d => ({ ...d })),
+    ball: f.ball ? { ...f.ball } : null,
+    ballHolderId: f.ballHolderId ?? null,
+    actions: [],
+    // Court text and drawings can describe the very move being asked
+    // about, so they stay out of the question.
+  };
+}
+
+/** A full step for the reveal, without links to real players. */
+function cleanStep(f: PlayFrame, focusId?: string): PlayFrame {
+  return { ...f, players: f.players.map(p => ({ ...p, profile_id: null, quizFocus: !!focusId && p.id === focusId })), note: undefined };
+}
+
+function playCaption(play: Play, i: number): string {
+  return `${play.title} · ${stepName(play.data.frames[i], i)}`;
+}
+
+function pickN<T>(arr: T[], n: number): T[] {
+  return shuffle(arr).slice(0, Math.max(0, n));
+}
+
+/**
+ * Builds play questions from plays as drawn. Every answer comes from the
+ * drawing itself, so it's right by construction. Steps' coaching notes,
+ * when written, become the explanation.
+ */
+export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): QuestionDraft[] {
+  const per = settings.types;
+  const out: QuestionDraft[] = [];
+  const titled = plays.filter(p => p.title?.trim());
+
+  for (const play of plays) {
+    const frames = play.data?.frames ?? [];
+    const template = play.court_template;
+
+    // ── What happens next: one player's first action on a step ──
+    if (per.what_next) {
+      const pool: { i: number; num: number; id: string; action: PlayAction; many: boolean }[] = [];
+      frames.forEach((f, i) => {
+        for (const p of f.players) {
+          if (!p.id) continue;
+          const mine = f.actions
+            .filter(a => a.sourcePlayerId === p.id)
+            .sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0));
+          if (mine.length && ACTION_WORD[mine[0].type]) pool.push({ i, num: p.num, id: p.id, action: mine[0], many: mine.length > 1 });
+        }
+      });
+      for (const c of pickN(pool, per.what_next)) {
+        const right = ACTION_WORD[c.action.type];
+        const wrong = pickN(Object.values(ACTION_WORD).filter(w => w !== right), 3);
+        const note = frames[c.i].note?.trim();
+        out.push({
+          prompt: `What does the ${c.num} do${c.many ? " first" : ""} on this step?`,
+          options: [right, ...wrong], correctIndex: 0,
+          explanation: `The ${c.num} ${ACTION_SENTENCE[c.action.type]}.${note ? ` Coach's note: ${note}` : ""}`,
+          source: "sheet", family: null, assigneeIds: [], qtype: "what_next",
+          visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.id)], caption: playCaption(play, c.i) },
+          reveal: { court_template: template, frame: cleanStep(frames[c.i], c.id), caption: playCaption(play, c.i) },
+        });
+      }
+    }
+
+    // ── Who gets the ball: a pass with a known receiver ──
+    if (per.who_ball) {
+      const pool: { i: number; from: number; fromId: string; to: number; others: number[] }[] = [];
+      frames.forEach((f, i) => {
+        for (const a of f.actions) {
+          if ((a.type !== "pass" && a.type !== "lob") || !a.sourcePlayerId || !a.targetPlayerId) continue;
+          const from = f.players.find(p => p.id === a.sourcePlayerId);
+          const to = f.players.find(p => p.id === a.targetPlayerId);
+          if (!from || !to) continue;
+          const others = f.players.filter(p => p.id !== from.id && p.id !== to.id).map(p => p.num);
+          if (others.length >= 1) pool.push({ i, from: from.num, fromId: from.id!, to: to.num, others });
+        }
+      });
+      for (const c of pickN(pool, per.who_ball)) {
+        const note = frames[c.i].note?.trim();
+        out.push({
+          prompt: `Who does the ${c.from} pass to on this step?`,
+          options: [`The ${c.to}`, ...pickN(c.others, 3).map(n => `The ${n}`)], correctIndex: 0,
+          explanation: `The ${c.from} passes to the ${c.to}.${note ? ` Coach's note: ${note}` : ""}`,
+          source: "sheet", family: null, assigneeIds: [], qtype: "who_ball",
+          visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.fromId)], caption: playCaption(play, c.i) },
+          reveal: { court_template: template, frame: cleanStep(frames[c.i], c.fromId), caption: playCaption(play, c.i) },
+        });
+      }
+    }
+
+    // ── Name that play: watch the opening, court hides, pick the title ──
+    if (per.name_play && frames.some(f => f.actions.length) && titled.length >= 3) {
+      const others = titled.filter(p => p.id !== play.id && p.title.trim().toLowerCase() !== play.title.trim().toLowerCase());
+      const wrong = pickN([...new Set(others.map(p => p.title.trim()))], 3);
+      if (wrong.length >= 2) {
+        const opening = frames.slice(0, Math.min(2, frames.length)).map(f => ({
+          ...cleanStep(f), label: undefined, texts: [], drawings: [],
+        }));
+        for (let k = 0; k < Math.min(per.name_play, 1); k++) {
+          out.push({
+            prompt: "Which play was that?",
+            options: [play.title.trim(), ...wrong], correctIndex: 0,
+            explanation: `That's ${play.title.trim()}.`,
+            source: "sheet", family: null, assigneeIds: [], qtype: "name_play",
+            visual: { court_template: template, frames: opening, hide_after: true, caption: null },
+            reveal: null,
+          });
+        }
+      }
+    }
+  }
+
+  // Cap the total, keeping a mix of types rather than cutting one off.
+  const max = Math.max(1, settings.maxQuestions || out.length);
+  if (out.length <= max) return out;
+  const byType = new Map<string, QuestionDraft[]>();
+  shuffle(out).forEach(q => { const k = q.qtype ?? ""; byType.set(k, [...(byType.get(k) ?? []), q]); });
+  const kept: QuestionDraft[] = [];
+  while (kept.length < max) {
+    let added = false;
+    for (const list of byType.values()) {
+      if (kept.length >= max) break;
+      const q = list.shift();
+      if (q) { kept.push(q); added = true; }
+    }
+    if (!added) break;
+  }
+  return kept;
+}
+
+/** The plays a play quiz builds from: its playbook's, or the hand-picked ones. */
+async function loadSourcePlays(playbookId: string | null, playIds: string[]): Promise<{ plays: Play[]; skipped: number }> {
+  if (playbookId) {
+    const rows = await getPlaybookPlays(playbookId);
+    // A coach can only read plays they own or that were shared with them;
+    // the rest come back empty and are skipped.
+    const plays = rows.filter(r => r && (r as any).id && (r as any).data) as Play[];
+    return { plays, skipped: rows.length - plays.length };
+  }
+  if (!playIds.length) return { plays: [], skipped: 0 };
+  const { data, error } = await supabase.from("plays").select("*").in("id", playIds);
+  if (error) throw error;
+  const plays = (data ?? []) as Play[];
+  return { plays, skipped: playIds.length - plays.length };
+}
+
+export interface PlayQuizInput {
+  title: string;
+  playbookId: string | null;
+  playIds: string[];
+  rosterIds: string[];
+  dueAt: string | null;
+  settings: PlayQuizSettings;
+}
+
+/** Creates a play quiz draft and fills it. Returns its id and how many questions it got. */
+export async function createPlayQuiz(input: PlayQuizInput): Promise<{ id: string; count: number; skipped: number }> {
+  if (!input.title.trim()) throw new Error("Give the quiz a title.");
+  if (!input.rosterIds.length) throw new Error("Pick at least one team.");
+  if (!input.playbookId && !input.playIds.length) throw new Error("Pick a playbook or some plays.");
+  if (!Object.values(input.settings.types).some(n => (n ?? 0) > 0)) throw new Error("Pick at least one question type.");
+
+  const { plays, skipped } = await loadSourcePlays(input.playbookId, input.playIds);
+  const drafts = buildPlayQuestions(plays, input.settings);
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase.from("quizzes").insert({
+    title: input.title.trim(),
+    roster_ids: input.rosterIds,
+    due_at: input.dueAt,
+    playbook_id: input.playbookId,
+    source_play_ids: input.playbookId ? plays.map(p => p.id) : input.playIds,
+    play_settings: input.settings,
+    created_by: user?.id ?? null,
+  }).select("id").single();
+  if (error) throw error;
+  const id = (data as any).id as string;
+  try {
+    await addQuestions(id, drafts, 0);
+  } catch (e) {
+    await supabase.from("quizzes").delete().eq("id", id);
+    throw e;
+  }
+  return { id, count: drafts.length, skipped };
+}
+
+/**
+ * Rebuilds a play quiz from its plays as they are now, with the same
+ * types and counts. A draft is rebuilt in place; a published quiz gets a
+ * new draft version that replaces it when published (it stays live until
+ * then). Questions the coach wrote by hand carry over either way.
+ * Returns the id of the draft to open.
+ */
+export async function regeneratePlayQuiz(quizId: string): Promise<string> {
+  const quiz = await getQuiz(quizId);
+  if (!quiz) throw new Error("Quiz not found.");
+  const settings = quiz.play_settings as PlayQuizSettings;
+  if (!settings?.types) throw new Error("This quiz wasn't built from plays.");
+  const bundle = await getQuizBundle(quizId);
+  const handWritten: QuestionDraft[] = bundle.questions.filter(q => !q.qtype && q.source !== "sheet").map(q => ({
+    prompt: q.prompt,
+    options: q.options.map(o => o.label),
+    correctIndex: Math.max(0, q.options.findIndex(o => o.id === q.correct_option_id)),
+    explanation: q.explanation, source: q.source, family: q.family, assigneeIds: q.assignee_ids,
+  }));
+  const { plays } = await loadSourcePlays(quiz.playbook_id, quiz.source_play_ids);
+  const drafts = [...buildPlayQuestions(plays, settings), ...handWritten];
+
+  if (quiz.status === "draft") {
+    const { error } = await supabase.from("quiz_questions").delete().eq("quiz_id", quizId);
+    if (error) throw error;
+    await addQuestions(quizId, drafts, 0);
+    return quizId;
+  }
+
+  // An existing draft of the next version is reused rather than doubled.
+  const { data: existing } = await supabase.from("quizzes").select("id").eq("replaces_quiz_id", quizId).eq("status", "draft").maybeSingle();
+  if ((existing as any)?.id) return (existing as any).id as string;
+
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase.from("quizzes").insert({
+    title: quiz.title, roster_ids: quiz.roster_ids, due_at: quiz.due_at,
+    playbook_id: quiz.playbook_id, source_play_ids: quiz.playbook_id ? plays.map(p => p.id) : quiz.source_play_ids,
+    play_settings: settings, version: quiz.version + 1, replaces_quiz_id: quiz.id,
+    feedback_mode: quiz.feedback_mode, allow_retakes: quiz.allow_retakes,
+    time_limit_seconds: quiz.time_limit_seconds, show_time_to_coaches: quiz.show_time_to_coaches,
+    created_by: user?.id ?? null,
+  }).select("id").single();
+  if (error) throw error;
+  const id = (data as any).id as string;
+  try { await addQuestions(id, drafts, 0); }
+  catch (e) { await supabase.from("quizzes").delete().eq("id", id); throw e; }
+  return id;
+}
+
 /** A game a scout quiz can be made for (the Quizzes page's game picker). */
 export interface QuizGameOption {
   id: string;
@@ -528,8 +830,16 @@ export async function getAllQuizzes(): Promise<QuizListItem[]> {
     .order("created_at", { ascending: false });
   if (error) throw error;
   const rows = (data ?? []) as any[];
-  const visible = rows.filter(r => r.status !== "archived"
-    || !rows.some(o => o.id !== r.id && o.scout_sheet_id && o.scout_sheet_id === r.scout_sheet_id && o.status !== "archived"));
+  // An archived version is hidden when a newer one exists (same scout
+  // sheet, or a play quiz version that replaced it). Drafts that replace a
+  // live play quiz are opened from that quiz rather than listed twice.
+  const visible = rows.filter(r => {
+    if (r.replaces_quiz_id && r.status === "draft" && rows.some(o => o.id === r.replaces_quiz_id && o.status === "published")) return false;
+    if (r.status !== "archived") return true;
+    const newerSheet = rows.some(o => o.id !== r.id && o.scout_sheet_id && o.scout_sheet_id === r.scout_sheet_id && o.status !== "archived");
+    const replacedBy = rows.some(o => o.replaces_quiz_id === r.id);
+    return !newerSheet && !replacedBy;
+  });
   const ids = visible.map(r => r.id);
   const { data: attempts } = ids.length
     ? await supabase.from("quiz_attempts").select("quiz_id, player_id").in("quiz_id", ids).not("submitted_at", "is", null)
@@ -908,6 +1218,7 @@ export interface MyQuiz {
   title: string;
   kind: QuizKind;
   due_at: string | null;
+  playbook_id: string | null;
   scout_sheet_id: string | null;
   game_id: string | null;
   game_date: string | null;
@@ -926,6 +1237,8 @@ export interface ServedQuestion {
   done: boolean;
   question_id: string;
   prompt: string;
+  qtype: PlayQType | null;
+  visual: QuizVisual | null;
   options: ServedOption[];
   index: number;
   total: number;
@@ -941,11 +1254,15 @@ export interface AnswerResult {
   correct?: boolean;
   correct_option_id?: string;
   explanation?: string | null;
+  reveal?: QuizReveal | null;
 }
 
 export interface ReviewQuestion {
   question_id: string;
   prompt: string;
+  qtype: PlayQType | null;
+  visual: QuizVisual | null;
+  reveal: QuizReveal | null;
   options: ServedOption[];
   chosen_option_id: string | null;
   correct_option_id: string | null;
@@ -980,11 +1297,13 @@ export interface DeckQuestion {
   done: boolean;
   question_id: string;
   prompt: string;
+  qtype: PlayQType | null;
+  visual: QuizVisual | null;
   options: ServedOption[];
   quiz_title: string;
   remaining: number;
 }
-export interface DeckAnswer { correct: boolean; correct_option_id: string; explanation: string | null; remaining: number; }
+export interface DeckAnswer { correct: boolean; correct_option_id: string; explanation: string | null; reveal?: QuizReveal | null; remaining: number; }
 
 export const getReviewDeckCount = () => rpc<number>("review_deck_count").then(n => n ?? 0);
 export const getReviewDeckNext = (excludeId?: string | null) => rpc<DeckQuestion>("review_deck_next", { p_exclude: excludeId ?? null });
