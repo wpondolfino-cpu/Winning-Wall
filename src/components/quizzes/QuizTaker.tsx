@@ -9,6 +9,7 @@ import {
   ServedQuestion, AnswerResult, startQuizAttempt, getNextQuestion, submitQuizAnswer,
 } from "../../lib/quizzes";
 import QuizAttemptReview from "./QuizAttemptReview";
+import { QuizPlayVisual, QuizPlayReveal } from "./QuizPlayVisual";
 import { optionStyle, primaryBtn, secondaryBtn } from "./quizStyles";
 
 interface Props {
@@ -29,6 +30,9 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [inputError, setInputError] = useState<string | null>(null);
   const submittedFor = useRef<string | null>(null);   // stops a double submit (tap + timer)
+  // A "name that play" question shows its answers only after the court
+  // has played and hidden. Everything else is ready at once.
+  const [ready, setReady] = useState(true);
 
   const showFinish = useCallback(async (id: string) => {
     const { data } = await supabase.from("quiz_attempts").select("correct_count, total_count").eq("id", id).maybeSingle();
@@ -43,6 +47,7 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
     const q = await getNextQuestion(id);
     if (q.done) { await showFinish(id); return; }
     submittedFor.current = null;
+    setReady(!q.visual?.hide_after);
     setQuestion(q);
     setRemaining(q.remaining);
   }, [showFinish]);
@@ -88,11 +93,12 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
   // Time limit: the server is the judge (it stamped when the question was
   // served); this countdown just shows it and sends "no answer" at zero.
   useEffect(() => {
-    if (remaining == null || feedback || !question) return;
+    // The clock runs once the answers are on screen.
+    if (remaining == null || feedback || !question || !ready) return;
     if (remaining <= 0) { submit(picked); return; }
     const t = window.setTimeout(() => setRemaining(r => (r == null ? r : r - 1)), 1000);
     return () => window.clearTimeout(t);
-  }, [remaining, feedback, question, submit, picked]);
+  }, [remaining, feedback, question, submit, picked, ready]);
 
   function check() {
     if (!picked) { setInputError("Pick an answer first."); return; }
@@ -169,9 +175,14 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
 
       {error && <div className="error-msg">{error}</div>}
 
+      {question.visual && (!feedback?.reveal) && (
+        <QuizPlayVisual visual={question.visual} onReady={() => setReady(true)} />
+      )}
+      {feedback?.reveal && <QuizPlayReveal reveal={feedback.reveal} />}
+
       <div style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.4, marginBottom: 14 }}>{question.prompt}</div>
 
-      {question.options.map(o => (
+      {ready && question.options.map(o => (
         <button key={o.id} type="button" disabled={!!feedback || busy}
           onClick={() => { setPicked(o.id); setInputError(null); }} style={optionStyle(stateOf(o.id))}>
           {o.label}
@@ -194,7 +205,7 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
             {feedback.finished ? "See my score" : "Next question"}
           </button>
         </>
-      ) : (
+      ) : ready && (
         <button type="button" onClick={check} disabled={busy} style={{ ...primaryBtn, width: "100%", padding: "11px 16px", marginTop: 4 }}>
           {busy ? "Saving…" : question.index === question.total ? "Submit answer" : "Lock in answer"}
         </button>
