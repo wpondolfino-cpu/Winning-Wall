@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Quiz, QuizBundle, QuizQuestion, QuestionDraft,
-  getQuizzesForSheet, getQuiz, getQuizBundle, createDraftForSheet, addQuestions, saveDraftQuestion,
+  getQuizzesForSheet, getQuiz, getQuizBundle, regeneratePlayQuiz, quizKind, PLAY_QTYPE_LABEL, createDraftForSheet, addQuestions, saveDraftQuestion,
   saveWording, deleteQuestion, moveQuestion, updateQuizSettings, publishQuiz, deleteQuiz,
   draftQuestionsWithAi,
 } from "../../lib/quizzes";
@@ -24,6 +24,8 @@ import { getRosters } from "../../lib/practicePlanner";
 import { inputStyle } from "../../lib/inputStyle";
 import QuizQuestionEditor from "./QuizQuestionEditor";
 import QuizResults from "./QuizResults";
+import { QuizPlayVisual } from "./QuizPlayVisual";
+import { supabase } from "../../lib/supabase";
 import { card, pill, primaryBtn, secondaryBtn, dangerBtn, smallBtn, sectionTitle, label } from "./quizStyles";
 
 interface Props {
@@ -55,8 +57,20 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
     if (scoutSheetId) {
       list = await getQuizzesForSheet(scoutSheetId);
     } else {
+      // A standalone or play quiz, plus the version it replaces or the
+      // draft that will replace it (play quizzes' Regenerate).
       const one = quizId ? await getQuiz(quizId) : null;
       list = one ? [one] : [];
+      if (one) {
+        const ids = new Set<string>([one.id]);
+        if (one.replaces_quiz_id) {
+          const older = await getQuiz(one.replaces_quiz_id);
+          if (older) { list.push(older); ids.add(older.id); }
+        }
+        const { data: newer } = await supabase.from("quizzes").select("*").in("replaces_quiz_id", [...ids]);
+        for (const n of (newer ?? []) as Quiz[]) if (!ids.has(n.id)) list.push(n);
+        list.sort((a, b) => b.version - a.version);
+      }
     }
     setVersions(list);
     const live = list.find(q => q.status === "published");
@@ -121,11 +135,27 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
   });
 
   const regenerate = () => run("regenerate", async () => {
-    if (!scoutSheetId) return;
+    if (!scoutSheetId) {
+      if (!bundle || quizKind(bundle.quiz) !== "plays") return;
+      if (!window.confirm("Start a new version from the plays as they are now? Questions you wrote by hand carry over. This version stays live until you publish the new one.")) return;
+      const id = await regeneratePlayQuiz(bundle.quiz.id);
+      await loadVersions(id);
+      setView("questions");
+      return;
+    }
     if (!window.confirm("Start a new version from the scout sheet as it is now? Questions you wrote or kept from the AI carry over. This version stays live until you publish the new one.")) return;
     const id = await createDraftForSheet(scoutSheetId);
     await loadVersions(id);
     setView("questions");
+  });
+
+  // A play quiz draft: rebuild its questions from the plays as they are now.
+  const rebuildPlayDraft = () => run("rebuild", async () => {
+    if (!bundle || bundle.quiz.status !== "draft") return;
+    if (bundle.questions.some(q => q.qtype) &&
+        !window.confirm("Rebuild the play questions from the plays as they are now? Edits to built questions are replaced; questions you wrote by hand stay.")) return;
+    await regeneratePlayQuiz(bundle.quiz.id);
+    await refresh();
   });
 
   // An empty draft (the sheet had nothing to build from): throw it away and
@@ -148,7 +178,9 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
       : `Delete ${scoutSheetId ? `version ${bundle.quiz.version}` : "this quiz"}? Every player's attempts and answers on it are deleted too. This can't be undone.`;
     if (!window.confirm(msg)) return;
     await deleteQuiz(bundle.quiz.id);
-    if (!scoutSheetId) { onDeleted?.(); return; }
+    // Deleting the quiz this screen was opened for closes it; deleting
+    // another version (a play quiz's new draft) just shows what's left.
+    if (!scoutSheetId && bundle.quiz.id === quizId) { onDeleted?.(); return; }
     await loadVersions();
   });
 
@@ -197,7 +229,7 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
       {notice && <div style={{ ...card, fontSize: 13, marginBottom: 12, borderColor: "var(--royal-light)" }}>{notice}</div>}
 
       {/* ── Versions (scout quizzes only; a standalone quiz has one) ── */}
-      <div style={{ display: scoutSheetId ? "flex" : "none", gap: 6, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+      <div style={{ display: scoutSheetId || versions.length > 1 ? "flex" : "none", gap: 6, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
         {versions.map(v => (
           <button key={v.id} type="button" onClick={() => setSelectedId(v.id)}
             style={{ ...smallBtn, padding: "5px 10px", color: v.id === selectedId ? "#fff" : "var(--muted)",
@@ -350,7 +382,15 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
               </div>
               {bundle.questions.length === 0 && isDraft && (
                 <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>
-                  {scoutSheetId ? (
+                  {quizKind(quiz) === "plays" ? (
+                    <>
+                      No questions could be built. Play questions need steps with cuts, screens or passes (and Name that play
+                      needs at least 3 plays).{" "}
+                      <button type="button" onClick={rebuildPlayDraft} disabled={!!busy} style={smallBtn}>
+                        {busy === "rebuild" ? "Building…" : "Rebuild from plays"}
+                      </button>
+                    </>
+                  ) : scoutSheetId ? (
                     <>
                       The scout sheet doesn't have enough filled in to build questions from yet (matchups, hands,
                       strengths, defense). Fill in the sheet, then{" "}
@@ -400,6 +440,11 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
               {isDraft && (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
                   <button type="button" onClick={() => setEditingId("new")} style={secondaryBtn}>+ Add question</button>
+                  {quizKind(quiz) === "plays" && bundle.questions.length > 0 && (
+                    <button type="button" onClick={rebuildPlayDraft} disabled={!!busy} style={secondaryBtn}>
+                      {busy === "rebuild" ? "Building…" : "↻ Rebuild from plays"}
+                    </button>
+                  )}
                   <span style={{ display: scoutSheetId ? "flex" : "none", gap: 6, alignItems: "center" }}>
                     <button type="button" onClick={draftWithAi} disabled={busy === "ai"} style={secondaryBtn}>
                       {busy === "ai" ? "Drafting…" : "✨ Draft with AI"}
@@ -427,7 +472,7 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
           {/* ── Live / archived actions ── */}
           {!isDraft && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
-              {isLive && !draft && scoutSheetId && (
+              {isLive && !draft && (scoutSheetId || quizKind(quiz) === "plays") && (
                 <button type="button" onClick={regenerate} disabled={!!busy} style={secondaryBtn}>
                   {busy === "regenerate" ? "Building…" : "↻ Regenerate"}
                 </button>
@@ -466,8 +511,14 @@ function QuestionRow(props: {
     <div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 0", borderTop: "1px solid var(--border)" }}>
       <span style={{ fontSize: 12, color: "var(--muted)", width: 18, paddingTop: 2 }}>{index + 1}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
+        {q.visual && (
+          <div style={{ maxWidth: 220, marginBottom: 4 }}>
+            <QuizPlayVisual visual={q.visual} compact />
+          </div>
+        )}
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 3 }}>
-          <span style={pill(sourceKind)}>{SOURCE_LABEL[q.source]}</span>
+          <span style={pill(q.qtype ? "warn" : sourceKind)}>{q.qtype ? PLAY_QTYPE_LABEL[q.qtype] : SOURCE_LABEL[q.source]}</span>
+          {q.visual?.caption && <span style={{ fontSize: 11, color: "var(--muted)" }}>{q.visual.caption}</span>}
           <span style={{ fontSize: 11, color: "var(--muted)" }}>
             {q.assignee_ids.length ? `→ ${q.assignee_ids.map(nameOf).join(", ")}` : "→ Everyone"}
           </span>
