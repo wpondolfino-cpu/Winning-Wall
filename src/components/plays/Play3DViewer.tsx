@@ -11,7 +11,8 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { Play, RosterPlayer, PlayFrame, PlayAction, resolvePassEndpoint, playerActionSequence, localActionProgress, ballChainSequence, activeSequenceIndex, stepTimingUnits } from "../../lib/plays";
+import { Play, RosterPlayer, PlayFrame, PlayAction, resolvePassEndpoint, playerActionSequence, localActionProgress, ballChainSequence, activeSequenceIndex, stepTimingUnits, stepButtonText } from "../../lib/plays";
+import StepNote from "./StepNote";
 import { courtLines, hoopPositions } from "./courtGeometry";
 
 interface Props {
@@ -1011,17 +1012,24 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
             }}
           >
             <style>{`@keyframes play3dNoteIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }`}</style>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", marginBottom: 2 }}>Step {frameIdx + 1}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", marginBottom: 2 }}>
+              Step {frameIdx + 1}{play.data.frames[frameIdx]?.label?.trim() ? ` — ${play.data.frames[frameIdx]!.label!.trim()}` : ""}
+            </div>
             <div style={{ fontSize: 13, lineHeight: 1.4, overflowWrap: "anywhere" }}>{stepNotes.join(" · ")}</div>
           </div>
         )}
       </div>
       <p style={{ textAlign: "center", fontSize: 12, color: "var(--muted)", margin: "8px 0" }}>Drag to orbit, scroll to zoom</p>
+      {/* Full coaching notes sit under the view, not over it: they can be a
+          few sentences, which would cover the court as a caption. */}
+      <StepNote frame={play.data.frames[frameIdx]} index={frameIdx} totalSteps={play.data.frames.length} />
       {play.data.frames.length > 1 && (
         <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-          {play.data.frames.map((_, i) => (
-            <button key={i} onClick={() => setFrameIdx(i)} style={{ padding: "6px 10px", border: i === frameIdx ? "2px solid var(--gold)" : "1px solid var(--border)" }}>
-              Step {i + 1}
+          {play.data.frames.map((f, i) => (
+            <button key={i} onClick={() => setFrameIdx(i)} title={stepButtonText(f, i)}
+              style={{ padding: "6px 10px", border: i === frameIdx ? "2px solid var(--gold)" : "1px solid var(--border)",
+                maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {stepButtonText(f, i)}
             </button>
           ))}
         </div>
