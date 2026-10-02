@@ -5,7 +5,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import {
-  QuizBundle, QuizResults as Results, getQuizResults, addToNextPractice, formatSeconds,
+  QuizBundle, QuizResults as Results, getQuizResults, addToNextPractice, formatSeconds, PLAY_QTYPE_LABEL, PlayQType,
 } from "../../lib/quizzes";
 import { formatDateOnly } from "../../lib/schedule";
 import QuizAttemptReview from "./QuizAttemptReview";
@@ -100,6 +100,37 @@ export default function QuizResults({ bundle }: Props) {
           )}
         </div>
       ))}
+
+      {/* ── By question type (play quizzes) ── */}
+      {(() => {
+        const typeOf = new Map(bundle.questions.map(q => [q.id, q.qtype]));
+        const totals = new Map<PlayQType, { answered: number; correct: number }>();
+        for (const r of results.questions) {
+          const t = typeOf.get(r.questionId);
+          if (!t) continue;
+          const cur = totals.get(t) ?? { answered: 0, correct: 0 };
+          totals.set(t, { answered: cur.answered + r.answered, correct: cur.correct + r.correct });
+        }
+        if (totals.size === 0) return null;
+        return (
+          <>
+            <div style={sectionTitle}>By question type</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+              {[...totals.entries()].map(([t, v]) => {
+                const pct = v.answered ? Math.round((v.correct / v.answered) * 100) : null;
+                const color = pct == null ? "var(--muted)" : pct >= 80 ? "#5de098" : pct >= 60 ? "var(--gold)" : "#ff7b7b";
+                return (
+                  <div key={t} style={{ background: "var(--surface2)", borderRadius: 10, padding: "10px 12px" }}>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{PLAY_QTYPE_LABEL[t]}</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color }}>{pct == null ? "—" : `${pct}%`}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{v.answered} answer{v.answered === 1 ? "" : "s"}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        );
+      })()}
 
       {/* ── Per question ── */}
       <div style={sectionTitle}>Question breakdown</div>
