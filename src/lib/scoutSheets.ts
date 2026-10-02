@@ -169,22 +169,30 @@ export async function createScoutSheet(gameId: string, opponentId: string): Prom
 export async function duplicateScoutSheet(sourceSheetId: string, newGameId: string): Promise<ScoutSheet> {
   const source = await getScoutSheet(sourceSheetId);
   if (!source) throw new Error("Source scout sheet not found");
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not signed in");
+  const newSheet = await createScoutSheet(newGameId, source.opponent_id);
+  await copyScoutSheetInto(sourceSheetId, newSheet.id);
+  return (await getScoutSheet(newSheet.id)) ?? newSheet;
+}
 
-  const { data: created, error: createErr } = await supabase
-    .from("scout_sheets")
-    .insert({
-      game_id: newGameId,
-      opponent_id: source.opponent_id,
-      team_record: source.team_record,
-      tempo: source.tempo,
-      team_offensive_strengths: source.team_offensive_strengths,
-      created_by: user.id,
-    })
-    .select().single();
-  if (createErr) throw createErr;
-  const newSheet: ScoutSheet = created;
+/**
+ * Copies a previous sheet's content into an EXISTING sheet: record,
+ * tempo, team strengths, roster, sets, specials and defense. Keys to the
+ * game stay as they are, since those are almost always game-specific.
+ *
+ * Used by the "copy from last time" banner on a sheet that was just made,
+ * and by duplicateScoutSheet. The old duplicate ignored every insert
+ * error, so a failed copy could silently leave half a sheet; this checks
+ * each one.
+ */
+export async function copyScoutSheetInto(sourceSheetId: string, targetSheetId: string): Promise<void> {
+  const source = await getScoutSheet(sourceSheetId);
+  if (!source) throw new Error("The sheet to copy from wasn't found.");
+
+  await updateScoutSheet(targetSheetId, {
+    team_record: source.team_record,
+    tempo: source.tempo,
+    team_offensive_strengths: source.team_offensive_strengths,
+  });
 
   const [players, sets, specials, defense] = await Promise.all([
     getScoutPlayers(sourceSheetId),
@@ -194,27 +202,106 @@ export async function duplicateScoutSheet(sourceSheetId: string, newGameId: stri
   ]);
 
   if (players.length) {
-    await supabase.from("scout_players").insert(players.map(({ id, scout_sheet_id, created_at, ...rest }) => ({
-      ...rest, scout_sheet_id: newSheet.id,
+    const { error } = await supabase.from("scout_players").insert(players.map(({ id, scout_sheet_id, created_at, ...rest }) => ({
+      ...rest, scout_sheet_id: targetSheetId,
     })));
+    if (error) throw error;
   }
   if (sets.length) {
-    await supabase.from("scout_offense_sets").insert(sets.map(({ id, scout_sheet_id, created_at, ...rest }) => ({
-      ...rest, scout_sheet_id: newSheet.id,
+    const { error } = await supabase.from("scout_offense_sets").insert(sets.map(({ id, scout_sheet_id, created_at, ...rest }) => ({
+      ...rest, scout_sheet_id: targetSheetId,
     })));
+    if (error) throw error;
   }
   if (specials.length) {
-    await supabase.from("scout_specials").insert(specials.map(({ id, scout_sheet_id, created_at, ...rest }) => ({
-      ...rest, scout_sheet_id: newSheet.id,
+    const { error } = await supabase.from("scout_specials").insert(specials.map(({ id, scout_sheet_id, created_at, ...rest }) => ({
+      ...rest, scout_sheet_id: targetSheetId,
     })));
+    if (error) throw error;
   }
   if (defense.length) {
-    await supabase.from("scout_defense").insert(defense.map(({ id, scout_sheet_id, created_at, updated_at, ...rest }) => ({
-      ...rest, scout_sheet_id: newSheet.id,
-    })));
+    // One row per slot per sheet, so an upsert -- a fresh sheet can
+    // already have a slot saved if the coach clicked into Defense first.
+    const { error } = await supabase.from("scout_defense").upsert(
+      defense.map(({ id, scout_sheet_id, created_at, updated_at, ...rest }) => ({ ...rest, scout_sheet_id: targetSheetId })),
+      { onConflict: "scout_sheet_id,slot" });
+    if (error) throw error;
+  }
+}
+
+/** True when a sheet has no roster, sets, specials or defense yet. */
+export async function isScoutSheetEmpty(sheetId: string): Promise<boolean> {
+  const counts = await Promise.all(["scout_players", "scout_offense_sets", "scout_specials", "scout_defense"].map(t =>
+    supabase.from(t).select("id", { count: "exact", head: true }).eq("scout_sheet_id", sheetId)));
+  return counts.every((c: { count: number | null }) => (c.count ?? 0) === 0);
+}
+
+/**
+ * The most recent OTHER sheet for this opponent that has something on
+ * it -- what the "copy from last time" banner offers.
+ */
+export async function getPreviousSheetForOpponent(opponentId: string, excludeSheetId: string): Promise<{ id: string; game_date: string | null } | null> {
+  const { data, error } = await supabase
+    .from("scout_sheets")
+    .select("id, games(game_date)")
+    .eq("opponent_id", opponentId)
+    .neq("id", excludeSheetId);
+  if (error) throw error;
+  const list = ((data ?? []) as any[])
+    .map(r => ({ id: r.id as string, game_date: (Array.isArray(r.games) ? r.games[0]?.game_date : r.games?.game_date) ?? null }))
+    .sort((a, b) => (b.game_date ?? "").localeCompare(a.game_date ?? ""));
+  for (const s of list) {
+    if (!(await isScoutSheetEmpty(s.id))) return s;
+  }
+  return null;
+}
+
+/** Names compared ignoring capitals, spaces and punctuation. */
+function opponentKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * The scout sheet for a game, creating it if there isn't one yet -- so
+ * tapping Scout sheet on a game opens something editable straight away.
+ *
+ * A game whose opponent was typed rather than picked has no opponent
+ * record, and a sheet needs one. It's matched to an existing opponent by
+ * name (ignoring capitals, spaces and punctuation) or created, and the
+ * game is linked to it, so the opponent page and its last-5 results see
+ * the game from then on. A different spelling ("Foxboro" vs
+ * "Foxborough") still makes a second opponent; rename to merge.
+ *
+ * Coaches only (players can't create sheets).
+ */
+export async function ensureScoutSheetForGame(gameId: string): Promise<{ sheet: ScoutSheet; opponentId: string; created: boolean }> {
+  const existing = await getScoutSheetByGame(gameId);
+  if (existing) return { sheet: existing, opponentId: existing.opponent_id, created: false };
+
+  const { data: game, error: gErr } = await supabase
+    .from("games").select("id, opponent, opponent_id").eq("id", gameId).single();
+  if (gErr || !game) throw new Error("That game wasn't found.");
+
+  let opponentId: string | null = (game as any).opponent_id ?? null;
+  if (!opponentId) {
+    const name = String((game as any).opponent ?? "").trim();
+    if (!name) throw new Error("This game has no opponent name. Add one to the game first.");
+    const match = (await getOpponents()).find(o => opponentKey(o.name) === opponentKey(name));
+    const opp = match ?? await createOpponent(name);
+    opponentId = opp.id;
+    const { error: linkErr } = await supabase.from("games").update({ opponent_id: opponentId }).eq("id", gameId);
+    if (linkErr) throw linkErr;
   }
 
-  return newSheet;
+  try {
+    const sheet = await createScoutSheet(gameId, opponentId);
+    return { sheet, opponentId, created: true };
+  } catch (e) {
+    // One sheet per game: if two taps raced, the other one won -- use it.
+    const raced = await getScoutSheetByGame(gameId);
+    if (raced) return { sheet: raced, opponentId: raced.opponent_id, created: false };
+    throw e;
+  }
 }
 
 export async function updateScoutSheet(id: string, patch: Partial<Pick<ScoutSheet,
