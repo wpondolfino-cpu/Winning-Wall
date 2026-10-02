@@ -6,7 +6,7 @@ import { createGame } from "../../lib/gameStats";
 import { deleteScoutSheet, renameOpponent, deleteOpponent,
   Opponent, getOpponents, createOpponent, uploadOpponentLogo,
   getOpponentLastGames, getScoutSheetsForOpponent,
-  createScoutSheet, duplicateScoutSheet,
+  createScoutSheet, duplicateScoutSheet, ensureScoutSheetForGame,
   scoutSheetToExportPayload, importScoutSheetFromExportPayload, SCOUT_SHEET_EXPORT_SCHEMA_VERSION,
 } from "../../lib/scoutSheets";
 import { embedJsonInPdf, extractJsonFromPdf, drawTextDocument } from "../../lib/pdfDataExport";
@@ -100,6 +100,21 @@ export default function ScoutSheetsHub(props: Props) {
    * the opponent with the New sheet box ready if none exists yet.
    */
   async function openForGame(gameId: string) {
+    // Coaches: open a sheet that's ready to edit, creating it (and linking
+    // a typed-name game to an opponent) if it doesn't exist yet. There used
+    // to be a separate "New sheet" step here, and a game whose opponent
+    // was typed rather than picked did nothing at all.
+    if (canManage) {
+      try {
+        const { sheet, opponentId } = await ensureScoutSheetForGame(gameId);
+        const { data: opp } = await supabase.from("opponents").select("*").eq("id", opponentId).single();
+        if (opp) await openOpponent(opp as Opponent);
+        setOpenSheetId(sheet.id);
+      } catch (e: any) {
+        setError(e?.message ?? "Couldn't open the scout sheet for that game.");
+      }
+      return;
+    }
     const { data: game } = await supabase
       .from("games").select("id, opponent_id, game_date").eq("id", gameId).single();
     if (!game?.opponent_id) return;                 // typed-name game, no opponent page to open
@@ -300,7 +315,9 @@ export default function ScoutSheetsHub(props: Props) {
                   )}
                 </span>
               )
-              : <span style={{ fontSize: 12, color: "var(--muted)" }}>No scout sheet</span>}
+              : canManage
+                ? <button type="button" onClick={() => openForGame(g.id)} style={{ background: "none", border: "none", color: "var(--royal-light)", cursor: "pointer", fontSize: 12 }}>Start scout sheet →</button>
+                : <span style={{ fontSize: 12, color: "var(--muted)" }}>No scout sheet</span>}
           </div>
         ))}
 
