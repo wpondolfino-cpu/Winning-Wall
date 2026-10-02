@@ -1,12 +1,13 @@
 // src/components/quizzes/QuizzesPage.tsx
 // The coach's Quizzes page: every quiz (scout and standalone) in one list,
-// filterable by team, with New quiz for standalone ones. Scout quizzes are
-// only CREATED from their scout sheet, so there's one place they're made;
-// they're listed here so everything is visible at a glance.
+// filterable by team. New quiz makes either kind: a standalone quiz, or a
+// game's scout quiz -- which is the same quiz as on that game's scout
+// sheet (one per game), so it can be made and edited from either place.
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  QuizListItem, getAllQuizzes, getReteachCount, createStandaloneQuiz,
+  QuizListItem, QuizGameOption, getAllQuizzes, getReteachCount, createStandaloneQuiz,
+  getGamesForScoutQuiz, createScoutQuizForGame,
 } from "../../lib/quizzes";
 import { getRosters } from "../../lib/practicePlanner";
 import { formatDateOnly } from "../../lib/schedule";
@@ -63,6 +64,11 @@ export default function QuizzesPage() {
           setCreating(false);
           await load();
           setOpen({ quiz: { id } as any, kind: "standalone", gameDate: null, tipTime: null, submitted: 0 });
+        }}
+        onScoutCreated={async sheetId => {
+          setCreating(false);
+          await load();
+          setOpen({ quiz: { id: sheetId, scout_sheet_id: sheetId } as any, kind: "scout", gameDate: null, tipTime: null, submitted: 0 });
         }} />
     );
   }
@@ -141,15 +147,37 @@ export default function QuizzesPage() {
   );
 }
 
-function NewQuizForm({ teams, onCancel, onCreated }: { teams: Team[]; onCancel: () => void; onCreated: (id: string) => void }) {
+function gameLabel(g: QuizGameOption, teams: Team[]): string {
+  const day = formatDateOnly(g.game_date, { weekday: "short", month: "short", day: "numeric" });
+  const team = g.roster_id ? teams.find(t => t.id === g.roster_id)?.name : null;
+  return `${day} · ${g.opponent || "Opponent"}${team ? ` · ${team}` : ""}`;
+}
+
+function NewQuizForm({ teams, onCancel, onCreated, onScoutCreated }: {
+  teams: Team[]; onCancel: () => void; onCreated: (id: string) => void; onScoutCreated: (scoutSheetId: string) => void;
+}) {
+  const [kind, setKind] = useState<"scout" | "standalone">("scout");
+  const [games, setGames] = useState<QuizGameOption[] | null>(null);
+  const [gameId, setGameId] = useState("");
   const [title, setTitle] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
   const [due, setDue] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    getGamesForScoutQuiz().then(setGames).catch(() => setGames([]));
+  }, []);
+
   async function create() {
     setError(null);
+    if (kind === "scout") {
+      if (!gameId) { setError("Pick a game."); return; }
+      setSaving(true);
+      try { onScoutCreated(await createScoutQuizForGame(gameId)); }
+      catch (e: any) { setError(e?.message ?? "Couldn't make the scout quiz."); setSaving(false); }
+      return;
+    }
     if (!title.trim()) { setError("Give the quiz a title."); return; }
     if (!picked.length) { setError("Pick at least one team."); return; }
     setSaving(true);
@@ -169,12 +197,37 @@ function NewQuizForm({ teams, onCancel, onCreated }: { teams: Team[]; onCancel: 
   return (
     <div style={{ width: "100%", maxWidth: 720, margin: "0 auto" }}>
       <div style={card}>
-        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>New quiz</div>
-        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
-          For a scout quiz, open the scout sheet instead. Its quiz builds from the sheet.
+        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>New quiz</div>
+
+        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          {([["scout", "Scout quiz"], ["standalone", "Standalone"]] as const).map(([k, l]) => (
+            <button key={k} type="button" onClick={() => { setKind(k); setError(null); }}
+              style={{ fontSize: 13, fontWeight: 600, padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit",
+                background: kind === k ? "var(--royal)" : "var(--surface)", color: kind === k ? "#fff" : "var(--muted)" }}>
+              {l}
+            </button>
+          ))}
         </div>
         {error && <div className="error-msg">{error}</div>}
 
+        {kind === "scout" ? (
+          <>
+            <div style={label}>Game</div>
+            <select value={gameId} onChange={e => setGameId(e.target.value)} style={{ ...inputStyle, width: "100%", marginBottom: 8 }}>
+              <option value="">{games === null ? "Loading games…" : games.length ? "Pick a game" : "No upcoming games on the schedule"}</option>
+              {(games ?? []).map(g => <option key={g.id} value={g.id}>{gameLabel(g, teams)}</option>)}
+            </select>
+            <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginBottom: 16 }}>
+              Questions are built from the game's scout sheet, so fill that in first for the best quiz. If the game
+              already has a scout quiz, this opens it. It's the same quiz as the one on the sheet's Quiz tab, and the
+              team comes from the game.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" onClick={create} disabled={saving} style={primaryBtn}>{saving ? "Building…" : "Build scout quiz"}</button>
+              <button type="button" onClick={onCancel} style={secondaryBtn}>Cancel</button>
+            </div>
+          </>
+        ) : (<>
         <div style={label}>Title</div>
         <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Basketball terms 101"
           style={{ ...inputStyle, width: "100%", marginBottom: 12 }} />
@@ -203,6 +256,7 @@ function NewQuizForm({ teams, onCancel, onCreated }: { teams: Team[]; onCancel: 
           <button type="button" onClick={create} disabled={saving} style={primaryBtn}>{saving ? "Creating…" : "Create draft"}</button>
           <button type="button" onClick={onCancel} style={secondaryBtn}>Cancel</button>
         </div>
+        </>)}
       </div>
     </div>
   );
