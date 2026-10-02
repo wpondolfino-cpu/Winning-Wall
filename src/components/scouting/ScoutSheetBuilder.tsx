@@ -19,6 +19,8 @@ import ScoutSheetPrintView from "./ScoutSheetPrintView";
 import QuizManager from "../quizzes/QuizManager";
 import PlayerQuizList from "../quizzes/PlayerQuizList";
 import { getMyQuizzes, MyQuiz } from "../../lib/quizzes";
+import { isScoutSheetEmpty, getPreviousSheetForOpponent, copyScoutSheetInto } from "../../lib/scoutSheets";
+import { formatDateOnly } from "../../lib/schedule";
 import { OFF_STRENGTH_STARTERS, PLAN_TO_GUARD_STARTERS, DEF_STRENGTH_STARTERS, PLAN_TO_ATTACK_STARTERS, TEAM_OFF_STRENGTH_STARTERS, PRESS_OPTS, PRESS_PLAN_OPTS, BLOB_SLOB_D_OPTS, BLOB_SLOB_D_PLAN_OPTS } from "../../lib/scoutOptions";
 
 interface Props {
@@ -49,6 +51,11 @@ export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: 
   const [detailPlayerId, setDetailPlayerId] = useState<string | null>(null);
   // Players: this sheet's quiz, for the button at the top of the sheet.
   const [myQuiz, setMyQuiz] = useState<MyQuiz | null>(null);
+  // Coaches: on an empty sheet, offer to copy the last sheet against this
+  // opponent (sheets are now created the moment a game's Scout sheet is
+  // opened, so this replaces the old "duplicate from previous" choice).
+  const [copySource, setCopySource] = useState<{ id: string; game_date: string | null } | null>(null);
+  const [copying, setCopying] = useState(false);
 
   const load = useCallback(async () => {
     const [s, p, r, sets, specialsData, plays, defense] = await Promise.all([
@@ -313,6 +320,36 @@ function joinHeight(ft: string, inch: string): string {
     setSheet({ ...sheet, status: next });
   }
 
+  // Checked once per sheet. Empty = nothing on any tab yet.
+  const sheetOpponentId = sheet?.opponent_id ?? null;
+  useEffect(() => {
+    setCopySource(null);
+    if (!canManage || !sheetOpponentId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!(await isScoutSheetEmpty(scoutSheetId))) return;
+        const prev = await getPreviousSheetForOpponent(sheetOpponentId, scoutSheetId);
+        if (!cancelled) setCopySource(prev);
+      } catch { /* the banner is a convenience; never block the sheet */ }
+    })();
+    return () => { cancelled = true; };
+  }, [canManage, scoutSheetId, sheetOpponentId]);
+
+  async function copyFromPrevious() {
+    if (!copySource) return;
+    setCopying(true);
+    try {
+      await copyScoutSheetInto(copySource.id, scoutSheetId);
+      setCopySource(null);
+      await load();
+    } catch (e: any) {
+      window.alert(e?.message ?? "Couldn't copy that sheet — try again.");
+    } finally {
+      setCopying(false);
+    }
+  }
+
   if (!sheet) return <div style={{ padding: 24 }}>Loading…</div>;
 
   return (
@@ -366,6 +403,26 @@ function joinHeight(ft: string, inch: string): string {
               style={{ background: sheet.status === "published" ? "var(--surface2)" : "var(--royal)", color: sheet.status === "published" ? "var(--muted)" : "#fff",
                 border: sheet.status === "published" ? "1px solid var(--border)" : "none", borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
               {sheet.status === "published" ? "Unpublish" : "Publish"}
+            </button>
+          </div>
+        )}
+
+        {canManage && copySource && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap",
+            background: "rgba(37,80,212,0.12)", border: "1px solid var(--royal-light)", borderRadius: 10, padding: "10px 12px" }}>
+            <span style={{ fontSize: 18 }}>📋</span>
+            <div style={{ flex: 1, minWidth: 180, fontSize: 13 }}>
+              You've scouted {opponentName} before
+              {copySource.game_date ? ` (${formatDateOnly(copySource.game_date, { month: "short", day: "numeric", year: "numeric" })})` : ""}.
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>Copy in their players, sets, specials and defense? Keys to the game stay blank.</div>
+            </div>
+            <button type="button" onClick={copyFromPrevious} disabled={copying}
+              style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+              {copying ? "Copying…" : "Copy last sheet"}
+            </button>
+            <button type="button" onClick={() => setCopySource(null)}
+              style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "7px 12px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+              Start blank
             </button>
           </div>
         )}
