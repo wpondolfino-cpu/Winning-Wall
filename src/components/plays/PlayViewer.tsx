@@ -8,6 +8,7 @@ import { supabase } from "../../lib/supabase";
 import { getProfile } from "../../lib/auth";
 import PlayCanvas, { CANVAS_W, CANVAS_H } from "./PlayCanvas";
 import PlayPrintView from "./PlayPrintView";
+import StepNote from "./StepNote";
 import PlayCategoryManagerModal from "./PlayCategoryManagerModal";
 import RosterShareRows from "../shared/RosterShareRows";
 import { PlayCategory, getPlayCategories } from "../../lib/playCategories";
@@ -18,6 +19,7 @@ import {
   forkPlay, getRoster, Playbook, deletePlay, getStaff, sharePlay, PlayShareTarget,
   getMyForkOrigins, adoptSharedPlaybook, dismissPlayShare, dismissPlaybookShare, type ForkRecord,
   playToExportPayload, importPlayFromExportPayload, PLAY_EXPORT_SCHEMA_VERSION,
+  stepButtonText,
 } from "../../lib/plays";
 import { embedJsonInPdf, extractJsonFromPdf, drawSimpleCoverPage, svgElementToPngBytes } from "../../lib/pdfDataExport";
 
@@ -791,13 +793,17 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
 
       {play.data.frames.length > 1 && (
         <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-          {play.data.frames.map((_, i) => (
-            <button key={i} onClick={() => setFrameIdx(i)} style={{ padding: "6px 10px", border: i === frameIdx ? "2px solid var(--gold)" : "1px solid var(--border)" }}>
-              Step {i + 1}
+          {play.data.frames.map((f, i) => (
+            <button key={i} onClick={() => setFrameIdx(i)} title={stepButtonText(f, i)}
+              style={{ padding: "6px 10px", border: i === frameIdx ? "2px solid var(--gold)" : "1px solid var(--border)",
+                maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {stepButtonText(f, i)}
             </button>
           ))}
         </div>
       )}
+
+      <StepNote frame={frame} index={frameIdx} totalSteps={play.data.frames.length} />
 
       {(play.data.frames[0]?.players.length ?? 0) > 0 && (
         <div style={{ marginBottom: 10 }}>
