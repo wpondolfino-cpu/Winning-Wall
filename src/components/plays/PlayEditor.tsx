@@ -13,6 +13,7 @@ import {
   SavedAction, Formation, RosterPlayer, PlayShareTarget,
   emptyPlayData, createPlay, updatePlay, deletePlay, genPlayerId, deriveNextFrame,
   restepFrom, restepAffectedCount, carryForwardSignature,
+  stepButtonText, STEP_LABEL_MAX, STEP_NOTE_MAX,
   getSavedActions, createSavedAction, deleteSavedAction,
   getFormations, createFormation, deleteFormation,
   getRoster, getStaff, sharePlay, getAllTags,
@@ -427,6 +428,45 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       zones: (f.zones ?? []).filter((z) => !(x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h)),
       cones: (f.cones ?? []).filter((c) => !near(c, 16)),
     }));
+  }
+
+  // Step name and notes. Typing doesn't push an undo entry per keystroke:
+  // one entry is taken when a field gets focus, so Undo reverts the whole
+  // edit. Neither changes positions, so they never prompt a re-step.
+  function setStepText(field: "label" | "note", value: string) {
+    const max = field === "label" ? STEP_LABEL_MAX : STEP_NOTE_MAX;
+    const v = value.slice(0, max);
+    setFrames((fr) => fr.map((f, i) => (i === frameIdx ? { ...f, [field]: v.trim() ? v : undefined } : f)));
+  }
+
+  function renderStepDetails() {
+    const f = frames[frameIdx];
+    return (
+      <div style={{ marginBottom: 12 }}>
+        <input
+          value={f?.label ?? ""}
+          onFocus={pushHistory}
+          onChange={(e) => setStepText("label", e.target.value)}
+          placeholder={`Name step ${frameIdx + 1} (optional), e.g. "Screen sets"`}
+          maxLength={STEP_LABEL_MAX}
+          style={{ width: "100%", boxSizing: "border-box", padding: "7px 10px", fontSize: 13, marginBottom: 6,
+            background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", fontFamily: "inherit" }}
+        />
+        <textarea
+          value={f?.note ?? ""}
+          onFocus={pushHistory}
+          onChange={(e) => setStepText("note", e.target.value)}
+          placeholder={`Coaching notes for step ${frameIdx + 1} — the reads and the why. Players see these under the court.`}
+          maxLength={STEP_NOTE_MAX}
+          rows={3}
+          style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", fontSize: 13, lineHeight: 1.45, resize: "vertical",
+            background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", fontFamily: "inherit" }}
+        />
+        {(f?.note?.length ?? 0) > STEP_NOTE_MAX - 80 && (
+          <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "right" }}>{f?.note?.length ?? 0}/{STEP_NOTE_MAX}</div>
+        )}
+      </div>
+    );
   }
 
   function addFrame() {
@@ -1073,14 +1113,16 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           );
         })()}
         <div style={{ display: "flex", gap: 4, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
-          {frames.map((_, i) => (
-            <button key={i} onClick={() => setFrameIdx(i)}
-              style={{ padding: "6px 9px", fontSize: 11, border: i === frameIdx ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 8, background: "var(--surface2)", color: "var(--text)" }}>
-              Step {i + 1}
+          {frames.map((f, i) => (
+            <button key={i} onClick={() => setFrameIdx(i)} title={stepButtonText(f, i)}
+              style={{ padding: "6px 9px", fontSize: 11, border: i === frameIdx ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 8, background: "var(--surface2)", color: "var(--text)",
+                maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {stepButtonText(f, i)}
             </button>
           ))}
           <button onClick={addFrame} style={{ padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface2)", color: "var(--muted)" }}>+</button>
         </div>
+        {renderStepDetails()}
 
         <button onClick={() => setShowPreview3D(true)} style={{ width: "100%", padding: "8px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface2)", color: "var(--text)", marginBottom: 8 }}>
           🧊 Watch live
@@ -1310,10 +1352,11 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           );
         })()}
         <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
-          {frames.map((_, i) => (
-            <button key={i} onClick={() => setFrameIdx(i)}
-              style={{ padding: "6px 10px", border: i === frameIdx ? "2px solid var(--gold)" : "1px solid var(--border)", borderRadius: "8px" }}>
-              Step {i + 1}
+          {frames.map((f, i) => (
+            <button key={i} onClick={() => setFrameIdx(i)} title={stepButtonText(f, i)}
+              style={{ padding: "6px 10px", border: i === frameIdx ? "2px solid var(--gold)" : "1px solid var(--border)", borderRadius: "8px",
+                maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {stepButtonText(f, i)}
             </button>
           ))}
           <button onClick={addFrame} style={{ padding: "6px 10px" }}>+ Add step</button>
@@ -1321,6 +1364,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           {frames.length > 1 && <button onClick={() => deleteFrame(frameIdx)} style={{ padding: "6px 10px" }}>Delete step</button>}
           <span style={{ fontSize: 12, color: "var(--muted)" }}>A play can be several sequential steps — e.g. "screen sets" then "cut".</span>
         </div>
+        <div style={{ marginTop: 10 }}>{renderStepDetails()}</div>
 
         <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
           <button onClick={handleSave} disabled={saving} className="coach-add-btn">
