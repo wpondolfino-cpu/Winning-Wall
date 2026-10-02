@@ -64,6 +64,9 @@ export default function PlayPrintView({ plays, playbookName, roster = {}, onBack
                     courtBg="#f3e4c8"
                   />
                 </div>
+                {frame.note?.trim() && (
+                  <div style={{ fontSize: 11, lineHeight: 1.45, color: "#333", marginTop: 6, whiteSpace: "pre-wrap" }}>{frame.note.trim()}</div>
+                )}
               </div>
             ))}
           </div>
