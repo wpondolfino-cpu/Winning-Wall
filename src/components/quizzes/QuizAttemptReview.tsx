@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { AttemptReview, getAttemptReview } from "../../lib/quizzes";
 import { optionStyle, secondaryBtn } from "./quizStyles";
+import { QuizPlayReveal } from "./QuizPlayVisual";
 
 interface Props {
   attemptId: string;
@@ -46,6 +47,7 @@ export default function QuizAttemptReview({ attemptId, onClose }: Props) {
           <div style={{ fontSize: 12, color: q.is_correct ? "#5de098" : "#ff7b7b", marginBottom: 4 }}>
             {i + 1}. {q.is_correct ? "Correct" : q.timed_out ? "Time ran out" : "Missed"}
           </div>
+          {q.reveal && <QuizPlayReveal reveal={q.reveal} />}
           <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>{q.prompt}</div>
           {q.options.map(o => {
             const state = o.id === q.correct_option_id ? "right" : o.id === q.chosen_option_id ? "wrong" : "idle";
