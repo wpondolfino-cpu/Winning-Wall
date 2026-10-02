@@ -34,18 +34,20 @@ import DrillLibrary from "./components/DrillLibrary";
 import PlaysHub from "./components/plays/PlaysHub";
 import GameStatsHub from "./components/game-stats/GameStatsHub";
 import ScoutSheetsHub from "./components/scouting/ScoutSheetsHub";
+import QuizzesPage from "./components/quizzes/QuizzesPage";
+import PlayerQuizList from "./components/quizzes/PlayerQuizList";
 import SchedulePage from "./components/schedule/SchedulePage";
 import NavModeChangePopup from "./components/NavModeChangePopup";
 import GameDaySheetsList from "./components/gameday/GameDaySheetsList";
 import { confirmNavAway } from "./lib/navGuard";
 
-type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "scoutsheets" | "schedule" | "practiceschedule" | "more";
+type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "scoutsheets" | "quizzes" | "schedule" | "practiceschedule" | "more";
 // "playbooks" stays in these unions deliberately: a coach who reordered
 // their nav has "playbooks" saved in nav_order, and resolveNavOrder reads
 // those strings back. Dropping it from the type would break that read for
 // anyone who customised their nav before Playbooks moved into Plays.
-type CoachTab  = "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "gameday" | "practices" | "practicelibrary" | "settings" | "profile";
-type AdminTab  = "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "gameday" | "practices" | "practicelibrary" | "profile";
+type CoachTab  = "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "quizzes" | "gameday" | "practices" | "practicelibrary" | "settings" | "profile";
+type AdminTab  = "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "quizzes" | "gameday" | "practices" | "practicelibrary" | "profile";
 
 // "Drill Library" and "Practice Drills" both sounded like a place drills
 // live, so which held what was a guess. They're genuinely different things:
@@ -65,6 +67,7 @@ const COACH_NAV_CONFIG: NavItemConfig[] = [
   { key: "practicelibrary", icon: "📒", label: "Team Drills",     section: "inseason" },
   { key: "gamestats",     icon: "📊", label: "Analytics",         section: "inseason" },
   { key: "scoutsheets",   icon: "🔎", label: "Scout Sheets",      section: "inseason" },
+  { key: "quizzes",       icon: "📝", label: "Quizzes",           section: "always" },
   { key: "gameday",       icon: "📋", label: "Game Day",          section: "inseason" },
   { key: "players",       icon: "👥", label: "Players & Coaches", section: "always" },
   { key: "announcements", icon: "📢", label: "Announcements",     section: "always" },
@@ -87,6 +90,7 @@ const ADMIN_NAV_CONFIG: NavItemConfig[] = [
   { key: "practicelibrary", icon: "📒", label: "Team Drills",     section: "inseason" },
   { key: "gamestats",     icon: "📊", label: "Analytics",         section: "inseason" },
   { key: "scoutsheets",   icon: "🔎", label: "Scout Sheets",      section: "inseason" },
+  { key: "quizzes",       icon: "📝", label: "Quizzes",           section: "always" },
   { key: "gameday",       icon: "📋", label: "Game Day",          section: "inseason" },
   { key: "players",       icon: "👥", label: "Players & Coaches", section: "always" },
   { key: "announcements", icon: "📢", label: "Announcements",     section: "always" },
@@ -110,7 +114,7 @@ const ADMIN_NAV_DEFAULT_ORDER = ADMIN_NAV_CONFIG.map(i => i.key);
 // it survives in the tab unions for saved nav orders but renders nothing.
 const PLAYER_URL_TABS = new Set<string>([
   "schedule", "workouts", "leaderboard", "h2h", "plays", "gamestats",
-  "scoutsheets", "lifting", "progress", "hof", "profile", "library", "more",
+  "scoutsheets", "quizzes", "lifting", "progress", "hof", "profile", "library", "more",
 ]);
 const COACH_URL_TABS = new Set<string>(COACH_NAV_DEFAULT_ORDER);
 const ADMIN_URL_TABS = new Set<string>(ADMIN_NAV_DEFAULT_ORDER);
@@ -687,6 +691,7 @@ export default function App() {
     plays:       { label: "Plays",       emoji: "🏀", icon: <><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="12" cy="11" r="2.5"/><path d="M3 8h18"/></> },
     gamestats:   { label: "Analytics",   emoji: "📊", icon: <><line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="12" width="3" height="8"/><rect x="14" y="8" width="3" height="12"/><rect x="10" y="15" width="3" height="5"/></> },
     scoutsheets: { label: "Scout",       emoji: "🔎", icon: <><circle cx="10" cy="10" r="6.5"/><line x1="15" y1="15" x2="20.5" y2="20.5"/></> },
+    quizzes:     { label: "Quizzes",     emoji: "📝" },
     library:     { label: "Player Drills", emoji: "📚" },
     progress:    { label: "My Progress", emoji: "📈" },
     hof:         { label: "Hall of Fame", emoji: "👑" },
@@ -697,7 +702,7 @@ export default function App() {
   // the current mode lands in More, in this order.
   const PLAYER_TAB_ORDER: PlayerTab[] = [
     "schedule", "workouts", "library", "leaderboard", "h2h", "plays",
-    "gamestats", "scoutsheets", "lifting", "progress", "hof", "profile",
+    "gamestats", "scoutsheets", "quizzes", "lifting", "progress", "hof", "profile",
   ];
 
   const barKeys = PLAYER_NAV[effectiveMode === "inseason" ? "inseason" : "offseason"].bar;
@@ -809,6 +814,12 @@ export default function App() {
           {isPlayer && playerTab === "plays" && <PlaysHub currentUserRole="player" />}
           {isPlayer && playerTab === "gamestats" && <GameStatsHub currentUserRole="player" userId={user.id} initialGameId={scheduleTarget?.gameId ?? null} initialView={scheduleTarget?.view ?? null} key={scheduleTarget?.gameId ?? "hub"} />}
           {isPlayer && playerTab === "scoutsheets" && <ScoutSheetsHub canManage={false} initialGameId={scheduleTarget?.gameId ?? null} key={scheduleTarget?.gameId ?? "list"} />}
+          {isPlayer && playerTab === "quizzes" && (
+            <div className="panel active">
+              <div className="section-title">Quizzes</div>
+              <PlayerQuizList />
+            </div>
+          )}
           {/* Schedule supersedes PracticeSchedulePlayerView — it shows the
               same practices plus games and events. The old key still routes
               here so a saved tab value doesn't dead-end. */}
@@ -867,6 +878,7 @@ export default function App() {
           {isCoach && coachTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
           {isCoach && coachTab === "gamestats" && <GameStatsHub currentUserRole="coach" userId={user.id} initialGameId={scheduleTarget?.gameId ?? null} initialView={scheduleTarget?.view ?? null} key={scheduleTarget?.gameId ?? "hub"} />}
           {isCoach && coachTab === "scoutsheets" && <ScoutSheetsHub canManage={true} initialGameId={scheduleTarget?.gameId ?? null} key={scheduleTarget?.gameId ?? "list"} />}
+          {isCoach && coachTab === "quizzes" && <QuizzesPage />}
           {isCoach && coachTab === "gameday" && <GameDaySheetsList initialSheetId={scheduleTarget?.sheetId ?? null} key={scheduleTarget?.sheetId ?? "list"} />}
           {isCoach && coachTab === "leaderboard" && <LeaderboardHub canManage={true} profile={displayProfile} />}
           {isCoach && coachTab === "announcements" && (<><AnnouncementPanel isAdmin={false} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
@@ -901,6 +913,7 @@ export default function App() {
           {isAdmin && adminTab === "plays" && <PlaysHub currentUserRole="admin" />}
           {isAdmin && adminTab === "gamestats" && <GameStatsHub currentUserRole="admin" userId={user.id} initialGameId={scheduleTarget?.gameId ?? null} initialView={scheduleTarget?.view ?? null} key={scheduleTarget?.gameId ?? "hub"} />}
           {isAdmin && adminTab === "scoutsheets" && <ScoutSheetsHub canManage={true} initialGameId={scheduleTarget?.gameId ?? null} key={scheduleTarget?.gameId ?? "list"} />}
+          {isAdmin && adminTab === "quizzes" && <QuizzesPage />}
           {isAdmin && adminTab === "gameday" && <GameDaySheetsList initialSheetId={scheduleTarget?.sheetId ?? null} key={scheduleTarget?.sheetId ?? "list"} />}
           {isAdmin && adminTab === "schedule" && <SchedulePage role="admin" onOpenTab={(t, payload) => { setScheduleTarget(payload ?? null); setAdminTab(t as AdminTab); }} />}
           {isAdmin && adminTab === "practices" && <PracticeWeeksList initialPracticeId={scheduleTarget?.practiceId ?? null} key={scheduleTarget?.practiceId ?? "list"} />}
