@@ -36,13 +36,19 @@ export interface Quiz {
   allow_retakes: boolean;
   time_limit_seconds: number | null;
   show_time_to_coaches: boolean;
+  roster_ids: string[];            // the teams "everyone" means (162)
+  due_at: string | null;           // standalone quizzes; scout quizzes use tip-off
   published_at: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export type QuizSettings = Pick<Quiz, "feedback_mode" | "allow_retakes" | "time_limit_seconds" | "show_time_to_coaches">;
+export type QuizSettings = Pick<Quiz, "feedback_mode" | "allow_retakes" | "time_limit_seconds" | "show_time_to_coaches"
+  | "title" | "roster_ids" | "due_at">;
+
+export type QuizKind = "scout" | "standalone";
+export const quizKind = (q: Pick<Quiz, "scout_sheet_id">): QuizKind => (q.scout_sheet_id ? "scout" : "standalone");
 
 export interface QuizOption { id: string; label: string; sort_order: number; }
 
@@ -406,6 +412,9 @@ export async function createDraftForSheet(scoutSheetId: string): Promise<string>
   const ctx = await getScoutSheetPrintContext(sheet.game_id, sheet.opponent_id);
   const previous = existing.find(q => q.status === "published") ?? existing[0] ?? null;
   const { data: { user } } = await supabase.auth.getUser();
+  // A scout quiz goes to the game's team.
+  const { data: game } = await supabase.from("games").select("roster_id").eq("id", sheet.game_id).maybeSingle();
+  const gameRoster = (game as any)?.roster_id as string | null | undefined;
 
   const { data: created, error } = await supabase.from("quizzes").insert({
     scout_sheet_id: scoutSheetId,
@@ -416,6 +425,7 @@ export async function createDraftForSheet(scoutSheetId: string): Promise<string>
     allow_retakes: previous?.allow_retakes ?? false,
     time_limit_seconds: previous?.time_limit_seconds ?? null,
     show_time_to_coaches: previous?.show_time_to_coaches ?? false,
+    roster_ids: gameRoster ? [gameRoster] : (previous?.roster_ids ?? []),
     created_by: user?.id ?? null,
   }).select().single();
   if (error) throw error;
@@ -443,6 +453,75 @@ export async function createDraftForSheet(scoutSheetId: string): Promise<string>
     throw e;
   }
   return quizId;
+}
+
+/** A quiz that isn't tied to a scout sheet (terms, rules, later plays). */
+export async function createStandaloneQuiz(title: string, rosterIds: string[], dueAt: string | null): Promise<string> {
+  if (!title.trim()) throw new Error("Give the quiz a title.");
+  if (!rosterIds.length) throw new Error("Pick at least one team.");
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase.from("quizzes").insert({
+    title: title.trim(), roster_ids: rosterIds, due_at: dueAt, created_by: user?.id ?? null,
+  }).select("id").single();
+  if (error) throw error;
+  return (data as any).id as string;
+}
+
+export async function getQuiz(quizId: string): Promise<Quiz | null> {
+  const { data, error } = await supabase.from("quizzes").select("*").eq("id", quizId).maybeSingle();
+  if (error) throw error;
+  return (data as Quiz) ?? null;
+}
+
+/** A row on the coach's Quizzes page. */
+export interface QuizListItem {
+  quiz: Quiz;
+  kind: QuizKind;
+  gameDate: string | null;
+  tipTime: string | null;
+  submitted: number;   // players with a finished attempt
+}
+
+/**
+ * Every quiz version a coach can see, newest first, with its game and how
+ * many players have finished it. Archived versions are left out except
+ * when they're the only version of a scout quiz.
+ */
+export async function getAllQuizzes(): Promise<QuizListItem[]> {
+  const { data, error } = await supabase.from("quizzes").select("*, games(game_date, tip_time)")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  const rows = (data ?? []) as any[];
+  const visible = rows.filter(r => r.status !== "archived"
+    || !rows.some(o => o.id !== r.id && o.scout_sheet_id && o.scout_sheet_id === r.scout_sheet_id && o.status !== "archived"));
+  const ids = visible.map(r => r.id);
+  const { data: attempts } = ids.length
+    ? await supabase.from("quiz_attempts").select("quiz_id, player_id").in("quiz_id", ids).not("submitted_at", "is", null)
+    : { data: [] as any[] };
+  const doneBy = new Map<string, Set<string>>();
+  for (const a of (attempts ?? []) as any[]) {
+    const set = doneBy.get(a.quiz_id) ?? new Set<string>();
+    set.add(a.player_id);
+    doneBy.set(a.quiz_id, set);
+  }
+  return visible.map(r => {
+    const g = Array.isArray(r.games) ? r.games[0] : r.games;
+    const { games: _g, ...quiz } = r;
+    return {
+      quiz: quiz as Quiz,
+      kind: quizKind(quiz),
+      gameDate: g?.game_date ?? null,
+      tipTime: g?.tip_time ?? null,
+      submitted: doneBy.get(r.id)?.size ?? 0,
+    };
+  });
+}
+
+/** How many re-teach flags a published quiz has right now. */
+export async function getReteachCount(quizId: string): Promise<number> {
+  const bundle = await getQuizBundle(quizId);
+  const results = await getQuizResults(bundle);
+  return results.flags.length;
 }
 
 /** Replaces a draft question in full (prompt, answers, key, assignees). */
@@ -727,11 +806,12 @@ function localToday(): string {
 }
 
 /**
- * Adds a "to cover" item to the next practice for this game's roster.
+ * Adds a "to cover" item to the next practice for this quiz's team(s):
+ * the game's roster for a scout quiz, the quiz's own teams otherwise.
  * Prefers a practice BEFORE tip-off; if there isn't one, the next one
  * after. Returns that practice's date.
  */
-export async function addToNextPractice(gameId: string | null, text: string, questionId: string | null): Promise<string> {
+export async function addToNextPractice(gameId: string | null, text: string, questionId: string | null, quizRosterIds: string[] = []): Promise<string> {
   let rosterId: string | null = null, gameDate: string | null = null, tipTime: string | null = null;
   if (gameId) {
     const { data: g } = await supabase.from("games").select("roster_id, game_date, tip_time").eq("id", gameId).maybeSingle();
@@ -745,8 +825,9 @@ export async function addToNextPractice(gameId: string | null, text: string, que
     .gte("practice_date", localToday())
     .order("practice_date").order("start_time");
   if (error) throw error;
+  const teamIds = rosterId ? [rosterId] : quizRosterIds;
   const forTeam = ((practices ?? []) as any[]).filter(p =>
-    !rosterId || !(p.roster_ids ?? []).length || (p.roster_ids ?? []).includes(rosterId));
+    !teamIds.length || !(p.roster_ids ?? []).length || (p.roster_ids ?? []).some((r: string) => teamIds.includes(r)));
   if (!forTeam.length) throw new Error("No upcoming practice for this team. Create one first, then add it.");
 
   const beforeTip = (p: any) => {
@@ -789,6 +870,8 @@ export async function deleteCoverItem(id: string) {
 export interface MyQuiz {
   quiz_id: string;
   title: string;
+  kind: QuizKind;
+  due_at: string | null;
   scout_sheet_id: string | null;
   game_id: string | null;
   game_date: string | null;
