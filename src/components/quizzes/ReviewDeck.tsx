@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { DeckQuestion, DeckAnswer, getReviewDeckNext, answerReviewDeck } from "../../lib/quizzes";
 import { optionStyle, primaryBtn, secondaryBtn } from "./quizStyles";
+import { QuizPlayVisual, QuizPlayReveal } from "./QuizPlayVisual";
 
 interface Props {
   onClose: () => void;
@@ -19,10 +20,15 @@ export default function ReviewDeck({ onClose }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inputError, setInputError] = useState<string | null>(null);
+  const [ready, setReady] = useState(true);
 
   const load = useCallback(async (exclude?: string | null) => {
     setPicked(null); setResult(null); setInputError(null); setError(null);
-    try { setQ(await getReviewDeckNext(exclude)); }
+    try {
+      const next = await getReviewDeckNext(exclude);
+      setReady(!next.visual?.hide_after);
+      setQ(next);
+    }
     catch (e: any) { setError(e?.message ?? "Couldn't load your review deck."); }
   }, []);
 
@@ -78,8 +84,10 @@ export default function ReviewDeck({ onClose }: Props) {
         <span style={{ fontSize: 13, color: "var(--muted)" }}>{result ? result.remaining : q.remaining} left</span>
       </div>
 
+      {q.visual && !result?.reveal && <QuizPlayVisual visual={q.visual} onReady={() => setReady(true)} />}
+      {result?.reveal && <QuizPlayReveal reveal={result.reveal} />}
       <div style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.4, marginBottom: 14 }}>{q.prompt}</div>
-      {q.options.map(o => (
+      {ready && q.options.map(o => (
         <button key={o.id} type="button" disabled={!!result || busy}
           onClick={() => { setPicked(o.id); setInputError(null); }} style={optionStyle(stateOf(o.id))}>
           {o.label}
@@ -102,7 +110,7 @@ export default function ReviewDeck({ onClose }: Props) {
             <button type="button" onClick={onClose} style={secondaryBtn}>Done</button>
           </div>
         </>
-      ) : (
+      ) : ready && (
         <button type="button" onClick={check} disabled={busy} style={{ ...primaryBtn, width: "100%", padding: "11px 16px", marginTop: 4 }}>
           {busy ? "Checking…" : "Check"}
         </button>
