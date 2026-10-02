@@ -69,7 +69,7 @@ export default function QuizzesPage() {
 
   if (open) {
     return (
-      <div style={{ width: "100%", maxWidth: 820, margin: "0 auto" }}>
+      <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto" }}>
         <button type="button" onClick={close} style={{ ...secondaryBtn, marginBottom: 12 }}>← All quizzes</button>
         {open.kind === "scout" && open.quiz.scout_sheet_id
           ? <QuizManager scoutSheetId={open.quiz.scout_sheet_id} />
@@ -82,7 +82,7 @@ export default function QuizzesPage() {
   const shown = (items ?? []).filter(i => teamFilter === "all" || i.quiz.roster_ids.includes(teamFilter));
 
   return (
-    <div style={{ width: "100%", maxWidth: 820, margin: "0 auto" }}>
+    <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
         <div className="section-title" style={{ margin: 0 }}>Quizzes</div>
         <button type="button" onClick={() => setCreating(true)} style={primaryBtn}>+ New quiz</button>
@@ -167,7 +167,7 @@ function NewQuizForm({ teams, onCancel, onCreated }: { teams: Team[]; onCancel: 
   }
 
   return (
-    <div style={{ width: "100%", maxWidth: 560, margin: "0 auto" }}>
+    <div style={{ width: "100%", maxWidth: 720, margin: "0 auto" }}>
       <div style={card}>
         <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>New quiz</div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
