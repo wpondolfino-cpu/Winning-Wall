@@ -320,10 +320,12 @@ function PlayerIcon({ p, avatarUrl }: { p: PlayPlayer; avatarUrl?: string | null
       </g>
     );
   }
+  // A quiz question's player ("what does the 4 do?") is drawn gold.
+  const focus = !!p.quizFocus;
   return (
     <g>
-      <circle cx={p.x} cy={p.y} r={13} fill="#E6F1FB" stroke="#185FA5" strokeWidth={2} />
-      <text x={p.x} y={p.y + 4} textAnchor="middle" fontSize={12} fontWeight={500} fill="#0C447C">{p.num}</text>
+      <circle cx={p.x} cy={p.y} r={13} fill={focus ? "#F0C040" : "#E6F1FB"} stroke={focus ? "#8A6A12" : "#185FA5"} strokeWidth={2} />
+      <text x={p.x} y={p.y + 4} textAnchor="middle" fontSize={12} fontWeight={focus ? 700 : 500} fill={focus ? "#2A2008" : "#0C447C"}>{p.num}</text>
       {p.handoff && (
         <g>
           <circle cx={p.x - 10} cy={p.y - 10} r={7} fill="var(--surface)" stroke="var(--gold)" strokeWidth={1.5} />
