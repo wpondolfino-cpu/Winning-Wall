@@ -111,8 +111,8 @@ export default function QuizzesPage() {
         <div style={{ color: "var(--muted)", fontSize: 13 }}>Loading…</div>
       ) : shown.length === 0 ? (
         <div style={{ ...card, fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
-          No quizzes{teamFilter !== "all" ? " for this team" : ""} yet. Scout quizzes are made from a scout sheet's Quiz tab;
-          use New quiz for anything else, like terms or rules.
+          No quizzes{teamFilter !== "all" ? " for this team" : ""} yet. Use New quiz to make a scout quiz for a game,
+          or a standalone one for anything else, like terms or rules.
         </div>
       ) : (
         <div style={card}>
