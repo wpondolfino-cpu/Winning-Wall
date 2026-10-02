@@ -11,7 +11,6 @@ import { deleteScoutSheet, renameOpponent, deleteOpponent,
 } from "../../lib/scoutSheets";
 import { embedJsonInPdf, extractJsonFromPdf, drawTextDocument } from "../../lib/pdfDataExport";
 import ScoutSheetBuilder from "./ScoutSheetBuilder";
-import PlayerQuizList from "../quizzes/PlayerQuizList";
 import { inputStyle } from "../../lib/inputStyle";
 
 interface Props {
@@ -345,8 +344,6 @@ export default function ScoutSheetsHub(props: Props) {
   return (
     <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto" }}>
       {error && <div className="error-msg">{error}</div>}
-      {/* Players: their quizzes and review deck, above the opponents. */}
-      {!canManage && <PlayerQuizList />}
       {canManage && (
         <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
           <input value={newOpponentName} onChange={e => setNewOpponentName(e.target.value)} placeholder="New opponent name"
