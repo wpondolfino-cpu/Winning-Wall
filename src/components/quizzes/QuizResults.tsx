@@ -37,7 +37,7 @@ export default function QuizResults({ bundle }: Props) {
     setError(null);
     try {
       const text = `Re-teach (${bundle.quiz.title}): ${labelText} — ${missed} of ${answered} missed`;
-      const date = await addToNextPractice(bundle.quiz.game_id, text, questionId);
+      const date = await addToNextPractice(bundle.quiz.game_id, text, questionId, bundle.quiz.roster_ids);
       setAdded(a => ({ ...a, [key]: date }));
     } catch (e: any) {
       setError(e?.message ?? "Couldn't add it to a practice.");
