@@ -1,5 +1,9 @@
 // src/components/quizzes/QuizManager.tsx
-// The coach's Quiz tab on a scout sheet.
+// Managing one quiz. Used two ways:
+//   - the Quiz tab on a scout sheet (scoutSheetId): every version of that
+//     sheet's quiz, Generate and Regenerate;
+//   - a standalone quiz from the Quizzes page (quizId): one quiz, no
+//     versions, its teams and due date picked by the coach.
 //
 //   No quiz yet  -> Generate (questions built from the sheet's structured
 //                   fields; AI drafts can be added from the free text).
@@ -11,27 +15,34 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Quiz, QuizBundle, QuizQuestion, QuestionDraft,
-  getQuizzesForSheet, getQuizBundle, createDraftForSheet, addQuestions, saveDraftQuestion,
+  getQuizzesForSheet, getQuiz, getQuizBundle, createDraftForSheet, addQuestions, saveDraftQuestion,
   saveWording, deleteQuestion, moveQuestion, updateQuizSettings, publishQuiz, deleteQuiz,
   draftQuestionsWithAi,
 } from "../../lib/quizzes";
 import { getRoster, RosterPlayer } from "../../lib/plays";
+import { getRosters } from "../../lib/practicePlanner";
 import { inputStyle } from "../../lib/inputStyle";
 import QuizQuestionEditor from "./QuizQuestionEditor";
 import QuizResults from "./QuizResults";
 import { card, pill, primaryBtn, secondaryBtn, dangerBtn, smallBtn, sectionTitle, label } from "./quizStyles";
 
 interface Props {
-  scoutSheetId: string;
+  /** A scout sheet's quiz (all its versions). */
+  scoutSheetId?: string;
+  /** Or one standalone quiz. */
+  quizId?: string;
+  /** Standalone only: called after the quiz is deleted. */
+  onDeleted?: () => void;
 }
 
 const SOURCE_LABEL = { sheet: "From sheet", ai: "AI draft", coach: "Coach" } as const;
 
-export default function QuizManager({ scoutSheetId }: Props) {
+export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) {
   const [versions, setVersions] = useState<Quiz[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [bundle, setBundle] = useState<QuizBundle | null>(null);
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
+  const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
   const [view, setView] = useState<"results" | "questions">("results");
   const [editingId, setEditingId] = useState<string | null>(null);   // question id, or "new"
   const [aiCount, setAiCount] = useState(6);
@@ -40,13 +51,19 @@ export default function QuizManager({ scoutSheetId }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
 
   const loadVersions = useCallback(async (select?: string) => {
-    const list = await getQuizzesForSheet(scoutSheetId);
+    let list: Quiz[];
+    if (scoutSheetId) {
+      list = await getQuizzesForSheet(scoutSheetId);
+    } else {
+      const one = quizId ? await getQuiz(quizId) : null;
+      list = one ? [one] : [];
+    }
     setVersions(list);
     const live = list.find(q => q.status === "published");
     const pick = select ?? live?.id ?? list[0]?.id ?? null;
     setSelectedId(pick);
     return list;
-  }, [scoutSheetId]);
+  }, [scoutSheetId, quizId]);
 
   const loadBundle = useCallback(async (id: string | null) => {
     if (!id) { setBundle(null); return; }
@@ -56,6 +73,7 @@ export default function QuizManager({ scoutSheetId }: Props) {
   useEffect(() => {
     loadVersions().catch(e => setError(e?.message ?? "Couldn't load the quiz."));
     getRoster().then(setRoster).catch(() => {});
+    getRosters().then(r => setTeams(r.map(t => ({ id: t.id, name: t.name })))).catch(() => {});
   }, [loadVersions]);
 
   useEffect(() => {
@@ -74,13 +92,14 @@ export default function QuizManager({ scoutSheetId }: Props) {
 
   // ── Actions ──
   const generate = () => run("generate", async () => {
+    if (!scoutSheetId) return;
     const id = await createDraftForSheet(scoutSheetId);
     await loadVersions(id);
     setView("questions");
   });
 
   const draftWithAi = () => run("ai", async () => {
-    if (!bundle) return;
+    if (!bundle || !scoutSheetId) return;
     const drafts = await draftQuestionsWithAi(scoutSheetId, aiCount);
     if (!drafts.length) { setNotice("The AI didn't come back with any usable questions. Try again."); return; }
     const start = bundle.questions.reduce((m, q) => Math.max(m, q.sort_order), -1) + 1;
@@ -94,7 +113,7 @@ export default function QuizManager({ scoutSheetId }: Props) {
     const live = versions.find(q => q.status === "published");
     const msg = live
       ? `Publish version ${bundle.quiz.version}? Version ${live.version} comes down (its results are kept). After publishing, only the wording can change.`
-      : "Publish this quiz? Players on the game roster will see it. After publishing, only the wording can change.";
+      : "Publish this quiz? Players on its teams will see it. After publishing, only the wording can change.";
     if (!window.confirm(msg)) return;
     await publishQuiz(bundle.quiz.id);
     await loadVersions(bundle.quiz.id);
@@ -102,6 +121,7 @@ export default function QuizManager({ scoutSheetId }: Props) {
   });
 
   const regenerate = () => run("regenerate", async () => {
+    if (!scoutSheetId) return;
     if (!window.confirm("Start a new version from the scout sheet as it is now? Questions you wrote or kept from the AI carry over. This version stays live until you publish the new one.")) return;
     const id = await createDraftForSheet(scoutSheetId);
     await loadVersions(id);
@@ -113,9 +133,10 @@ export default function QuizManager({ scoutSheetId }: Props) {
     const isDraft = bundle.quiz.status === "draft";
     const msg = isDraft
       ? "Delete this draft?"
-      : `Delete version ${bundle.quiz.version}? Every player's attempts and answers on it are deleted too. This can't be undone.`;
+      : `Delete ${scoutSheetId ? `version ${bundle.quiz.version}` : "this quiz"}? Every player's attempts and answers on it are deleted too. This can't be undone.`;
     if (!window.confirm(msg)) return;
     await deleteQuiz(bundle.quiz.id);
+    if (!scoutSheetId) { onDeleted?.(); return; }
     await loadVersions();
   });
 
@@ -127,6 +148,10 @@ export default function QuizManager({ scoutSheetId }: Props) {
 
   // ── Render ──
   if (versions === null) return <div style={{ padding: 12, color: "var(--muted)", fontSize: 13 }}>{error ?? "Loading…"}</div>;
+
+  if (versions.length === 0 && !scoutSheetId) {
+    return <div style={{ padding: 12, color: "var(--muted)", fontSize: 13 }}>This quiz no longer exists.</div>;
+  }
 
   if (versions.length === 0) {
     return (
@@ -159,8 +184,8 @@ export default function QuizManager({ scoutSheetId }: Props) {
       {error && <div className="error-msg">{error}</div>}
       {notice && <div style={{ ...card, fontSize: 13, marginBottom: 12, borderColor: "var(--royal-light)" }}>{notice}</div>}
 
-      {/* ── Versions ── */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+      {/* ── Versions (scout quizzes only; a standalone quiz has one) ── */}
+      <div style={{ display: scoutSheetId ? "flex" : "none", gap: 6, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
         {versions.map(v => (
           <button key={v.id} type="button" onClick={() => setSelectedId(v.id)}
             style={{ ...smallBtn, padding: "5px 10px", color: v.id === selectedId ? "#fff" : "var(--muted)",
@@ -205,6 +230,62 @@ export default function QuizManager({ scoutSheetId }: Props) {
               {/* ── Settings ── */}
               <div style={sectionTitle}>Settings</div>
               <div style={{ ...card, display: "grid", gap: 10 }}>
+                {quiz.scout_sheet_id ? (
+                  <div style={{ fontSize: 13 }}>
+                    <span style={{ color: "var(--muted)" }}>Team: </span>
+                    {quiz.roster_ids.length
+                      ? quiz.roster_ids.map(id => teams.find(t => t.id === id)?.name ?? "Team").join(", ")
+                      : "Every player (the game has no team set)"}
+                    <span style={{ color: "var(--muted)" }}> — from the game</span>
+                  </div>
+                ) : (
+                  <>
+                    <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+                      <span style={{ width: 70 }}>Title</span>
+                      <input defaultValue={quiz.title} key={`title-${quiz.id}`} disabled={quiz.status === "archived"}
+                        onBlur={e => {
+                          const t = e.target.value.trim();
+                          if (!t) { setError("The title can't be blank."); return; }
+                          if (t !== quiz.title) setSetting({ title: t });
+                        }}
+                        style={{ ...inputStyle, flex: 1, padding: "6px 10px" }} />
+                    </label>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 13 }}>
+                      <span style={{ width: 70, paddingTop: 4 }}>Teams</span>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", flex: 1 }}>
+                        {teams.map(t => {
+                          const on = quiz.roster_ids.includes(t.id);
+                          return (
+                            <button key={t.id} type="button" disabled={quiz.status === "archived"}
+                              onClick={() => {
+                                const next = on ? quiz.roster_ids.filter(x => x !== t.id) : [...quiz.roster_ids, t.id];
+                                if (!next.length) { setError("A quiz needs at least one team."); return; }
+                                setSetting({ roster_ids: next });
+                              }}
+                              style={{ fontSize: 12, padding: "4px 10px", borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
+                                border: on ? "1px solid var(--royal-light)" : "1px solid var(--border)",
+                                background: on ? "rgba(37,80,212,0.18)" : "var(--surface)", color: on ? "var(--text)" : "var(--muted)" }}>
+                              {t.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+                      <span style={{ width: 70 }}>Due</span>
+                      <input type="date" key={`due-${quiz.id}-${quiz.due_at ?? ""}`} disabled={quiz.status === "archived"}
+                        defaultValue={quiz.due_at ? toLocalDate(quiz.due_at) : ""}
+                        onChange={e => setSetting({ due_at: e.target.value ? endOfLocalDay(e.target.value) : null })}
+                        style={{ ...inputStyle, padding: "6px 10px" }} />
+                      <span style={{ color: "var(--muted)", fontSize: 12 }}>optional</span>
+                    </label>
+                    {isLive && (
+                      <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                        Adding a team sends this quiz to its players now. Removing one hides it from players who haven't started.
+                      </div>
+                    )}
+                  </>
+                )}
                 <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
                   <span style={{ flex: 1 }}>Show answers</span>
                   <select value={quiz.feedback_mode} disabled={quiz.status === "archived"}
@@ -257,7 +338,9 @@ export default function QuizManager({ scoutSheetId }: Props) {
               </div>
               {bundle.questions.length === 0 && isDraft && (
                 <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>
-                  The sheet's structured fields didn't produce any questions yet. Add your own or draft some with AI.
+                  {scoutSheetId
+                    ? "The sheet's structured fields didn't produce any questions yet. Add your own or draft some with AI."
+                    : "No questions yet. Add your first one below."}
                 </div>
               )}
               {bundle.questions.map((q, i) => editingId === q.id ? (
@@ -298,7 +381,7 @@ export default function QuizManager({ scoutSheetId }: Props) {
               {isDraft && (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
                   <button type="button" onClick={() => setEditingId("new")} style={secondaryBtn}>+ Add question</button>
-                  <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <span style={{ display: scoutSheetId ? "flex" : "none", gap: 6, alignItems: "center" }}>
                     <button type="button" onClick={draftWithAi} disabled={busy === "ai"} style={secondaryBtn}>
                       {busy === "ai" ? "Drafting…" : "✨ Draft with AI"}
                     </button>
@@ -314,7 +397,7 @@ export default function QuizManager({ scoutSheetId }: Props) {
                   </button>
                 </div>
               )}
-              {isDraft && (
+              {isDraft && scoutSheetId && (
                 <div style={{ ...label, marginTop: 8 }}>
                   AI drafts use the sheet's written descriptions, plans, notes and keys. Opposing players are sent by number only, never by name.
                 </div>
@@ -325,19 +408,31 @@ export default function QuizManager({ scoutSheetId }: Props) {
           {/* ── Live / archived actions ── */}
           {!isDraft && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
-              {isLive && !draft && (
+              {isLive && !draft && scoutSheetId && (
                 <button type="button" onClick={regenerate} disabled={!!busy} style={secondaryBtn}>
                   {busy === "regenerate" ? "Building…" : "↻ Regenerate"}
                 </button>
               )}
               <span style={{ flex: 1 }} />
-              <button type="button" onClick={removeQuiz} disabled={!!busy} style={dangerBtn}>Delete v{quiz.version}</button>
+              <button type="button" onClick={removeQuiz} disabled={!!busy} style={dangerBtn}>{scoutSheetId ? `Delete v${quiz.version}` : "Delete quiz"}</button>
             </div>
           )}
         </>
       )}
     </div>
   );
+}
+
+/** "2026-10-09" from a stored due time, in the coach's own time zone. */
+function toLocalDate(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** A picked date means "by the end of that day", local time. */
+function endOfLocalDay(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(y, m - 1, d, 23, 59, 0).toISOString();
 }
 
 function QuestionRow(props: {
