@@ -77,7 +77,14 @@ export default function QuizQuestionEditor({ mode, question, roster, onSaveDraft
       <textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={2}
         style={{ ...inputStyle, width: "100%", resize: "vertical", marginBottom: 10 }} />
 
-      <div style={label}>{mode === "draft" ? "Answers — tap the circle on the correct one" : "Answers (the correct one is locked)"}</div>
+      {(mode === "draft" || (question?.options.length ?? 0) > 0) && (
+        <div style={label}>{mode === "draft" ? "Answers — tap the circle on the correct one" : "Answers (the correct one is locked)"}</div>
+      )}
+      {mode === "wording" && question?.qtype === "tap_place" && (
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+          Players tap the court. The right spot comes from the play as drawn — Rebuild from plays picks up changes.
+        </div>
+      )}
       {mode === "draft" ? (
         <>
           {options.map((o, i) => (
