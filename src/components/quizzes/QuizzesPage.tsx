@@ -8,7 +8,11 @@ import { useCallback, useEffect, useState } from "react";
 import {
   QuizListItem, QuizGameOption, getAllQuizzes, getReteachCount, createStandaloneQuiz,
   getGamesForScoutQuiz, createScoutQuizForGame, createPlayQuiz, PlayQType, PLAY_QTYPE_LABEL,
+  QuizBundle, getQuizBundle, getQuizResults, resultsToCsv, publishQuiz, deleteQuiz,
 } from "../../lib/quizzes";
+import { getRoster, RosterPlayer } from "../../lib/plays";
+import QuizPreview from "./QuizPreview";
+import QuizPrintView from "./QuizPrintView";
 import { getPlaybooks, getMyPlays, Playbook, Play } from "../../lib/plays";
 import { getRosters } from "../../lib/practicePlanner";
 import { formatDateOnly } from "../../lib/schedule";
@@ -17,6 +21,17 @@ import QuizManager from "./QuizManager";
 import { card, pill, primaryBtn, secondaryBtn, label } from "./quizStyles";
 
 type Team = { id: string; name: string };
+
+function timeAgo(iso: string): string {
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
 function dueLabel(item: QuizListItem): string | null {
   if (item.kind === "scout") {
@@ -38,6 +53,67 @@ export default function QuizzesPage() {
   const [open, setOpen] = useState<QuizListItem | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  // Row ⋯ menu, and what its actions open.
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ bundle: QuizBundle; roster: RosterPlayer[] } | null>(null);
+  const [printing, setPrinting] = useState<QuizBundle | null>(null);
+
+  // Close an open menu on any click elsewhere.
+  useEffect(() => {
+    if (!menuFor) return;
+    const off = () => setMenuFor(null);
+    window.addEventListener("click", off);
+    return () => window.removeEventListener("click", off);
+  }, [menuFor]);
+
+  async function act(item: QuizListItem, action: "preview" | "publish" | "export" | "print" | "delete") {
+    setMenuFor(null); setError(null); setNotice(null);
+    setBusyId(item.quiz.id);
+    try {
+      if (action === "preview") {
+        const [bundle, roster] = await Promise.all([getQuizBundle(item.quiz.id), getRoster()]);
+        if (!bundle.questions.length) { setError("This quiz has no questions to preview yet."); return; }
+        setPreview({ bundle, roster });
+      } else if (action === "print") {
+        const bundle = await getQuizBundle(item.quiz.id);
+        if (!bundle.questions.length) { setError("This quiz has no questions to print yet."); return; }
+        setPrinting(bundle);
+      } else if (action === "export") {
+        const bundle = await getQuizBundle(item.quiz.id);
+        const csv = resultsToCsv(bundle, await getQuizResults(bundle));
+        const blob = new Blob([csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${item.quiz.title.replace(/[^\w\- ]+/g, "").trim() || "quiz"} results.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else if (action === "publish") {
+        const replacing = items?.find(o => o.quiz.status === "published" && o.quiz.id !== item.quiz.id &&
+          ((item.quiz.scout_sheet_id && o.quiz.scout_sheet_id === item.quiz.scout_sheet_id) || o.quiz.id === item.quiz.replaces_quiz_id));
+        const msg = replacing
+          ? `Publish "${item.quiz.title}"? The current live version comes down (its results are kept). After publishing, only the wording can change.`
+          : `Publish "${item.quiz.title}"? Players on its teams will see it. After publishing, only the wording can change.`;
+        if (!window.confirm(msg)) return;
+        await publishQuiz(item.quiz.id);
+        setNotice(`"${item.quiz.title}" is live.`);
+        await load();
+      } else if (action === "delete") {
+        const msg = item.quiz.status === "draft"
+          ? `Delete the draft "${item.quiz.title}"?`
+          : `Delete "${item.quiz.title}"? Every player's attempts and answers on it are deleted too. This can't be undone.`;
+        if (!window.confirm(msg)) return;
+        await deleteQuiz(item.quiz.id);
+        await load();
+      }
+    } catch (e: any) {
+      setError(e?.message ?? "Something went wrong — try again.");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   const load = useCallback(async () => {
     setError(null);
@@ -64,18 +140,35 @@ export default function QuizzesPage() {
         onCreated={async id => {
           setCreating(false);
           await load();
-          setOpen({ quiz: { id } as any, kind: "standalone", gameDate: null, tipTime: null, submitted: 0 });
+          setOpen({ quiz: { id } as any, kind: "standalone", gameDate: null, tipTime: null, submitted: 0, questionCount: 0, lastEdited: "" });
         }}
         onPlaysCreated={async id => {
           setCreating(false);
           await load();
-          setOpen({ quiz: { id } as any, kind: "plays", gameDate: null, tipTime: null, submitted: 0 });
+          setOpen({ quiz: { id } as any, kind: "plays", gameDate: null, tipTime: null, submitted: 0, questionCount: 0, lastEdited: "" });
         }}
         onScoutCreated={async sheetId => {
           setCreating(false);
           await load();
-          setOpen({ quiz: { id: sheetId, scout_sheet_id: sheetId } as any, kind: "scout", gameDate: null, tipTime: null, submitted: 0 });
+          setOpen({ quiz: { id: sheetId, scout_sheet_id: sheetId } as any, kind: "scout", gameDate: null, tipTime: null, submitted: 0, questionCount: 0, lastEdited: "" });
         }} />
+    );
+  }
+
+  if (preview) {
+    return (
+      <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto" }}>
+        <QuizPreview bundle={preview.bundle} roster={preview.roster} onClose={() => setPreview(null)} />
+      </div>
+    );
+  }
+
+  if (printing) {
+    const names = printing.quiz.roster_ids.map(id => teams.find(t => t.id === id)?.name ?? "Team").join(", ");
+    return (
+      <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto" }}>
+        <QuizPrintView bundle={printing} teamNames={names} onBack={() => setPrinting(null)} />
+      </div>
     );
   }
 
@@ -100,6 +193,7 @@ export default function QuizzesPage() {
         <button type="button" onClick={() => setCreating(true)} style={primaryBtn}>+ New quiz</button>
       </div>
       {error && <div className="error-msg">{error}</div>}
+      {notice && <div style={{ ...card, fontSize: 13, marginBottom: 12, borderColor: "rgba(40,180,80,0.4)" }}>{notice}</div>}
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
         {[{ id: "all", name: "All teams" }, ...teams].map(t => (
@@ -127,9 +221,26 @@ export default function QuizzesPage() {
             const statusKind = i.quiz.status === "published" ? "good" : i.quiz.status === "draft" ? "warn" : "plain";
             const statusText = i.quiz.status === "published" ? "Live" : i.quiz.status === "draft" ? "Draft" : "Archived";
             const flags = reteach[i.quiz.id] ?? 0;
+            const isDraft = i.quiz.status === "draft";
+            const teamsText = i.quiz.roster_ids.length ? i.quiz.roster_ids.map(teamName).join(", ") : "All players";
+            const meta = isDraft
+              ? `${teamsText} · ${i.questionCount} question${i.questionCount === 1 ? "" : "s"} · Edited ${timeAgo(i.lastEdited)}`
+              : `${teamsText}${due ? ` · Due ${due}` : ""} · ${i.submitted} finished`;
+            const menuItem = (labelText: string, icon: string, action: Parameters<typeof act>[1], opts: { danger?: boolean; disabled?: string } = {}) => (
+              <button type="button" disabled={!!opts.disabled}
+                onClick={e => { e.stopPropagation(); if (!opts.disabled) act(i, action); }}
+                style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "none", border: "none",
+                  padding: "8px 10px", borderRadius: 8, fontSize: 13, fontFamily: "inherit",
+                  cursor: opts.disabled ? "default" : "pointer",
+                  color: opts.disabled ? "var(--muted)" : opts.danger ? "#ff7b7b" : "var(--text)" }}>
+                <span aria-hidden="true" style={{ width: 18, textAlign: "center" }}>{icon}</span>
+                <span style={{ flex: 1 }}>{labelText}</span>
+                {opts.disabled && <span style={{ fontSize: 10, color: "var(--muted)" }}>{opts.disabled}</span>}
+              </button>
+            );
             return (
               <div key={i.quiz.id} onClick={() => setOpen(i)}
-                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", cursor: "pointer",
+                style={{ position: "relative", display: "flex", alignItems: "center", gap: 10, padding: "12px 0", cursor: "pointer",
                   borderTop: idx === 0 ? "none" : "1px solid var(--border)" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
@@ -138,14 +249,33 @@ export default function QuizzesPage() {
                     </span>
                     <span style={{ fontSize: 14, fontWeight: 600 }}>{i.quiz.title}</span>
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
-                    {i.quiz.roster_ids.length ? i.quiz.roster_ids.map(teamName).join(", ") : "All players"}
-                    {due ? ` · Due ${due}` : ""}
-                    {i.quiz.status !== "draft" ? ` · ${i.submitted} finished` : ""}
-                  </div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>{meta}</div>
                 </div>
                 {flags > 0 && <span style={pill("bad")}>{flags} to re-teach</span>}
                 <span style={pill(statusKind)}>{statusText}</span>
+                <button type="button" aria-label={`Actions for ${i.quiz.title}`} disabled={busyId === i.quiz.id}
+                  onClick={e => { e.stopPropagation(); setMenuFor(menuFor === i.quiz.id ? null : i.quiz.id); }}
+                  style={{ background: "none", border: "1px solid transparent", borderRadius: 6, padding: "2px 8px",
+                    color: "var(--muted)", fontSize: 18, lineHeight: 1, cursor: "pointer", fontFamily: "inherit" }}>
+                  {busyId === i.quiz.id ? "…" : "⋯"}
+                </button>
+                <span aria-hidden="true" style={{ color: "var(--muted)", fontSize: 18 }}>›</span>
+
+                {menuFor === i.quiz.id && (
+                  <div onClick={e => e.stopPropagation()}
+                    style={{ position: "absolute", right: 24, top: 44, zIndex: 20, minWidth: 220, padding: 6,
+                      background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10,
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.35)" }}>
+                    {menuItem("Preview as a player", "▶", "preview")}
+                    {isDraft ? menuItem("Publish…", "🌐", "publish")
+                      : menuItem(i.quiz.status === "published" ? "Published" : "Archived", "🌐", "publish", { disabled: i.quiz.status === "published" ? "live" : "old version" })}
+                    <div style={{ height: 1, background: "var(--border)", margin: "4px 6px" }} />
+                    {isDraft ? menuItem("Export results", "📊", "export", { disabled: "once live" }) : menuItem("Export results (CSV)", "📊", "export")}
+                    {menuItem("Print quiz + answer key", "🖨️", "print")}
+                    <div style={{ height: 1, background: "var(--border)", margin: "4px 6px" }} />
+                    {menuItem("Delete…", "🗑", "delete", { danger: true })}
+                  </div>
+                )}
               </div>
             );
           })}
