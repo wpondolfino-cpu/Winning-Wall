@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { QuizBundle, QuizQuestion } from "../../lib/quizzes";
+import { QuizBundle, QuizQuestion, TapPoint, TAP_RADIUS } from "../../lib/quizzes";
 import { RosterPlayer } from "../../lib/plays";
 import { inputStyle } from "../../lib/inputStyle";
 import { QuizPlayVisual, QuizPlayReveal } from "./QuizPlayVisual";
@@ -25,7 +25,7 @@ interface Props {
   onClose: () => void;
 }
 
-interface Answer { questionId: string; chosen: string | null; correct: boolean; timedOut: boolean; }
+interface Answer { questionId: string; chosen: string | null; tap: TapPoint | null; correct: boolean; timedOut: boolean; }
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -44,6 +44,7 @@ export default function QuizPreview({ bundle, roster, onClose }: Props) {
   const [order, setOrder] = useState<QuizQuestion[]>([]);
   const [idx, setIdx] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
+  const [tapPoint, setTapPoint] = useState<TapPoint | null>(null);
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [feedback, setFeedback] = useState<Answer | null>(null);
   const [finished, setFinished] = useState(false);
@@ -94,16 +95,23 @@ export default function QuizPreview({ bundle, roster, onClose }: Props) {
   }
 
   function beginQuestion(q: QuizQuestion) {
-    setPicked(null); setFeedback(null); setInputError(null);
+    setPicked(null); setTapPoint(null); setFeedback(null); setInputError(null);
     setReady(!q.visual?.hide_after && !(q.visual?.lead_frames?.length));
     setRemaining(quiz.time_limit_seconds ?? null);
   }
 
   const q = order[idx];
 
+  const radius = TAP_RADIUS[quiz.tap_tolerance ?? "normal"] ?? 50;
+  const focusNum = (qq: QuizQuestion) => qq.visual?.frames[0]?.players.find(pl => pl.quizFocus)?.num ?? null;
+
   function lock(choice: string | null, timedOut: boolean) {
     if (!q || feedback) return;
-    const a: Answer = { questionId: q.id, chosen: choice, correct: !timedOut && !!choice && choice === q.correct_option_id, timedOut };
+    const isTap = q.qtype === "tap_place";
+    const correct = isTap
+      ? !timedOut && !!tapPoint && !!q.correct_point && Math.hypot(tapPoint.x - q.correct_point.x, tapPoint.y - q.correct_point.y) <= radius
+      : !timedOut && !!choice && choice === q.correct_option_id;
+    const a: Answer = { questionId: q.id, chosen: isTap ? null : choice, tap: isTap ? tapPoint : null, correct, timedOut };
     const next = [...answers, a];
     setAnswers(next);
     if (quiz.feedback_mode === "immediate") { setFeedback(a); return; }
@@ -120,7 +128,7 @@ export default function QuizPreview({ bundle, roster, onClose }: Props) {
   // Time limit, started once the answers are showing.
   useEffect(() => {
     if (!started || finished || remaining == null || feedback || !ready || !q) return;
-    if (remaining <= 0) { lock(picked, !picked); return; }
+    if (remaining <= 0) { const has = q.qtype === "tap_place" ? !!tapPoint : !!picked; lock(picked, !has); return; }
     const t = window.setTimeout(() => setRemaining(r => (r == null ? r : r - 1)), 1000);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -177,7 +185,10 @@ export default function QuizPreview({ bundle, roster, onClose }: Props) {
               <div style={{ fontSize: 12, color: a?.correct ? "#5de098" : "#ff7b7b", marginBottom: 4 }}>
                 {i + 1}. {a?.correct ? "Correct" : a?.timedOut ? "Time ran out" : "Missed"}
               </div>
-              {qq.reveal && <QuizPlayReveal reveal={qq.reveal} />}
+              {qq.reveal && (
+                <QuizPlayReveal reveal={qq.reveal} tap={a?.tap ?? null} tapNum={focusNum(qq)}
+                  target={qq.correct_point ? { point: qq.correct_point, radius } : null} />
+              )}
               <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>{qq.prompt}</div>
               {opts.map(o => (
                 <div key={o.id} style={{ ...optionStyle(o.id === qq.correct_option_id ? "right" : o.id === a?.chosen ? "wrong" : "idle"), cursor: "default" }}>
@@ -245,8 +256,18 @@ export default function QuizPreview({ bundle, roster, onClose }: Props) {
         <div style={{ width: `${Math.round(((idx + 1) / order.length) * 100)}%`, height: "100%", background: "var(--royal-light)" }} />
       </div>
 
-      {q.visual && !(feedback && q.reveal) && <QuizPlayVisual key={`${q.id}-${run}`} visual={q.visual} onReady={() => setReady(true)} />}
-      {feedback && q.reveal && <QuizPlayReveal reveal={q.reveal} />}
+      {q.visual && !(feedback && q.reveal) && (
+        <QuizPlayVisual key={`${q.id}-${run}`} visual={q.visual} onReady={() => setReady(true)}
+          {...(q.qtype === "tap_place" ? {
+            tap: tapPoint,
+            onTap: (p: TapPoint) => { setTapPoint(p); setInputError(null); },
+            tapNum: focusNum(q),
+          } : {})} />
+      )}
+      {feedback && q.reveal && (
+        <QuizPlayReveal reveal={q.reveal} tap={feedback.tap} tapNum={focusNum(q)}
+          target={q.correct_point ? { point: q.correct_point, radius } : null} />
+      )}
 
       <div style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.4, marginBottom: 14 }}>{q.prompt}</div>
 
@@ -274,7 +295,10 @@ export default function QuizPreview({ bundle, roster, onClose }: Props) {
         </>
       ) : ready && (
         <button type="button"
-          onClick={() => { if (!picked) { setInputError("Pick an answer first."); return; } lock(picked, false); }}
+          onClick={() => {
+            if (q.qtype === "tap_place") { if (!tapPoint) { setInputError("Tap the court first."); return; } lock(null, false); return; }
+            if (!picked) { setInputError("Pick an answer first."); return; } lock(picked, false);
+          }}
           style={{ ...primaryBtn, width: "100%", padding: "11px 16px", marginTop: 4 }}>
           {idx + 1 === order.length ? "Submit answer" : "Lock in answer"}
         </button>
