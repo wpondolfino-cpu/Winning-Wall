@@ -47,7 +47,17 @@ export default function QuizAttemptReview({ attemptId, onClose }: Props) {
           <div style={{ fontSize: 12, color: q.is_correct ? "#5de098" : "#ff7b7b", marginBottom: 4 }}>
             {i + 1}. {q.is_correct ? "Correct" : q.timed_out ? "Time ran out" : "Missed"}
           </div>
-          {q.reveal && <QuizPlayReveal reveal={q.reveal} />}
+          {q.reveal && (
+            <QuizPlayReveal reveal={q.reveal}
+              tap={q.chosen_point}
+              target={q.correct_point ? { point: q.correct_point, radius: q.radius ?? 50 } : null}
+              tapNum={q.visual?.frames[0]?.players.find(pl => pl.quizFocus)?.num ?? null} />
+          )}
+          {q.qtype === "tap_place" && (
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>
+              {q.chosen_point ? "Gold = your tap. " : "No tap. "}Green circle = where the play sends them, and how close counted.
+            </div>
+          )}
           <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>{q.prompt}</div>
           {q.options.map(o => {
             const state = o.id === q.correct_option_id ? "right" : o.id === q.chosen_option_id ? "wrong" : "idle";
