@@ -18,7 +18,7 @@
 import { useEffect, useRef, useState } from "react";
 import PlayCanvas from "../plays/PlayCanvas";
 import type { CourtTemplate, PlayFrame } from "../../lib/plays";
-import type { QuizVisual, QuizReveal } from "../../lib/quizzes";
+import type { QuizVisual, QuizReveal, QuizHeading } from "../../lib/quizzes";
 
 const COURT_MAX = 520;
 const courtBox: React.CSSProperties = {
@@ -29,6 +29,29 @@ const smallBtn: React.CSSProperties = {
   background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6,
   padding: "3px 10px", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
 };
+
+/**
+ * Which play and which step, big enough to read at a glance -- players
+ * need it to answer. Older questions without a heading fall back to the
+ * small caption line.
+ */
+function PlayHeading({ heading, status }: { heading: QuizHeading; status?: string | null }) {
+  return (
+    <div style={{ maxWidth: COURT_MAX, margin: "0 auto 8px" }}>
+      <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.2, color: "var(--text)" }}>{heading.play}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+        <span style={{ background: "rgba(240,192,64,0.16)", border: "1px solid rgba(240,192,64,0.5)", color: "var(--gold)",
+          borderRadius: 8, padding: "4px 10px", fontSize: 14, fontWeight: 700 }}>
+          Step {heading.stepNumber}{heading.stepName ? ` · ${heading.stepName}` : heading.stepNumber === 1 ? " · Start of the play" : ""}
+        </span>
+        {heading.ballHolder != null && (
+          <span style={{ fontSize: 13, color: "var(--text)" }}>🏀 The {heading.ballHolder} has the ball</span>
+        )}
+        {status && <span style={{ fontSize: 12, color: "var(--muted)" }}>{status}</span>}
+      </div>
+    </div>
+  );
+}
 
 export function QuizPlayVisual({ visual, onReady, compact = false }: {
   visual: QuizVisual;
@@ -99,6 +122,11 @@ export function QuizPlayVisual({ visual, onReady, compact = false }: {
   if (!shown) return null;
 
   return (
+    <>
+    {!compact && visual.heading && (
+      <PlayHeading heading={visual.heading}
+        status={playing && !hideAfter ? `▶ Lead-up: step ${visual.heading.stepNumber - 1}` : null} />
+    )}
     <div style={compact ? { background: "var(--surface2)", borderRadius: 8, padding: 4 } : courtBox}>
       <PlayCanvas
         frame={shown}
@@ -109,7 +137,7 @@ export function QuizPlayVisual({ visual, onReady, compact = false }: {
       />
       {!compact && (
         <>
-          {visual.caption && (
+          {visual.caption && !visual.heading && (
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>
               {playing && !hideAfter ? "Lead-up — " : ""}{visual.caption}
             </div>
@@ -131,16 +159,20 @@ export function QuizPlayVisual({ visual, onReady, compact = false }: {
         </>
       )}
     </div>
+    </>
   );
 }
 
 export function QuizPlayReveal({ reveal }: { reveal: QuizReveal }) {
   const [signal, setSignal] = useState(0);
   return (
+    <>
+    {reveal.heading && <PlayHeading heading={reveal.heading} />}
     <div style={courtBox}>
       <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", marginBottom: 6 }}>What happens on this step</div>
       <PlayCanvas frame={reveal.frame} courtTemplate={reveal.court_template as CourtTemplate} edit={false} playSignal={signal} />
       <button type="button" onClick={() => setSignal(n => n + 1)} style={{ ...smallBtn, marginTop: 6 }}>▶ Play the step</button>
     </div>
+    </>
   );
 }
