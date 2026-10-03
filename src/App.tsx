@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, Fragment } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import type { ReactNode, ChangeEvent } from "react";
 import { useAuth } from "./hooks/useAuth";
 import { useWorkouts } from "./hooks/useWorkouts";
@@ -34,6 +34,7 @@ import DrillLibrary from "./components/DrillLibrary";
 import PlaysHub from "./components/plays/PlaysHub";
 import GameStatsHub from "./components/game-stats/GameStatsHub";
 import ScoutSheetsHub from "./components/scouting/ScoutSheetsHub";
+import PageErrorBoundary from "./components/PageErrorBoundary";
 import QuizzesPage from "./components/quizzes/QuizzesPage";
 import PlayerQuizList from "./components/quizzes/PlayerQuizList";
 import SchedulePage from "./components/schedule/SchedulePage";
@@ -804,7 +805,8 @@ export default function App() {
 
           {/* Keyed by navNonce so a nav click always remounts the open tab
               at its main page -- see navigateFromNav. */}
-          <Fragment key={navNonce}>
+          {/* One page crashing shows an error card instead of blanking the app. */}
+          <PageErrorBoundary key={`${isPlayer ? playerTab : isCoach ? coachTab : adminTab}-${navNonce}`}>
           {/* Player panels */}
           {isPlayer && playerTab === "workouts" && <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} onDismiss={() => { if (returnToLibrary) { setReturnToLibrary(false); setPlayerTab("library"); } }} onLogged={(msg) => { showLogToast(msg); if (returnToLibrary) { setReturnToLibrary(false); setPlayerTab("library"); } }} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} canChallengeFromLibrary={!xpEnabled || (xpPerks.length > 0 && playerXp >= (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150))} onChallengeDrill={(id) => { setChallengePrefillWorkoutId(id); setPlayerTab("h2h"); }} />}
           {isPlayer && playerTab === "leaderboard" && <LeaderboardHub currentUserId={user.id} profile={displayProfile} />}
@@ -946,7 +948,7 @@ export default function App() {
               <ProfileEditor profile={displayProfile} onUpdated={handleProfileUpdated} />
             </div>
           )}
-          </Fragment>
+          </PageErrorBoundary>
         </div>
       </div>
 
