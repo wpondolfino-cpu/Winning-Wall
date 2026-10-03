@@ -854,6 +854,8 @@ export interface QuizListItem {
   gameDate: string | null;
   tipTime: string | null;
   submitted: number;   // players with a finished attempt
+  questionCount: number;
+  lastEdited: string;  // newest of the quiz's own update and its questions' creation
 }
 
 /**
@@ -880,6 +882,15 @@ export async function getAllQuizzes(): Promise<QuizListItem[]> {
   const { data: attempts } = ids.length
     ? await supabase.from("quiz_attempts").select("quiz_id, player_id").in("quiz_id", ids).not("submitted_at", "is", null)
     : { data: [] as any[] };
+  const { data: qrows } = ids.length
+    ? await supabase.from("quiz_questions").select("quiz_id, created_at").in("quiz_id", ids)
+    : { data: [] as any[] };
+  const qCount = new Map<string, number>();
+  const qNewest = new Map<string, string>();
+  for (const q of (qrows ?? []) as any[]) {
+    qCount.set(q.quiz_id, (qCount.get(q.quiz_id) ?? 0) + 1);
+    if (!qNewest.has(q.quiz_id) || q.created_at > qNewest.get(q.quiz_id)!) qNewest.set(q.quiz_id, q.created_at);
+  }
   const doneBy = new Map<string, Set<string>>();
   for (const a of (attempts ?? []) as any[]) {
     const set = doneBy.get(a.quiz_id) ?? new Set<string>();
@@ -895,6 +906,8 @@ export async function getAllQuizzes(): Promise<QuizListItem[]> {
       gameDate: g?.game_date ?? null,
       tipTime: g?.tip_time ?? null,
       submitted: doneBy.get(r.id)?.size ?? 0,
+      questionCount: qCount.get(r.id) ?? 0,
+      lastEdited: [r.updated_at, qNewest.get(r.id)].filter(Boolean).sort().slice(-1)[0] ?? r.updated_at,
     };
   });
 }
@@ -1019,6 +1032,8 @@ export interface ReteachFlag {
 
 export interface QuizResults {
   players: PlayerResult[];
+  /** Each player's FIRST finished attempt, question by question: true = right, false = missed. */
+  firstAnswers: Record<string, Record<string, boolean>>;
   questions: QuestionResult[];
   flags: ReteachFlag[];
   submittedCount: number;
@@ -1162,16 +1177,57 @@ export async function getQuizResults(bundle: QuizBundle): Promise<QuizResults> {
     }
   }
 
+  const firstAnswers: Record<string, Record<string, boolean>> = {};
+  for (const [pid, a] of firstDone) {
+    firstAnswers[pid] = {};
+    for (const x of answersBy.get(a.id) ?? []) if (x.answered_at) firstAnswers[pid][x.question_id] = !!x.is_correct;
+  }
+
   const done = [...firstDone.values()];
   const pcts = done.filter(a => a.total_count > 0).map(a => (a.correct_count ?? 0) / a.total_count);
   const secs = done.map(secondsOf).filter((s): s is number => s != null);
   return {
-    players, questions, flags,
+    players, questions, flags, firstAnswers,
     submittedCount: done.length,
     rosterCount: players.length,
     averagePct: pcts.length ? Math.round((pcts.reduce((s, x) => s + x, 0) / pcts.length) * 100) : null,
     averageSeconds: secs.length ? Math.round(secs.reduce((s, x) => s + x, 0) / secs.length) : null,
   };
+}
+
+/**
+ * Results as CSV: one row per player -- status, attempts, first and latest
+ * score, time (only when the quiz shows time to coaches), then one column
+ * per question from their first finished attempt (Right / Missed / blank
+ * if they didn't get that question).
+ */
+export function resultsToCsv(bundle: QuizBundle, results: QuizResults): string {
+  const esc = (v: unknown) => {
+    const t = v == null ? "" : String(v);
+    return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  const showTime = bundle.quiz.show_time_to_coaches;
+  const head = ["Player", "Status", "Attempts", "First score", "Latest score", "Latest %"];
+  if (showTime) head.push("Latest time");
+  bundle.questions.forEach((q, i) => head.push(`Q${i + 1}: ${q.prompt}`));
+  const lines = [head.map(esc).join(",")];
+  for (const p of results.players) {
+    const done = p.attempts.filter(a => a.submittedAt);
+    const first = done[0], latest = done[done.length - 1];
+    const row: unknown[] = [
+      p.name,
+      p.status === "submitted" ? "Finished" : p.status === "in_progress" ? "In progress" : "Not started",
+      done.length,
+      first ? `${first.correct ?? 0}/${first.total}` : "",
+      latest ? `${latest.correct ?? 0}/${latest.total}` : "",
+      latest && latest.total ? Math.round(((latest.correct ?? 0) / latest.total) * 100) : "",
+    ];
+    if (showTime) row.push(latest ? formatSeconds(latest.seconds) : "");
+    const mine = results.firstAnswers[p.playerId] ?? {};
+    bundle.questions.forEach(q => row.push(q.id in mine ? (mine[q.id] ? "Right" : "Missed") : ""));
+    lines.push(row.map(esc).join(","));
+  }
+  return lines.join("\n");
 }
 
 export function formatSeconds(s: number | null | undefined): string {
