@@ -90,6 +90,16 @@ export interface QuizVisual {
    */
   lead_frames?: PlayFrame[];
   caption?: string | null;
+  /** Shown as a header above the court: which play and which step. */
+  heading?: QuizHeading | null;
+}
+
+/** The play and step a question is about, shown big above the court. */
+export interface QuizHeading {
+  play: string;
+  stepNumber: number;          // 1-based
+  stepName: string | null;     // the coach's name for the step, if any
+  ballHolder: number | null;   // jersey number of whoever has the ball
 }
 
 /** The answering step, sent only once the answer is locked. */
@@ -97,6 +107,7 @@ export interface QuizReveal {
   court_template: string;
   frame: PlayFrame;
   caption?: string | null;
+  heading?: QuizHeading | null;
 }
 
 export interface QuizOption { id: string; label: string; sort_order: number; }
@@ -551,6 +562,17 @@ function playCaption(play: Play, i: number): string {
   return `${play.title} · ${stepName(f, i)}${i === 0 ? " · Start of the play" : ""}${holder ? ` · the ${holder.num} has the ball` : ""}`;
 }
 
+function playHeading(play: Play, i: number): QuizHeading {
+  const f = play.data.frames[i];
+  const holder = f?.ballHolderId ? f.players.find(p => p.id === f.ballHolderId) : undefined;
+  return {
+    play: play.title,
+    stepNumber: i + 1,
+    stepName: f?.label?.trim() || null,
+    ballHolder: holder ? holder.num : null,
+  };
+}
+
 /** The steps before step i, for the lead-up. */
 function leadUp(play: Play, i: number, focusId?: string): PlayFrame[] {
   return play.data.frames.slice(0, i).map(f => cleanStep(f, focusId));
@@ -595,8 +617,8 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
           options: [right, ...wrong], correctIndex: 0,
           explanation: `The ${c.num} ${ACTION_SENTENCE[c.action.type]}.${note ? ` Coach's note: ${note}` : ""}`,
           source: "sheet", family: null, assigneeIds: [], qtype: "what_next",
-          visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.id)], lead_frames: leadUp(play, c.i, c.id), caption: playCaption(play, c.i) },
-          reveal: { court_template: template, frame: cleanStep(frames[c.i], c.id), caption: playCaption(play, c.i) },
+          visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.id)], lead_frames: leadUp(play, c.i, c.id), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
+          reveal: { court_template: template, frame: cleanStep(frames[c.i], c.id), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
         });
       }
     }
@@ -621,8 +643,8 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
           options: [`The ${c.to}`, ...pickN(c.others, 3).map(n => `The ${n}`)], correctIndex: 0,
           explanation: `The ${c.from} passes to the ${c.to}.${note ? ` Coach's note: ${note}` : ""}`,
           source: "sheet", family: null, assigneeIds: [], qtype: "who_ball",
-          visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.fromId)], lead_frames: leadUp(play, c.i, c.fromId), caption: playCaption(play, c.i) },
-          reveal: { court_template: template, frame: cleanStep(frames[c.i], c.fromId), caption: playCaption(play, c.i) },
+          visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.fromId)], lead_frames: leadUp(play, c.i, c.fromId), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
+          reveal: { court_template: template, frame: cleanStep(frames[c.i], c.fromId), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
         });
       }
     }
