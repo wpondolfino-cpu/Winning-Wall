@@ -4,7 +4,7 @@
 // changes a quiz score.
 
 import { useCallback, useEffect, useState } from "react";
-import { DeckQuestion, DeckAnswer, getReviewDeckNext, answerReviewDeck } from "../../lib/quizzes";
+import { DeckQuestion, DeckAnswer, getReviewDeckNext, answerReviewDeck, answerReviewDeckTap, TapPoint } from "../../lib/quizzes";
 import { optionStyle, primaryBtn, secondaryBtn } from "./quizStyles";
 import { QuizPlayVisual, QuizPlayReveal } from "./QuizPlayVisual";
 
@@ -15,6 +15,7 @@ interface Props {
 export default function ReviewDeck({ onClose }: Props) {
   const [q, setQ] = useState<DeckQuestion | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
+  const [tapPoint, setTapPoint] = useState<TapPoint | null>(null);
   const [result, setResult] = useState<DeckAnswer | null>(null);
   const [cleared, setCleared] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -23,7 +24,7 @@ export default function ReviewDeck({ onClose }: Props) {
   const [ready, setReady] = useState(true);
 
   const load = useCallback(async (exclude?: string | null) => {
-    setPicked(null); setResult(null); setInputError(null); setError(null);
+    setPicked(null); setTapPoint(null); setResult(null); setInputError(null); setError(null);
     try {
       const next = await getReviewDeckNext(exclude);
       setReady(!next.visual?.hide_after && !(next.visual?.lead_frames?.length));
@@ -36,10 +37,12 @@ export default function ReviewDeck({ onClose }: Props) {
 
   async function check() {
     if (!q || q.done) return;
-    if (!picked) { setInputError("Pick an answer first."); return; }
+    const isTap = q.qtype === "tap_place";
+    if (isTap && !tapPoint) { setInputError("Tap the court first."); return; }
+    if (!isTap && !picked) { setInputError("Pick an answer first."); return; }
     setBusy(true);
     try {
-      const r = await answerReviewDeck(q.question_id, picked);
+      const r = isTap ? await answerReviewDeckTap(q.question_id, tapPoint!) : await answerReviewDeck(q.question_id, picked!);
       setResult(r);
       if (r.correct) setCleared(c => c + 1);
     } catch (e: any) {
@@ -84,8 +87,20 @@ export default function ReviewDeck({ onClose }: Props) {
         <span style={{ fontSize: 13, color: "var(--muted)" }}>{result ? result.remaining : q.remaining} left</span>
       </div>
 
-      {q.visual && !result?.reveal && <QuizPlayVisual visual={q.visual} onReady={() => setReady(true)} />}
-      {result?.reveal && <QuizPlayReveal reveal={result.reveal} />}
+      {q.visual && !result?.reveal && (
+        <QuizPlayVisual visual={q.visual} onReady={() => setReady(true)}
+          {...(q.qtype === "tap_place" ? {
+            tap: tapPoint,
+            onTap: busy ? null : (p: TapPoint) => { setTapPoint(p); setInputError(null); },
+            tapNum: q.visual.frames[0]?.players.find(pl => pl.quizFocus)?.num ?? null,
+          } : {})} />
+      )}
+      {result?.reveal && (
+        <QuizPlayReveal reveal={result.reveal}
+          tap={q.qtype === "tap_place" ? tapPoint : null}
+          target={result.correct_point ? { point: result.correct_point, radius: result.radius ?? 50 } : null}
+          tapNum={q.visual?.frames[0]?.players.find(pl => pl.quizFocus)?.num ?? null} />
+      )}
       <div style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.4, marginBottom: 14 }}>{q.prompt}</div>
       {ready && q.options.map(o => (
         <button key={o.id} type="button" disabled={!!result || busy}
