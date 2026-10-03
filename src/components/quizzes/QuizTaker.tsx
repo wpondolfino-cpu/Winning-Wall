@@ -47,7 +47,7 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
     const q = await getNextQuestion(id);
     if (q.done) { await showFinish(id); return; }
     submittedFor.current = null;
-    setReady(!q.visual?.hide_after);
+    setReady(!q.visual?.hide_after && !(q.visual?.lead_frames?.length));
     setQuestion(q);
     setRemaining(q.remaining);
   }, [showFinish]);
