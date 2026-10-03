@@ -3,6 +3,7 @@
 // archived pattern and visual style, applied to Playbooks instead of
 // Workout Groups.
 
+import { supabase } from "../../lib/supabase";
 import { useState, useEffect } from "react";
 import { getYouTubeId } from "../../lib/youtube";
 import VideoUrlNote from "../shared/VideoUrlNote";
@@ -31,9 +32,11 @@ interface Props {
   onOpenPlay?: (play: Play, playbookId: string) => void;
   /** Re-open this playbook on mount — used when coming back from a play. */
   initialExpandedId?: string | null;
+  /** "Make quiz" / "Open quiz": go to the Quizzes page for this playbook. */
+  onMakeQuiz?: (playbook: Playbook, existingQuizId: string | null) => void;
 }
 
-export default function PlaybookManager({ onOpenPlay, initialExpandedId }: Props = {}) {
+export default function PlaybookManager({ onOpenPlay, initialExpandedId, onMakeQuiz }: Props = {}) {
   const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
   // The playbook currently being printed, if any. Printing takes over the
@@ -46,12 +49,28 @@ export default function PlaybookManager({ onOpenPlay, initialExpandedId }: Props
   const [newVideoUrl, setNewVideoUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(initialExpandedId ?? null);
+  // Each playbook's current play quiz (live first, else a draft), so the
+  // button can say "Open quiz" instead of making a second one.
+  const [quizFor, setQuizFor] = useState<Record<string, string>>({});
 
   useEffect(() => {
     load();
     getRoster().then(setRoster).catch(console.error);
   }, []);
-  async function load() { setLoading(true); setPlaybooks(await getPlaybooks()); setLoading(false); }
+  async function load() {
+    setLoading(true);
+    const list = await getPlaybooks();
+    setPlaybooks(list);
+    setLoading(false);
+    if (!onMakeQuiz || !list.length) return;
+    const { data } = await supabase.from("quizzes").select("id, playbook_id, status")
+      .in("playbook_id", list.map(p => p.id)).neq("status", "archived");
+    const map: Record<string, string> = {};
+    for (const q of (data ?? []) as { id: string; playbook_id: string; status: string }[]) {
+      if (!map[q.playbook_id] || q.status === "published") map[q.playbook_id] = q.id;
+    }
+    setQuizFor(map);
+  }
 
   if (printing) {
     const rosterMap: Record<string, RosterPlayer> = Object.fromEntries(roster.map((r) => [r.id, r]));
@@ -149,6 +168,13 @@ export default function PlaybookManager({ onOpenPlay, initialExpandedId }: Props
                     {pb.description && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{pb.description}</div>}
                   </div>
                   <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    {onMakeQuiz && (
+                      <button onClick={() => onMakeQuiz(pb, quizFor[pb.id] ?? null)}
+                        title={quizFor[pb.id] ? "Open this playbook's quiz" : "Make a play quiz from this playbook"}
+                        style={{ background: "none", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                        📝 {quizFor[pb.id] ? "Open quiz" : "Make quiz"}
+                      </button>
+                    )}
                     {pb.status === "draft" && (
                       <button onClick={() => publish(pb.id)}
                         style={{ background: "rgba(40,180,80,0.12)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
