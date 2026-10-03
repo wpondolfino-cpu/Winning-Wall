@@ -15,7 +15,8 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Quiz, QuizBundle, QuizQuestion, QuestionDraft,
-  getQuizzesForSheet, getQuiz, getQuizBundle, regeneratePlayQuiz, quizKind, PLAY_QTYPE_LABEL, createDraftForSheet, addQuestions, saveDraftQuestion,
+  getQuizzesForSheet, getQuiz, getQuizBundle, regeneratePlayQuiz, quizKind, PLAY_QTYPE_LABEL,
+  rebuildScoutDraft, DEFAULT_SCOUT_PLAY_SETTINGS, PlayQuizSettings, PlayQType, createDraftForSheet, addQuestions, saveDraftQuestion,
   saveWording, deleteQuestion, moveQuestion, updateQuizSettings, publishQuiz, deleteQuiz,
   draftQuestionsWithAi,
 } from "../../lib/quizzes";
@@ -161,6 +162,16 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
     await refresh();
   });
 
+  // A scout quiz draft: rebuild from the sheet and its linked plays as they
+  // are now. Questions the coach wrote or kept from the AI stay.
+  const rebuildScout = () => run("rebuild", async () => {
+    if (!bundle || bundle.quiz.status !== "draft" || !scoutSheetId) return;
+    if (!window.confirm("Rebuild the questions from the scout sheet and its linked plays as they are now? Edits to built questions are replaced; questions you wrote or kept from the AI stay.")) return;
+    const n = await rebuildScoutDraft(bundle.quiz.id);
+    await refresh();
+    setNotice(n ? `Rebuilt ${n} question${n === 1 ? "" : "s"} from the sheet.` : "Nothing on the sheet to build from yet.");
+  });
+
   // An empty draft (the sheet had nothing to build from): throw it away and
   // build again from the sheet as it is now.
   const rebuildEmptyDraft = () => run("rebuild", async () => {
@@ -286,6 +297,27 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
               {/* ── Settings ── */}
               <div style={sectionTitle}>Settings</div>
               <div style={{ ...card, display: "grid", gap: 10 }}>
+                {quiz.scout_sheet_id && (() => {
+                  const ps: PlayQuizSettings = (quiz.play_settings as PlayQuizSettings)?.types ? quiz.play_settings as PlayQuizSettings : DEFAULT_SCOUT_PLAY_SETTINGS;
+                  const LABELS: Record<PlayQType, string> = { name_play: "Name that set", what_next: "What happens next", who_ball: "Who gets the ball" };
+                  return (
+                    <div style={{ fontSize: 13 }}>
+                      <div style={{ marginBottom: 4 }}>From their linked plays <span style={{ color: "var(--muted)", fontSize: 12 }}>(sets and BLOB/SLOBs with a play attached)</span></div>
+                      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                        {(["name_play", "what_next", "who_ball"] as PlayQType[]).map(t => (
+                          <label key={t} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <input type="checkbox" checked={(ps.types[t] ?? 0) > 0} disabled={quiz.status === "archived"}
+                              onChange={e => setSetting({ play_settings: { ...ps, types: { ...ps.types, [t]: e.target.checked ? 1 : 0 } } })} />
+                            {LABELS[t]}
+                          </label>
+                        ))}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
+                        {isDraft ? "Takes effect when you tap Rebuild from sheet." : "Takes effect on the next Regenerate."} Name that set needs 3 or more linked plays.
+                      </div>
+                    </div>
+                  );
+                })()}
                 {quiz.scout_sheet_id ? (
                   <div style={{ fontSize: 13 }}>
                     <span style={{ color: "var(--muted)" }}>Team: </span>
@@ -452,6 +484,11 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
               {isDraft && (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
                   <button type="button" onClick={() => setEditingId("new")} style={secondaryBtn}>+ Add question</button>
+                  {scoutSheetId && bundle.questions.length > 0 && (
+                    <button type="button" onClick={rebuildScout} disabled={!!busy} style={secondaryBtn}>
+                      {busy === "rebuild" ? "Building…" : "↻ Rebuild from sheet"}
+                    </button>
+                  )}
                   {quizKind(quiz) === "plays" && bundle.questions.length > 0 && (
                     <button type="button" onClick={rebuildPlayDraft} disabled={!!busy} style={secondaryBtn}>
                       {busy === "rebuild" ? "Building…" : "↻ Rebuild from plays"}
@@ -529,7 +566,7 @@ function QuestionRow(props: {
           </div>
         )}
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 3 }}>
-          <span style={pill(q.qtype ? "warn" : sourceKind)}>{q.qtype ? PLAY_QTYPE_LABEL[q.qtype] : SOURCE_LABEL[q.source]}</span>
+          <span style={pill(q.qtype ? "warn" : sourceKind)}>{q.qtype ? (q.family === "scout_play" && q.qtype === "name_play" ? "Name that set" : PLAY_QTYPE_LABEL[q.qtype]) : SOURCE_LABEL[q.source]}</span>
           {q.visual?.caption && <span style={{ fontSize: 11, color: "var(--muted)" }}>{q.visual.caption}</span>}
           <span style={{ fontSize: 11, color: "var(--muted)" }}>
             {q.assignee_ids.length ? `→ ${q.assignee_ids.map(nameOf).join(", ")}` : "→ Everyone"}
