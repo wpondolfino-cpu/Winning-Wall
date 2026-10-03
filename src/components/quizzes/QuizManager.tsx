@@ -299,7 +299,7 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
               <div style={{ ...card, display: "grid", gap: 10 }}>
                 {quiz.scout_sheet_id && (() => {
                   const ps: PlayQuizSettings = (quiz.play_settings as PlayQuizSettings)?.types ? quiz.play_settings as PlayQuizSettings : DEFAULT_SCOUT_PLAY_SETTINGS;
-                  const LABELS: Record<PlayQType, string> = { name_play: "Name that set", what_next: "What happens next", who_ball: "Who gets the ball" };
+                  const LABELS: Partial<Record<PlayQType, string>> = { name_play: "Name that set", what_next: "What happens next", who_ball: "Who gets the ball" };
                   return (
                     <div style={{ fontSize: 13 }}>
                       <div style={{ marginBottom: 4 }}>From their linked plays <span style={{ color: "var(--muted)", fontSize: 12 }}>(sets and BLOB/SLOBs with a play attached)</span></div>
@@ -407,6 +407,18 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
                     </span>
                   )}
                 </label>
+                {quizKind(quiz) === "plays" && (
+                  <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+                    <span style={{ flex: 1 }}>"Where do you go" — how close a tap must be</span>
+                    <select value={quiz.tap_tolerance ?? "normal"} disabled={quiz.status === "archived"}
+                      onChange={e => setSetting({ tap_tolerance: e.target.value as "strict" | "normal" | "loose" })}
+                      style={{ ...inputStyle, padding: "6px 10px" }}>
+                      <option value="strict">Strict</option>
+                      <option value="normal">Normal (about two player-widths)</option>
+                      <option value="loose">Loose</option>
+                    </select>
+                  </label>
+                )}
                 <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
                   <input type="checkbox" checked={quiz.show_time_to_coaches} disabled={quiz.status === "archived"}
                     onChange={e => setSetting({ show_time_to_coaches: e.target.checked })} />
@@ -449,7 +461,7 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
               {bundle.questions.map((q, i) => editingId === q.id ? (
                 <div key={q.id} style={{ marginBottom: 8 }}>
                   <QuizQuestionEditor
-                    mode={isDraft ? "draft" : "wording"} question={q} roster={roster}
+                    mode={isDraft && q.qtype !== "tap_place" ? "draft" : "wording"} question={q} roster={roster}
                     onCancel={() => setEditingId(null)}
                     onSaveDraft={async d => { await saveDraftQuestion(q, d); setEditingId(null); await refresh(); }}
                     onSaveWording={async (p, l, e) => { await saveWording(q, p, l, e); setEditingId(null); await refresh(); }}
@@ -579,7 +591,9 @@ function QuestionRow(props: {
               {o.id === correct?.id ? "✓ " : ""}{o.label}
             </span>
           ))}
-          {!correct && <span style={{ color: "#ff7b7b" }}>No correct answer marked</span>}
+          {q.qtype === "tap_place"
+            ? <span style={{ color: "#5de098" }}>✓ Correct spot comes from the play</span>
+            : !correct && <span style={{ color: "#ff7b7b" }}>No correct answer marked</span>}
         </div>
       </div>
       {canEdit && (
