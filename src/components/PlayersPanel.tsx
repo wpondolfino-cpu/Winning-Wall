@@ -659,6 +659,16 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     loadPending();
   }
 
+  // What each box is editing, as typed. Kept as text so clearing the box
+  // leaves it empty (it used to snap to 0, and typing then gave "08"), and
+  // the field it edits is fixed on the first keystroke -- clearing "made"
+  // used to switch the box over to editing reps.
+  //
+  // Declared ABOVE the loading return on purpose: a hook after an early
+  // return runs on some renders and not others, and React crashes the
+  // whole app (error #310, a blank screen) the moment loading finishes.
+  const [scoreDrafts, setScoreDrafts] = useState<Record<string, { text: string; field: "self_points" | "reps" | "made" }>>({});
+
   if (loading) return <div className="loading">Loading player data…</div>;
 
   function getScoreValue(sc: EditScore): number {
@@ -666,11 +676,6 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     return sc.made > 0 ? sc.made : sc.reps;
   }
 
-  // What each box is editing, as typed. Kept as text so clearing the box
-  // leaves it empty (it used to snap to 0, and typing then gave "08"), and
-  // the field it edits is fixed on the first keystroke -- clearing "made"
-  // used to switch the box over to editing reps.
-  const [scoreDrafts, setScoreDrafts] = useState<Record<string, { text: string; field: "self_points" | "reps" | "made" }>>({});
 
   function scoreField(sc: EditScore): "self_points" | "reps" | "made" {
     if (sc.scoring_type === "self_reported" || sc.scoring_type === "flat") return "self_points";
