@@ -573,6 +573,25 @@ function playHeading(play: Play, i: number): QuizHeading {
   };
 }
 
+/**
+ * A play's drawing as text -- court, then every step's positions and
+ * actions, rounded so a nudge of a few pixels doesn't count as different.
+ * Two plays with the same signature look identical start to finish.
+ */
+function playSignature(play: Play): string {
+  const r = (n: number | undefined) => Math.round((n ?? 0) / 12);
+  const pt = (p?: { x: number; y: number } | null) => (p ? `${r(p.x)},${r(p.y)}` : "-");
+  const frames = play.data?.frames ?? [];
+  return play.court_template + "|" + frames.map(f => {
+    const numOf = (id?: string | null) => f.players.find(p => p.id === id)?.num ?? "?";
+    const players = f.players.map(p => `${p.num}@${pt(p)}`).sort().join(";");
+    const defenders = f.defenders.map(d => pt(d)).sort().join(";");
+    const actions = f.actions.map(a =>
+      `${a.type}:${numOf(a.sourcePlayerId)}>${a.targetPlayerId ? numOf(a.targetPlayerId) : `${r(a.x2)},${r(a.y2)}`}`).sort().join(";");
+    return `${players}/${defenders}/${actions}`;
+  }).join("||");
+}
+
 /** The steps before step i, for the lead-up. */
 function leadUp(play: Play, i: number, focusId?: string): PlayFrame[] {
   return play.data.frames.slice(0, i).map(f => cleanStep(f, focusId));
@@ -649,12 +668,20 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
       }
     }
 
-    // ── Name that play: watch the opening, court hides, pick the title ──
+    // ── Name that play: watch the WHOLE play, court hides, pick the title ──
+    // Whole play, not just the opening: sets like BLOBs often start the
+    // same, so two steps can look identical. Plays drawn identically all
+    // the way through are never used as wrong answers for each other, so
+    // there's always exactly one right answer.
     if (per.name_play && frames.some(f => f.actions.length) && titled.length >= 3) {
-      const others = titled.filter(p => p.id !== play.id && p.title.trim().toLowerCase() !== play.title.trim().toLowerCase());
+      const mine = playSignature(play);
+      const others = titled.filter(p =>
+        p.id !== play.id &&
+        p.title.trim().toLowerCase() !== play.title.trim().toLowerCase() &&
+        playSignature(p) !== mine);
       const wrong = pickN([...new Set(others.map(p => p.title.trim()))], 3);
       if (wrong.length >= 2) {
-        const opening = frames.slice(0, Math.min(2, frames.length)).map(f => ({
+        const opening = frames.map(f => ({
           ...cleanStep(f), label: undefined, texts: [], drawings: [],
         }));
         for (let k = 0; k < Math.min(per.name_play, 1); k++) {
