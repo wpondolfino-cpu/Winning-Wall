@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import {
-  ServedQuestion, AnswerResult, startQuizAttempt, getNextQuestion, submitQuizAnswer,
+  ServedQuestion, AnswerResult, startQuizAttempt, getNextQuestion, submitQuizAnswer, submitQuizTap, TapPoint,
 } from "../../lib/quizzes";
 import QuizAttemptReview from "./QuizAttemptReview";
 import { QuizPlayVisual, QuizPlayReveal } from "./QuizPlayVisual";
@@ -22,6 +22,8 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
   const [attemptId, setAttemptId] = useState<string | null>(null);
   const [question, setQuestion] = useState<ServedQuestion | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
+  // "Where do you go": where they've tapped (they can tap again to move it).
+  const [tapPoint, setTapPoint] = useState<TapPoint | null>(null);
   const [feedback, setFeedback] = useState<AnswerResult | null>(null);
   const [finished, setFinished] = useState<{ correct: number; total: number } | null>(null);
   const [reviewing, setReviewing] = useState(false);
@@ -30,6 +32,7 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [inputError, setInputError] = useState<string | null>(null);
   const submittedFor = useRef<string | null>(null);   // stops a double submit (tap + timer)
+  const tapRef = useRef<TapPoint | null>(null);       // the tap at the moment of submitting
   // A "name that play" question shows its answers only after the court
   // has played and hidden. Everything else is ready at once.
   const [ready, setReady] = useState(true);
@@ -42,6 +45,8 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
 
   const loadNext = useCallback(async (id: string) => {
     setPicked(null);
+    setTapPoint(null);
+    tapRef.current = null;
     setFeedback(null);
     setInputError(null);
     const q = await getNextQuestion(id);
@@ -74,7 +79,9 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const res = await submitQuizAnswer(attemptId, question.question_id, optionId);
+      const res = question.qtype === "tap_place"
+        ? await submitQuizTap(attemptId, question.question_id, tapRef.current)
+        : await submitQuizAnswer(attemptId, question.question_id, optionId);
       if (question.feedback_mode === "immediate") {
         setFeedback(res);
       } else if (res.finished) {
@@ -101,6 +108,11 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
   }, [remaining, feedback, question, submit, picked, ready]);
 
   function check() {
+    if (question?.qtype === "tap_place") {
+      if (!tapPoint) { setInputError("Tap the court first."); return; }
+      submit(null);
+      return;
+    }
     if (!picked) { setInputError("Pick an answer first."); return; }
     submit(picked);
   }
@@ -176,9 +188,19 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
       {error && <div className="error-msg">{error}</div>}
 
       {question.visual && (!feedback?.reveal) && (
-        <QuizPlayVisual visual={question.visual} onReady={() => setReady(true)} />
+        <QuizPlayVisual visual={question.visual} onReady={() => setReady(true)}
+          {...(question.qtype === "tap_place" ? {
+            tap: tapPoint,
+            onTap: busy ? null : (p: TapPoint) => { setTapPoint(p); tapRef.current = p; setInputError(null); },
+            tapNum: question.visual.frames[0]?.players.find(pl => pl.quizFocus)?.num ?? null,
+          } : {})} />
       )}
-      {feedback?.reveal && <QuizPlayReveal reveal={feedback.reveal} />}
+      {feedback?.reveal && (
+        <QuizPlayReveal reveal={feedback.reveal}
+          tap={question.qtype === "tap_place" ? tapPoint : null}
+          target={feedback.correct_point ? { point: feedback.correct_point, radius: feedback.radius ?? 50 } : null}
+          tapNum={question.visual?.frames[0]?.players.find(pl => pl.quizFocus)?.num ?? null} />
+      )}
 
       <div style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.4, marginBottom: 14 }}>{question.prompt}</div>
 
