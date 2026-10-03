@@ -10,7 +10,7 @@
 import { supabase } from "./supabase";
 import { Play, PlayFrame, PlayAction, getPlaybookPlays, stepName } from "./plays";
 import {
-  getScoutSheet, getScoutPlayers, getDefenseSections, getScoutSheetPrintContext,
+  getScoutSheet, getScoutPlayers, getDefenseSections, getScoutSheetPrintContext, getOffenseSets, getSpecials,
   ensureScoutSheetForGame, ScoutPlayer,
 } from "./scoutSheets";
 import {
@@ -50,7 +50,7 @@ export interface Quiz {
 }
 
 export type QuizSettings = Pick<Quiz, "feedback_mode" | "allow_retakes" | "time_limit_seconds" | "show_time_to_coaches"
-  | "title" | "roster_ids" | "due_at">;
+  | "title" | "roster_ids" | "due_at" | "play_settings">;
 
 export type QuizKind = "scout" | "plays" | "standalone";
 export const quizKind = (q: Pick<Quiz, "scout_sheet_id"> & Partial<Pick<Quiz, "playbook_id" | "source_play_ids">>): QuizKind =>
@@ -339,6 +339,56 @@ export async function buildQuestionsFromSheet(scoutSheetId: string): Promise<Que
   return out;
 }
 
+/** What a scout quiz asks about the opponent's linked plays, by default. */
+export const DEFAULT_SCOUT_PLAY_SETTINGS: PlayQuizSettings = {
+  types: { name_play: 1, what_next: 1, who_ball: 1 },
+  maxQuestions: 15,
+};
+
+/**
+ * Questions from the plays linked to the sheet's offense sets and
+ * BLOB/SLOB specials: Name that set (the whole set plays, the court hides,
+ * pick its call name from their other linked sets), What happens next and
+ * Who gets the ball. Numbers are positions as drawn, so prompts say "their
+ * 4". The set's "plan to defend" joins the explanation when written.
+ * Only plays this coach can open are used.
+ */
+export async function buildScoutPlayQuestions(scoutSheetId: string, settings: PlayQuizSettings): Promise<QuestionDraft[]> {
+  if (!Object.values(settings.types ?? {}).some(n => (n ?? 0) > 0)) return [];
+  const [sets, specials] = await Promise.all([getOffenseSets(scoutSheetId), getSpecials(scoutSheetId)]);
+  const linked = [
+    ...sets.filter(x => x.play_id).map(x => ({ playId: x.play_id!, name: x.call_name?.trim() || "Set", plan: x.plan_to_defend })),
+    ...specials.filter(x => x.play_id).map(x => ({ playId: x.play_id!, name: `${x.kind.toUpperCase()} · ${x.call_name?.trim() || "Special"}`, plan: x.plan_to_defend })),
+  ];
+  if (!linked.length) return [];
+  const { data, error } = await supabase.from("plays").select("*").in("id", [...new Set(linked.map(l => l.playId))]);
+  if (error) throw error;
+  const byId = new Map<string, Play>(((data ?? []) as Play[]).map(p => [p.id, p]));
+  // One entry per set; the question shows the SET's name, not the play's.
+  const plays: Play[] = [];
+  const planOf = new Map<string, string>();
+  linked.forEach((l, i) => {
+    const play = byId.get(l.playId);
+    if (!play) return;
+    const id = `${play.id}#${i}`;
+    plays.push({ ...play, id, title: l.name });
+    const plan = (l.plan ?? "").replace(/\*\*/g, "").trim();
+    if (plan) planOf.set(id, plan);
+  });
+  const drafts = buildPlayQuestions(plays, settings);
+  return drafts.map(d => {
+    const pid = d.family?.startsWith("play:") ? d.family.slice(5) : "";
+    const plan = planOf.get(pid);
+    return {
+      ...d,
+      family: "scout_play",
+      prompt: d.qtype === "name_play" ? "Which of their sets was that?"
+        : d.prompt.replace(/^What does the (\d+)/, "What does their $1").replace(/^Who does the (\d+)/, "Who does their $1"),
+      explanation: plan ? `${d.explanation ?? ""} Our plan: ${plan}`.trim() : d.explanation,
+    };
+  });
+}
+
 /** AI drafts from the sheet's free-text fields (edge function quiz-draft). */
 export async function draftQuestionsWithAi(scoutSheetId: string, count = 6): Promise<QuestionDraft[]> {
   const { data, error } = await supabase.functions.invoke("quiz-draft", { body: { scoutSheetId, count } });
@@ -498,13 +548,18 @@ export async function createDraftForSheet(scoutSheetId: string): Promise<string>
     time_limit_seconds: previous?.time_limit_seconds ?? null,
     show_time_to_coaches: previous?.show_time_to_coaches ?? false,
     roster_ids: gameRoster ? [gameRoster] : (previous?.roster_ids ?? []),
+    play_settings: (previous?.play_settings as PlayQuizSettings)?.types ? previous!.play_settings : DEFAULT_SCOUT_PLAY_SETTINGS,
     created_by: user?.id ?? null,
   }).select().single();
   if (error) throw error;
   const quizId = (created as any).id as string;
 
   try {
-    const fromSheet = await buildQuestionsFromSheet(scoutSheetId);
+    const settings = ((created as any).play_settings as PlayQuizSettings)?.types ? (created as any).play_settings as PlayQuizSettings : DEFAULT_SCOUT_PLAY_SETTINGS;
+    const fromSheet = [
+      ...await buildQuestionsFromSheet(scoutSheetId),
+      ...await buildScoutPlayQuestions(scoutSheetId, settings),
+    ];
     let carried: QuestionDraft[] = [];
     if (previous) {
       const prev = await getQuizBundle(previous.id);
@@ -635,7 +690,7 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
           prompt: `What does the ${c.num} do${c.many ? " first" : ""} on this step?`,
           options: [right, ...wrong], correctIndex: 0,
           explanation: `The ${c.num} ${ACTION_SENTENCE[c.action.type]}.${note ? ` Coach's note: ${note}` : ""}`,
-          source: "sheet", family: null, assigneeIds: [], qtype: "what_next",
+          source: "sheet", family: `play:${play.id}`, assigneeIds: [], qtype: "what_next",
           visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.id)], lead_frames: leadUp(play, c.i, c.id), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
           reveal: { court_template: template, frame: cleanStep(frames[c.i], c.id), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
         });
@@ -661,7 +716,7 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
           prompt: `Who does the ${c.from} pass to on this step?`,
           options: [`The ${c.to}`, ...pickN(c.others, 3).map(n => `The ${n}`)], correctIndex: 0,
           explanation: `The ${c.from} passes to the ${c.to}.${note ? ` Coach's note: ${note}` : ""}`,
-          source: "sheet", family: null, assigneeIds: [], qtype: "who_ball",
+          source: "sheet", family: `play:${play.id}`, assigneeIds: [], qtype: "who_ball",
           visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.fromId)], lead_frames: leadUp(play, c.i, c.fromId), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
           reveal: { court_template: template, frame: cleanStep(frames[c.i], c.fromId), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
         });
@@ -689,7 +744,7 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
             prompt: "Which play was that?",
             options: [play.title.trim(), ...wrong], correctIndex: 0,
             explanation: `That's ${play.title.trim()}.`,
-            source: "sheet", family: null, assigneeIds: [], qtype: "name_play",
+            source: "sheet", family: `play:${play.id}`, assigneeIds: [], qtype: "name_play",
             visual: { court_template: template, frames: opening, hide_after: true, caption: null },
             reveal: null,
           });
@@ -944,6 +999,30 @@ export async function getReteachCount(quizId: string): Promise<number> {
   const bundle = await getQuizBundle(quizId);
   const results = await getQuizResults(bundle);
   return results.flags.length;
+}
+
+/**
+ * Rebuilds a scout quiz DRAFT from the sheet as it is now (structured
+ * fields and linked plays, using the quiz's play settings). Questions the
+ * coach wrote or kept from the AI stay.
+ */
+export async function rebuildScoutDraft(quizId: string): Promise<number> {
+  const quiz = await getQuiz(quizId);
+  if (!quiz || quiz.status !== "draft" || !quiz.scout_sheet_id) throw new Error("Only a scout quiz draft can be rebuilt.");
+  const { error } = await supabase.from("quiz_questions").delete().eq("quiz_id", quizId).eq("source", "sheet");
+  if (error) throw error;
+  const settings = (quiz.play_settings as PlayQuizSettings)?.types ? quiz.play_settings as PlayQuizSettings : DEFAULT_SCOUT_PLAY_SETTINGS;
+  const fresh = [...await buildQuestionsFromSheet(quiz.scout_sheet_id), ...await buildScoutPlayQuestions(quiz.scout_sheet_id, settings)];
+  const { data: rest } = await supabase.from("quiz_questions").select("sort_order").eq("quiz_id", quizId);
+  // Fresh sheet questions go first; the kept ones move after them.
+  const kept = ((rest ?? []) as any[]).length;
+  if (kept) {
+    const { data: keptRows } = await supabase.from("quiz_questions").select("id, sort_order").eq("quiz_id", quizId).order("sort_order");
+    await Promise.all(((keptRows ?? []) as any[]).map((r, i) =>
+      supabase.from("quiz_questions").update({ sort_order: fresh.length + i }).eq("id", r.id)));
+  }
+  await addQuestions(quizId, fresh, 0);
+  return fresh.length;
 }
 
 /** Replaces a draft question in full (prompt, answers, key, assignees). */
