@@ -53,6 +53,11 @@ export default function ClassClash({ currentUserId, canManage }: Props) {
   const [showCreate, setShowCreate] = useState(false);
   const [awarding, setAwarding]     = useState(false);
   const [toast, setToast]           = useState("");
+  // Which grade cards are open. One record here rather than a useState
+  // inside the .map() below: a hook in a loop runs a different number of
+  // times when the number of grades changes (e.g. 0 while loading, then 4),
+  // which crashes the whole app with React error #310.
+  const [expandedGrades, setExpandedGrades] = useState<Record<string, boolean>>({});
 
   // Create form state
   const [title, setTitle]         = useState("Class Clash");
@@ -337,7 +342,9 @@ export default function ClassClash({ currentUserId, canManage }: Props) {
               const color = GRADE_COLORS[grade.grade] ?? "#93b4ff";
               const label = GRADE_LABELS[grade.grade] ?? grade.grade;
               const isMyGrade = grade.players.some(p => p.id === currentUserId);
-              const [expanded, setExpanded] = useState(false);
+              const expanded = !!expandedGrades[grade.grade];
+              const setExpanded = (f: (e: boolean) => boolean) =>
+                setExpandedGrades(m => ({ ...m, [grade.grade]: f(!!m[grade.grade]) }));
 
               return (
                 <div key={grade.grade} style={{ background: "var(--surface2)", border: `1px solid ${isMyGrade ? color + "44" : "var(--border)"}`, borderRadius: 12, overflow: "hidden" }}>
