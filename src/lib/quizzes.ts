@@ -83,6 +83,12 @@ export interface QuizVisual {
   frames: PlayFrame[];
   /** Animate these frames, then hide the court before answers appear. */
   hide_after?: boolean;
+  /**
+   * The steps BEFORE the one asked about, in order, with their arrows --
+   * played as a lead-up so the player knows where they are in the play.
+   * Never includes the step being asked about.
+   */
+  lead_frames?: PlayFrame[];
   caption?: string | null;
 }
 
@@ -539,7 +545,15 @@ function cleanStep(f: PlayFrame, focusId?: string): PlayFrame {
 }
 
 function playCaption(play: Play, i: number): string {
-  return `${play.title} · ${stepName(play.data.frames[i], i)}`;
+  const f = play.data.frames[i];
+  // The ball is drawn over whoever has it, which can hide their number.
+  const holder = f?.ballHolderId ? f.players.find(p => p.id === f.ballHolderId) : undefined;
+  return `${play.title} · ${stepName(f, i)}${i === 0 ? " · Start of the play" : ""}${holder ? ` · the ${holder.num} has the ball` : ""}`;
+}
+
+/** The steps before step i, for the lead-up. */
+function leadUp(play: Play, i: number, focusId?: string): PlayFrame[] {
+  return play.data.frames.slice(0, i).map(f => cleanStep(f, focusId));
 }
 
 function pickN<T>(arr: T[], n: number): T[] {
@@ -581,7 +595,7 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
           options: [right, ...wrong], correctIndex: 0,
           explanation: `The ${c.num} ${ACTION_SENTENCE[c.action.type]}.${note ? ` Coach's note: ${note}` : ""}`,
           source: "sheet", family: null, assigneeIds: [], qtype: "what_next",
-          visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.id)], caption: playCaption(play, c.i) },
+          visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.id)], lead_frames: leadUp(play, c.i, c.id), caption: playCaption(play, c.i) },
           reveal: { court_template: template, frame: cleanStep(frames[c.i], c.id), caption: playCaption(play, c.i) },
         });
       }
@@ -607,7 +621,7 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
           options: [`The ${c.to}`, ...pickN(c.others, 3).map(n => `The ${n}`)], correctIndex: 0,
           explanation: `The ${c.from} passes to the ${c.to}.${note ? ` Coach's note: ${note}` : ""}`,
           source: "sheet", family: null, assigneeIds: [], qtype: "who_ball",
-          visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.fromId)], caption: playCaption(play, c.i) },
+          visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.fromId)], lead_frames: leadUp(play, c.i, c.fromId), caption: playCaption(play, c.i) },
           reveal: { court_template: template, frame: cleanStep(frames[c.i], c.fromId), caption: playCaption(play, c.i) },
         });
       }
