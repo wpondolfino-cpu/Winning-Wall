@@ -121,7 +121,7 @@ export default function QuizResults({ bundle }: Props) {
                 const color = pct == null ? "var(--muted)" : pct >= 80 ? "#5de098" : pct >= 60 ? "var(--gold)" : "#ff7b7b";
                 return (
                   <div key={t} style={{ background: "var(--surface2)", borderRadius: 10, padding: "10px 12px" }}>
-                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{PLAY_QTYPE_LABEL[t]}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{bundle.quiz.scout_sheet_id && t === "name_play" ? "Name that set" : PLAY_QTYPE_LABEL[t]}</div>
                     <div style={{ fontSize: 22, fontWeight: 700, color }}>{pct == null ? "—" : `${pct}%`}</div>
                     <div style={{ fontSize: 11, color: "var(--muted)" }}>{v.answered} answer{v.answered === 1 ? "" : "s"}</div>
                   </div>
