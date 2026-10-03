@@ -16,9 +16,49 @@
 // fit on screen on a desktop too.
 
 import { useEffect, useRef, useState } from "react";
-import PlayCanvas from "../plays/PlayCanvas";
+import PlayCanvas, { CANVAS_W, CANVAS_H } from "../plays/PlayCanvas";
 import type { CourtTemplate, PlayFrame } from "../../lib/plays";
-import type { QuizVisual, QuizReveal, QuizHeading } from "../../lib/quizzes";
+import type { QuizVisual, QuizReveal, QuizHeading, TapPoint } from "../../lib/quizzes";
+
+/**
+ * Drawn over the court for "Where do you go": catches taps (in the court's
+ * own coordinates, so it works at any screen size) and shows the tap and,
+ * once answered, the right spot with how close counted.
+ */
+function TapOverlay({ tap, target, onTap, num }: {
+  tap?: TapPoint | null;
+  target?: { point: TapPoint; radius: number } | null;
+  onTap?: (p: TapPoint) => void;
+  num?: number | null;
+}) {
+  function handle(e: React.MouseEvent<SVGSVGElement>) {
+    if (!onTap) return;
+    const svg = e.currentTarget;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return;
+    const p = pt.matrixTransform(ctm.inverse());
+    onTap({ x: Math.max(0, Math.min(CANVAS_W, Math.round(p.x))), y: Math.max(0, Math.min(CANVAS_H, Math.round(p.y))) });
+  }
+  return (
+    <svg viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`} onClick={handle}
+      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", cursor: onTap ? "crosshair" : "default" }}>
+      {target && (
+        <>
+          <circle cx={target.point.x} cy={target.point.y} r={target.radius} fill="rgba(40,180,80,0.12)" stroke="#28b450" strokeWidth={2} strokeDasharray="6 4" />
+          <circle cx={target.point.x} cy={target.point.y} r={5} fill="#28b450" />
+        </>
+      )}
+      {tap && (
+        <g>
+          <circle cx={tap.x} cy={tap.y} r={14} fill="#F0C040" fillOpacity={0.9} stroke="#fff" strokeWidth={2} />
+          {num != null && <text x={tap.x} y={tap.y + 4} textAnchor="middle" fontSize={12} fontWeight={700} fill="#2A2008">{num}</text>}
+        </g>
+      )}
+    </svg>
+  );
+}
 
 const COURT_MAX = 520;
 const courtBox: React.CSSProperties = {
@@ -53,11 +93,16 @@ function PlayHeading({ heading, status }: { heading: QuizHeading; status?: strin
   );
 }
 
-export function QuizPlayVisual({ visual, onReady, compact = false }: {
+export function QuizPlayVisual({ visual, onReady, compact = false, tap, onTap, target, tapNum }: {
   visual: QuizVisual;
   /** Called once when the answers may be shown. */
   onReady?: () => void;
   compact?: boolean;
+  /** "Where do you go": the current tap, a tap handler (null when locked), and the right spot once answered. */
+  tap?: TapPoint | null;
+  onTap?: ((p: TapPoint) => void) | null;
+  target?: { point: TapPoint; radius: number } | null;
+  tapNum?: number | null;
 }) {
   const hideAfter = !!visual.hide_after;
   const lead = visual.lead_frames ?? [];
@@ -128,13 +173,18 @@ export function QuizPlayVisual({ visual, onReady, compact = false }: {
         status={playing && !hideAfter ? `▶ Lead-up: step ${visual.heading.stepNumber - 1}` : null} />
     )}
     <div style={compact ? { background: "var(--surface2)", borderRadius: 8, padding: 4 } : courtBox}>
-      <PlayCanvas
-        frame={shown}
-        courtTemplate={visual.court_template as CourtTemplate}
-        edit={false}
-        playSignal={playing ? signal : undefined}
-        onPlayDone={playing ? stepDone : undefined}
-      />
+      <div style={{ position: "relative" }}>
+        <PlayCanvas
+          frame={shown}
+          courtTemplate={visual.court_template as CourtTemplate}
+          edit={false}
+          playSignal={playing ? signal : undefined}
+          onPlayDone={playing ? stepDone : undefined}
+        />
+        {!compact && !playing && (onTap || tap || target) && (
+          <TapOverlay tap={tap} target={target} onTap={onTap ?? undefined} num={tapNum} />
+        )}
+      </div>
       {!compact && (
         <>
           {visual.caption && !visual.heading && (
@@ -163,14 +213,23 @@ export function QuizPlayVisual({ visual, onReady, compact = false }: {
   );
 }
 
-export function QuizPlayReveal({ reveal }: { reveal: QuizReveal }) {
+export function QuizPlayReveal({ reveal, tap, target, tapNum }: {
+  reveal: QuizReveal;
+  /** "Where do you go": the player's tap and the right spot, drawn over the step. */
+  tap?: TapPoint | null;
+  target?: { point: TapPoint; radius: number } | null;
+  tapNum?: number | null;
+}) {
   const [signal, setSignal] = useState(0);
   return (
     <>
     {reveal.heading && <PlayHeading heading={reveal.heading} />}
     <div style={courtBox}>
       <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", marginBottom: 6 }}>What happens on this step</div>
-      <PlayCanvas frame={reveal.frame} courtTemplate={reveal.court_template as CourtTemplate} edit={false} playSignal={signal} />
+      <div style={{ position: "relative" }}>
+        <PlayCanvas frame={reveal.frame} courtTemplate={reveal.court_template as CourtTemplate} edit={false} playSignal={signal} />
+        {(tap || target) && <TapOverlay tap={tap} target={target} num={tapNum} />}
+      </div>
       <button type="button" onClick={() => setSignal(n => n + 1)} style={{ ...smallBtn, marginTop: 6 }}>▶ Play the step</button>
     </div>
     </>
