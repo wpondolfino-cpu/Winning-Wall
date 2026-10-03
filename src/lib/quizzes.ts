@@ -8,7 +8,7 @@
 // reaches the phone after the answer it belongs to is locked.
 
 import { supabase } from "./supabase";
-import { Play, PlayFrame, PlayAction, getPlaybookPlays, stepName } from "./plays";
+import { Play, PlayFrame, PlayAction, getPlaybookPlays, stepName, deriveNextFrame } from "./plays";
 import {
   getScoutSheet, getScoutPlayers, getDefenseSections, getScoutSheetPrintContext, getOffenseSets, getSpecials,
   ensureScoutSheetForGame, ScoutPlayer,
@@ -43,6 +43,7 @@ export interface Quiz {
   source_play_ids: string[];
   play_settings: PlayQuizSettings | Record<string, never>;
   replaces_quiz_id: string | null;
+  tap_tolerance: TapTolerance;         // 166
   published_at: string | null;
   created_by: string | null;
   created_at: string;
@@ -50,7 +51,7 @@ export interface Quiz {
 }
 
 export type QuizSettings = Pick<Quiz, "feedback_mode" | "allow_retakes" | "time_limit_seconds" | "show_time_to_coaches"
-  | "title" | "roster_ids" | "due_at" | "play_settings">;
+  | "title" | "roster_ids" | "due_at" | "play_settings" | "tap_tolerance">;
 
 export type QuizKind = "scout" | "plays" | "standalone";
 export const quizKind = (q: Pick<Quiz, "scout_sheet_id"> & Partial<Pick<Quiz, "playbook_id" | "source_play_ids">>): QuizKind =>
@@ -60,12 +61,18 @@ export const quizKind = (q: Pick<Quiz, "scout_sheet_id"> & Partial<Pick<Quiz, "p
 
 // ── Play quiz types (163) ─────────────────────────────────────
 
-export type PlayQType = "what_next" | "who_ball" | "name_play";
+export type PlayQType = "what_next" | "who_ball" | "name_play" | "tap_place";
 export const PLAY_QTYPE_LABEL: Record<PlayQType, string> = {
   what_next: "What happens next",
   who_ball: "Who gets the ball",
   name_play: "Name that play",
+  tap_place: "Where do you go",
 };
+
+/** How close a tap must land, in court units (the court is 600 wide). Mirrors quiz_tap_radius in SQL. */
+export type TapTolerance = "strict" | "normal" | "loose";
+export const TAP_RADIUS: Record<TapTolerance, number> = { strict: 30, normal: 50, loose: 75 };
+export interface TapPoint { x: number; y: number; }
 
 /** What a play quiz was built with, so Regenerate repeats it. */
 export interface PlayQuizSettings {
@@ -127,6 +134,7 @@ export interface QuizQuestion {
   qtype: PlayQType | null;
   visual: QuizVisual | null;
   reveal: QuizReveal | null;
+  correct_point: TapPoint | null;   // tap_place only
 }
 
 /** A question before it's saved: options by text, correct one by index. */
@@ -141,6 +149,8 @@ export interface QuestionDraft {
   qtype?: PlayQType | null;
   visual?: QuizVisual | null;
   reveal?: QuizReveal | null;
+  /** tap_place: the spot the play sends the player. No options. */
+  correctPoint?: TapPoint | null;
 }
 
 export interface QuizBundle { quiz: Quiz; questions: QuizQuestion[]; }
@@ -461,6 +471,7 @@ export async function getQuizBundle(quizId: string): Promise<QuizBundle> {
       qtype: q.qtype ?? null,
       visual: q.visual ?? null,
       reveal: q.reveal ?? null,
+      correct_point: keyBy.get(q.id)?.correct_point ?? null,
     })),
   };
 }
@@ -474,7 +485,7 @@ export async function getQuizBundle(quizId: string): Promise<QuizBundle> {
 export async function addQuestions(quizId: string, drafts: QuestionDraft[], startOrder: number): Promise<void> {
   const clean = drafts
     .map(d => ({ ...d, prompt: d.prompt.trim(), options: d.options.map(o => o.trim()) }))
-    .filter(d => d.prompt && d.options.filter(Boolean).length >= 2);
+    .filter(d => d.prompt && (d.qtype === "tap_place" ? !!d.correctPoint : d.options.filter(Boolean).length >= 2));
   if (!clean.length) return;
 
   const { data: qRows, error: qErr } = await supabase.from("quiz_questions")
@@ -491,7 +502,9 @@ export async function addQuestions(quizId: string, drafts: QuestionDraft[], star
     const qid = qIdByOrder.get(startOrder + i)!;
     d.options.forEach((label, j) => { if (label) optionRows.push({ question_id: qid, label, sort_order: j }); });
   });
-  const { data: oRows, error: oErr } = await supabase.from("quiz_question_options").insert(optionRows).select("id, question_id, sort_order");
+  const { data: oRows, error: oErr } = optionRows.length
+    ? await supabase.from("quiz_question_options").insert(optionRows).select("id, question_id, sort_order")
+    : { data: [] as any[], error: null };
   if (oErr) throw oErr;
   const optId = (qid: string, order: number) =>
     ((oRows ?? []) as any[]).find(o => o.question_id === qid && o.sort_order === order)?.id as string | undefined;
@@ -500,8 +513,11 @@ export async function addQuestions(quizId: string, drafts: QuestionDraft[], star
     const qid = qIdByOrder.get(startOrder + i)!;
     // correctIndex counts every option the coach typed; blanks were
     // skipped above, so find the option at that original position.
-    return { question_id: qid, correct_option_id: optId(qid, d.correctIndex), explanation: d.explanation?.trim() || null };
-  }).filter(k => k.correct_option_id);
+    if (d.qtype === "tap_place") {
+      return { question_id: qid, correct_option_id: null as string | null | undefined, correct_point: d.correctPoint ?? null, explanation: d.explanation?.trim() || null };
+    }
+    return { question_id: qid, correct_option_id: optId(qid, d.correctIndex), correct_point: null, explanation: d.explanation?.trim() || null };
+  }).filter(k => k.correct_option_id || k.correct_point);
   if (keyRows.length) {
     const { error: kErr } = await supabase.from("quiz_answer_keys").insert(keyRows);
     if (kErr) throw kErr;
@@ -691,6 +707,40 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
           options: [right, ...wrong], correctIndex: 0,
           explanation: `The ${c.num} ${ACTION_SENTENCE[c.action.type]}.${note ? ` Coach's note: ${note}` : ""}`,
           source: "sheet", family: `play:${play.id}`, assigneeIds: [], qtype: "what_next",
+          visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.id)], lead_frames: leadUp(play, c.i, c.id), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
+          reveal: { court_template: template, frame: cleanStep(frames[c.i], c.id), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
+        });
+      }
+    }
+
+    // ── Where do you go: a player who moves on this step taps their spot ──
+    if (per.tap_place) {
+      const pool: { i: number; num: number; id: string; profileId: string | null; end: TapPoint; type: string }[] = [];
+      frames.forEach((f, i) => {
+        const after = deriveNextFrame(f);
+        for (const p of f.players) {
+          if (!p.id) continue;
+          const mine = f.actions.filter(a => a.sourcePlayerId === p.id && ["move", "dribble", "screen"].includes(a.type));
+          if (!mine.length) continue;
+          const end = after.players.find(q => q.id === p.id);
+          if (!end) continue;
+          // Only real moves: standing still isn't a tap question.
+          if (Math.hypot(end.x - p.x, end.y - p.y) < 30) continue;
+          pool.push({ i, num: p.num, id: p.id, profileId: p.profile_id ?? null, end: { x: end.x, y: end.y },
+            type: [...mine].sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0))[0].type });
+        }
+      });
+      for (const c of pickN(pool, per.tap_place)) {
+        const note = frames[c.i].note?.trim();
+        out.push({
+          prompt: c.profileId ? `You're the ${c.num} — tap where you go on this step.` : `Tap where the ${c.num} goes on this step.`,
+          options: [], correctIndex: 0,
+          explanation: `The ${c.num} ${ACTION_SENTENCE[c.type] ?? "moves"} to that spot.${note ? ` Coach's note: ${note}` : ""}`,
+          source: "sheet", family: `play:${play.id}`,
+          // A play linked to a real player sends "you're the 2" to that kid.
+          assigneeIds: c.profileId ? [c.profileId] : [],
+          qtype: "tap_place",
+          correctPoint: c.end,
           visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.id)], lead_frames: leadUp(play, c.i, c.id), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
           reveal: { court_template: template, frame: cleanStep(frames[c.i], c.id), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
         });
@@ -1453,6 +1503,8 @@ export interface AnswerResult {
   correct_option_id?: string;
   explanation?: string | null;
   reveal?: QuizReveal | null;
+  correct_point?: TapPoint | null;   // tap questions
+  radius?: number;
 }
 
 export interface ReviewQuestion {
@@ -1461,6 +1513,9 @@ export interface ReviewQuestion {
   qtype: PlayQType | null;
   visual: QuizVisual | null;
   reveal: QuizReveal | null;
+  chosen_point: TapPoint | null;
+  correct_point: TapPoint | null;
+  radius: number | null;
   options: ServedOption[];
   chosen_option_id: string | null;
   correct_option_id: string | null;
@@ -1489,6 +1544,11 @@ export const startQuizAttempt = (quizId: string) => rpc<string>("start_quiz_atte
 export const getNextQuestion = (attemptId: string) => rpc<ServedQuestion>("quiz_next_question", { p_attempt: attemptId });
 export const submitQuizAnswer = (attemptId: string, questionId: string, optionId: string | null) =>
   rpc<AnswerResult>("quiz_submit_answer", { p_attempt: attemptId, p_question: questionId, p_option: optionId });
+/** A tap, graded and locked on the server. x/y null = time ran out with no tap. */
+export const submitQuizTap = (attemptId: string, questionId: string, point: TapPoint | null) =>
+  rpc<AnswerResult>("quiz_submit_tap", { p_attempt: attemptId, p_question: questionId, p_x: point?.x ?? null, p_y: point?.y ?? null });
+export const answerReviewDeckTap = (questionId: string, point: TapPoint) =>
+  rpc<DeckAnswer>("review_deck_tap", { p_question: questionId, p_x: point.x, p_y: point.y });
 export const getAttemptReview = (attemptId: string) => rpc<AttemptReview>("quiz_attempt_review", { p_attempt: attemptId });
 
 export interface DeckQuestion {
@@ -1501,7 +1561,10 @@ export interface DeckQuestion {
   quiz_title: string;
   remaining: number;
 }
-export interface DeckAnswer { correct: boolean; correct_option_id: string; explanation: string | null; reveal?: QuizReveal | null; remaining: number; }
+export interface DeckAnswer {
+  correct: boolean; correct_option_id?: string; explanation: string | null; reveal?: QuizReveal | null; remaining: number;
+  correct_point?: TapPoint | null; radius?: number;
+}
 
 export const getReviewDeckCount = () => rpc<number>("review_deck_count").then(n => n ?? 0);
 export const getReviewDeckNext = (excludeId?: string | null) => rpc<DeckQuestion>("review_deck_next", { p_exclude: excludeId ?? null });
