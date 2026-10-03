@@ -51,6 +51,9 @@ export default function QuizPreview({ bundle, roster, onClose }: Props) {
   const [ready, setReady] = useState(true);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [inputError, setInputError] = useState<string | null>(null);
+  // Bumped each run so the court restarts its lead-up even when "Preview
+  // again" shows the very same question object.
+  const [run, setRun] = useState(0);
 
   // Who "everyone" is for this quiz right now -- same function the results use.
   useEffect(() => {
@@ -85,13 +88,14 @@ export default function QuizPreview({ bundle, roster, onClose }: Props) {
     setOptionOrder(Object.fromEntries(qs.map(q => [q.id, shuffle(q.options.map(o => o.id))])));
     setAnswers([]); setIdx(0); setPicked(null); setFeedback(null); setFinished(false); setReviewing(false);
     setInputError(null);
+    setRun(r => r + 1);
     setStarted(true);
     beginQuestion(qs[0]);
   }
 
   function beginQuestion(q: QuizQuestion) {
     setPicked(null); setFeedback(null); setInputError(null);
-    setReady(!q.visual?.hide_after);
+    setReady(!q.visual?.hide_after && !(q.visual?.lead_frames?.length));
     setRemaining(quiz.time_limit_seconds ?? null);
   }
 
@@ -241,7 +245,7 @@ export default function QuizPreview({ bundle, roster, onClose }: Props) {
         <div style={{ width: `${Math.round(((idx + 1) / order.length) * 100)}%`, height: "100%", background: "var(--royal-light)" }} />
       </div>
 
-      {q.visual && !(feedback && q.reveal) && <QuizPlayVisual visual={q.visual} onReady={() => setReady(true)} />}
+      {q.visual && !(feedback && q.reveal) && <QuizPlayVisual key={`${q.id}-${run}`} visual={q.visual} onReady={() => setReady(true)} />}
       {feedback && q.reveal && <QuizPlayReveal reveal={q.reveal} />}
 
       <div style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.4, marginBottom: 14 }}>{q.prompt}</div>
