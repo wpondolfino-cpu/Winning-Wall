@@ -9,7 +9,7 @@
 // a "name that play" question prints its opening step with arrows.
 
 import { useMemo } from "react";
-import PlayCanvas from "../plays/PlayCanvas";
+import PlayCanvas, { CANVAS_W, CANVAS_H } from "../plays/PlayCanvas";
 import type { CourtTemplate } from "../../lib/plays";
 import { QuizBundle, QuizQuestion, PLAY_QTYPE_LABEL } from "../../lib/quizzes";
 
@@ -83,7 +83,8 @@ export default function QuizPrintView({ bundle, teamNames, onBack }: Props) {
             {heading(q) && <div style={{ fontSize: 12, fontWeight: 700, color: "#7a5a00" }}>{heading(q)}</div>}
             {courtFor(q)}
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
-              {i + 1}. {q.qtype === "name_play" ? "Which play starts like this?" : q.prompt}
+              {i + 1}. {q.qtype === "name_play" ? "Which play starts like this?"
+                : q.qtype === "tap_place" ? q.prompt.replace(/tap where/i, "Draw an X where") : q.prompt}
             </div>
             {order[q.id].map((o, j) => (
               <div key={o.id} style={{ fontSize: 13, padding: "2px 0 2px 16px" }}>
@@ -101,6 +102,22 @@ export default function QuizPrintView({ bundle, teamNames, onBack }: Props) {
         {questions.map((q, i) => {
           const opts = order[q.id];
           const j = opts.findIndex(o => o.id === q.correct_option_id);
+          if (q.qtype === "tap_place" && q.reveal) {
+            return (
+              <div key={q.id} style={{ fontSize: 13, marginBottom: 12, breakInside: "avoid" }}>
+                <strong>{i + 1}. Where the play sends them (green):</strong>
+                <div style={{ border: "1px solid #ddd", borderRadius: 8, maxWidth: 260, margin: "6px 0", position: "relative" }}>
+                  <PlayCanvas frame={q.reveal.frame} courtTemplate={q.reveal.court_template as CourtTemplate} edit={false} courtBg="#f3e4c8" />
+                  {q.correct_point && (
+                    <svg viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
+                      <circle cx={q.correct_point.x} cy={q.correct_point.y} r={22} fill="none" stroke="#1f9d4c" strokeWidth={4} />
+                    </svg>
+                  )}
+                </div>
+                {q.explanation && <div style={{ color: "#444", marginTop: 2 }}>{q.explanation}</div>}
+              </div>
+            );
+          }
           return (
             <div key={q.id} style={{ fontSize: 13, marginBottom: 10, breakInside: "avoid" }}>
               <strong>{i + 1}. {j >= 0 ? `${LETTERS[j]}. ${opts[j].label}` : "—"}</strong>
