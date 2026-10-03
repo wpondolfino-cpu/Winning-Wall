@@ -26,7 +26,7 @@ export default function ReviewDeck({ onClose }: Props) {
     setPicked(null); setResult(null); setInputError(null); setError(null);
     try {
       const next = await getReviewDeckNext(exclude);
-      setReady(!next.visual?.hide_after);
+      setReady(!next.visual?.hide_after && !(next.visual?.lead_frames?.length));
       setQ(next);
     }
     catch (e: any) { setError(e?.message ?? "Couldn't load your review deck."); }
