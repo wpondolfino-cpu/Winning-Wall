@@ -45,13 +45,20 @@ function dueLabel(item: QuizListItem): string | null {
   return new Date(item.quiz.due_at).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 
-export default function QuizzesPage() {
+export interface QuizPrefill { playbookId: string; name: string; quizId: string | null; }
+
+export default function QuizzesPage({ prefill, onPrefillUsed }: {
+  /** From a playbook's Make quiz / Open quiz button. */
+  prefill?: QuizPrefill | null;
+  onPrefillUsed?: () => void;
+} = {}) {
   const [items, setItems] = useState<QuizListItem[] | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamFilter, setTeamFilter] = useState<string>("all");
   const [reteach, setReteach] = useState<Record<string, number>>({});
   const [open, setOpen] = useState<QuizListItem | null>(null);
   const [creating, setCreating] = useState(false);
+  const [formStart, setFormStart] = useState<{ playbookId: string; title: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // Row ⋯ menu, and what its actions open.
@@ -132,11 +139,24 @@ export default function QuizzesPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Arriving from a playbook: open its quiz, or start a Plays quiz for it.
+  useEffect(() => {
+    if (!prefill) return;
+    if (prefill.quizId) {
+      setOpen({ quiz: { id: prefill.quizId } as any, kind: "plays", gameDate: null, tipTime: null, submitted: 0, questionCount: 0, lastEdited: "" });
+    } else {
+      setFormStart({ playbookId: prefill.playbookId, title: `${prefill.name} quiz` });
+      setCreating(true);
+    }
+    onPrefillUsed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
+
   const close = () => { setOpen(null); load(); };
 
   if (creating) {
     return (
-      <NewQuizForm teams={teams} onCancel={() => setCreating(false)}
+      <NewQuizForm teams={teams} start={formStart} onCancel={() => { setCreating(false); setFormStart(null); }}
         onCreated={async id => {
           setCreating(false);
           await load();
@@ -291,29 +311,31 @@ function gameLabel(g: QuizGameOption, teams: Team[]): string {
   return `${day} · ${g.opponent || "Opponent"}${team ? ` · ${team}` : ""}`;
 }
 
-const PLAY_TYPES: PlayQType[] = ["what_next", "who_ball", "name_play"];
+const PLAY_TYPES: PlayQType[] = ["what_next", "who_ball", "tap_place", "name_play"];
 const PLAY_TYPE_HINT: Record<PlayQType, string> = {
   what_next: "\"Step 3 · Screen sets — what does the 4 do?\"",
   who_ball: "\"Who does the 1 pass to on this step?\"",
-  name_play: "Watch the opening, the court hides, pick the play",
+  name_play: "Watch the whole play, the court hides, pick the play",
+  tap_place: "\"Tap where the 2 goes on this step\" — graded by distance",
 };
 
-function NewQuizForm({ teams, onCancel, onCreated, onScoutCreated, onPlaysCreated }: {
-  teams: Team[]; onCancel: () => void; onCreated: (id: string) => void; onScoutCreated: (scoutSheetId: string) => void;
+function NewQuizForm({ teams, start, onCancel, onCreated, onScoutCreated, onPlaysCreated }: {
+  teams: Team[]; start?: { playbookId: string; title: string } | null;
+  onCancel: () => void; onCreated: (id: string) => void; onScoutCreated: (scoutSheetId: string) => void;
   onPlaysCreated: (quizId: string) => void;
 }) {
-  const [kind, setKind] = useState<"scout" | "plays" | "standalone">("scout");
+  const [kind, setKind] = useState<"scout" | "plays" | "standalone">(start ? "plays" : "scout");
   // Plays
   const [playbooks, setPlaybooks] = useState<Playbook[] | null>(null);
   const [myPlays, setMyPlays] = useState<Play[] | null>(null);
-  const [source, setSource] = useState<string>("");          // playbook id, or "pick"
+  const [source, setSource] = useState<string>(start?.playbookId ?? "");   // playbook id, or "pick"
   const [pickedPlays, setPickedPlays] = useState<string[]>([]);
-  const [typeCounts, setTypeCounts] = useState<Record<PlayQType, number>>({ what_next: 2, who_ball: 1, name_play: 1 });
-  const [typeOn, setTypeOn] = useState<Record<PlayQType, boolean>>({ what_next: true, who_ball: true, name_play: true });
+  const [typeCounts, setTypeCounts] = useState<Record<PlayQType, number>>({ what_next: 2, who_ball: 1, name_play: 1, tap_place: 1 });
+  const [typeOn, setTypeOn] = useState<Record<PlayQType, boolean>>({ what_next: true, who_ball: true, name_play: true, tap_place: true });
   const [maxQ, setMaxQ] = useState(20);
   const [games, setGames] = useState<QuizGameOption[] | null>(null);
   const [gameId, setGameId] = useState("");
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(start?.title ?? "");
   const [picked, setPicked] = useState<string[]>([]);
   const [due, setDue] = useState("");
   const [saving, setSaving] = useState(false);
@@ -472,7 +494,7 @@ function NewQuizForm({ teams, onCancel, onCreated, onScoutCreated, onPlaysCreate
                 )}
               </div>
             ))}
-            {(["Where do you go (tap to place)", "Why / what-if (AI, from step notes)"]).map(l => (
+            {(["Why / what-if (AI, from step notes)"]).map(l => (
               <div key={l} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: "1px solid var(--border)", opacity: 0.5 }}>
                 <input type="checkbox" disabled aria-label={l} />
                 <div style={{ flex: 1, fontSize: 13 }}>{l}</div>
