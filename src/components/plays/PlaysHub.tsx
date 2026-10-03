@@ -10,6 +10,7 @@
 // plays drawn here -- so two top-level items were describing one body of
 // content.
 
+import type { Playbook } from "../../lib/plays";
 import { useState } from "react";
 import PlayViewer from "./PlayViewer";
 import PlayEditor from "./PlayEditor";
@@ -18,9 +19,11 @@ import { Play } from "../../lib/plays";
 
 interface Props {
   currentUserRole: "player" | "coach" | "admin";
+  /** Coaches: "Make quiz" on a playbook goes to the Quizzes page. */
+  onMakeQuiz?: (playbook: Playbook, existingQuizId: string | null) => void;
 }
 
-export default function PlaysHub({ currentUserRole }: Props) {
+export default function PlaysHub({ currentUserRole, onMakeQuiz }: Props) {
   const [editing, setEditing] = useState<Play | "new" | null>(null);
   const [tab, setTab] = useState<"plays" | "playbooks">("plays");
   // A play opened from inside a playbook. Held here rather than in either
@@ -78,6 +81,7 @@ export default function PlaysHub({ currentUserRole }: Props) {
           <PlaybookManager
             initialExpandedId={lastPlaybookId}
             onOpenPlay={(play, playbookId) => { setLastPlaybookId(playbookId); setFromPlaybook({ play, playbookId }); }}
+            onMakeQuiz={onMakeQuiz}
           />
         )
       ) : (
