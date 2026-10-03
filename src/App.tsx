@@ -35,7 +35,7 @@ import PlaysHub from "./components/plays/PlaysHub";
 import GameStatsHub from "./components/game-stats/GameStatsHub";
 import ScoutSheetsHub from "./components/scouting/ScoutSheetsHub";
 import PageErrorBoundary from "./components/PageErrorBoundary";
-import QuizzesPage from "./components/quizzes/QuizzesPage";
+import QuizzesPage, { QuizPrefill } from "./components/quizzes/QuizzesPage";
 import PlayerQuizList from "./components/quizzes/PlayerQuizList";
 import SchedulePage from "./components/schedule/SchedulePage";
 import NavModeChangePopup from "./components/NavModeChangePopup";
@@ -200,6 +200,8 @@ export default function App() {
 
   const [coachTab, setCoachTab]     = useState<CoachTab>(() => initialTabFromUrl<CoachTab>(COACH_URL_TABS, "workouts"));
   const [adminTab, setAdminTab]     = useState<AdminTab>(() => initialTabFromUrl<AdminTab>(ADMIN_URL_TABS, "workouts"));
+  // A playbook's "Make quiz" / "Open quiz" hands off to the Quizzes page.
+  const [quizPrefill, setQuizPrefill] = useState<QuizPrefill | null>(null);
   // Set when a Schedule row routes to another tab, so that tab can open
   // the specific practice or game rather than just its list. Cleared by
   // any sidebar/bottom-bar click and by Back/Forward -- it used to never
@@ -874,13 +876,14 @@ export default function App() {
           {/* Coach panels */}
           {isCoach && coachTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={false} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
           {isCoach && coachTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} onChallenge={() => setCoachTab("challenges")} />}
-          {isCoach && coachTab === "plays" && <PlaysHub currentUserRole="coach" />}
+          {isCoach && coachTab === "plays" && <PlaysHub currentUserRole="coach"
+            onMakeQuiz={(pb, quizId) => { setQuizPrefill({ playbookId: pb.id, name: pb.name, quizId }); setCoachTab("quizzes"); }} />}
           {isCoach && coachTab === "schedule" && <SchedulePage role="coach" onOpenTab={(t, payload) => { setScheduleTarget(payload ?? null); setCoachTab(t as CoachTab); }} />}
           {isCoach && coachTab === "practices" && <PracticeWeeksList initialPracticeId={scheduleTarget?.practiceId ?? null} key={scheduleTarget?.practiceId ?? "list"} />}
           {isCoach && coachTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
           {isCoach && coachTab === "gamestats" && <GameStatsHub currentUserRole="coach" userId={user.id} initialGameId={scheduleTarget?.gameId ?? null} initialView={scheduleTarget?.view ?? null} key={scheduleTarget?.gameId ?? "hub"} />}
           {isCoach && coachTab === "scoutsheets" && <ScoutSheetsHub canManage={true} initialGameId={scheduleTarget?.gameId ?? null} key={scheduleTarget?.gameId ?? "list"} />}
-          {isCoach && coachTab === "quizzes" && <QuizzesPage />}
+          {isCoach && coachTab === "quizzes" && <QuizzesPage prefill={quizPrefill} onPrefillUsed={() => setQuizPrefill(null)} />}
           {isCoach && coachTab === "gameday" && <GameDaySheetsList initialSheetId={scheduleTarget?.sheetId ?? null} key={scheduleTarget?.sheetId ?? "list"} />}
           {isCoach && coachTab === "leaderboard" && <LeaderboardHub canManage={true} profile={displayProfile} />}
           {isCoach && coachTab === "announcements" && (<><AnnouncementPanel isAdmin={false} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
@@ -912,10 +915,11 @@ export default function App() {
           {/* Admin panels */}
           {isAdmin && adminTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={true} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
           {isAdmin && adminTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} onChallenge={() => setAdminTab("challenges")} />}
-          {isAdmin && adminTab === "plays" && <PlaysHub currentUserRole="admin" />}
+          {isAdmin && adminTab === "plays" && <PlaysHub currentUserRole="admin"
+            onMakeQuiz={(pb, quizId) => { setQuizPrefill({ playbookId: pb.id, name: pb.name, quizId }); setAdminTab("quizzes"); }} />}
           {isAdmin && adminTab === "gamestats" && <GameStatsHub currentUserRole="admin" userId={user.id} initialGameId={scheduleTarget?.gameId ?? null} initialView={scheduleTarget?.view ?? null} key={scheduleTarget?.gameId ?? "hub"} />}
           {isAdmin && adminTab === "scoutsheets" && <ScoutSheetsHub canManage={true} initialGameId={scheduleTarget?.gameId ?? null} key={scheduleTarget?.gameId ?? "list"} />}
-          {isAdmin && adminTab === "quizzes" && <QuizzesPage />}
+          {isAdmin && adminTab === "quizzes" && <QuizzesPage prefill={quizPrefill} onPrefillUsed={() => setQuizPrefill(null)} />}
           {isAdmin && adminTab === "gameday" && <GameDaySheetsList initialSheetId={scheduleTarget?.sheetId ?? null} key={scheduleTarget?.sheetId ?? "list"} />}
           {isAdmin && adminTab === "schedule" && <SchedulePage role="admin" onOpenTab={(t, payload) => { setScheduleTarget(payload ?? null); setAdminTab(t as AdminTab); }} />}
           {isAdmin && adminTab === "practices" && <PracticeWeeksList initialPracticeId={scheduleTarget?.practiceId ?? null} key={scheduleTarget?.practiceId ?? "list"} />}
