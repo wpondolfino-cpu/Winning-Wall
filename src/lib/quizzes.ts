@@ -8,7 +8,7 @@
 // reaches the phone after the answer it belongs to is locked.
 
 import { supabase } from "./supabase";
-import { Play, PlayFrame, PlayAction, getPlaybookPlays, stepName, deriveNextFrame } from "./plays";
+import { Play, PlayFrame, PlayAction, getPlaybookPlays, stepName, deriveNextFrame, cleanNote } from "./plays";
 import {
   getScoutSheet, getScoutPlayers, getDefenseSections, getScoutSheetPrintContext, getOffenseSets, getSpecials,
   ensureScoutSheetForGame, ScoutPlayer,
@@ -61,12 +61,18 @@ export const quizKind = (q: Pick<Quiz, "scout_sheet_id"> & Partial<Pick<Quiz, "p
 
 // ── Play quiz types (163) ─────────────────────────────────────
 
-export type PlayQType = "what_next" | "who_ball" | "name_play" | "tap_place";
+/**
+ * Kinds of play question. two_part is a builder choice only: it makes a
+ * linked pair -- a what_next, then a tap_place (or who_ball for a pass).
+ */
+export type PlayQType = "what_next" | "who_ball" | "name_play" | "tap_place" | "fill_read" | "two_part";
 export const PLAY_QTYPE_LABEL: Record<PlayQType, string> = {
   what_next: "What happens next",
   who_ball: "Who gets the ball",
   name_play: "Name that play",
   tap_place: "Where do you go",
+  fill_read: "Fill in the read",
+  two_part: "What, then where",
 };
 
 /** How close a tap must land, in court units (the court is 600 wide). Mirrors quiz_tap_radius in SQL. */
@@ -99,6 +105,8 @@ export interface QuizVisual {
   caption?: string | null;
   /** Shown as a header above the court: which play and which step. */
   heading?: QuizHeading | null;
+  /** Two-part questions: which part this is. */
+  part?: { n: number; of: number } | null;
 }
 
 /** The play and step a question is about, shown big above the court. */
@@ -135,6 +143,8 @@ export interface QuizQuestion {
   visual: QuizVisual | null;
   reveal: QuizReveal | null;
   correct_point: TapPoint | null;   // tap_place only
+  group_id: string | null;          // the parts of a two-part question share one
+  group_part: number | null;
 }
 
 /** A question before it's saved: options by text, correct one by index. */
@@ -151,6 +161,9 @@ export interface QuestionDraft {
   reveal?: QuizReveal | null;
   /** tap_place: the spot the play sends the player. No options. */
   correctPoint?: TapPoint | null;
+  /** Two-part questions: shared id and which part. */
+  groupId?: string | null;
+  groupPart?: number | null;
 }
 
 export interface QuizBundle { quiz: Quiz; questions: QuizQuestion[]; }
@@ -472,6 +485,8 @@ export async function getQuizBundle(quizId: string): Promise<QuizBundle> {
       visual: q.visual ?? null,
       reveal: q.reveal ?? null,
       correct_point: keyBy.get(q.id)?.correct_point ?? null,
+      group_id: q.group_id ?? null,
+      group_part: q.group_part ?? null,
     })),
   };
 }
@@ -492,6 +507,7 @@ export async function addQuestions(quizId: string, drafts: QuestionDraft[], star
     .insert(clean.map((d, i) => ({
       quiz_id: quizId, sort_order: startOrder + i, prompt: d.prompt, source: d.source, family: d.family,
       qtype: d.qtype ?? null, visual: d.visual ?? null, reveal: d.reveal ?? null,
+      group_id: d.groupId ?? null, group_part: d.groupPart ?? null,
     })))
     .select("id, sort_order");
   if (qErr) throw qErr;
@@ -672,6 +688,64 @@ function pickN<T>(arr: T[], n: number): T[] {
   return shuffle(arr).slice(0, Math.max(0, n));
 }
 
+// ── Fill in the read: terms the app recognises in coaching notes ──
+// Grouped so a blank's wrong answers are the same kind of thing (a read
+// for a read, a spot for a spot).
+const READ_TERMS: Record<string, string[]> = {
+  read: ["curl", "flare", "fade", "backdoor", "slip", "pop", "roll", "dive", "flash", "drift", "lift", "sink", "seal",
+         "re-screen", "reject", "ghost", "short roll", "straight cut", "basket cut", "v-cut", "l-cut"],
+  spot: ["short corner", "corner", "wing", "elbow", "block", "top", "slot", "dunker spot", "high post", "low post", "nail"],
+  coverage: ["ice", "hedge", "switch", "blitz", "trap", "show", "drop", "under", "over", "top-lock", "deny", "help"],
+  action: ["down screen", "back screen", "cross screen", "flare screen", "stagger", "handoff", "pin down", "post up",
+           "drive", "kick", "skip", "lob", "rip", "shuffle"],
+};
+const TERM_GROUP = new Map<string, string>(Object.entries(READ_TERMS).flatMap(([g, ts]) => ts.map(t => [t, g] as [string, string])));
+// Everyday words that are only sometimes basketball terms ("go over the
+// top"). They still serve as wrong answers, and a coach can [bracket] them,
+// but they're never picked out automatically.
+const AUTO_SKIP = new Set(["under", "over", "help", "top", "show", "drop", "kick", "lift", "sink", "rip", "deny", "drive", "roll"]);
+const ALL_TERMS = [...TERM_GROUP.keys()].filter(t => !AUTO_SKIP.has(t)).sort((a, b) => b.length - a.length);   // longest first: "short corner" before "corner"
+
+const titleCase = (t: string) => t.replace(/(^|[\s-])([a-z])/g, (_m, a, b) => a + b.toUpperCase());
+const escapeRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** The sentence of a note that contains a given character position. */
+function sentenceAround(text: string, at: number): { start: number; end: number } {
+  let start = 0, end = text.length;
+  for (let i = at - 1; i >= 0; i--) if (/[.!?\n]/.test(text[i])) { start = i + 1; break; }
+  for (let i = at; i < text.length; i++) if (/[.!?\n]/.test(text[i])) { end = i + 1; break; }
+  return { start, end };
+}
+
+/**
+ * The blanks a note offers. Bracketed words win: "[curl] if trailed" means
+ * "quiz this". With no brackets, recognised basketball terms are used.
+ */
+function noteBlanks(raw: string): { term: string; sentence: string }[] {
+  const text = cleanNote(raw);
+  if (!text) return [];
+  const out: { term: string; sentence: string }[] = [];
+  const bracketed = [...raw.matchAll(/\[([^\]]+)\]/g)].map(m => m[1].trim()).filter(Boolean);
+  const terms = bracketed.length ? bracketed : (() => {
+    const found: string[] = [];
+    let rest = text.toLowerCase();
+    for (const t of ALL_TERMS) {
+      const re = new RegExp(`(^|[^a-z])${escapeRe(t)}(?![a-z])`, "i");
+      if (re.test(rest)) { found.push(t); rest = rest.replace(new RegExp(escapeRe(t), "gi"), " "); }
+    }
+    return found;
+  })();
+  for (const term of terms) {
+    const m = new RegExp(`(^|[^A-Za-z])(${escapeRe(term)})(?![A-Za-z])`, "i").exec(text);
+    if (!m) continue;
+    const at = m.index + m[1].length;
+    const { start, end } = sentenceAround(text, at);
+    const sentence = (text.slice(start, at) + "_____" + text.slice(at + m[2].length, end)).trim();
+    out.push({ term: m[2], sentence });
+  }
+  return out;
+}
+
 /**
  * Builds play questions from plays as drawn. Every answer comes from the
  * drawing itself, so it's right by construction. Steps' coaching notes,
@@ -681,6 +755,10 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
   const per = settings.types;
   const out: QuestionDraft[] = [];
   const titled = plays.filter(p => p.title?.trim());
+  // Every bracketed word across these plays' notes: wrong answers for a
+  // bracketed word the app doesn't recognise (a play call, say).
+  const otherBrackets = [...new Set(plays.flatMap(p => (p.data?.frames ?? []).flatMap(f =>
+    [...(f.note ?? "").matchAll(/\[([^\]]+)\]/g)].map(m => m[1].trim()))).filter(Boolean))];
 
   for (const play of plays) {
     const frames = play.data?.frames ?? [];
@@ -701,7 +779,7 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
       for (const c of pickN(pool, per.what_next)) {
         const right = ACTION_WORD[c.action.type];
         const wrong = pickN(Object.values(ACTION_WORD).filter(w => w !== right), 3);
-        const note = frames[c.i].note?.trim();
+        const note = cleanNote(frames[c.i].note);
         out.push({
           prompt: `What does the ${c.num} do${c.many ? " first" : ""} on this step?`,
           options: [right, ...wrong], correctIndex: 0,
@@ -731,7 +809,7 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
         }
       });
       for (const c of pickN(pool, per.tap_place)) {
-        const note = frames[c.i].note?.trim();
+        const note = cleanNote(frames[c.i].note);
         out.push({
           prompt: c.profileId ? `You're the ${c.num} — tap where you go on this step.` : `Tap where the ${c.num} goes on this step.`,
           options: [], correctIndex: 0,
@@ -744,6 +822,98 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
           visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.id)], lead_frames: leadUp(play, c.i, c.id), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
           reveal: { court_template: template, frame: cleanStep(frames[c.i], c.id), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
         });
+      }
+    }
+
+    // ── Fill in the read: a blank from the step's coaching note ──
+    if (per.fill_read) {
+      const pool: { i: number; term: string; sentence: string; bracketed: boolean }[] = [];
+      frames.forEach((f, i) => {
+        if (!f.note?.trim()) return;
+        const bracketed = /\[[^\]]+\]/.test(f.note);
+        for (const b of noteBlanks(f.note)) pool.push({ i, term: b.term, sentence: b.sentence, bracketed });
+      });
+      for (const c of pickN(pool, per.fill_read)) {
+        const key = c.term.toLowerCase();
+        const group = TERM_GROUP.get(key);
+        // Wrong answers: same kind of term, never a word from this note.
+        const noteWords = cleanNote(frames[c.i].note).toLowerCase();
+        let pool2 = group ? READ_TERMS[group] : [];
+        if (!group) pool2 = otherBrackets.filter(t => t.toLowerCase() !== key);
+        const wrong = pickN([...new Set(pool2.filter(t => t.toLowerCase() !== key && !noteWords.includes(t.toLowerCase())))], 3);
+        if (wrong.length < 2) continue;
+        out.push({
+          prompt: c.sentence,
+          options: [titleCase(c.term.toLowerCase()), ...wrong.map(w => titleCase(w.toLowerCase()))], correctIndex: 0,
+          explanation: `Coach's note: ${cleanNote(frames[c.i].note)}`,
+          source: "sheet", family: `play:${play.id}`, assigneeIds: [], qtype: "fill_read",
+          visual: { court_template: template, frames: [positionsOnly(frames[c.i])], lead_frames: leadUp(play, c.i), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
+          reveal: { court_template: template, frame: cleanStep(frames[c.i]), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
+        });
+      }
+    }
+
+    // ── Two-part: what does the player do, then where (or who to) ──
+    if (per.two_part) {
+      const pool: { i: number; p: PlayFrame["players"][number]; action: PlayAction; end: TapPoint | null; to: number | null; others: number[] }[] = [];
+      frames.forEach((f, i) => {
+        const after = deriveNextFrame(f);
+        for (const p of f.players) {
+          if (!p.id) continue;
+          const mine = f.actions.filter(a => a.sourcePlayerId === p.id).sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0));
+          const first = mine[0];
+          if (!first || !ACTION_WORD[first.type]) continue;
+          if (first.type === "pass" || first.type === "lob") {
+            const to = f.players.find(q => q.id === first.targetPlayerId);
+            const others = f.players.filter(q => q.id !== p.id && q.id !== to?.id).map(q => q.num);
+            if (to && others.length) pool.push({ i, p, action: first, end: null, to: to.num, others });
+          } else if (["move", "dribble", "screen"].includes(first.type)) {
+            const end = after.players.find(q => q.id === p.id);
+            if (end && Math.hypot(end.x - p.x, end.y - p.y) >= 30) pool.push({ i, p, action: first, end: { x: end.x, y: end.y }, to: null, others: [] });
+          }
+        }
+      });
+      for (const c of pickN(pool, per.two_part)) {
+        const groupId = crypto.randomUUID();
+        const note = cleanNote(frames[c.i].note);
+        const right = ACTION_WORD[c.action.type];
+        const wrong = pickN(Object.values(ACTION_WORD).filter(w => w !== right), 3);
+        const assignees = c.p.profile_id ? [c.p.profile_id] : [];
+        const you = !!c.p.profile_id;
+        const heading = playHeading(play, c.i);
+        const reveal = { court_template: template, frame: cleanStep(frames[c.i], c.p.id), caption: playCaption(play, c.i), heading };
+        out.push({
+          prompt: you ? `You're the ${c.p.num}. What do you do on this step?` : `What does the ${c.p.num} do on this step?`,
+          options: [right, ...wrong], correctIndex: 0,
+          explanation: `The ${c.p.num} ${ACTION_SENTENCE[c.action.type]}.${note ? ` Coach's note: ${note}` : ""}`,
+          source: "sheet", family: `play:${play.id}`, assigneeIds: assignees, qtype: "what_next",
+          groupId, groupPart: 1,
+          visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.p.id)], lead_frames: leadUp(play, c.i, c.p.id), caption: playCaption(play, c.i), heading, part: { n: 1, of: 2 } },
+          reveal,
+        });
+        // Part 2 on the same paused court -- no second lead-up. Its prompt
+        // never names the action, so it gives nothing away about part 1.
+        if (c.end) {
+          out.push({
+            prompt: you ? "Now tap where you go." : `Now tap where the ${c.p.num} goes.`,
+            options: [], correctIndex: 0,
+            explanation: `The ${c.p.num} ${ACTION_SENTENCE[c.action.type] ?? "moves"} to that spot.${note ? ` Coach's note: ${note}` : ""}`,
+            source: "sheet", family: `play:${play.id}`, assigneeIds: assignees, qtype: "tap_place", correctPoint: c.end,
+            groupId, groupPart: 2,
+            visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.p.id)], caption: playCaption(play, c.i), heading, part: { n: 2, of: 2 } },
+            reveal,
+          });
+        } else {
+          out.push({
+            prompt: you ? "Who do you pass to?" : `Who does the ${c.p.num} pass to?`,
+            options: [`The ${c.to}`, ...pickN(c.others, 3).map(n => `The ${n}`)], correctIndex: 0,
+            explanation: `The ${c.p.num} passes to the ${c.to}.${note ? ` Coach's note: ${note}` : ""}`,
+            source: "sheet", family: `play:${play.id}`, assigneeIds: assignees, qtype: "who_ball",
+            groupId, groupPart: 2,
+            visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.p.id)], caption: playCaption(play, c.i), heading, part: { n: 2, of: 2 } },
+            reveal,
+          });
+        }
       }
     }
 
@@ -761,7 +931,7 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
         }
       });
       for (const c of pickN(pool, per.who_ball)) {
-        const note = frames[c.i].note?.trim();
+        const note = cleanNote(frames[c.i].note);
         out.push({
           prompt: `Who does the ${c.from} pass to on this step?`,
           options: [`The ${c.to}`, ...pickN(c.others, 3).map(n => `The ${n}`)], correctIndex: 0,
@@ -803,20 +973,31 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
     }
   }
 
-  // Cap the total, keeping a mix of types rather than cutting one off.
+  // Cap the total, keeping a mix of types rather than cutting one off. The
+  // parts of a two-part question count separately but stay together.
   const max = Math.max(1, settings.maxQuestions || out.length);
   if (out.length <= max) return out;
-  const byType = new Map<string, QuestionDraft[]>();
-  shuffle(out).forEach(q => { const k = q.qtype ?? ""; byType.set(k, [...(byType.get(k) ?? []), q]); });
+  const units: QuestionDraft[][] = [];
+  const byGroup = new Map<string, QuestionDraft[]>();
+  for (const q of out) {
+    if (q.groupId) {
+      const g = byGroup.get(q.groupId);
+      if (g) g.push(q); else { const ng = [q]; byGroup.set(q.groupId, ng); units.push(ng); }
+    } else units.push([q]);
+  }
+  const byType = new Map<string, QuestionDraft[][]>();
+  shuffle(units).forEach(u => { const k = u.length > 1 ? "two_part" : (u[0].qtype ?? ""); byType.set(k, [...(byType.get(k) ?? []), u]); });
   const kept: QuestionDraft[] = [];
-  while (kept.length < max) {
-    let added = false;
+  let progress = true;
+  while (kept.length < max && progress) {
+    progress = false;
     for (const list of byType.values()) {
-      if (kept.length >= max) break;
-      const q = list.shift();
-      if (q) { kept.push(q); added = true; }
+      const u = list[0];
+      if (!u || kept.length + u.length > max) continue;
+      list.shift();
+      kept.push(...u);
+      progress = true;
     }
-    if (!added) break;
   }
   return kept;
 }
