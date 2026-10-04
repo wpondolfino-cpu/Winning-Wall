@@ -1179,7 +1179,9 @@ export interface QuizListItem {
  * when they're the only version of a scout quiz.
  */
 export async function getAllQuizzes(): Promise<QuizListItem[]> {
-  const { data, error } = await supabase.from("quizzes").select("*, games(game_date, tip_time)")
+  // quizzes points at games twice (game_id, and review_game_id from 169),
+  // so the embed has to name which link: the quiz's own game.
+  const { data, error } = await supabase.from("quizzes").select("*, games!game_id(game_date, tip_time)")
     .order("created_at", { ascending: false });
   if (error) throw error;
   const rows = (data ?? []) as any[];
