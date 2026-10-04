@@ -311,12 +311,14 @@ function gameLabel(g: QuizGameOption, teams: Team[]): string {
   return `${day} · ${g.opponent || "Opponent"}${team ? ` · ${team}` : ""}`;
 }
 
-const PLAY_TYPES: PlayQType[] = ["what_next", "who_ball", "tap_place", "name_play"];
+const PLAY_TYPES: PlayQType[] = ["what_next", "who_ball", "tap_place", "two_part", "fill_read", "name_play"];
 const PLAY_TYPE_HINT: Record<PlayQType, string> = {
   what_next: "\"Step 3 · Screen sets — what does the 4 do?\"",
   who_ball: "\"Who does the 1 pass to on this step?\"",
   name_play: "Watch the whole play, the court hides, pick the play",
   tap_place: "\"Tap where the 2 goes on this step\" — graded by distance",
+  two_part: "\"What does the 2 do?\" then \"Now tap where\" (or who to, for a pass) — 2 points",
+  fill_read: "A word blanked from your step notes — [bracket] the word to choose it",
 };
 
 function NewQuizForm({ teams, start, onCancel, onCreated, onScoutCreated, onPlaysCreated }: {
@@ -330,8 +332,8 @@ function NewQuizForm({ teams, start, onCancel, onCreated, onScoutCreated, onPlay
   const [myPlays, setMyPlays] = useState<Play[] | null>(null);
   const [source, setSource] = useState<string>(start?.playbookId ?? "");   // playbook id, or "pick"
   const [pickedPlays, setPickedPlays] = useState<string[]>([]);
-  const [typeCounts, setTypeCounts] = useState<Record<PlayQType, number>>({ what_next: 2, who_ball: 1, name_play: 1, tap_place: 1 });
-  const [typeOn, setTypeOn] = useState<Record<PlayQType, boolean>>({ what_next: true, who_ball: true, name_play: true, tap_place: true });
+  const [typeCounts, setTypeCounts] = useState<Record<PlayQType, number>>({ what_next: 2, who_ball: 1, name_play: 1, tap_place: 1, two_part: 1, fill_read: 1 });
+  const [typeOn, setTypeOn] = useState<Record<PlayQType, boolean>>({ what_next: true, who_ball: true, name_play: true, tap_place: true, two_part: false, fill_read: false });
   const [maxQ, setMaxQ] = useState(20);
   const [games, setGames] = useState<QuizGameOption[] | null>(null);
   const [gameId, setGameId] = useState("");
