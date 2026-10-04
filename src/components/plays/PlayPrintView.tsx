@@ -5,7 +5,7 @@
 // for a single play or a whole playbook (one page per play).
 
 import PlayCanvas from "./PlayCanvas";
-import { Play, RosterPlayer, COURT_TEMPLATE_LABELS } from "../../lib/plays";
+import { Play, RosterPlayer, COURT_TEMPLATE_LABELS, cleanNote } from "../../lib/plays";
 
 interface Props {
   plays: Play[];
@@ -64,8 +64,8 @@ export default function PlayPrintView({ plays, playbookName, roster = {}, onBack
                     courtBg="#f3e4c8"
                   />
                 </div>
-                {frame.note?.trim() && (
-                  <div style={{ fontSize: 11, lineHeight: 1.45, color: "#333", marginTop: 6, whiteSpace: "pre-wrap" }}>{frame.note.trim()}</div>
+                {cleanNote(frame.note) && (
+                  <div style={{ fontSize: 11, lineHeight: 1.45, color: "#333", marginTop: 6, whiteSpace: "pre-wrap" }}>{cleanNote(frame.note)}</div>
                 )}
               </div>
             ))}
