@@ -3,7 +3,7 @@
 // viewers. Renders nothing for an unnamed step with no notes, so plays
 // drawn before notes existed look exactly as they did.
 
-import { PlayFrame, stepName } from "../../lib/plays";
+import { PlayFrame, stepName, cleanNote } from "../../lib/plays";
 
 interface Props {
   frame: PlayFrame | undefined;
@@ -12,7 +12,7 @@ interface Props {
 }
 
 export default function StepNote({ frame, index, totalSteps }: Props) {
-  const note = frame?.note?.trim();
+  const note = cleanNote(frame?.note);
   const named = !!frame?.label?.trim();
   if (!note && !named) return null;
   return (
