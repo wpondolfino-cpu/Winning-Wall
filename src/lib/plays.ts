@@ -706,6 +706,15 @@ export function resolvePassEndpoint(frame: PlayFrame, action: PlayAction): { x: 
 export const STEP_LABEL_MAX = 40;
 export const STEP_NOTE_MAX = 600;
 
+/**
+ * A coaching note as players read it. Coaches can put [brackets] around a
+ * key word to have quizzes test it ("2 reads his man: [curl] if trailed");
+ * the brackets are for the quiz builder, never shown.
+ */
+export function cleanNote(note: string | null | undefined): string {
+  return (note ?? "").replace(/\[([^\]]*)\]/g, "$1").trim();
+}
+
 /** A step's display name: its own name if it has one, otherwise "Step N". */
 export function stepName(frame: PlayFrame | undefined, index: number): string {
   const label = frame?.label?.trim();
