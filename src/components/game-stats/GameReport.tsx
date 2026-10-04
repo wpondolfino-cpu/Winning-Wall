@@ -13,6 +13,8 @@
 // (we don't track the opponent's shot selection or play calls) and keep
 // their relative order among themselves.
 
+import QuizManager from "../quizzes/QuizManager";
+import { createReviewQuiz } from "../../lib/gameReviewQuiz";
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import {
@@ -150,7 +152,64 @@ export default function GameReport({ scope, title, variant = "full", canManage =
 
   if (loading) return <div className="card">Loading report…</div>;
 
-  return <ReportBody possessions={possessions} playCalls={playCalls} goals={goals} title={title} statOrder={statOrder} variant={variant} opponentName={opponentName} isPractice={isPractice} canManage={canManage} />;
+  return (
+    <>
+      {canManage && scope.kind === "game" && variant !== "in_game" && possessions.length > 0 && (
+        <ReviewQuizButton gameId={scope.gameId} />
+      )}
+      <ReportBody possessions={possessions} playCalls={playCalls} goals={goals} title={title} statOrder={statOrder} variant={variant} opponentName={opponentName} isPractice={isPractice} canManage={canManage} />
+    </>
+  );
+}
+
+/**
+ * "📝 Make review quiz" on a game's end-of-game report: drafts a quiz from
+ * the team stats (never individual or lineup stats) and opens it right
+ * here. Says "Open review quiz" once the game has one.
+ */
+function ReviewQuizButton({ gameId }: { gameId: string }) {
+  const [existing, setExisting] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const check = () => {
+    supabase.from("quizzes").select("id, status").eq("review_game_id", gameId).neq("status", "archived")
+      .then(({ data }: { data: unknown }) => {
+        const rows = (data ?? []) as { id: string; status: string }[];
+        setExisting((rows.find(r => r.status === "published") ?? rows[0])?.id ?? null);
+      });
+  };
+  useEffect(check, [gameId]);
+
+  async function go() {
+    if (existing) { setOpenId(existing); return; }
+    setBusy(true); setError(null);
+    try { setOpenId((await createReviewQuiz(gameId)).id); }
+    catch (e: any) { setError(e?.message ?? "Couldn't build the review quiz."); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginBottom: 10 }}>
+        {error && <span style={{ fontSize: 12, color: "#ff7b7b" }}>{error}</span>}
+        <button type="button" onClick={go} disabled={busy}
+          style={{ background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8,
+            padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+          {busy ? "Building…" : existing ? "📝 Open review quiz" : "📝 Make review quiz"}
+        </button>
+      </div>
+      {openId && (
+        <div className="modal-overlay open" onClick={() => { setOpenId(null); check(); }}>
+          <div className="log-modal" style={{ maxWidth: 820 }} onClick={e => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => { setOpenId(null); check(); }}>✕</button>
+            <QuizManager quizId={openId} onDeleted={() => { setOpenId(null); check(); }} />
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 /** The actual report card -- shared between GameReport (scope-based) and ReportBuilder (custom multi-game/category filters), so both stay visually identical. */
