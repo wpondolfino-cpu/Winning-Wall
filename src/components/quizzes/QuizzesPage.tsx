@@ -14,6 +14,7 @@ import { getRoster, RosterPlayer } from "../../lib/plays";
 import QuizPreview from "./QuizPreview";
 import QuizPrintView from "./QuizPrintView";
 import { getPlaybooks, getMyPlays, Playbook, Play } from "../../lib/plays";
+import { createReviewQuiz, getGamesForReview } from "../../lib/gameReviewQuiz";
 import { getRosters } from "../../lib/practicePlanner";
 import { formatDateOnly } from "../../lib/schedule";
 import { inputStyle } from "../../lib/inputStyle";
@@ -264,8 +265,8 @@ export default function QuizzesPage({ prefill, onPrefillUsed }: {
                   borderTop: idx === 0 ? "none" : "1px solid var(--border)" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                    <span style={pill(i.kind === "scout" ? "info" : i.kind === "plays" ? "warn" : "plain")}>
-                      {i.kind === "scout" ? "Scout" : i.kind === "plays" ? "Plays" : "Standalone"}
+                    <span style={pill(i.kind === "scout" ? "info" : i.kind === "plays" ? "warn" : i.kind === "review" ? "good" : "plain")}>
+                      {i.kind === "scout" ? "Scout" : i.kind === "plays" ? "Plays" : i.kind === "review" ? "Game review" : "Standalone"}
                     </span>
                     <span style={{ fontSize: 14, fontWeight: 600 }}>{i.quiz.title}</span>
                   </div>
@@ -326,7 +327,10 @@ function NewQuizForm({ teams, start, onCancel, onCreated, onScoutCreated, onPlay
   onCancel: () => void; onCreated: (id: string) => void; onScoutCreated: (scoutSheetId: string) => void;
   onPlaysCreated: (quizId: string) => void;
 }) {
-  const [kind, setKind] = useState<"scout" | "plays" | "standalone">(start ? "plays" : "scout");
+  const [kind, setKind] = useState<"scout" | "plays" | "review" | "standalone">(start ? "plays" : "scout");
+  // Game review
+  const [reviewGames, setReviewGames] = useState<{ id: string; game_date: string; opponent: string | null; roster_id: string | null }[] | null>(null);
+  const [reviewGameId, setReviewGameId] = useState("");
   // Plays
   const [playbooks, setPlaybooks] = useState<Playbook[] | null>(null);
   const [myPlays, setMyPlays] = useState<Play[] | null>(null);
@@ -347,10 +351,23 @@ function NewQuizForm({ teams, start, onCancel, onCreated, onScoutCreated, onPlay
     getGamesForScoutQuiz().then(setGames).catch(() => setGames([]));
     getPlaybooks().then(list => setPlaybooks(list.filter(p => p.status !== "archived"))).catch(() => setPlaybooks([]));
     getMyPlays().then(setMyPlays).catch(() => setMyPlays([]));
+    getGamesForReview().then(setReviewGames).catch(() => setReviewGames([]));
   }, []);
 
   async function create() {
     setError(null);
+    if (kind === "review") {
+      if (!reviewGameId) { setError("Pick a game."); return; }
+      setSaving(true);
+      try {
+        const res = await createReviewQuiz(reviewGameId);
+        onPlaysCreated(res.id);
+      } catch (e: any) {
+        setError(e?.message ?? "Couldn't build the review quiz.");
+        setSaving(false);
+      }
+      return;
+    }
     if (kind === "plays") {
       if (!title.trim()) { setError("Give the quiz a title."); return; }
       if (!source) { setError("Pick a playbook, or pick plays by hand."); return; }
@@ -407,7 +424,7 @@ function NewQuizForm({ teams, start, onCancel, onCreated, onScoutCreated, onPlay
         <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>New quiz</div>
 
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-          {([["scout", "Scout quiz"], ["plays", "Plays"], ["standalone", "Standalone"]] as const).map(([k, l]) => (
+          {([["scout", "Scout quiz"], ["plays", "Plays"], ["review", "Game review"], ["standalone", "Standalone"]] as const).map(([k, l]) => (
             <button key={k} type="button" onClick={() => { setKind(k); setError(null); }}
               style={{ fontSize: 13, fontWeight: 600, padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit",
                 background: kind === k ? "var(--royal)" : "var(--surface)", color: kind === k ? "#fff" : "var(--muted)" }}>
@@ -417,7 +434,28 @@ function NewQuizForm({ teams, start, onCancel, onCreated, onScoutCreated, onPlay
         </div>
         {error && <div className="error-msg">{error}</div>}
 
-        {kind === "scout" ? (
+        {kind === "review" ? (
+          <>
+            <div style={label}>Game</div>
+            <select value={reviewGameId} onChange={e => setReviewGameId(e.target.value)} style={{ ...inputStyle, width: "100%", marginBottom: 8 }}>
+              <option value="">{reviewGames === null ? "Loading games…" : reviewGames.length ? "Pick a game" : "No played games yet"}</option>
+              {(reviewGames ?? []).map(g => (
+                <option key={g.id} value={g.id}>
+                  {formatDateOnly(g.game_date, { weekday: "short", month: "short", day: "numeric" })} · {g.opponent || "Opponent"}
+                  {g.roster_id && teams.find(t => t.id === g.roster_id) ? ` · ${teams.find(t => t.id === g.roster_id)!.name}` : ""}
+                </option>
+              ))}
+            </select>
+            <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginBottom: 16 }}>
+              Built from the game's end-of-game report — team stats only, never individual or lineup stats: goal checks,
+              where the game was won or lost, which sets worked, and scoring runs. The team comes from the game.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" onClick={create} disabled={saving} style={primaryBtn}>{saving ? "Building…" : "Build review quiz"}</button>
+              <button type="button" onClick={onCancel} style={secondaryBtn}>Cancel</button>
+            </div>
+          </>
+        ) : kind === "scout" ? (
           <>
             <div style={label}>Game</div>
             <select value={gameId} onChange={e => setGameId(e.target.value)} style={{ ...inputStyle, width: "100%", marginBottom: 8 }}>
