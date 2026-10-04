@@ -35,6 +35,7 @@ import PlaysHub from "./components/plays/PlaysHub";
 import GameStatsHub from "./components/game-stats/GameStatsHub";
 import ScoutSheetsHub from "./components/scouting/ScoutSheetsHub";
 import PageErrorBoundary from "./components/PageErrorBoundary";
+import { LiveBanner } from "./components/quizzes/LivePlayer";
 import QuizzesPage, { QuizPrefill } from "./components/quizzes/QuizzesPage";
 import PlayerQuizList from "./components/quizzes/PlayerQuizList";
 import SchedulePage from "./components/schedule/SchedulePage";
@@ -807,6 +808,8 @@ export default function App() {
 
           {/* Keyed by navNonce so a nav click always remounts the open tab
               at its main page -- see navigateFromNav. */}
+          {/* Players: "Live now — Join" while a live team quiz is running. */}
+          {isPlayer && <LiveBanner />}
           {/* One page crashing shows an error card instead of blanking the app. */}
           <PageErrorBoundary key={`${isPlayer ? playerTab : isCoach ? coachTab : adminTab}-${navNonce}`}>
           {/* Player panels */}
