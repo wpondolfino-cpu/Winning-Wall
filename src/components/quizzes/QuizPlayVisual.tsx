@@ -78,7 +78,7 @@ const smallBtn: React.CSSProperties = {
  * need it to answer. Older questions without a heading fall back to the
  * small caption line.
  */
-function PlayHeading({ heading, status }: { heading: QuizHeading; status?: string | null }) {
+function PlayHeading({ heading, status, part }: { heading: QuizHeading; status?: string | null; part?: { n: number; of: number } | null }) {
   return (
     <div style={{ maxWidth: COURT_MAX, margin: "0 auto 8px" }}>
       <div style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.2, color: "var(--text)" }}>{heading.play}</div>
@@ -87,6 +87,12 @@ function PlayHeading({ heading, status }: { heading: QuizHeading; status?: strin
           borderRadius: 8, padding: "4px 10px", fontSize: 14, fontWeight: 700 }}>
           Step {heading.stepNumber}{heading.stepName ? ` · ${heading.stepName}` : heading.stepNumber === 1 ? " · Start of the play" : ""}
         </span>
+        {part && (
+          <span style={{ background: "rgba(37,80,212,0.2)", border: "1px solid var(--royal-light)", color: "var(--text)",
+            borderRadius: 8, padding: "4px 10px", fontSize: 13, fontWeight: 700 }}>
+            Part {part.n} of {part.of}
+          </span>
+        )}
         {heading.ballHolder != null && (
           <span style={{ fontSize: 13, color: "var(--text)" }}>🏀 The {heading.ballHolder} has the ball</span>
         )}
@@ -175,7 +181,7 @@ export function QuizPlayVisual({ visual, onReady, compact = false, tap, onTap, t
   return (
     <>
     {!compact && visual.heading && (
-      <PlayHeading heading={visual.heading}
+      <PlayHeading heading={visual.heading} part={visual.part}
         status={playing && !hideAfter ? `▶ Lead-up: step ${queueStart + pos} of ${lead.length}` : null} />
     )}
     <div style={compact ? { background: "var(--surface2)", borderRadius: 8, padding: 4 } : courtBox}>
