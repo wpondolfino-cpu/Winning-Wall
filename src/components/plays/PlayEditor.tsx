@@ -456,7 +456,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           value={f?.note ?? ""}
           onFocus={pushHistory}
           onChange={(e) => setStepText("note", e.target.value)}
-          placeholder={`Coaching notes for step ${frameIdx + 1} — the reads and the why. Players see these under the court.`}
+          placeholder={`Coaching notes for step ${frameIdx + 1} — the reads and the why. Players see these under the court. Put [brackets] around a key word to quiz it.`}
           maxLength={STEP_NOTE_MAX}
           rows={3}
           style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", fontSize: 13, lineHeight: 1.45, resize: "vertical",
