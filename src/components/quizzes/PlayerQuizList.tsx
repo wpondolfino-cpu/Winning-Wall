@@ -78,8 +78,8 @@ export default function PlayerQuizList({ scoutSheetId, playbookId }: Props) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
               {!scoutSheetId && !playbookId && (
-                <span style={pill(q.kind === "scout" ? "info" : q.kind === "plays" ? "warn" : "plain")}>
-                  {q.kind === "scout" ? "Scout" : q.kind === "plays" ? "Plays" : "Quiz"}
+                <span style={pill(q.kind === "scout" ? "info" : q.kind === "plays" ? "warn" : q.kind === "review" ? "good" : "plain")}>
+                  {q.kind === "scout" ? "Scout" : q.kind === "plays" ? "Plays" : q.kind === "review" ? "Game review" : "Quiz"}
                 </span>
               )}
               <span style={{ fontSize: 14, fontWeight: 600 }}>{q.title}</span>
