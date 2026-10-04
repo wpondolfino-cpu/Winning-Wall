@@ -28,11 +28,13 @@ import type { QuizVisual, QuizReveal, QuizHeading, TapPoint } from "../../lib/qu
  * own coordinates, so it works at any screen size) and shows the tap and,
  * once answered, the right spot with how close counted.
  */
-function TapOverlay({ tap, target, onTap, num }: {
+function TapOverlay({ tap, target, onTap, num, dots }: {
   tap?: TapPoint | null;
   target?: { point: TapPoint; radius: number } | null;
   onTap?: (p: TapPoint) => void;
   num?: number | null;
+  /** Live mode: every player's tap, green inside the circle, red outside. */
+  dots?: { x: number; y: number; ok: boolean }[] | null;
 }) {
   function handle(e: React.MouseEvent<SVGSVGElement>) {
     if (!onTap) return;
@@ -53,6 +55,9 @@ function TapOverlay({ tap, target, onTap, num }: {
           <circle cx={target.point.x} cy={target.point.y} r={5} fill="#28b450" />
         </>
       )}
+      {(dots ?? []).map((d, i) => (
+        <circle key={i} cx={d.x} cy={d.y} r={7} fill={d.ok ? "#5de098" : "#ff7b7b"} stroke="#fff" strokeWidth={1.5} />
+      ))}
       {tap && (
         <g>
           <circle cx={tap.x} cy={tap.y} r={14} fill="#F0C040" fillOpacity={0.9} stroke="#fff" strokeWidth={2} />
@@ -225,8 +230,9 @@ export function QuizPlayVisual({ visual, onReady, compact = false, tap, onTap, t
   );
 }
 
-export function QuizPlayReveal({ reveal, tap, target, tapNum }: {
+export function QuizPlayReveal({ reveal, tap, target, tapNum, dots }: {
   reveal: QuizReveal;
+  dots?: { x: number; y: number; ok: boolean }[] | null;
   /** "Where do you go": the player's tap and the right spot, drawn over the step. */
   tap?: TapPoint | null;
   target?: { point: TapPoint; radius: number } | null;
@@ -240,7 +246,7 @@ export function QuizPlayReveal({ reveal, tap, target, tapNum }: {
       <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", marginBottom: 6 }}>What happens on this step</div>
       <div style={{ position: "relative" }}>
         <PlayCanvas frame={reveal.frame} courtTemplate={reveal.court_template as CourtTemplate} edit={false} playSignal={signal} />
-        {(tap || target) && <TapOverlay tap={tap} target={target} num={tapNum} />}
+        {(tap || target || dots) && <TapOverlay tap={tap} target={target} num={tapNum} dots={dots} />}
       </div>
       <button type="button" onClick={() => setSignal(n => n + 1)} style={{ ...smallBtn, marginTop: 6 }}>▶ Play the step</button>
     </div>
