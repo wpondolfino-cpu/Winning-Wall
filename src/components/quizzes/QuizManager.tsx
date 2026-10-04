@@ -26,6 +26,9 @@ import { inputStyle } from "../../lib/inputStyle";
 import QuizQuestionEditor from "./QuizQuestionEditor";
 import QuizResults from "./QuizResults";
 import QuizPreview from "./QuizPreview";
+import LiveHost from "./LiveHost";
+import { startLive } from "../../lib/liveQuiz";
+import { rebuildReviewDraft } from "../../lib/gameReviewQuiz";
 import { QuizPlayVisual } from "./QuizPlayVisual";
 import { supabase } from "../../lib/supabase";
 import { card, pill, primaryBtn, secondaryBtn, dangerBtn, smallBtn, sectionTitle, label } from "./quizStyles";
@@ -50,6 +53,7 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
   const [view, setView] = useState<"results" | "questions">("results");
   const [editingId, setEditingId] = useState<string | null>(null);   // question id, or "new"
   const [previewing, setPreviewing] = useState(false);
+  const [liveId, setLiveId] = useState<string | null>(null);
   const [aiCount, setAiCount] = useState(6);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -172,6 +176,15 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
     setNotice(n ? `Rebuilt ${n} question${n === 1 ? "" : "s"} from the sheet.` : "Nothing on the sheet to build from yet.");
   });
 
+  // A game-review draft: rebuild from the game's possessions as they are now.
+  const rebuildReview = () => run("rebuild", async () => {
+    if (!bundle || bundle.quiz.status !== "draft") return;
+    if (bundle.questions.length && !window.confirm("Rebuild the questions from the game's stats as they are now? Edits to built questions are replaced; questions you wrote stay.")) return;
+    const n = await rebuildReviewDraft(bundle.quiz.id);
+    await refresh();
+    setNotice(n ? `Rebuilt ${n} question${n === 1 ? "" : "s"} from the game.` : "The game's stats didn't produce any questions — add your own.");
+  });
+
   // An empty draft (the sheet had nothing to build from): throw it away and
   // build again from the sheet as it is now.
   const rebuildEmptyDraft = () => run("rebuild", async () => {
@@ -253,14 +266,23 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
         ))}
       </div>
 
+      {liveId && <LiveHost sessionId={liveId} onClose={() => setLiveId(null)} />}
       {!quiz ? <div style={{ color: "var(--muted)", fontSize: 13 }}>Loading…</div> : previewing && bundle ? (
         <QuizPreview bundle={bundle} roster={roster} onClose={() => setPreviewing(false)} />
       ) : (
         <>
           {bundle && bundle.questions.length > 0 && (
-            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
               <button type="button" onClick={() => { setEditingId(null); setPreviewing(true); }} style={secondaryBtn}>
                 ▶ Preview as a player
+              </button>
+              <button type="button" disabled={busy === "live"}
+                onClick={() => run("live", async () => {
+                  if (!window.confirm("Start a live quiz for the team? Players on this quiz's teams get a notification to join. It doesn't count toward their quiz results.")) return;
+                  setLiveId(await startLive(quiz.id, quiz.title));
+                })}
+                style={{ ...secondaryBtn, borderColor: "rgba(220,50,50,0.5)" }}>
+                {busy === "live" ? "Starting…" : "🔴 Run live"}
               </button>
             </div>
           )}
@@ -438,7 +460,14 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
               </div>
               {bundle.questions.length === 0 && isDraft && (
                 <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>
-                  {quizKind(quiz) === "plays" ? (
+                  {quizKind(quiz) === "review" ? (
+                    <>
+                      The game's numbers didn't produce questions — they need stat goals, play calls run 2+ times, or a run of 8+.{" "}
+                      <button type="button" onClick={rebuildReview} disabled={!!busy} style={smallBtn}>
+                        {busy === "rebuild" ? "Building…" : "Rebuild from game"}
+                      </button>
+                    </>
+                  ) : quizKind(quiz) === "plays" ? (
                     <>
                       No questions could be built. Play questions need steps with cuts, screens or passes (and Name that play
                       needs at least 3 plays).{" "}
@@ -502,6 +531,11 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
                   {scoutSheetId && bundle.questions.length > 0 && (
                     <button type="button" onClick={rebuildScout} disabled={!!busy} style={secondaryBtn}>
                       {busy === "rebuild" ? "Building…" : "↻ Rebuild from sheet"}
+                    </button>
+                  )}
+                  {quizKind(quiz) === "review" && bundle.questions.length > 0 && (
+                    <button type="button" onClick={rebuildReview} disabled={!!busy} style={secondaryBtn}>
+                      {busy === "rebuild" ? "Building…" : "↻ Rebuild from game"}
                     </button>
                   )}
                   {quizKind(quiz) === "plays" && bundle.questions.length > 0 && (
