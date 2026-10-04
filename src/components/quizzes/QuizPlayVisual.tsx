@@ -5,8 +5,11 @@
 //   QuizPlayVisual -- the question's court.
 //     * A question with a lead-up ("what happens next", "who gets the
 //       ball") plays the step before the moment asked about, then pauses
-//       there; the answers appear once it has played. Replay last step and
-//       Watch from the start replay it. Step 1 has no lead-up.
+//       there; the answers appear once it has played. The lead-up is every
+//       step from the start of the play (a step-4 question plays 1-3), so
+//       the player follows the play to the moment asked about. Watch again
+//       replays it all; Last step only replays just the one before. Step 1
+//       has no lead-up.
 //     * A "name that play" visual plays its opening when the player taps
 //       Watch, then hides the court before the answers appear.
 //   QuizPlayReveal -- the answering step (arrows and all), shown with the
@@ -109,6 +112,8 @@ export function QuizPlayVisual({ visual, onReady, compact = false, tap, onTap, t
   // What's playing right now (a list of steps), and where in it.
   const [queue, setQueue] = useState<PlayFrame[] | null>(null);
   const [pos, setPos] = useState(0);
+  // Which step number the queue starts at (1 = the start of the play).
+  const [queueStart, setQueueStart] = useState(1);
   const [signal, setSignal] = useState(0);
   const [hidden, setHidden] = useState(false);
   const [started, setStarted] = useState(false);
@@ -120,7 +125,8 @@ export function QuizPlayVisual({ visual, onReady, compact = false, tap, onTap, t
     onReady?.();
   }
 
-  function play(frames: PlayFrame[]) {
+  function play(frames: PlayFrame[], startStep = 1) {
+    setQueueStart(startStep);
     if (!frames.length) return;
     setHidden(false);
     setQueue(frames);
@@ -135,7 +141,7 @@ export function QuizPlayVisual({ visual, onReady, compact = false, tap, onTap, t
     setQueue(null); setPos(0); setSignal(0); setHidden(false); setStarted(false);
     if (compact) return;
     if (hideAfter) return;                       // waits for the Watch tap
-    if (lead.length) play([lead[lead.length - 1]]);
+    if (lead.length) play(lead, 1);
     else ready();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visual]);
@@ -170,7 +176,7 @@ export function QuizPlayVisual({ visual, onReady, compact = false, tap, onTap, t
     <>
     {!compact && visual.heading && (
       <PlayHeading heading={visual.heading}
-        status={playing && !hideAfter ? `▶ Lead-up: step ${visual.heading.stepNumber - 1}` : null} />
+        status={playing && !hideAfter ? `▶ Lead-up: step ${queueStart + pos} of ${lead.length}` : null} />
     )}
     <div style={compact ? { background: "var(--surface2)", borderRadius: 8, padding: 4 } : courtBox}>
       <div style={{ position: "relative" }}>
@@ -200,9 +206,9 @@ export function QuizPlayVisual({ visual, onReady, compact = false, tap, onTap, t
           )}
           {!hideAfter && lead.length > 0 && (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-              <button type="button" disabled={!!playing} onClick={() => play([lead[lead.length - 1]])} style={smallBtn}>↺ Replay last step</button>
+              <button type="button" disabled={!!playing} onClick={() => play(lead, 1)} style={smallBtn}>↺ Watch again</button>
               {lead.length > 1 && (
-                <button type="button" disabled={!!playing} onClick={() => play(lead)} style={smallBtn}>⏮ Watch from the start</button>
+                <button type="button" disabled={!!playing} onClick={() => play([lead[lead.length - 1]], lead.length)} style={smallBtn}>Last step only</button>
               )}
             </div>
           )}
