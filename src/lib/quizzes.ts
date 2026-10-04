@@ -44,6 +44,7 @@ export interface Quiz {
   play_settings: PlayQuizSettings | Record<string, never>;
   replaces_quiz_id: string | null;
   tap_tolerance: TapTolerance;         // 166
+  review_game_id: string | null;       // 169: game-review quizzes
   published_at: string | null;
   created_by: string | null;
   created_at: string;
@@ -53,9 +54,10 @@ export interface Quiz {
 export type QuizSettings = Pick<Quiz, "feedback_mode" | "allow_retakes" | "time_limit_seconds" | "show_time_to_coaches"
   | "title" | "roster_ids" | "due_at" | "play_settings" | "tap_tolerance">;
 
-export type QuizKind = "scout" | "plays" | "standalone";
-export const quizKind = (q: Pick<Quiz, "scout_sheet_id"> & Partial<Pick<Quiz, "playbook_id" | "source_play_ids">>): QuizKind =>
+export type QuizKind = "scout" | "plays" | "review" | "standalone";
+export const quizKind = (q: Pick<Quiz, "scout_sheet_id"> & Partial<Pick<Quiz, "playbook_id" | "source_play_ids" | "review_game_id">>): QuizKind =>
   q.scout_sheet_id ? "scout"
+  : q.review_game_id ? "review"
   : (q.playbook_id || (q.source_play_ids?.length ?? 0) > 0) ? "plays"
   : "standalone";
 
