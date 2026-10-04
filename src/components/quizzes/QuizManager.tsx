@@ -474,8 +474,11 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
                   onUp={() => run("move", async () => { await moveQuestion(bundle.questions, i, -1); await refresh(); })}
                   onDown={() => run("move", async () => { await moveQuestion(bundle.questions, i, 1); await refresh(); })}
                   onDelete={() => run("del", async () => {
-                    if (!window.confirm("Delete this question?")) return;
-                    await deleteQuestion(q.id); await refresh();
+                    // The parts of a two-part question go together.
+                    const parts = q.group_id ? bundle.questions.filter(x => x.group_id === q.group_id) : [q];
+                    if (!window.confirm(parts.length > 1 ? "Delete both parts of this two-part question?" : "Delete this question?")) return;
+                    for (const x of parts) await deleteQuestion(x.id);
+                    await refresh();
                   })}
                 />
               ))}
@@ -579,6 +582,7 @@ function QuestionRow(props: {
         )}
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 3 }}>
           <span style={pill(q.qtype ? "warn" : sourceKind)}>{q.qtype ? (q.family === "scout_play" && q.qtype === "name_play" ? "Name that set" : PLAY_QTYPE_LABEL[q.qtype]) : SOURCE_LABEL[q.source]}</span>
+          {q.group_part && <span style={pill("info")}>Part {q.group_part} of 2</span>}
           {q.visual?.caption && <span style={{ fontSize: 11, color: "var(--muted)" }}>{q.visual.caption}</span>}
           <span style={{ fontSize: 11, color: "var(--muted)" }}>
             {q.assignee_ids.length ? `→ ${q.assignee_ids.map(nameOf).join(", ")}` : "→ Everyone"}
