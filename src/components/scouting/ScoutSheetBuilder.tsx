@@ -21,6 +21,7 @@ import PlayerQuizList from "../quizzes/PlayerQuizList";
 import { getMyQuizzes, MyQuiz } from "../../lib/quizzes";
 import { isScoutSheetEmpty, getPreviousSheetForOpponent, copyScoutSheetInto } from "../../lib/scoutSheets";
 import { formatDateOnly } from "../../lib/schedule";
+import { cleanNote } from "../../lib/plays";
 import { OFF_STRENGTH_STARTERS, PLAN_TO_GUARD_STARTERS, DEF_STRENGTH_STARTERS, PLAN_TO_ATTACK_STARTERS, TEAM_OFF_STRENGTH_STARTERS, PRESS_OPTS, PRESS_PLAN_OPTS, BLOB_SLOB_D_OPTS, BLOB_SLOB_D_PLAN_OPTS } from "../../lib/scoutOptions";
 
 interface Props {
@@ -581,7 +582,7 @@ function joinHeight(ft: string, inch: string): string {
 
         {tab === "keys" && (
           <div>
-            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10 }}>Up to 5 short bullets — wrap one key word in ** to bold it (e.g. **box out** #5).</div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10 }}>Up to 5 short bullets — wrap one key word in ** to bold it (e.g. **box out** #5). Put [brackets] around a word to quiz it; players never see the brackets.</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
               {(() => {
                 const keys = sheet.keys_to_game ?? [];
@@ -594,7 +595,7 @@ function joinHeight(ft: string, inch: string): string {
                       return (
                         <div key={idx} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8 }}>
                           <span style={{ fontSize: 12, color: "var(--muted)", width: 16 }}>{idx + 1}.</span>
-                          <input ref={el => { keyInputRefs.current[idx] = el; }} value={k} disabled={!canManage}
+                          <input ref={el => { keyInputRefs.current[idx] = el; }} value={canManage ? k : cleanNote(k)} disabled={!canManage}
                             onChange={e => updateKey(idx, e.target.value)} placeholder="Key point…" style={{ ...inputStyle, flex: 1, fontSize: 13 }} />
                           {canManage && <button type="button" onMouseDown={e => e.preventDefault()} title="Bold the selected text, or the word by the cursor" onClick={() => wrapKeyBold(idx)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "4px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>B</button>}
                           {canManage && <button type="button" onClick={() => removeKey(idx)} style={{ background: "none", border: "none", color: "#ff7b7b", cursor: "pointer", fontSize: 14 }}>×</button>}
