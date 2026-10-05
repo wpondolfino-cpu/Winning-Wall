@@ -12,7 +12,7 @@ import {
   LivePlayerState, getLiveState, joinLive, answerLive, getMyLiveSessions, useLiveChannel, LIVE_COLORS,
 } from "../../lib/liveQuiz";
 import type { TapPoint } from "../../lib/quizzes";
-import { QuizPlayVisual } from "./QuizPlayVisual";
+import { QuizPlayVisual, actionFromLabel, TapAction } from "./QuizPlayVisual";
 
 const shell: React.CSSProperties = {
   position: "fixed", inset: 0, zIndex: 2000, background: "var(--bg, #0b0f1a)", color: "var(--text)",
@@ -27,6 +27,7 @@ export function LivePlayer({ sessionId, onClose }: { sessionId: string; onClose:
   const [tap, setTap] = useState<TapPoint | null>(null);
   const [clock, setClock] = useState<number | null>(null);
   const lastQ = useRef<string | null>(null);
+  const [part1Action, setPart1Action] = useState<TapAction | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -63,6 +64,9 @@ export function LivePlayer({ sessionId, onClose }: { sessionId: string; onClose:
     if (!st?.question || st.answered || busy) return;
     if (st.question.qtype === "tap_place" && !tap) { setError("Tap the court first."); return; }
     setBusy(true); setError(null);
+    if (st.question.visual?.part?.n === 1 && optionId) {
+      setPart1Action(actionFromLabel(st.question.options.find(o => o.id === optionId)?.label));
+    }
     try {
       await answerLive(sessionId, st.question.question_id, optionId, st.question.qtype === "tap_place" ? tap : null);
       send("answered");
@@ -99,7 +103,8 @@ export function LivePlayer({ sessionId, onClose }: { sessionId: string; onClose:
           <div style={{ fontSize: 15, marginBottom: 8 }}>{q.prompt}</div>
           <QuizPlayVisual key={q.question_id} visual={tapVisual} tap={tap}
             onTap={busy ? null : (p: TapPoint) => { setTap(p); setError(null); }}
-            tapNum={tapVisual.frames[0]?.players.find(pl => pl.quizFocus)?.num ?? null} />
+            tapNum={tapVisual.frames[0]?.players.find(pl => pl.quizFocus)?.num ?? null}
+            tapAction={tapVisual.part?.n === 2 ? part1Action : undefined} />
           <button onClick={() => answer(null)} disabled={busy || !tap}
             style={{ width: "100%", padding: "14px", fontSize: 16, fontWeight: 700, border: "none", borderRadius: 12, background: tap ? "#2550D4" : "var(--surface2)", color: "#fff", cursor: "pointer", fontFamily: "inherit" }}>
             {busy ? "Sending…" : tap ? "Lock in" : "Tap the court"}
