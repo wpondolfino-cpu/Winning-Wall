@@ -18,7 +18,9 @@
 // The court is capped at about phone width so the question and answers
 // fit on screen on a desktop too.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { playCrop } from "../../lib/plays";
 import PlayCanvas, { CANVAS_W, CANVAS_H } from "../plays/PlayCanvas";
 import type { CourtTemplate, PlayFrame } from "../../lib/plays";
 import type { QuizVisual, QuizReveal, QuizHeading, TapPoint } from "../../lib/quizzes";
@@ -129,6 +131,15 @@ export function QuizPlayVisual({ visual, onReady, compact = false, tap, onTap, t
   const [hidden, setHidden] = useState(false);
   const [started, setStarted] = useState(false);
   const readySent = useRef(false);
+  // Phones: zoom to the action -- the lead-up and the paused moment only, so
+  // the crop never hints at where the answering step goes. Tap questions
+  // keep the whole court: the right spot may be outside what's shown.
+  const isMobile = useIsMobile();
+  const tapMode = !!(onTap || tap || target);
+  const crop = useMemo(
+    () => (isMobile && !compact && !tapMode ? playCrop([...(visual.lead_frames ?? []), ...visual.frames]) : null),
+    [isMobile, compact, tapMode, visual],
+  );
 
   function ready() {
     if (readySent.current) return;
@@ -197,6 +208,7 @@ export function QuizPlayVisual({ visual, onReady, compact = false, tap, onTap, t
           edit={false}
           playSignal={playing ? signal : undefined}
           onPlayDone={playing ? stepDone : undefined}
+          viewBox={crop}
         />
         {!compact && !playing && (onTap || tap || target) && (
           <TapOverlay tap={tap} target={target} onTap={onTap ?? undefined} num={tapNum} />
@@ -239,13 +251,20 @@ export function QuizPlayReveal({ reveal, tap, target, tapNum, dots }: {
   tapNum?: number | null;
 }) {
   const [signal, setSignal] = useState(0);
+  // Phones: zoom to the step, unless taps are drawn on top (they use the
+  // whole court's coordinates).
+  const isMobile = useIsMobile();
+  const crop = useMemo(
+    () => (isMobile && !tap && !target && !dots ? playCrop([reveal.frame]) : null),
+    [isMobile, tap, target, dots, reveal],
+  );
   return (
     <>
     {reveal.heading && <PlayHeading heading={reveal.heading} />}
     <div style={courtBox}>
       <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", marginBottom: 6 }}>What happens on this step</div>
       <div style={{ position: "relative" }}>
-        <PlayCanvas frame={reveal.frame} courtTemplate={reveal.court_template as CourtTemplate} edit={false} playSignal={signal} />
+        <PlayCanvas frame={reveal.frame} courtTemplate={reveal.court_template as CourtTemplate} edit={false} playSignal={signal} viewBox={crop} />
         {(tap || target || dots) && <TapOverlay tap={tap} target={target} num={tapNum} dots={dots} />}
       </div>
       <button type="button" onClick={() => setSignal(n => n + 1)} style={{ ...smallBtn, marginTop: 6 }}>▶ Play the step</button>
