@@ -33,6 +33,13 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
   const [inputError, setInputError] = useState<string | null>(null);
   const submittedFor = useRef<string | null>(null);   // stops a double submit (tap + timer)
   const tapRef = useRef<TapPoint | null>(null);       // the tap at the moment of submitting
+  const lockRef = useRef<HTMLButtonElement | null>(null);
+
+  // On a phone the answers can fill the screen; once one is picked (or the
+  // court tapped), bring Lock in into view so it's never hiding below.
+  useEffect(() => {
+    if (picked || tapPoint) lockRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [picked, tapPoint]);
   // A "name that play" question shows its answers only after the court
   // has played and hidden. Everything else is ready at once.
   const [ready, setReady] = useState(true);
@@ -228,7 +235,7 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
           </button>
         </>
       ) : ready && (
-        <button type="button" onClick={check} disabled={busy} style={{ ...primaryBtn, width: "100%", padding: "11px 16px", marginTop: 4 }}>
+        <button ref={lockRef} type="button" onClick={check} disabled={busy} style={{ ...primaryBtn, width: "100%", padding: "11px 16px", marginTop: 4, scrollMarginBottom: 16 }}>
           {busy ? "Saving…" : question.index === question.total ? "Submit answer" : "Lock in answer"}
         </button>
       )}
