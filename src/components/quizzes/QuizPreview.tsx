@@ -16,7 +16,7 @@ import { supabase } from "../../lib/supabase";
 import { QuizBundle, QuizQuestion, TapPoint, TAP_RADIUS } from "../../lib/quizzes";
 import { RosterPlayer } from "../../lib/plays";
 import { inputStyle } from "../../lib/inputStyle";
-import { QuizPlayVisual, QuizPlayReveal } from "./QuizPlayVisual";
+import { QuizPlayVisual, QuizPlayReveal, actionFromLabel } from "./QuizPlayVisual";
 import { optionStyle, primaryBtn, secondaryBtn, card, label } from "./quizStyles";
 
 interface Props {
@@ -104,6 +104,12 @@ export default function QuizPreview({ bundle, roster, onClose }: Props) {
 
   const radius = TAP_RADIUS[quiz.tap_tolerance ?? "normal"] ?? 50;
   const focusNum = (qq: QuizQuestion) => qq.visual?.frames[0]?.players.find(pl => pl.quizFocus)?.num ?? null;
+  // Part 2 of a two-part question draws the action picked in its part 1.
+  const part1Action = (qq: QuizQuestion) => {
+    const p1 = order.find(x => x.group_id && x.group_id === qq.group_id && x.group_part === 1);
+    const a = p1 ? answers.find(x => x.questionId === p1.id) : null;
+    return actionFromLabel(p1?.options.find(o => o.id === a?.chosen)?.label);
+  };
 
   function lock(choice: string | null, timedOut: boolean) {
     if (!q || feedback) return;
@@ -262,10 +268,12 @@ export default function QuizPreview({ bundle, roster, onClose }: Props) {
             tap: tapPoint,
             onTap: (p: TapPoint) => { setTapPoint(p); setInputError(null); },
             tapNum: focusNum(q),
+            tapAction: q.visual?.part?.n === 2 ? part1Action(q) : undefined,
           } : {})} />
       )}
       {feedback && q.reveal && (
         <QuizPlayReveal reveal={q.reveal} tap={feedback.tap} tapNum={focusNum(q)}
+          tapAction={q.visual?.part?.n === 2 ? part1Action(q) : q.visual?.tap_action ?? null}
           target={q.correct_point ? { point: q.correct_point, radius } : null} />
       )}
 
