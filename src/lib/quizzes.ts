@@ -109,6 +109,8 @@ export interface QuizVisual {
   heading?: QuizHeading | null;
   /** Two-part questions: which part this is. */
   part?: { n: number; of: number } | null;
+  /** "Where do you go" questions: how the tap draws (a cut, a screen, a dribble). */
+  tap_action?: "move" | "screen" | "dribble" | null;
 }
 
 /** The play and step a question is about, shown big above the court. */
@@ -766,6 +768,13 @@ function playSignature(play: Play): string {
   }).join("||");
 }
 
+/** "Tap where the 2 sets the screen" -- the action is part of the question. */
+function tapPrompt(num: number, type: string, you: boolean): string {
+  if (type === "screen") return you ? `You're the ${num} — tap where you set the screen.` : `Tap where the ${num} sets the screen.`;
+  if (type === "dribble") return you ? `You're the ${num} — tap where you dribble to.` : `Tap where the ${num} dribbles to.`;
+  return you ? `You're the ${num} — tap where you cut to.` : `Tap where the ${num} cuts to.`;
+}
+
 /** The steps before step i, for the lead-up. */
 function leadUp(play: Play, i: number, focusId?: string): PlayFrame[] {
   return play.data.frames.slice(0, i).map(f => cleanStep(f, focusId));
@@ -898,7 +907,7 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
       for (const c of pickN(pool, per.tap_place)) {
         const note = cleanNote(frames[c.i].note);
         out.push({
-          prompt: c.profileId ? `You're the ${c.num} — tap where you go on this step.` : `Tap where the ${c.num} goes on this step.`,
+          prompt: tapPrompt(c.num, c.type, !!c.profileId),
           options: [], correctIndex: 0,
           explanation: `The ${c.num} ${ACTION_SENTENCE[c.type] ?? "moves"} to that spot.${note ? ` Coach's note: ${note}` : ""}`,
           source: "sheet", family: `play:${play.id}`,
@@ -906,7 +915,8 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
           assigneeIds: c.profileId ? [c.profileId] : [],
           qtype: "tap_place",
           correctPoint: c.end,
-          visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.id)], lead_frames: leadUp(play, c.i, c.id), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
+          visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.id)], lead_frames: leadUp(play, c.i, c.id), caption: playCaption(play, c.i), heading: playHeading(play, c.i),
+                    tap_action: c.type === "screen" ? "screen" : c.type === "dribble" ? "dribble" : "move" },
           reveal: { court_template: template, frame: cleanStep(frames[c.i], c.id), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
         });
       }
