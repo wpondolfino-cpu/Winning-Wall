@@ -9,7 +9,7 @@ import {
   ServedQuestion, AnswerResult, startQuizAttempt, getNextQuestion, submitQuizAnswer, submitQuizTap, TapPoint,
 } from "../../lib/quizzes";
 import QuizAttemptReview from "./QuizAttemptReview";
-import { QuizPlayVisual, QuizPlayReveal } from "./QuizPlayVisual";
+import { QuizPlayVisual, QuizPlayReveal, actionFromLabel, TapAction } from "./QuizPlayVisual";
 import { optionStyle, primaryBtn, secondaryBtn } from "./quizStyles";
 
 interface Props {
@@ -34,6 +34,10 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
   const submittedFor = useRef<string | null>(null);   // stops a double submit (tap + timer)
   const tapRef = useRef<TapPoint | null>(null);       // the tap at the moment of submitting
   const lockRef = useRef<HTMLButtonElement | null>(null);
+  // Two-part questions: what the player picked in part 1 (cut / screen /
+  // dribble) is how their part-2 tap draws -- their own picture, never the
+  // right answer.
+  const [part1Action, setPart1Action] = useState<TapAction | null>(null);
 
   // On a phone the answers can fill the screen; once one is picked (or the
   // court tapped), bring Lock in into view so it's never hiding below.
@@ -86,6 +90,9 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
     setBusy(true);
     setError(null);
     try {
+      if (question.visual?.part?.n === 1 && optionId) {
+        setPart1Action(actionFromLabel(question.options.find(o => o.id === optionId)?.label));
+      }
       const res = question.qtype === "tap_place"
         ? await submitQuizTap(attemptId, question.question_id, tapRef.current)
         : await submitQuizAnswer(attemptId, question.question_id, optionId);
@@ -200,13 +207,15 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
             tap: tapPoint,
             onTap: busy ? null : (p: TapPoint) => { setTapPoint(p); tapRef.current = p; setInputError(null); },
             tapNum: question.visual.frames[0]?.players.find(pl => pl.quizFocus)?.num ?? null,
+            tapAction: question.visual.part?.n === 2 ? part1Action : undefined,
           } : {})} />
       )}
       {feedback?.reveal && (
         <QuizPlayReveal reveal={feedback.reveal}
           tap={question.qtype === "tap_place" ? tapPoint : null}
           target={feedback.correct_point ? { point: feedback.correct_point, radius: feedback.radius ?? 50 } : null}
-          tapNum={question.visual?.frames[0]?.players.find(pl => pl.quizFocus)?.num ?? null} />
+          tapNum={question.visual?.frames[0]?.players.find(pl => pl.quizFocus)?.num ?? null}
+          tapAction={question.visual?.part?.n === 2 ? part1Action : question.visual?.tap_action ?? null} />
       )}
 
       <div style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.4, marginBottom: 14 }}>{question.prompt}</div>
