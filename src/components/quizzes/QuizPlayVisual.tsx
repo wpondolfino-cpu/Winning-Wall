@@ -30,13 +30,53 @@ import type { QuizVisual, QuizReveal, QuizHeading, TapPoint } from "../../lib/qu
  * own coordinates, so it works at any screen size) and shows the tap and,
  * once answered, the right spot with how close counted.
  */
-function TapOverlay({ tap, target, onTap, num, dots }: {
+export type TapAction = "move" | "screen" | "dribble";
+
+/**
+ * The line a tap draws from the player to the spot, in the style of the
+ * action, so it reads like the play would: a cut is an arrow, a screen ends
+ * in a bar, a dribble zig-zags. Without a known action it's a plain arrow.
+ */
+function ActionLine({ from, to, action, color = "#F0C040" }: { from: TapPoint; to: TapPoint; action?: TapAction | null; color?: string }) {
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 8) return null;
+  const ux = dx / len, uy = dy / len;          // along the line
+  const px = -uy, py = ux;                     // across it
+  // Stop short of the ghost circle at the end (radius 14).
+  const end = { x: to.x - ux * 15, y: to.y - uy * 15 };
+  let d = `M ${from.x + ux * 14} ${from.y + uy * 14} `;
+  if (action === "dribble") {
+    const n = Math.max(2, Math.floor((len - 30) / 14));
+    for (let i = 1; i <= n; i++) {
+      const t = 14 + ((len - 30) * i) / n;
+      const side = i % 2 ? 6 : -6;
+      d += `L ${from.x + ux * t + px * side} ${from.y + uy * t + py * side} `;
+    }
+  }
+  d += `L ${end.x} ${end.y}`;
+  const head = action === "screen"
+    ? <line x1={end.x + px * 12} y1={end.y + py * 12} x2={end.x - px * 12} y2={end.y - py * 12} stroke={color} strokeWidth={4} strokeLinecap="round" />
+    : <path d={`M ${end.x} ${end.y} L ${end.x - ux * 12 + px * 7} ${end.y - uy * 12 + py * 7} L ${end.x - ux * 12 - px * 7} ${end.y - uy * 12 - py * 7} Z`} fill={color} />;
+  return (
+    <g>
+      <path d={d} fill="none" stroke={color} strokeWidth={3.5} strokeLinejoin="round" strokeLinecap="round" />
+      {head}
+    </g>
+  );
+}
+
+function TapOverlay({ tap, target, onTap, num, dots, from, action }: {
   tap?: TapPoint | null;
   target?: { point: TapPoint; radius: number } | null;
   onTap?: (p: TapPoint) => void;
   num?: number | null;
   /** Live mode: every player's tap, green inside the circle, red outside. */
   dots?: { x: number; y: number; ok: boolean }[] | null;
+  /** Where the player starts, so the tap draws a line from them. */
+  from?: TapPoint | null;
+  /** How to draw that line: a cut, a screen or a dribble. */
+  action?: TapAction | null;
 }) {
   function handle(e: React.MouseEvent<SVGSVGElement>) {
     if (!onTap) return;
@@ -60,14 +100,31 @@ function TapOverlay({ tap, target, onTap, num, dots }: {
       {(dots ?? []).map((d, i) => (
         <circle key={i} cx={d.x} cy={d.y} r={7} fill={d.ok ? "#5de098" : "#ff7b7b"} stroke="#fff" strokeWidth={1.5} />
       ))}
+      {tap && from && <ActionLine from={from} to={tap} action={action} />}
       {tap && (
         <g>
-          <circle cx={tap.x} cy={tap.y} r={14} fill="#F0C040" fillOpacity={0.9} stroke="#fff" strokeWidth={2} />
-          {num != null && <text x={tap.x} y={tap.y + 4} textAnchor="middle" fontSize={12} fontWeight={700} fill="#2A2008">{num}</text>}
+          {/* A ghost of the player at the spot (the real one stays put). */}
+          <circle cx={tap.x} cy={tap.y} r={14} fill="#F0C040" fillOpacity={0.55} stroke="#fff" strokeWidth={2} strokeDasharray="4 3" />
+          {num != null && <text x={tap.x} y={tap.y} dy="0.35em" textAnchor="middle" fontSize={17} fontWeight={800} fill="#2A2008">{num}</text>}
         </g>
       )}
     </svg>
   );
+}
+
+/** Where the question's gold player stands -- the start of a tap's line. */
+function focusPoint(f: PlayFrame | undefined): TapPoint | null {
+  const p = f?.players.find(pl => pl.quizFocus);
+  return p ? { x: p.x, y: p.y } : null;
+}
+
+/** Part 1's answer, as the action part 2's tap should draw. */
+export function actionFromLabel(label: string | null | undefined): TapAction | null {
+  const l = (label ?? "").toLowerCase();
+  if (l.includes("screen")) return "screen";
+  if (l.includes("dribble")) return "dribble";
+  if (l.includes("cut")) return "move";
+  return null;
 }
 
 const COURT_MAX = 520;
@@ -109,7 +166,7 @@ function PlayHeading({ heading, status, part }: { heading: QuizHeading; status?:
   );
 }
 
-export function QuizPlayVisual({ visual, onReady, compact = false, tap, onTap, target, tapNum }: {
+export function QuizPlayVisual({ visual, onReady, compact = false, tap, onTap, target, tapNum, tapAction }: {
   visual: QuizVisual;
   /** Called once when the answers may be shown. */
   onReady?: () => void;
@@ -119,6 +176,8 @@ export function QuizPlayVisual({ visual, onReady, compact = false, tap, onTap, t
   onTap?: ((p: TapPoint) => void) | null;
   target?: { point: TapPoint; radius: number } | null;
   tapNum?: number | null;
+  /** The action a tap draws (cut / screen / dribble); defaults to the question's own. */
+  tapAction?: TapAction | null;
 }) {
   const hideAfter = !!visual.hide_after;
   const lead = visual.lead_frames ?? [];
@@ -211,7 +270,8 @@ export function QuizPlayVisual({ visual, onReady, compact = false, tap, onTap, t
           viewBox={crop}
         />
         {!compact && !playing && (onTap || tap || target) && (
-          <TapOverlay tap={tap} target={target} onTap={onTap ?? undefined} num={tapNum} />
+          <TapOverlay tap={tap} target={target} onTap={onTap ?? undefined} num={tapNum}
+            from={focusPoint(visual.frames[0])} action={tapAction ?? visual.tap_action ?? null} />
         )}
       </div>
       {!compact && (
@@ -242,8 +302,9 @@ export function QuizPlayVisual({ visual, onReady, compact = false, tap, onTap, t
   );
 }
 
-export function QuizPlayReveal({ reveal, tap, target, tapNum, dots }: {
+export function QuizPlayReveal({ reveal, tap, target, tapNum, dots, tapAction }: {
   reveal: QuizReveal;
+  tapAction?: TapAction | null;
   dots?: { x: number; y: number; ok: boolean }[] | null;
   /** "Where do you go": the player's tap and the right spot, drawn over the step. */
   tap?: TapPoint | null;
@@ -265,7 +326,8 @@ export function QuizPlayReveal({ reveal, tap, target, tapNum, dots }: {
       <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", marginBottom: 6 }}>What happens on this step</div>
       <div style={{ position: "relative" }}>
         <PlayCanvas frame={reveal.frame} courtTemplate={reveal.court_template as CourtTemplate} edit={false} playSignal={signal} viewBox={crop} />
-        {(tap || target || dots) && <TapOverlay tap={tap} target={target} num={tapNum} dots={dots} />}
+        {(tap || target || dots) && <TapOverlay tap={tap} target={target} num={tapNum} dots={dots}
+          from={focusPoint(reveal.frame)} action={tapAction ?? null} />}
       </div>
       <button type="button" onClick={() => setSignal(n => n + 1)} style={{ ...smallBtn, marginTop: 6 }}>▶ Play the step</button>
     </div>
