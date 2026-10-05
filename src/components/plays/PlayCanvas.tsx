@@ -72,6 +72,12 @@ interface Props {
   onSelect?: (sel: { kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone" | "coach"; index: number } | null) => void;
   /** Viewer-only, local override — renders this one player (by stable id) with the viewer's own avatar, regardless of what's actually linked in the play data. Never persisted or saved. */
   selfOverride?: { playerId: string; avatarUrl: string | null } | null;
+  /**
+   * Viewer-only crop, in court units [x, y, width, height] -- "zoom to the
+   * action" on phones (see playCrop in lib/plays). Never used while
+   * editing: the designer's pointer maths assume the whole court.
+   */
+  viewBox?: [number, number, number, number] | null;
 }
 
 // Shared half-court markings (key, free-throw circle, hoop, 3PT line) used
@@ -325,7 +331,9 @@ function PlayerIcon({ p, avatarUrl }: { p: PlayPlayer; avatarUrl?: string | null
   return (
     <g>
       <circle cx={p.x} cy={p.y} r={13} fill={focus ? "#F0C040" : "#E6F1FB"} stroke={focus ? "#8A6A12" : "#185FA5"} strokeWidth={2} />
-      <text x={p.x} y={p.y + 4} textAnchor="middle" fontSize={12} fontWeight={focus ? 700 : 500} fill={focus ? "#2A2008" : "#0C447C"}>{p.num}</text>
+      {/* Numbers fill the circle (bold, ~19 units; two digits a bit
+          smaller) so they read on a phone without the circles growing. */}
+      <text x={p.x} y={p.y} dy="0.35em" textAnchor="middle" fontSize={String(p.num).length > 1 ? 15 : 19} fontWeight={800} fill={focus ? "#2A2008" : "#0C447C"}>{p.num}</text>
       {p.handoff && (
         <g>
           <circle cx={p.x - 10} cy={p.y - 10} r={7} fill="var(--surface)" stroke="var(--gold)" strokeWidth={1.5} />
@@ -341,7 +349,7 @@ export default function PlayCanvas({
   onAddPlayer, onAddDefender, onSetBall, onAddAction, onErase,
   onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff, onSetActionCurve, onSetActionCurve2,
   onAddText, onMoveText, onEditText, onAddZone, onMoveZone, onAddCone, onMoveCone, onAddCoach, onMoveCoach, onAddShot, stampPreview,
-  playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect, selfOverride = null, speed = 1,
+  playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect, selfOverride = null, speed = 1, viewBox = null,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
@@ -673,7 +681,7 @@ export default function PlayCanvas({
   return (
     <svg
       ref={svgRef}
-      viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`}
+      viewBox={!edit && viewBox ? viewBox.join(" ") : `0 0 ${CANVAS_W} ${CANVAS_H}`}
       style={{ width: "100%", height: "auto", display: "block", background: courtBg, borderRadius: 8, cursor: !edit || !tool ? "default" : tool === "select" ? (moveDrag ? "grabbing" : "grab") : "crosshair" }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
