@@ -462,9 +462,12 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", fontSize: 13, lineHeight: 1.45, resize: "vertical",
             background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", fontFamily: "inherit" }}
         />
-        {(f?.note?.length ?? 0) > STEP_NOTE_MAX - 80 && (
-          <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "right" }}>{f?.note?.length ?? 0}/{STEP_NOTE_MAX}</div>
-        )}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, minHeight: 14 }}>
+          {autoBadge}
+          {(f?.note?.length ?? 0) > STEP_NOTE_MAX - 80 && (
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>{f?.note?.length ?? 0}/{STEP_NOTE_MAX}</span>
+          )}
+        </div>
       </div>
     );
   }
@@ -763,78 +766,127 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     const video_url = videoUrl.trim() || null;
     const categoryValue = currentUserRole === "player" ? (existingPlay?.category ?? null) : (category || null);
     try {
-      if (existingPlay) {
-        await updatePlay(existingPlay.id, { title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
+      // Wait out a background save so the two can't race.
+      if (inFlightRef.current) await inFlightRef.current;
+      const base = existingPlay ?? createdPlayRef.current;
+      if (base) {
+        await updatePlay(base.id, { title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
         showToast("Saved");
-        autosavedRef.current = true;
-        onSaved?.({ ...existingPlay, title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
+        onSaved?.({ ...base, title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
       } else {
         const created = await createPlay({ title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
+        createdPlayRef.current = created;
         showToast("Play saved");
-        autosavedRef.current = true;
         onSaved?.(created);
       }
+      lastSavedSigRef.current = signatureOf(latestRef.current);
+      setAutoStatus("saved");
     } catch (e: any) { showToast("Error: " + e.message); }
     finally { setSaving(false); }
   }
 
-  /** If you leave a brand-new play (never saved) that actually has
-      something drawn on it, silently save it as a real play instead of
-      losing it — same fields handleSave would use, just an auto title
-      if none was typed. Only for never-saved plays; editing an existing
-      one and leaving without hitting Save still just discards the
-      in-progress edit, since silently overwriting an already-shared
-      play without an explicit Save click would be a bad surprise.
-      "Leaving" covers both the Close button AND switching to a
-      different top-level tab, since both just make this component stop
-      being rendered -- see the unmount effect below for why this reads
-      from a ref instead of the state variables directly, and the
-      one-shot guard so a real Save can't also trigger a duplicate. */
-  const autosavedRef = useRef(false);
+  // The latest values, readable from saves that run after a render or
+  // as the editor unmounts.
   const latestRef = useRef({ frames, title, tagsInput, courtTemplate, videoUrl, category, existingPlay, currentUserRole });
   useEffect(() => {
     latestRef.current = { frames, title, tagsInput, courtTemplate, videoUrl, category, existingPlay, currentUserRole };
   }); // no dependency array -- refreshes after every render, so whichever values were on screen right before the component unmounts are what the cleanup below actually sees.
 
-  /** Autosaves whatever's currently drawn when the editor goes away for any
-      reason -- for a brand-new play, that means creating it (title falls
-      back to "Untitled draft ..." if you hadn't typed one); for a play you
-      already opened to edit, it means updating it in place, the same
-      fields the Save button would send. Either way this is just doing
-      automatically what an explicit Save already does, not doing anything
-      new or riskier. */
-  async function maybeAutosaveDraft() {
-    if (autosavedRef.current) return;
-    autosavedRef.current = true;
-    const vals = latestRef.current;
-    const hasContent = vals.frames.length > 1 || vals.frames.some((f) => f.players.length > 0 || f.actions.length > 0);
-    if (!hasContent) return;
-    const tags = vals.tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
-    const video_url = vals.videoUrl.trim() || null;
-    try {
-      if (vals.existingPlay) {
-        const categoryValue = vals.currentUserRole === "player" ? (vals.existingPlay.category ?? null) : (vals.category || null);
-        await updatePlay(vals.existingPlay.id, { title: vals.title.trim() || vals.existingPlay.title, tags, court_template: vals.courtTemplate, data: { frames: vals.frames }, video_url, category: categoryValue });
-      } else {
-        const categoryValue = vals.currentUserRole === "player" ? null : (vals.category || null);
-        await createPlay({
-          title: vals.title.trim() || `Untitled draft ${new Date().toLocaleDateString()}`,
-          tags,
-          court_template: vals.courtTemplate,
-          data: { frames: vals.frames },
-          video_url,
-          category: categoryValue,
-        });
+  // ── Save as you go ──────────────────────────────────────────
+  // A few seconds after any change -- a step name, a note, a moved player
+  // -- the play saves in the background, and again the moment the page is
+  // hidden (switching apps, locking the phone, closing the tab) and when
+  // the editor closes. A brand-new play is created on its first save
+  // ("Untitled draft" until it's named) and every later save updates that
+  // same play, so there are never duplicates. Saves the same fields the
+  // Save button does.
+  const createdPlayRef = useRef<Play | null>(null);
+  const untitledRef = useRef(`Untitled draft ${new Date().toLocaleDateString()}`);
+  const lastSavedSigRef = useRef<string | null>(null);
+  const inFlightRef = useRef<Promise<void> | null>(null);
+  const pendingRef = useRef(false);
+  const [autoStatus, setAutoStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  function signatureOf(vals: typeof latestRef.current): string {
+    return JSON.stringify([vals.frames, vals.title.trim(), vals.tagsInput, vals.courtTemplate, vals.videoUrl.trim(), vals.category]);
+  }
+
+  async function saveNow(): Promise<void> {
+    if (inFlightRef.current) { pendingRef.current = true; return inFlightRef.current; }
+    const run = async () => {
+      const vals = latestRef.current;
+      const sig = signatureOf(vals);
+      if (sig === lastSavedSigRef.current) return;
+      const base = vals.existingPlay ?? createdPlayRef.current;
+      const hasContent = vals.frames.length > 1 || vals.frames.some((f) => f.players.length > 0 || f.actions.length > 0);
+      if (!base && !hasContent) return;          // nothing worth creating yet
+      const tags = vals.tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
+      const video_url = vals.videoUrl.trim() || null;
+      const categoryValue = vals.currentUserRole === "player" ? (base?.category ?? null) : (vals.category || null);
+      setAutoStatus("saving");
+      try {
+        if (base) {
+          await updatePlay(base.id, { title: vals.title.trim() || base.title, tags, court_template: vals.courtTemplate, data: { frames: vals.frames }, video_url, category: categoryValue });
+        } else {
+          createdPlayRef.current = await createPlay({
+            title: vals.title.trim() || untitledRef.current, tags, court_template: vals.courtTemplate,
+            data: { frames: vals.frames }, video_url, category: categoryValue,
+          });
+        }
+        lastSavedSigRef.current = sig;
+        setAutoStatus("saved");
+      } catch {
+        setAutoStatus("error");                   // tries again on the next change
       }
-    } catch {
-      // Best-effort — leaving shouldn't get blocked just because the autosave failed.
+    };
+    inFlightRef.current = run().finally(() => {
+      inFlightRef.current = null;
+      if (pendingRef.current) { pendingRef.current = false; void saveNow(); }
+    });
+    return inFlightRef.current;
+  }
+
+  // Opening a play isn't a change: remember how it started.
+  const firstSigRef = useRef(true);
+  useEffect(() => {
+    if (firstSigRef.current) {
+      firstSigRef.current = false;
+      lastSavedSigRef.current = signatureOf({ frames, title, tagsInput, courtTemplate, videoUrl, category, existingPlay, currentUserRole });
+      return;
     }
+    const t = window.setTimeout(() => { void saveNow(); }, 2500);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frames, title, tagsInput, courtTemplate, videoUrl, category]);
+
+  // The page being hidden is the last reliable moment on a phone.
+  useEffect(() => {
+    const onHide = () => { if (document.visibilityState === "hidden") void saveNow(); };
+    const onPageHide = () => { void saveNow(); };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", onPageHide);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function maybeAutosaveDraft() {
+    try { await saveNow(); } catch { /* leaving shouldn't be blocked by a failed save */ }
   }
 
   useEffect(() => {
     return () => { void maybeAutosaveDraft(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Set up once at mount -- this is what makes it fire on ANY unmount reason, not just an explicit Close click.
+
+  const autoBadge = autoStatus === "idle" ? null : (
+    <span aria-live="polite" style={{ fontSize: 11, whiteSpace: "nowrap",
+      color: autoStatus === "error" ? "#ff7b7b" : autoStatus === "saving" ? "var(--muted)" : "#5de098" }}>
+      {autoStatus === "saving" ? "Saving…" : autoStatus === "saved" ? "Saved ✓" : "Not saved — will retry"}
+    </span>
+  );
 
   async function handleClose() {
     await maybeAutosaveDraft();
@@ -1198,6 +1250,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Play title"
             style={{ flex: "1 1 200px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+          {autoBadge}
           <select value={courtTemplate} onChange={(e) => setCourtTemplate(e.target.value as CourtTemplate)}
             style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
             {COURT_TEMPLATES.map((c) => <option key={c} value={c}>{COURT_TEMPLATE_LABELS[c]}</option>)}
