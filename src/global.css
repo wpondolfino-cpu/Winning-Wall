@@ -402,9 +402,12 @@ body {
     justify-content: center;
   }
 
-  /* Push content up so it's not hidden behind tab bar */
+  /* Push content up so it's not hidden behind tab bar. The bar is 56px
+     PLUS the phone's home-indicator area (its padding-bottom above), so
+     the space reserved has to include that too -- with just 56px, the
+     last ~34px of every page sat under the bar on iPhones. */
   .app-body {
-    padding-bottom: 56px;
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
 
   /* Hide hamburger when bottom tab bar is shown (players) */
