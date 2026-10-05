@@ -99,7 +99,8 @@ export default function ReviewDeck({ onClose }: Props) {
         <QuizPlayReveal reveal={result.reveal}
           tap={q.qtype === "tap_place" ? tapPoint : null}
           target={result.correct_point ? { point: result.correct_point, radius: result.radius ?? 50 } : null}
-          tapNum={q.visual?.frames[0]?.players.find(pl => pl.quizFocus)?.num ?? null} />
+          tapNum={q.visual?.frames[0]?.players.find(pl => pl.quizFocus)?.num ?? null}
+          tapAction={q.visual?.tap_action ?? null} />
       )}
       <div style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.4, marginBottom: 14 }}>{q.prompt}</div>
       {ready && q.options.map(o => (
