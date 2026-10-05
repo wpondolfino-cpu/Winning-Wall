@@ -51,7 +51,8 @@ export default function QuizAttemptReview({ attemptId, onClose }: Props) {
             <QuizPlayReveal reveal={q.reveal}
               tap={q.chosen_point}
               target={q.correct_point ? { point: q.correct_point, radius: q.radius ?? 50 } : null}
-              tapNum={q.visual?.frames[0]?.players.find(pl => pl.quizFocus)?.num ?? null} />
+              tapNum={q.visual?.frames[0]?.players.find(pl => pl.quizFocus)?.num ?? null}
+              tapAction={q.visual?.tap_action ?? null} />
           )}
           {q.qtype === "tap_place" && (
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>
