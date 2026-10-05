@@ -2,6 +2,7 @@
 import { useState, useMemo } from "react";
 import { ScoutSheet, ScoutPlayer, ScoutOffenseSet, ScoutSpecial, updateScoutSheet } from "../../lib/scoutSheets";
 import { DefenseSectionData } from "./DefenseSection";
+import { cleanNote } from "../../lib/plays";
 
 interface Props {
   sheet: ScoutSheet;
@@ -92,7 +93,8 @@ export default function ScoutSheetPrintView({
   const pressAttack = pressPlan.join(", ") || "—";
   const blobSlobDLook = blobSlobDChips.join(", ") || "Not scouted";
   const blobSlobDAttack = blobSlobDPlan.join(", ") || "—";
-  const keys = (sheet.keys_to_game ?? []).filter(Boolean);
+  // [quiz brackets] are for the quiz builder; print without them.
+  const keys = (sheet.keys_to_game ?? []).filter(Boolean).map(k => cleanNote(k));
   const mid = Math.ceil(keys.length / 2);
   const keyCols = [keys.slice(0, mid), keys.slice(mid)];
 
