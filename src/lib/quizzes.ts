@@ -246,7 +246,7 @@ export async function buildQuestionsFromSheet(scoutSheetId: string): Promise<Que
   ]);
   if (!sheet) throw new Error("Scout sheet not found");
   const out: QuestionDraft[] = [];
-  const push = (q: QuestionDraft | null) => { if (q) out.push(q); };
+  const push = (...qs: (QuestionDraft | null)[]) => { for (const q of qs) if (q) out.push(q); };
 
   // ── Matchups: each goes to the player assigned to guard him ──
   for (const p of players) {
@@ -307,6 +307,9 @@ export async function buildQuestionsFromSheet(scoutSheetId: string): Promise<Que
     });
     personnelCount++;
   }
+
+  // ── Keys to the game ──
+  push(...await keyQuestions(scoutSheetId, sheet.keys_to_game ?? [], sheet.opponent_id));
 
   // ── Team offense ──
   push(chipQuestion({
@@ -412,6 +415,88 @@ export async function buildScoutPlayQuestions(scoutSheetId: string, settings: Pl
       explanation: plan ? `${d.explanation ?? ""} Our plan: ${plan}`.trim() : d.explanation,
     };
   });
+}
+
+// ── Keys to the game (no AI) ──
+
+/** A key as players read it: no [quiz brackets], no **bold** markup. */
+const plainKey = (k: string) => cleanNote(k).replace(/\*\*/g, "").trim();
+
+/** Words in a key, for spotting near-duplicates across sheets. */
+function keyWords(k: string): Set<string> {
+  const stop = new Set(["the", "a", "an", "to", "and", "of", "on", "in", "our", "we", "every", "all", "be", "for", "with", "no"]);
+  return new Set(plainKey(k).toLowerCase().replace(/[^a-z0-9#\s-]/g, " ").split(/\s+/).filter(w => w && !stop.has(w)));
+}
+
+/** True when two keys say essentially the same thing ("Win the boards" / "Win the rebounding battle" aside). */
+function sameKey(a: string, b: string): boolean {
+  if (plainKey(a).toLowerCase() === plainKey(b).toLowerCase()) return true;
+  const A = keyWords(a), B = keyWords(b);
+  if (!A.size || !B.size) return false;
+  let both = 0;
+  A.forEach(w => { if (B.has(w)) both++; });
+  return both / Math.min(A.size, B.size) >= 0.6;
+}
+
+/**
+ * Two kinds of question from the sheet's keys to the game:
+ *   * "Which of these is one of our keys against X?" -- wrong answers are
+ *     real keys from your OTHER scout sheets, minus anything that says the
+ *     same as a key on this sheet, so exactly one answer is right.
+ *   * A blank in a key -- the [bracketed] word, or a basketball term the
+ *     app recognises -- the same rules as "Fill in the read".
+ */
+async function keyQuestions(scoutSheetId: string, rawKeys: string[], opponentId: string): Promise<QuestionDraft[]> {
+  const keys = rawKeys.map(k => k ?? "").filter(k => plainKey(k));
+  if (!keys.length) return [];
+  const out: QuestionDraft[] = [];
+  const { data: opp } = await supabase.from("opponents").select("name").eq("id", opponentId).maybeSingle();
+  const against = (opp as any)?.name ? ` against ${(opp as any).name}` : "";
+  const allKeys = keys.map(plainKey).join(" · ");
+
+  // Pick the key
+  const { data: others } = await supabase.from("scout_sheets").select("keys_to_game").neq("id", scoutSheetId).limit(60);
+  const pool = [...new Set(((others ?? []) as any[]).flatMap(r => (r.keys_to_game ?? []) as string[])
+    .filter(k => plainKey(k))
+    .filter(k => !keys.some(mine => sameKey(mine, k)))
+    .map(plainKey))];
+  for (const k of shuffle(keys).slice(0, 2)) {
+    const wrong: string[] = [];
+    for (const w of shuffle(pool)) {
+      if (wrong.length >= 3) break;
+      if (!wrong.some(x => sameKey(x, w))) wrong.push(w);
+    }
+    if (wrong.length < 2) break;   // not enough other sheets yet
+    out.push({
+      prompt: `Which of these is one of our keys to the game${against}?`,
+      options: [plainKey(k), ...wrong], correctIndex: 0,
+      explanation: `Our keys: ${allKeys}.`,
+      source: "sheet", family: "scout_key", assigneeIds: [],
+    });
+  }
+
+  // Fill in the key
+  const bracketedAll = [...new Set(keys.flatMap(k => [...k.matchAll(/\[([^\]]+)\]/g)].map(m => m[1].trim())).filter(Boolean))];
+  let blanks = 0;
+  for (const k of shuffle(keys)) {
+    if (blanks >= 3) break;
+    const b = noteBlanks(k.replace(/\*\*/g, ""))[0];
+    if (!b) continue;
+    const term = b.term.toLowerCase();
+    const group = TERM_GROUP.get(term);
+    const words = plainKey(k).toLowerCase();
+    const candidates = group ? READ_TERMS[group] : bracketedAll.filter(t => t.toLowerCase() !== term);
+    const wrong = shuffle([...new Set(candidates.filter(t => t.toLowerCase() !== term && !words.includes(t.toLowerCase())))]).slice(0, 3);
+    if (wrong.length < 2) continue;
+    out.push({
+      prompt: `Key to the game: "${b.sentence}"`,
+      options: [titleCase(term), ...wrong.map(w => titleCase(w.toLowerCase()))], correctIndex: 0,
+      explanation: `The key: ${plainKey(k)}`,
+      source: "sheet", family: "scout_key_blank", assigneeIds: [],
+    });
+    blanks++;
+  }
+  return out;
 }
 
 /** AI drafts from the sheet's free-text fields (edge function quiz-draft). */
