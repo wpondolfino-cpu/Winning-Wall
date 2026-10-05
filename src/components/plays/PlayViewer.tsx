@@ -3,12 +3,13 @@
 // "Shared with me", and "My playbooks", then plays back a single play
 // frame-by-frame. No drawing tools live here — see PlayEditor for that.
 
-import { useState, useEffect, useRef, lazy, Suspense, Component, type ComponentType, type ReactNode } from "react";
+import { useState, useEffect, useRef, lazy, Suspense, Component, type ComponentType, type ReactNode, useMemo } from "react";
 import { supabase } from "../../lib/supabase";
 import { getProfile } from "../../lib/auth";
 import PlayCanvas, { CANVAS_W, CANVAS_H } from "./PlayCanvas";
 import PlayPrintView from "./PlayPrintView";
 import StepNote from "./StepNote";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import PlayerQuizList from "../quizzes/PlayerQuizList";
 import PlayCategoryManagerModal from "./PlayCategoryManagerModal";
 import RosterShareRows from "../shared/RosterShareRows";
@@ -20,7 +21,7 @@ import {
   forkPlay, getRoster, Playbook, deletePlay, getStaff, sharePlay, PlayShareTarget,
   getMyForkOrigins, adoptSharedPlaybook, dismissPlayShare, dismissPlaybookShare, type ForkRecord,
   playToExportPayload, importPlayFromExportPayload, PLAY_EXPORT_SCHEMA_VERSION,
-  stepButtonText,
+  stepButtonText, playCrop,
 } from "../../lib/plays";
 import { embedJsonInPdf, extractJsonFromPdf, drawSimpleCoverPage, svgElementToPngBytes } from "../../lib/pdfDataExport";
 
@@ -725,6 +726,10 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
   const selfOverride = selfPlayerId ? { playerId: selfPlayerId, avatarUrl: myAvatarUrl } : null;
   const [showSharePopup, setShowSharePopup] = useState(false);
   const frame = play.data.frames[frameIdx];
+  // Phones: zoom to the part of the court the play uses. One crop for the
+  // whole play, so the view doesn't jump between steps.
+  const isMobile = useIsMobile();
+  const crop = useMemo(() => (isMobile ? playCrop(play.data.frames) : null), [isMobile, play.data.frames]);
 
   function playAll() {
     // Simple sequential playback: play current beat, then auto-advance.
@@ -791,6 +796,7 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
           onPlayDone={handleAnimDone}
           speed={speed}
           selfOverride={selfOverride}
+          viewBox={crop}
         />
       </div>
 
