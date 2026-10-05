@@ -702,6 +702,40 @@ export function resolvePassEndpoint(frame: PlayFrame, action: PlayAction): { x: 
   return { x: action.x2, y: action.y2 };
 }
 
+/**
+ * "Zoom to the action": the part of the court a set of steps actually uses
+ * -- every player, defender, the ball and every action's path -- plus a
+ * margin, as an SVG viewBox [x, y, w, h] in court units (600 x 420).
+ * Keeps the court's shape (no stretching), never zooms past 2x so there's
+ * always court around the action, and stays inside the court.
+ */
+export function playCrop(frames: PlayFrame[], margin = 40): [number, number, number, number] {
+  const W = 600, H = 420, MIN_W = W / 2, ASPECT = H / W;
+  const xs: number[] = [], ys: number[] = [];
+  const add = (x?: number, y?: number) => { if (typeof x === "number" && typeof y === "number") { xs.push(x); ys.push(y); } };
+  for (const f of frames) {
+    f.players.forEach(p => add(p.x, p.y));
+    f.defenders.forEach(d => add(d.x, d.y));
+    if (f.ball) add(f.ball.x, f.ball.y);
+    for (const a of f.actions) {
+      add(a.x1, a.y1); add(a.x2, a.y2);
+      if (a.curve) add(a.curve.x, a.curve.y);
+      if (a.curve2) add(a.curve2.x, a.curve2.y);
+    }
+  }
+  if (!xs.length) return [0, 0, W, H];
+  let x0 = Math.min(...xs) - margin, x1 = Math.max(...xs) + margin;
+  let y0 = Math.min(...ys) - margin, y1 = Math.max(...ys) + margin;
+  let w = Math.max(x1 - x0, MIN_W, (y1 - y0) / ASPECT);
+  w = Math.min(w, W);
+  const h = w * ASPECT;
+  // Centre on the action, then nudge back inside the court.
+  let cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  let x = Math.max(0, Math.min(W - w, cx - w / 2));
+  let y = Math.max(0, Math.min(H - h, cy - h / 2));
+  return [Math.round(x), Math.round(y), Math.round(w), Math.round(h)];
+}
+
 /** Longest step name and note the designer accepts. */
 export const STEP_LABEL_MAX = 40;
 export const STEP_NOTE_MAX = 600;
