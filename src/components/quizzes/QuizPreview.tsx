@@ -83,7 +83,10 @@ export default function QuizPreview({ bundle, roster, onClose }: Props) {
   const [optionOrder, setOptionOrder] = useState<Record<string, string[]>>({});
 
   function start() {
-    const qs = questionsFor(as).filter(q => q.options.length >= 2);
+    // Multiple choice needs 2+ answers; a tap question has none -- it has a
+    // spot instead. (This used to drop every tap question, which is why
+    // part 2 of a two-part question never showed in preview.)
+    const qs = questionsFor(as).filter(q => q.qtype === "tap_place" ? !!q.correct_point : q.options.length >= 2);
     if (!qs.length) { setInputError("No questions go to that choice."); return; }
     setOrder(qs);
     setOptionOrder(Object.fromEntries(qs.map(q => [q.id, shuffle(q.options.map(o => o.id))])));
