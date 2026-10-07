@@ -684,15 +684,7 @@ export async function createDraftForSheet(scoutSheetId: string): Promise<string>
     let carried: QuestionDraft[] = [];
     if (previous) {
       const prev = await getQuizBundle(previous.id);
-      carried = prev.questions.filter(q => q.source !== "sheet").map(q => ({
-        prompt: q.prompt,
-        options: q.options.map(o => o.label),
-        correctIndex: Math.max(0, q.options.findIndex(o => o.id === q.correct_option_id)),
-        explanation: q.explanation,
-        source: q.source,
-        family: q.family,
-        assigneeIds: q.assignee_ids,
-      }));
+      carried = prev.questions.filter(q => q.source !== "sheet").map(questionToDraft);
     }
     await addQuestions(quizId, [...fromSheet, ...carried], 0);
   } catch (e) {
@@ -701,6 +693,23 @@ export async function createDraftForSheet(scoutSheetId: string): Promise<string>
     throw e;
   }
   return quizId;
+}
+
+/**
+ * A saved question back as a draft, everything kept -- court, answer
+ * reveal, tap spot, two-part link, assignments -- so carrying questions
+ * into a rebuilt or regenerated quiz never loses a coach-made play
+ * question's court.
+ */
+export function questionToDraft(q: QuizQuestion): QuestionDraft {
+  return {
+    prompt: q.prompt,
+    options: q.options.map(o => o.label),
+    correctIndex: Math.max(0, q.options.findIndex(o => o.id === q.correct_option_id)),
+    explanation: q.explanation, source: q.source, family: q.family, assigneeIds: q.assignee_ids,
+    qtype: q.qtype, visual: q.visual, reveal: q.reveal, correctPoint: q.correct_point,
+    groupId: q.group_id, groupPart: q.group_part,
+  };
 }
 
 // ── Play quizzes (163) ───────────────────────────────────────
@@ -1099,6 +1108,163 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
   return kept;
 }
 
+// ── One play question, chosen by the coach ──────────────────
+
+export type PickType = "what_next" | "two_part" | "tap_place" | "who_ball" | "fill_read" | "name_play" | "own";
+
+/** What a step offers each type: who acts, who moves, who passes, and blanks. */
+export function stepOptions(play: Play, i: number): { acts: string[]; moves: string[]; passes: string[]; blanks: number } {
+  const f = play.data?.frames?.[i];
+  if (!f) return { acts: [], moves: [], passes: [], blanks: 0 };
+  const after = deriveNextFrame(f);
+  const acts: string[] = [], moves: string[] = [], passes: string[] = [];
+  for (const p of f.players) {
+    if (!p.id) continue;
+    const mine = f.actions.filter(a => a.sourcePlayerId === p.id).sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0));
+    if (mine.length && ACTION_WORD[mine[0].type]) acts.push(p.id);
+    const end = after.players.find(q => q.id === p.id);
+    if (mine.some(a => ["move", "dribble", "screen"].includes(a.type)) && end && Math.hypot(end.x - p.x, end.y - p.y) >= 30) moves.push(p.id);
+    if (mine.some(a => (a.type === "pass" || a.type === "lob") && a.targetPlayerId && f.players.some(q => q.id === a.targetPlayerId))) passes.push(p.id);
+  }
+  return { acts, moves, passes, blanks: f.note ? noteBlanks(f.note).length : 0 };
+}
+
+/** Which players a type can use on a step (empty = the type takes no player). */
+export function eligiblePlayers(type: PickType, play: Play, i: number): string[] {
+  const o = stepOptions(play, i);
+  if (type === "tap_place") return o.moves;
+  if (type === "who_ball") return o.passes;
+  if (type === "what_next") return o.acts;
+  if (type === "two_part") return o.acts.filter(id => o.moves.includes(id) || o.passes.includes(id));
+  if (type === "own") return (play.data?.frames?.[i]?.players ?? []).map(p => p.id).filter(Boolean) as string[];
+  return [];
+}
+
+/** Whether a step has anything for a type -- the step picker greys out the rest. */
+export function stepFits(type: PickType, play: Play, i: number): boolean {
+  if (type === "own") return true;
+  if (type === "fill_read") return stepOptions(play, i).blanks > 0;
+  return eligiblePlayers(type, play, i).length > 0;
+}
+
+/**
+ * Builds exactly the question the coach picked: this type, on this play,
+ * at this step, about this player -- with the right answer from the
+ * drawing. "own" returns just the court; the coach writes the rest.
+ * otherPlays are the wrong answers for Name that play.
+ */
+export function buildChosenQuestion(type: PickType, play: Play, stepIdx: number | null, playerId: string | null, otherPlays: Play[]): QuestionDraft[] {
+  const frames = play.data?.frames ?? [];
+  const template = play.court_template;
+  const i = stepIdx ?? 0;
+  const f = frames[i];
+  const p = f?.players.find(x => x.id === playerId);
+  const note = f ? cleanNote(f.note) : "";
+  const heading = f ? playHeading(play, i) : null;
+  const caption = f ? playCaption(play, i) : null;
+  const visual = (focus?: string, withLead = true): QuizVisual => ({
+    court_template: template, frames: [positionsOnly(f, focus)], lead_frames: withLead ? leadUp(play, i, focus) : [], caption, heading,
+  });
+  const reveal = (focus?: string): QuizReveal => ({ court_template: template, frame: cleanStep(f, focus), caption, heading });
+  const base = { source: "coach" as QuestionSource, family: `play:${play.id}`, assigneeIds: p?.profile_id ? [p.profile_id] : [] };
+  const firstAction = () => f.actions.filter(a => a.sourcePlayerId === playerId).sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0))[0];
+  const noteText = note ? ` Coach's note: ${note}` : "";
+
+  if (type === "name_play") {
+    const mine = playSignature(play);
+    const wrong = pickN([...new Set(otherPlays.filter(o => o.id !== play.id && o.title?.trim() && playSignature(o) !== mine
+      && o.title.trim().toLowerCase() !== play.title.trim().toLowerCase()).map(o => o.title.trim()))], 3);
+    if (wrong.length < 2) throw new Error("Name that play needs at least 2 other plays (that look different) for wrong answers.");
+    return [{ ...base, assigneeIds: [], prompt: "Which play was that?", options: [play.title.trim(), ...wrong], correctIndex: 0,
+      explanation: `That's ${play.title.trim()}.`, qtype: "name_play",
+      visual: { court_template: template, frames: frames.map(fr => ({ ...cleanStep(fr), label: undefined, texts: [], drawings: [] })), hide_after: true, caption: null },
+      reveal: null }];
+  }
+  if (!f) throw new Error("Pick a step.");
+
+  if (type === "fill_read") {
+    const blank = noteBlanks(f.note ?? "")[0];
+    if (!blank) throw new Error("This step's note has no [bracketed] word or recognised term to blank out.");
+    const term = blank.term.toLowerCase(), group = TERM_GROUP.get(term), words = note.toLowerCase();
+    const brackets = [...(f.note ?? "").matchAll(/\[([^\]]+)\]/g)].map(m => m[1].trim());
+    const pool = group ? READ_TERMS[group] : brackets.filter(t => t.toLowerCase() !== term);
+    const wrong = pickN([...new Set(pool.filter(t => t.toLowerCase() !== term && !words.includes(t.toLowerCase())))], 3);
+    if (wrong.length < 2) throw new Error("Not enough wrong answers for that word — bracket a basketball term like curl, flare or slip.");
+    return [{ ...base, assigneeIds: [], prompt: blank.sentence, options: [titleCase(term), ...wrong.map(w => titleCase(w.toLowerCase()))], correctIndex: 0,
+      explanation: `Coach's note: ${note}`, qtype: "fill_read", visual: visual(), reveal: reveal() }];
+  }
+
+  if (type === "own") {
+    return [{ ...base, assigneeIds: [], prompt: "", options: ["", "", ""], correctIndex: 0, explanation: null, qtype: null,
+      visual: visual(playerId ?? undefined), reveal: reveal(playerId ?? undefined) }];
+  }
+
+  if (!p || !playerId) throw new Error("Pick a player.");
+  const you = !!p.profile_id;
+  const a = firstAction();
+  const after = deriveNextFrame(f).players.find(q => q.id === playerId);
+
+  const whatNext = (groupId?: string): QuestionDraft => {
+    if (!a || !ACTION_WORD[a.type]) throw new Error("That player doesn't do anything on this step.");
+    const right = ACTION_WORD[a.type];
+    return { ...base, prompt: you ? `You're the ${p.num}. What do you do on this step?` : `What does the ${p.num} do on this step?`,
+      options: [right, ...pickN(Object.values(ACTION_WORD).filter(w => w !== right), 3)], correctIndex: 0,
+      explanation: `The ${p.num} ${ACTION_SENTENCE[a.type]}.${noteText}`, qtype: "what_next",
+      visual: { ...visual(playerId), ...(groupId ? { part: { n: 1, of: 2 } } : {}) }, reveal: reveal(playerId),
+      ...(groupId ? { groupId, groupPart: 1 } : {}) };
+  };
+  const tapQ = (groupId?: string): QuestionDraft => {
+    const mv = f.actions.filter(x => x.sourcePlayerId === playerId && ["move", "dribble", "screen"].includes(x.type))
+      .sort((x, y) => (x.sequenceIndex ?? 0) - (y.sequenceIndex ?? 0))[0];
+    if (!mv || !after) throw new Error("That player doesn't move on this step.");
+    const kind = mv.type === "screen" ? "screen" : mv.type === "dribble" ? "dribble" : "move";
+    return { ...base, prompt: groupId ? (you ? "Now tap where you go." : `Now tap where the ${p.num} goes.`) : tapPrompt(p.num, mv.type, you),
+      options: [], correctIndex: 0, explanation: `The ${p.num} ${ACTION_SENTENCE[mv.type] ?? "moves"} to that spot.${noteText}`,
+      qtype: "tap_place", correctPoint: { x: after.x, y: after.y },
+      visual: groupId ? { ...visual(playerId, false), part: { n: 2, of: 2 } } : { ...visual(playerId), tap_action: kind },
+      reveal: reveal(playerId), ...(groupId ? { groupId, groupPart: 2 } : {}) };
+  };
+  const whoQ = (groupId?: string): QuestionDraft => {
+    const pass = f.actions.find(x => x.sourcePlayerId === playerId && (x.type === "pass" || x.type === "lob") && x.targetPlayerId);
+    const to = f.players.find(x => x.id === pass?.targetPlayerId);
+    if (!pass || !to) throw new Error("That player doesn't pass on this step.");
+    const others = f.players.filter(x => x.id !== playerId && x.id !== to.id).map(x => x.num);
+    return { ...base, prompt: groupId ? (you ? "Who do you pass to?" : `Who does the ${p.num} pass to?`) : `Who does the ${p.num} pass to on this step?`,
+      options: [`The ${to.num}`, ...pickN(others, 3).map(n => `The ${n}`)], correctIndex: 0,
+      explanation: `The ${p.num} passes to the ${to.num}.${noteText}`, qtype: "who_ball",
+      visual: groupId ? { ...visual(playerId, false), part: { n: 2, of: 2 } } : visual(playerId), reveal: reveal(playerId),
+      ...(groupId ? { groupId, groupPart: 2 } : {}) };
+  };
+
+  if (type === "what_next") return [whatNext()];
+  if (type === "tap_place") return [tapQ()];
+  if (type === "who_ball") return [whoQ()];
+  // two_part: part 2 is a tap for a cut/screen/dribble, "who to" for a pass
+  const gid = crypto.randomUUID();
+  const isPass = a && (a.type === "pass" || a.type === "lob");
+  return [whatNext(gid), isPass ? whoQ(gid) : tapQ(gid)];
+}
+
+/** Plays a coach can make questions from: the quiz's own first, then theirs. */
+export async function getPlaysForPicker(quiz: Quiz): Promise<Play[]> {
+  const out = new Map<string, Play>();
+  if (quiz.playbook_id || quiz.source_play_ids?.length) {
+    const { plays } = await loadSourcePlays(quiz.playbook_id, quiz.source_play_ids ?? []);
+    plays.forEach(p => out.set(p.id, p));
+  }
+  if (quiz.scout_sheet_id) {
+    const [sets, specials] = await Promise.all([getOffenseSets(quiz.scout_sheet_id), getSpecials(quiz.scout_sheet_id)]);
+    const ids = [...sets, ...specials].map(x => x.play_id).filter(Boolean) as string[];
+    if (ids.length) {
+      const { data } = await supabase.from("plays").select("*").in("id", ids);
+      ((data ?? []) as Play[]).forEach(p => out.set(p.id, p));
+    }
+  }
+  const { data: mine } = await supabase.from("plays").select("*").order("updated_at", { ascending: false });
+  ((mine ?? []) as Play[]).forEach(p => { if (!out.has(p.id)) out.set(p.id, p); });
+  return [...out.values()].filter(p => (p.data?.frames?.length ?? 0) > 0);
+}
+
 /** The plays a play quiz builds from: its playbook's, or the hand-picked ones. */
 async function loadSourcePlays(playbookId: string | null, playIds: string[]): Promise<{ plays: Play[]; skipped: number }> {
   if (playbookId) {
@@ -1167,19 +1333,20 @@ export async function regeneratePlayQuiz(quizId: string): Promise<string> {
   const settings = quiz.play_settings as PlayQuizSettings;
   if (!settings?.types) throw new Error("This quiz wasn't built from plays.");
   const bundle = await getQuizBundle(quizId);
-  const handWritten: QuestionDraft[] = bundle.questions.filter(q => !q.qtype && q.source !== "sheet").map(q => ({
-    prompt: q.prompt,
-    options: q.options.map(o => o.label),
-    correctIndex: Math.max(0, q.options.findIndex(o => o.id === q.correct_option_id)),
-    explanation: q.explanation, source: q.source, family: q.family, assigneeIds: q.assignee_ids,
-  }));
+  // Everything the coach made by hand -- text questions and hand-made
+  // play questions alike -- carries over.
+  const handWritten: QuestionDraft[] = bundle.questions.filter(q => q.source !== "sheet").map(questionToDraft);
   const { plays } = await loadSourcePlays(quiz.playbook_id, quiz.source_play_ids);
   const drafts = [...buildPlayQuestions(plays, settings), ...handWritten];
 
   if (quiz.status === "draft") {
-    const { error } = await supabase.from("quiz_questions").delete().eq("quiz_id", quizId);
+    // Only the built questions are replaced; hand-made ones stay put.
+    const { error } = await supabase.from("quiz_questions").delete().eq("quiz_id", quizId).eq("source", "sheet");
     if (error) throw error;
-    await addQuestions(quizId, drafts, 0);
+    const built = buildPlayQuestions(plays, settings);
+    const { data: kept } = await supabase.from("quiz_questions").select("id").eq("quiz_id", quizId).order("sort_order");
+    await Promise.all(((kept ?? []) as any[]).map((r, i) => supabase.from("quiz_questions").update({ sort_order: built.length + i }).eq("id", r.id)));
+    await addQuestions(quizId, built, 0);
     return quizId;
   }
 
