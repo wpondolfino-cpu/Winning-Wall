@@ -12,7 +12,7 @@
 //                   version; this one stays live until that's published).
 //   Archived     -> read-only results of an older version.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Quiz, QuizBundle, QuizQuestion, QuestionDraft,
   getQuizzesForSheet, getQuiz, getQuizBundle, regeneratePlayQuiz, quizKind, PLAY_QTYPE_LABEL,
@@ -26,6 +26,7 @@ import { inputStyle } from "../../lib/inputStyle";
 import QuizQuestionEditor from "./QuizQuestionEditor";
 import QuizResults from "./QuizResults";
 import QuizPreview from "./QuizPreview";
+import PlayQuestionPicker from "./PlayQuestionPicker";
 import LiveHost from "./LiveHost";
 import { startLive } from "../../lib/liveQuiz";
 import { rebuildReviewDraft } from "../../lib/gameReviewQuiz";
@@ -53,11 +54,19 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
   const [view, setView] = useState<"results" | "questions">("results");
   const [editingId, setEditingId] = useState<string | null>(null);   // question id, or "new"
   const [previewing, setPreviewing] = useState(false);
+  const [addingPlayQ, setAddingPlayQ] = useState(false);
   const [liveId, setLiveId] = useState<string | null>(null);
   const [aiCount, setAiCount] = useState(6);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // The "it's live" banner after publishing; stays until dismissed or another action.
+  const [published, setPublished] = useState<string | null>(null);
+  const publishedRef = useRef<HTMLDivElement | null>(null);
+  // Publish sits at the bottom of a long draft -- bring the banner into view.
+  useEffect(() => {
+    if (published) publishedRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [published]);
 
   const loadVersions = useCallback(async (select?: string) => {
     let list: Quiz[];
@@ -104,7 +113,7 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
   }, [selectedId, loadBundle]);
 
   async function run(key: string, fn: () => Promise<void>) {
-    setBusy(key); setError(null); setNotice(null);
+    setBusy(key); setError(null); setNotice(null); if (key !== "publish") setPublished(null);
     try { await fn(); }
     catch (e: any) { setError(e?.message ?? "Something went wrong — try again."); }
     finally { setBusy(null); }
@@ -138,8 +147,17 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
       : "Publish this quiz? Players on its teams will see it. After publishing, only the wording can change.";
     if (!window.confirm(msg)) return;
     await publishQuiz(bundle.quiz.id);
+    // Tell the coach it worked, and who can see it now.
+    let who = "Players on its teams";
+    try {
+      const { data } = await supabase.rpc("quiz_roster", { p_quiz: bundle.quiz.id });
+      const n = ((data ?? []) as unknown[]).length;
+      const names = bundle.quiz.roster_ids.map(id => teams.find(t => t.id === id)?.name).filter(Boolean).join(", ");
+      who = `${n} player${n === 1 ? "" : "s"}${names ? ` on ${names}` : ""}`;
+    } catch { /* the count is a nicety */ }
     await loadVersions(bundle.quiz.id);
     setView("results");
+    setPublished(`${bundle.quiz.title} is live. ${who} can take it now.`);
   });
 
   const regenerate = () => run("regenerate", async () => {
@@ -254,6 +272,18 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
     <div>
       {error && <div className="error-msg">{error}</div>}
       {notice && <div style={{ ...card, fontSize: 13, marginBottom: 12, borderColor: "var(--royal-light)" }}>{notice}</div>}
+      {published && (
+        <div ref={publishedRef} role="status" style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, padding: "14px 16px", borderRadius: 12,
+          background: "rgba(40,180,80,0.14)", border: "1px solid rgba(40,180,80,0.55)" }}>
+          <span style={{ fontSize: 26 }}>✅</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#5de098" }}>Published!</div>
+            <div style={{ fontSize: 13 }}>{published} Results will show below as players finish.</div>
+          </div>
+          <button type="button" onClick={() => setPublished(null)} aria-label="Dismiss"
+            style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 16, cursor: "pointer" }}>✕</button>
+        </div>
+      )}
 
       {/* ── Versions (scout quizzes only; a standalone quiz has one) ── */}
       <div style={{ display: scoutSheetId || versions.length > 1 ? "flex" : "none", gap: 6, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
@@ -512,6 +542,16 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
                 />
               ))}
 
+              {isDraft && addingPlayQ && (
+                <PlayQuestionPicker quiz={bundle.quiz} onCancel={() => setAddingPlayQ(false)}
+                  onAdd={async (drafts) => {
+                    const start = bundle.questions.reduce((m, x) => Math.max(m, x.sort_order), -1) + 1;
+                    await addQuestions(bundle.quiz.id, drafts, start);
+                    setAddingPlayQ(false);
+                    await refresh();
+                    setNotice(drafts.length > 1 ? "Two-part question added at the bottom." : "Play question added at the bottom.");
+                  }} />
+              )}
               {isDraft && editingId === "new" && (
                 <div style={{ marginBottom: 8 }}>
                   <QuizQuestionEditor mode="draft" question={null} roster={roster}
@@ -527,7 +567,8 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
               {/* ── Draft actions ── */}
               {isDraft && (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
-                  <button type="button" onClick={() => setEditingId("new")} style={secondaryBtn}>+ Add question</button>
+                  <button type="button" onClick={() => { setAddingPlayQ(false); setEditingId("new"); }} style={secondaryBtn}>+ Add question</button>
+                  <button type="button" onClick={() => { setEditingId(null); setAddingPlayQ(true); }} style={secondaryBtn}>+ Play question</button>
                   {scoutSheetId && bundle.questions.length > 0 && (
                     <button type="button" onClick={rebuildScout} disabled={!!busy} style={secondaryBtn}>
                       {busy === "rebuild" ? "Building…" : "↻ Rebuild from sheet"}
