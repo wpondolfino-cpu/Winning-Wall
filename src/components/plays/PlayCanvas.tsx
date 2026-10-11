@@ -228,7 +228,63 @@ function endDirection(a: PlayAction) {
   return { dx: a.x2 - a.x1, dy: a.y2 - a.y1 };
 }
 
+/** Tools that draw a line from a player. */
+const DRAW_TOOLS: string[] = ["move", "pass", "dribble", "screen", "lob", "loop", "dho"];
+
+/**
+ * A player whose LAST action this step is a move (cut, dribble, screen)
+ * ending near (x, y) -- starting a new line there continues their path.
+ * Defenders count only for cuts.
+ */
+function chainEndAt(frame: PlayFrame, x: number, y: number, withDefenders: boolean):
+    { entity: { id?: string; x: number; y: number }; action: PlayAction } | null {
+  let best: { entity: { id?: string; x: number; y: number }; action: PlayAction } | null = null;
+  let bestDist = 22;
+  const consider = (entity: { id?: string; x: number; y: number }) => {
+    if (!entity.id) return;
+    const seq = frame.actions.filter((a) => a.sourcePlayerId === entity.id)
+      .sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0));
+    const last = seq[seq.length - 1];
+    if (!last || !(last.type === "move" || last.type === "dribble" || last.type === "screen")) return;
+    const d = Math.hypot(last.x2 - x, last.y2 - y);
+    if (d < bestDist) { bestDist = d; best = { entity, action: last }; }
+  };
+  frame.players.forEach(consider);
+  if (withDefenders) frame.defenders.forEach(consider);
+  return best;
+}
+
+/** The player nearest (x, y) by where they start OR where their moves end this step. */
+function nearestPlayerOrArrival(frame: PlayFrame, x: number, y: number, excludeId?: string) {
+  let best: PlayFrame["players"][number] | null = null, bestDist = 28;
+  for (const pl of frame.players) {
+    if (!pl.id || pl.id === excludeId) continue;
+    const spots = [{ x: pl.x, y: pl.y }, ...frame.actions
+      .filter((a) => a.sourcePlayerId === pl.id && (a.type === "move" || a.type === "dribble" || a.type === "screen"))
+      .map((a) => ({ x: a.x2, y: a.y2 }))];
+    for (const sp of spots) {
+      const d = Math.hypot(sp.x - x, sp.y - y);
+      if (d < bestDist) { bestDist = d; best = pl; }
+    }
+  }
+  return best;
+}
+
 function ActionShape({ a }: { a: PlayAction }) {
+  if (a.type === "dho") {
+    // Dribble handoff: a short line from the giver to the receiver with the
+    // usual double bar across its middle.
+    const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len, px = -uy * 8, py = ux * 8;
+    const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2;
+    return (
+      <g>
+        <line x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke="#C2541F" strokeWidth={3} strokeLinecap="round" />
+        <line x1={mx - ux * 4 + px} y1={my - uy * 4 + py} x2={mx - ux * 4 - px} y2={my - uy * 4 - py} stroke="#C2541F" strokeWidth={3} />
+        <line x1={mx + ux * 4 + px} y1={my + uy * 4 + py} x2={mx + ux * 4 - px} y2={my + uy * 4 - py} stroke="#C2541F" strokeWidth={3} />
+      </g>
+    );
+  }
   if (a.type === "screen") {
     const { dx, dy } = endDirection(a);
     const len = Math.hypot(dx, dy) || 1;
@@ -357,6 +413,7 @@ export default function PlayCanvas({
   const [justLinked, setJustLinked] = useState<string[]>([]);
   const [drawPoints, setDrawPoints] = useState<{ x: number; y: number }[] | null>(null);
   const [animT, setAnimT] = useState<number | null>(null); // 0..1 while animating, null when idle
+  const [chainHover, setChainHover] = useState<{ x: number; y: number } | null>(null);
   const nextNum = (frame.players.length % 5) + 1;
 
   type MoveDrag =
@@ -420,7 +477,7 @@ export default function PlayCanvas({
       if (ballHit && within(ballHit, 12)) { setMoveDrag({ kind: "ball" }); setMovePos(p); return; }
       for (let i = 0; i < frame.actions.length; i++) {
         const a = frame.actions[i];
-        if ((a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen" || a.type === "lob") && within(curveHandlePos(a), 11)) {
+        if ((a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen" || a.type === "lob" || a.type === "dho") && within(curveHandlePos(a), 11)) {
           setMoveDrag({ kind: "actionCurve", index: i }); setMovePos(p); return;
         }
       }
@@ -468,6 +525,17 @@ export default function PlayCanvas({
 
   function handleMouseMove(e: ReactMouseEvent) {
     if (drawPoints) { setDrawPoints((pts) => (pts ? [...pts, pointFromEvent(e)] : pts)); return; }
+    // While a line tool is armed (and not mid-drag), show a gold ring on a
+    // line's tip when starting there would continue that player's path.
+    if (edit && !dragStart && tool && DRAW_TOOLS.includes(tool) && !selected) {
+      const p = pointFromEvent(e);
+      const hit = chainEndAt(frame, p.x, p.y, tool === "move" || tool === "loop");
+      const onPlayer = frame.players.some((pl) => Math.hypot(pl.x - p.x, pl.y - p.y) <= 14);
+      const next = hit && !onPlayer ? { x: hit.action.x2, y: hit.action.y2 } : null;
+      setChainHover((cur) => (cur?.x === next?.x && cur?.y === next?.y ? cur : next));
+    } else if (chainHover) {
+      setChainHover(null);
+    }
     if (dragStart) { setDragCurrent(pointFromEvent(e)); }
     if (!moveDrag) return;
     setMovePos(pointFromEvent(e));
@@ -503,7 +571,7 @@ export default function PlayCanvas({
       return;
     }
     if (!edit || !dragStart || !tool) return;
-    if (["move", "pass", "dribble", "screen", "lob", "loop"].includes(tool)) {
+    if (DRAW_TOOLS.includes(tool)) {
       const p = pointFromEvent(e);
       if (Math.hypot(p.x - dragStart.x, p.y - dragStart.y) > 8) {
         const nearestPlayer = (x: number, y: number) => {
@@ -561,8 +629,17 @@ export default function PlayCanvas({
         } else {
           source = selectedRaw ?? proximityGuess;
         }
-        const selectedEntity = source === selectedRaw ? selectedRaw : null;
-        const target = (tool === "pass" || tool === "lob") ? nearestPlayer(p.x, p.y) : null;
+        // Starting a line at the tip of a player's last move continues that
+        // player's path (a V-cut's second leg, a screener's roll) without
+        // selecting them first -- unless the drag starts right on a player.
+        const chainHit = !selectedRaw ? chainEndAt(frame, dragStart.x, dragStart.y, canTargetDefender) : null;
+        const onEntity = !!proximityGuess && Math.hypot(proximityGuess.x - dragStart.x, proximityGuess.y - dragStart.y) <= 14;
+        if (chainHit && !onEntity) source = chainHit.entity;
+        const selectedEntity = source === selectedRaw ? selectedRaw : (chainHit && source === chainHit.entity ? chainHit.entity : null);
+        // A handoff goes to whoever is near the end of the line -- where
+        // they start this step, or where their move ends (they come to it).
+        const target = (tool === "pass" || tool === "lob") ? nearestPlayer(p.x, p.y)
+          : tool === "dho" ? nearestPlayerOrArrival(frame, p.x, p.y, source?.id) : null;
         // If the selected entity already has an action in this step (e.g.
         // a screen), a new one chains onto the end of it — starting where
         // the previous one left off, one slot further in their sequence —
@@ -783,6 +860,9 @@ export default function PlayCanvas({
         </g>
       ))}
 
+      {chainHover && !dragStart && (
+        <circle cx={chainHover.x} cy={chainHover.y} r={13} fill="rgba(240,192,64,0.18)" stroke="var(--gold)" strokeWidth={2.5} pointerEvents="none" />
+      )}
       {ballPos && (
         <circle cx={ballPos.x} cy={ballPos.y} r={8} fill="#EF9F27" stroke="#854F0B" strokeWidth={1.5} />
       )}
@@ -824,7 +904,7 @@ export default function PlayCanvas({
       })()}
 
       {edit && tool === "select" && displayFrame.actions.map((a, i) => {
-        const chp = (a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen" || a.type === "lob") ? curveHandlePos(a) : null;
+        const chp = (a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen" || a.type === "lob" || a.type === "dho") ? curveHandlePos(a) : null;
         const chp2 = a.curve2 ? curveHandle2Pos(a) : null;
         return (
           <g key={i}>
@@ -854,7 +934,7 @@ export default function PlayCanvas({
           y = a.y1 + (endpoint.y - a.y1) * localT;
         }
         const isShot = a.type === "shot";
-        return <circle key={i} cx={x} cy={y} r={a.type === "pass" ? 6 : isShot ? 7 : 9} fill={isShot ? "#EF9F27" : "#378ADD"} stroke={isShot ? "#854F0B" : undefined} strokeWidth={isShot ? 1.5 : 0} opacity={0.9} />;
+        return <circle key={i} cx={x} cy={y} r={a.type === "pass" || a.type === "dho" ? 6 : isShot ? 7 : 9} fill={isShot ? "#EF9F27" : "#378ADD"} stroke={isShot ? "#854F0B" : undefined} strokeWidth={isShot ? 1.5 : 0} opacity={0.9} />;
       })}
 
       {stampPreview && (
