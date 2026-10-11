@@ -715,11 +715,15 @@ export function questionToDraft(q: QuizQuestion): QuestionDraft {
 // ── Play quizzes (163) ───────────────────────────────────────
 
 const ACTION_WORD: Record<string, string> = {
-  move: "Cut", screen: "Set a screen", pass: "Pass", dribble: "Dribble", shot: "Shoot", lob: "Throw a lob",
+  move: "Cut", screen: "Set a screen", pass: "Pass", dribble: "Dribble", shot: "Shoot", lob: "Throw a lob", dho: "Hand off",
 };
 const ACTION_SENTENCE: Record<string, string> = {
-  move: "cuts", screen: "sets a screen", pass: "passes", dribble: "dribbles", shot: "shoots", lob: "throws a lob",
+  move: "cuts", screen: "sets a screen", pass: "passes", dribble: "dribbles", shot: "shoots", lob: "throws a lob", dho: "hands it off",
 };
+/** Passes and handoffs both put the ball in a teammate's hands. */
+const givesBall = (t: string) => t === "pass" || t === "lob" || t === "dho";
+const toVerb = (t: string) => (t === "dho" ? "hand it off to" : "pass to");
+const toPast = (t: string) => (t === "dho" ? "hands it off to" : "passes to");
 
 /** A frame stripped to what a question may show: positions only. The
  *  player the question is about is marked so the court draws them gold. */
@@ -969,7 +973,7 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
           const mine = f.actions.filter(a => a.sourcePlayerId === p.id).sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0));
           const first = mine[0];
           if (!first || !ACTION_WORD[first.type]) continue;
-          if (first.type === "pass" || first.type === "lob") {
+          if (givesBall(first.type)) {
             const to = f.players.find(q => q.id === first.targetPlayerId);
             const others = f.players.filter(q => q.id !== p.id && q.id !== to?.id).map(q => q.num);
             if (to && others.length) pool.push({ i, p, action: first, end: null, to: to.num, others });
@@ -1011,9 +1015,9 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
           });
         } else {
           out.push({
-            prompt: you ? "Who do you pass to?" : `Who does the ${c.p.num} pass to?`,
+            prompt: you ? `Who do you ${toVerb(c.action.type)}?` : `Who does the ${c.p.num} ${toVerb(c.action.type)}?`,
             options: [`The ${c.to}`, ...pickN(c.others, 3).map(n => `The ${n}`)], correctIndex: 0,
-            explanation: `The ${c.p.num} passes to the ${c.to}.${note ? ` Coach's note: ${note}` : ""}`,
+            explanation: `The ${c.p.num} ${toPast(c.action.type)} the ${c.to}.${note ? ` Coach's note: ${note}` : ""}`,
             source: "sheet", family: `play:${play.id}`, assigneeIds: assignees, qtype: "who_ball",
             groupId, groupPart: 2,
             visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.p.id)], caption: playCaption(play, c.i), heading, part: { n: 2, of: 2 } },
@@ -1025,23 +1029,23 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
 
     // ── Who gets the ball: a pass with a known receiver ──
     if (per.who_ball) {
-      const pool: { i: number; from: number; fromId: string; to: number; others: number[] }[] = [];
+      const pool: { i: number; from: number; fromId: string; to: number; others: number[]; type: string }[] = [];
       frames.forEach((f, i) => {
         for (const a of f.actions) {
-          if ((a.type !== "pass" && a.type !== "lob") || !a.sourcePlayerId || !a.targetPlayerId) continue;
+          if (!givesBall(a.type) || !a.sourcePlayerId || !a.targetPlayerId) continue;
           const from = f.players.find(p => p.id === a.sourcePlayerId);
           const to = f.players.find(p => p.id === a.targetPlayerId);
           if (!from || !to) continue;
           const others = f.players.filter(p => p.id !== from.id && p.id !== to.id).map(p => p.num);
-          if (others.length >= 1) pool.push({ i, from: from.num, fromId: from.id!, to: to.num, others });
+          if (others.length >= 1) pool.push({ i, from: from.num, fromId: from.id!, to: to.num, others, type: a.type });
         }
       });
       for (const c of pickN(pool, per.who_ball)) {
         const note = cleanNote(frames[c.i].note);
         out.push({
-          prompt: `Who does the ${c.from} pass to on this step?`,
+          prompt: `Who does the ${c.from} ${toVerb(c.type)} on this step?`,
           options: [`The ${c.to}`, ...pickN(c.others, 3).map(n => `The ${n}`)], correctIndex: 0,
-          explanation: `The ${c.from} passes to the ${c.to}.${note ? ` Coach's note: ${note}` : ""}`,
+          explanation: `The ${c.from} ${toPast(c.type)} the ${c.to}.${note ? ` Coach's note: ${note}` : ""}`,
           source: "sheet", family: `play:${play.id}`, assigneeIds: [], qtype: "who_ball",
           visual: { court_template: template, frames: [positionsOnly(frames[c.i], c.fromId)], lead_frames: leadUp(play, c.i, c.fromId), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
           reveal: { court_template: template, frame: cleanStep(frames[c.i], c.fromId), caption: playCaption(play, c.i), heading: playHeading(play, c.i) },
@@ -1124,7 +1128,7 @@ export function stepOptions(play: Play, i: number): { acts: string[]; moves: str
     if (mine.length && ACTION_WORD[mine[0].type]) acts.push(p.id);
     const end = after.players.find(q => q.id === p.id);
     if (mine.some(a => ["move", "dribble", "screen"].includes(a.type)) && end && Math.hypot(end.x - p.x, end.y - p.y) >= 30) moves.push(p.id);
-    if (mine.some(a => (a.type === "pass" || a.type === "lob") && a.targetPlayerId && f.players.some(q => q.id === a.targetPlayerId))) passes.push(p.id);
+    if (mine.some(a => givesBall(a.type) && a.targetPlayerId && f.players.some(q => q.id === a.targetPlayerId))) passes.push(p.id);
   }
   return { acts, moves, passes, blanks: f.note ? noteBlanks(f.note).length : 0 };
 }
@@ -1225,13 +1229,13 @@ export function buildChosenQuestion(type: PickType, play: Play, stepIdx: number 
       reveal: reveal(playerId), ...(groupId ? { groupId, groupPart: 2 } : {}) };
   };
   const whoQ = (groupId?: string): QuestionDraft => {
-    const pass = f.actions.find(x => x.sourcePlayerId === playerId && (x.type === "pass" || x.type === "lob") && x.targetPlayerId);
+    const pass = f.actions.find(x => x.sourcePlayerId === playerId && givesBall(x.type) && x.targetPlayerId);
     const to = f.players.find(x => x.id === pass?.targetPlayerId);
     if (!pass || !to) throw new Error("That player doesn't pass on this step.");
     const others = f.players.filter(x => x.id !== playerId && x.id !== to.id).map(x => x.num);
-    return { ...base, prompt: groupId ? (you ? "Who do you pass to?" : `Who does the ${p.num} pass to?`) : `Who does the ${p.num} pass to on this step?`,
+    return { ...base, prompt: groupId ? (you ? `Who do you ${toVerb(pass.type)}?` : `Who does the ${p.num} ${toVerb(pass.type)}?`) : `Who does the ${p.num} ${toVerb(pass.type)} on this step?`,
       options: [`The ${to.num}`, ...pickN(others, 3).map(n => `The ${n}`)], correctIndex: 0,
-      explanation: `The ${p.num} passes to the ${to.num}.${noteText}`, qtype: "who_ball",
+      explanation: `The ${p.num} ${toPast(pass.type)} the ${to.num}.${noteText}`, qtype: "who_ball",
       visual: groupId ? { ...visual(playerId, false), part: { n: 2, of: 2 } } : visual(playerId), reveal: reveal(playerId),
       ...(groupId ? { groupId, groupPart: 2 } : {}) };
   };
@@ -1241,7 +1245,7 @@ export function buildChosenQuestion(type: PickType, play: Play, stepIdx: number 
   if (type === "who_ball") return [whoQ()];
   // two_part: part 2 is a tap for a cut/screen/dribble, "who to" for a pass
   const gid = crypto.randomUUID();
-  const isPass = a && (a.type === "pass" || a.type === "lob");
+  const isPass = a && givesBall(a.type);
   return [whatNext(gid), isPass ? whoQ(gid) : tapQ(gid)];
 }
 
