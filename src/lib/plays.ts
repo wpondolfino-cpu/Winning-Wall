@@ -23,7 +23,8 @@ export const COURT_TEMPLATE_LABELS: Record<CourtTemplate, string> = {
 // the coordinate system stays constant so saved actions/forks stay valid
 // across templates.
 
-export type ActionType = "move" | "pass" | "dribble" | "screen" | "shot" | "lob";
+/** "dho" is a dribble handoff: drawn from the player handing it off to the receiver. */
+export type ActionType = "move" | "pass" | "dribble" | "screen" | "shot" | "lob" | "dho";
 
 export interface PlayPoint { x: number; y: number; }
 
@@ -127,7 +128,8 @@ export function deriveNextFrame(prev: PlayFrame): PlayFrame {
     if (handoffPlayer?.id) {
       ballHolderId = handoffPlayer.id;
     } else {
-      const passTarget = [...prev.actions].reverse().find((a) => a.type === "pass" && a.targetPlayerId);
+      // A handoff action gives the ball to its receiver, the same as a pass.
+      const passTarget = [...prev.actions].reverse().find((a) => (a.type === "pass" || a.type === "dho") && a.targetPlayerId);
       if (passTarget?.targetPlayerId) {
         ballHolderId = passTarget.targetPlayerId;
       } else {
@@ -468,9 +470,50 @@ function stepTiming(frame: PlayFrame): StepTiming | null {
   return result;
 }
 
+// ── Handoff timing ───────────────────────────────────────────
+// A dribble handoff only looks right if the two players arrive together.
+// So a step with a handoff plays in three parts:
+//   1. approach -- the giver's moves before the handoff, and the
+//      receiver's moves up to arriving at the handoff spot, side by side;
+//   2. the exchange -- the handoff itself (the ball goes hand to hand);
+//   3. after -- whatever each of them does next (e.g. the receiver drives).
+// Everyone else keeps the normal whole-step timing. (A step that also
+// has screens keeps the screen timing; the handoff then isn't synced.)
+const HANDOFF_ARRIVE = 0.5, HANDOFF_DONE = 0.62, HANDOFF_SPOT_RADIUS = 60;
+
+function computeHandoffTiming(frame: PlayFrame): StepTiming | null {
+  const dho = frame.actions.find((a) => a.type === "dho" && a.sourcePlayerId && a.targetPlayerId);
+  if (!dho) return null;
+  const giverSeq = playerActionSequence(frame, dho.sourcePlayerId!);
+  const recvSeq = playerActionSequence(frame, dho.targetPlayerId!);
+  const at = giverSeq.indexOf(dho);
+  const giverPre = giverSeq.slice(0, at), giverPost = giverSeq.slice(at + 1);
+  // The receiver "arrives" with the last move that ends near the handoff spot.
+  let k = -1;
+  recvSeq.forEach((a, i) => {
+    if ((a.type === "move" || a.type === "dribble" || a.type === "screen") && Math.hypot(a.x2 - dho.x1, a.y2 - dho.y1) <= HANDOFF_SPOT_RADIUS) k = i;
+  });
+  const recvPre = recvSeq.slice(0, k + 1), recvPost = recvSeq.slice(k + 1);
+
+  const bounds = new Map<PlayAction, SliceBounds>();
+  const wave = new Map<PlayAction, number>();
+  sliceWindow(giverPre, 0, HANDOFF_ARRIVE, bounds);
+  sliceWindow(recvPre, 0, HANDOFF_ARRIVE, bounds);
+  bounds.set(dho, { moveStart: HANDOFF_ARRIVE, moveEnd: HANDOFF_DONE });
+  sliceWindow(giverPost, HANDOFF_DONE, 1, bounds);
+  sliceWindow(recvPost, HANDOFF_DONE, 1, bounds);
+  [...giverPre, ...recvPre].forEach((a) => wave.set(a, 0));
+  wave.set(dho, 1);
+  [...giverPost, ...recvPost].forEach((a) => wave.set(a, 2));
+  // Long enough that each part plays at a normal pace.
+  const before = Math.max(1, giverPre.length, recvPre.length);
+  const after = Math.max(0.6, giverPost.length, recvPost.length);
+  return { bounds, wave, waves: 1, maxPerWave: before + 0.4 + after };
+}
+
 function computeStepTiming(frame: PlayFrame): StepTiming | null {
   const screens = frame.actions.filter((a) => a.type === "screen" && a.sourcePlayerId);
-  if (screens.length === 0) return null;
+  if (screens.length === 0) return computeHandoffTiming(frame);
 
   // Who uses which screen.
   const usesScreens = new Map<PlayAction, PlayAction[]>();
@@ -588,6 +631,9 @@ function boundsForSequence(frame: PlayFrame, seq: PlayAction[]): SliceBounds[] {
   const isBallChain = seq.length > 1 && new Set(seq.map((a) => a.sourcePlayerId)).size > 1;
   if (isBallChain) {
     if (!seq.some((a) => (timing.wave.get(a) ?? 0) > 0)) return actionSliceBounds(seq);
+    // Handoff timing isn't wave-sized; a multi-pass chain in a handoff step
+    // keeps the plain split rather than landing outside the step.
+    if (seq.some((a) => (timing.wave.get(a) ?? 0) >= timing.waves)) return actionSliceBounds(seq);
     const out = new Map<PlayAction, SliceBounds>();
     for (const g of groupByWave(seq, timing.wave)) sliceWindow(g.actions, g.w / timing.waves, (g.w + 1) / timing.waves, out);
     return seq.map((a) => out.get(a)!);
