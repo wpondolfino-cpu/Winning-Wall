@@ -783,7 +783,42 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
             const shotAction = shotIsCurrent ? lastShot : undefined;
             const shotT = shotAction ? localActionProgress(t, shotAction, animFromFrame!) : t;
             const lobAction = activeBallAction?.type === "lob" ? activeBallAction : undefined;
-            if (passAction) {
+            // Dribble handoff: the ball stays in the giver's hand until the
+            // two meet, goes hand to hand during the handoff's own short
+            // window, then rides with the receiver (bouncing if they
+            // dribble on). Uses the players' actual positions this frame,
+            // so it stays with them however their paths bend.
+            const dhoAction = !passAction && !shotAction && !lobAction
+              ? animFromFrame.actions.find((a) => a.type === "dho" && a.sourcePlayerId && a.targetPlayerId)
+              : undefined;
+            const giverIdx = dhoAction ? animFromFrame.players.findIndex((p) => p.id === dhoAction.sourcePlayerId) : -1;
+            const recvIdx = dhoAction ? animFromFrame.players.findIndex((p) => p.id === dhoAction.targetPlayerId) : -1;
+            if (dhoAction && giverIdx >= 0 && recvIdx >= 0 && playerGroups[giverIdx] && playerGroups[recvIdx]) {
+              const u = localActionProgress(t, dhoAction, animFromFrame);
+              const g = playerGroups[giverIdx].position, r = playerGroups[recvIdx].position;
+              const HAND = 0.38;
+              let bounce = 0;
+              if (u <= 0) {
+                ballMesh.position.x = g.x + HAND; ballMesh.position.z = g.z;
+                bounce = dribbleBounce;                       // still the giver's dribble
+              } else if (u < 1) {
+                const e = u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
+                ballMesh.position.x = (g.x + HAND) + ((r.x + HAND) - (g.x + HAND)) * e;
+                ballMesh.position.z = g.z + (r.z - g.z) * e;
+              } else {
+                ballMesh.position.x = r.x + HAND; ballMesh.position.z = r.z;
+                const rp = animFromFrame.players[recvIdx];
+                const rseq = rp.id ? playerActionSequence(animFromFrame, rp.id) : [];
+                const ri = rseq.length ? activeSequenceIndex(t, rseq, animFromFrame) : -1;
+                const ra = ri >= 0 ? rseq[ri] : undefined;
+                if (ra?.type === "dribble") {
+                  const lt = localActionProgress(t, ra, animFromFrame);
+                  const bounces = Math.max(2, Math.round(Math.hypot(ra.x2 - ra.x1, ra.y2 - ra.y1) / 42));
+                  bounce = Math.abs(Math.sin(lt * bounces * Math.PI));
+                }
+              }
+              ballMesh.position.y = 0.5 + bounce * 0.35;
+            } else if (passAction) {
               const mt = 1 - ballLocalT;
               const target = resolvePassEndpoint(animFromFrame, passAction);
               const w1 = toWorld(passAction.x1, passAction.y1), w2 = toWorld(target.x, target.y);
