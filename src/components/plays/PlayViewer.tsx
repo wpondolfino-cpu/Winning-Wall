@@ -786,7 +786,12 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
         </select>
       </div>
 
-      <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 12, marginBottom: 10 }}>
+      {/* Fit the court to the window's height on a laptop (same rule as the
+          designer): the court is 10 wide for every 7 tall, so its width is
+          capped at what keeps it and the controls on screen. On a phone the
+          width is the limit, so nothing changes there. */}
+      <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 12, marginBottom: 10,
+        maxWidth: "min(100%, max(420px, calc((100vh - 260px) * 600 / 420 + 24px)))", marginLeft: "auto", marginRight: "auto" }}>
         <PlayCanvas
           frame={frame}
           courtTemplate={play.court_template}
