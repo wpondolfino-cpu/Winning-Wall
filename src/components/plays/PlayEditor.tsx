@@ -51,7 +51,8 @@ const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "pass", label: "Pass", icon: "┄" },
   { tool: "dribble", label: "Dribble", icon: "〜" },
   { tool: "screen", label: "Screen", icon: "⊥" },
-  { tool: "handoff", label: "Handoff", icon: "✱" },
+  { tool: "dho", label: "Handoff", icon: "⇄" },
+  { tool: "handoff", label: "Handoff marker", icon: "✱" },
   { tool: "shot", label: "Shot", icon: "🥅" },
   { tool: "lob", label: "Lob", icon: "🙌" },
   { tool: "loop", label: "Loop", icon: "↻" },
@@ -742,7 +743,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       const sourcePlayerId = (a.sourcePlayerId && idMap.get(a.sourcePlayerId))
         ?? (roleId ? groupResolved.get(roleId) : undefined);
       const targetPlayerId = (a.targetPlayerId && idMap.get(a.targetPlayerId))
-        ?? ((a.type === "pass" || a.type === "lob") ? nearestRealPlayer(p2.x, p2.y) : undefined);
+        ?? ((a.type === "pass" || a.type === "lob" || a.type === "dho") ? nearestRealPlayer(p2.x, p2.y) : undefined);
       return { ...a, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, curve, sourcePlayerId, targetPlayerId };
     });
     updateFrame((f) => {
@@ -1087,7 +1088,9 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             <button onClick={() => { flipCurrentStep(); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↔ Flip step</button>
             <button onClick={() => { setTool("handoff"); setStampAction(null); setShowMoreTools(false); }}
-              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "handoff" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>✱ Handoff</button>
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "handoff" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>✱ Handoff marker</button>
+            <button onClick={() => { setTool("dho"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "dho" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>⇄ Handoff</button>
             <button onClick={() => { redo(); setShowMoreTools(false); }} disabled={!future.length}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↪ Redo</button>
             <button onClick={() => { setTool("shot"); setStampAction(null); setShowMoreTools(false); }}
@@ -1341,7 +1344,11 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             setStampPreviewPos({ x, y });
           }}
           onMouseLeave={() => setStampPreviewPos(null)}
-          style={{ background: "var(--surface2)", borderRadius: 12, padding: 12 }}
+          // Fit the court to the window's height on a laptop: the court is
+          // 10 wide for every 7 tall, so its width is capped at what keeps
+          // it (plus the tools and step buttons) on screen without scrolling.
+          style={{ background: "var(--surface2)", borderRadius: 12, padding: 12,
+            maxWidth: "min(100%, max(420px, calc((100vh - 230px) * 600 / 420 + 24px)))", marginLeft: "auto", marginRight: "auto" }}
         >
           <PlayCanvas
             frame={frame}
