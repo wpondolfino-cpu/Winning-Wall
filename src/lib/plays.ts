@@ -471,15 +471,17 @@ function stepTiming(frame: PlayFrame): StepTiming | null {
 }
 
 // ── Handoff timing ───────────────────────────────────────────
-// A dribble handoff only looks right if the two players arrive together.
-// So a step with a handoff plays in three parts:
-//   1. approach -- the giver's moves before the handoff, and the
-//      receiver's moves up to arriving at the handoff spot, side by side;
-//   2. the exchange -- the handoff itself (the ball goes hand to hand);
-//   3. after -- whatever each of them does next (e.g. the receiver drives).
+// A dribble handoff plays the way it does on the floor:
+//   1. the giver dribbles to the spot and STOPS (the receiver waits);
+//   2. then the receiver starts their cut toward the giver;
+//   3. the exchange happens as the receiver arrives -- they take it on the
+//      move, the ball going hand to hand over the last moment of the cut;
+//   4. the receiver carries straight on into whatever's drawn next (a
+//      drive), with no pause; the giver's own next move (a roll) follows
+//      the exchange.
 // Everyone else keeps the normal whole-step timing. (A step that also
 // has screens keeps the screen timing; the handoff then isn't synced.)
-const HANDOFF_ARRIVE = 0.5, HANDOFF_DONE = 0.62, HANDOFF_SPOT_RADIUS = 60;
+const HANDOFF_SPOT_RADIUS = 60;
 
 function computeHandoffTiming(frame: PlayFrame): StepTiming | null {
   const dho = frame.actions.find((a) => a.type === "dho" && a.sourcePlayerId && a.targetPlayerId);
@@ -495,20 +497,30 @@ function computeHandoffTiming(frame: PlayFrame): StepTiming | null {
   });
   const recvPre = recvSeq.slice(0, k + 1), recvPost = recvSeq.slice(k + 1);
 
+  // Where each part sits in the step.
+  const giverDone = giverPre.length ? 0.4 : 0;           // giver reaches the spot and stops
+  const arrive = recvPre.length ? giverDone + 0.3 : giverDone + 0.08;   // receiver gets there
+  const exchangeStart = Math.max(giverDone, arrive - 0.08); // the ball moves over the last bit of the cut
+  const exchangeEnd = arrive + 0.02;
+
   const bounds = new Map<PlayAction, SliceBounds>();
   const wave = new Map<PlayAction, number>();
-  sliceWindow(giverPre, 0, HANDOFF_ARRIVE, bounds);
-  sliceWindow(recvPre, 0, HANDOFF_ARRIVE, bounds);
-  bounds.set(dho, { moveStart: HANDOFF_ARRIVE, moveEnd: HANDOFF_DONE });
-  sliceWindow(giverPost, HANDOFF_DONE, 1, bounds);
-  sliceWindow(recvPost, HANDOFF_DONE, 1, bounds);
-  [...giverPre, ...recvPre].forEach((a) => wave.set(a, 0));
+  sliceWindow(giverPre, 0, giverDone, bounds);
+  sliceWindow(recvPre, giverDone, arrive, bounds);
+  bounds.set(dho, { moveStart: exchangeStart, moveEnd: exchangeEnd });
+  // The receiver keeps moving: their next move starts the instant they arrive.
+  sliceWindow(recvPost, arrive, 1, bounds);
+  sliceWindow(giverPost, exchangeEnd, 1, bounds);
+  [...giverPre].forEach((a) => wave.set(a, 0));
+  [...recvPre].forEach((a) => wave.set(a, 0));
   wave.set(dho, 1);
   [...giverPost, ...recvPost].forEach((a) => wave.set(a, 2));
-  // Long enough that each part plays at a normal pace.
-  const before = Math.max(1, giverPre.length, recvPre.length);
-  const after = Math.max(0.6, giverPost.length, recvPost.length);
-  return { bounds, wave, waves: 1, maxPerWave: before + 0.4 + after };
+  // Long enough that each part plays at a normal pace: the dribble, then
+  // the cut, then whatever follows.
+  const units = (giverPre.length ? Math.max(1, giverPre.length) : 0)
+    + (recvPre.length ? Math.max(1, recvPre.length) * 0.75 : 0.25)
+    + Math.max(0.75, giverPost.length, recvPost.length);
+  return { bounds, wave, waves: 1, maxPerWave: Math.max(1, units) };
 }
 
 function computeStepTiming(frame: PlayFrame): StepTiming | null {
