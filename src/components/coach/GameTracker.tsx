@@ -107,6 +107,7 @@
 // either way and guessing wrong misattributes the next trip.
 
 import { useEffect, useRef, useState } from "react";
+import { useHelpTopic } from "../../lib/help";
 import { registerNavGuard } from "../../lib/navGuard";
 import { supabase } from "../../lib/supabase";
 import {
@@ -209,6 +210,8 @@ const QUARTER_ACCENT: Record<number, string> = { 1: "#3b6fd6", 2: "#2f9e63", 3: 
 const DEFENSE_ACCENT = "#c2703a";
 
 export default function GameTracker({ gameId, userId, quarter, format = DEFAULT_GAME_FORMAT, intrasquad = false }: Props) {
+  // While this screen is open, the header ? opens its help.
+  useHelpTopic("gametracker");
   const [playCalls, setPlayCalls] = useState<PlayCall[]>([]);
   const [drawnPlays, setDrawnPlays] = useState<Record<PlayCallCategory, DrawnPlay[]>>({ set: [], motion: [], blob: [], slob: [], zone: [], press_type: [] });
   const [unsynced, setUnsynced] = useState(0);
