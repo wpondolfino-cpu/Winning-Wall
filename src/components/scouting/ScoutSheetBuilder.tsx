@@ -1,5 +1,6 @@
 // src/components/scouting/ScoutSheetBuilder.tsx
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useHelpTopic } from "../../lib/help";
 import {
   ScoutSheet, ScoutPlayer, ScoutMarker, SCOUT_MARKERS,
   ScoutOffenseSet, ScoutSpecial, DefenseSlot,
@@ -33,6 +34,8 @@ interface Props {
 const MARKER_ICON: Record<ScoutMarker, string> = { star: "⭐", dart: "🎯", turtle: "🐢" };
 
 export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: Props) {
+  // While this screen is open, the header ? opens its help.
+  useHelpTopic("scoutsheet");
   const [sheet, setSheet] = useState<ScoutSheet | null>(null);
   const [tab, setTab] = useState<"roster" | "offense" | "defense" | "specials" | "keys" | "print" | "quiz">("roster");
   const [players, setPlayers] = useState<ScoutPlayer[]>([]);
