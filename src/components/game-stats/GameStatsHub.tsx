@@ -19,6 +19,7 @@ import GoalsManager from "./GoalsManager";
 import SyncIssuesViewer from "./SyncIssuesViewer";
 import GameFormatEditor from "./GameFormatEditor";
 import { confirmNavAway } from "../../lib/navGuard";
+import { useHelpTopic } from "../../lib/help";
 import ShiftEntry from "./ShiftEntry";
 import LineupsTab from "./LineupsTab";
 
@@ -176,6 +177,15 @@ export default function GameStatsHub({ currentUserRole, userId, initialGameId, i
     if (error) { alert("Error: " + error); return; }
     setClosedQuarters(next);
   }
+
+  // Each Analytics tab has its own help. Players have no tabs (the page's own
+  // help covers them), and the tracker registers its own topic, so the hub
+  // steps aside while it's open.
+  useHelpTopic(
+    currentUserRole === "player" || (topTab === "games" && gamesView.mode === "track")
+      ? null
+      : `analytics-${topTab}`
+  );
 
   if (currentUserRole === "player") {
     return <PlayerGamesList userId={userId} />;
