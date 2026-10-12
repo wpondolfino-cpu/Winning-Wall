@@ -89,6 +89,33 @@ const COACH: Record<string, Starter> = {
     "Lineups shows individual, 2-, 3- and 5-man numbers once shifts are entered.",
     "Goals sets the target for each stat — that's what turns numbers green or red.",
   ]),
+  "analytics-games": S("Analytics — Games", "Every game on your schedule, with its tracker, stats and clean-up tools.", [
+    "Start opens the tap-through tracker; switch periods with the tabs above it.",
+    "Stats shows the report by period, half or full game.",
+    "Shifts is where you enter who was on the floor — the Lineups tab is built from these.",
+    "Edit stats fixes a mis-tapped trip after the fact.",
+    "Finish locks in the final score; Push to team shares the game with players.",
+    "Closed a period or game too early? Use Reopen.",
+  ]),
+  "analytics-reports": S("Analytics — Reports", "Reports across any games you choose. Saved reports stay listed by season.", [
+    "Pick a season to see its saved reports.",
+    "Create report: choose the games and possession types to include.",
+    "Numbers are colored against your Goals — green is on target, red is off.",
+    "Save it to come back later, or open a saved report to edit it.",
+  ]),
+  "analytics-lineups": S("Analytics — Lineups", "How groups of players did together, built from the shifts you enter on each game.", [
+    "Enter shifts first: Games → Shifts on that game.",
+    "Pick the type first (games, scrimmages, practices, summer), then the scope — all, the last few, wins, losses or one game.",
+    "Reports shows individual, 2-, 3- and 5-man numbers for that scope.",
+    "Rankings and Rotation are coming — they're placeholders for now.",
+    "Small samples mislead — check how many possessions a group actually played.",
+  ]),
+  "analytics-goals": S("Analytics — Goals", "Season targets for each stat. Reports color a stat green, yellow or red against these.", [
+    "Pick Us or Opponent, then set a target for each stat you care about.",
+    "Choose the direction — higher is better, or lower is better (like turnovers).",
+    "Leave an Opponent target blank to simply invert your Us target.",
+    "Use ↑ ↓ and Save order to set the order stats appear in reports.",
+  ]),
   gametracker: S("Game Tracker", "One tap-through per offensive trip, yours and theirs. Taps save on this device and sync in the background.", [
     "Pick how the trip started: Transition, Half-court, Press break or SLOB.",
     "Half court: Man set, Motion, Zone set or Unscripted, then the play call.",
@@ -337,14 +364,16 @@ export function HelpTopicProvider({ children }: { children: ReactNode }) {
   return createElement(HelpTopicContext.Provider, { value }, children);
 }
 
-/** Call in a screen's component: while it's on screen, ? opens this topic. */
-export function useHelpTopic(key: string) {
+/** Call in a screen's component: while it's on screen, ? opens this topic.
+ *  Pass null to register nothing (e.g. while a child screen has its own help). */
+export function useHelpTopic(key: string | null) {
   const ctx = useContext(HelpTopicContext);
   const pushRef = useRef(ctx?.push);
   const popRef = useRef(ctx?.pop);
   pushRef.current = ctx?.push;
   popRef.current = ctx?.pop;
   useEffect(() => {
+    if (!key) return;
     const id = pushRef.current?.(key);
     return () => { if (id) popRef.current?.(id); };
   }, [key]);
