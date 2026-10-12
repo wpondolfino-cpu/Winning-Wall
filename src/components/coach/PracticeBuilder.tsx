@@ -10,6 +10,7 @@
 // durations auto-split evenly across the block's time when added.
 
 import { useState, useEffect, useCallback } from "react";
+import { useHelpTopic } from "../../lib/help";
 import { supabase } from "../../lib/supabase";
 import {
   Roster, PracticeWeek, Practice, PracticeBlock, BlockSegment, SegmentDrill,
@@ -45,6 +46,8 @@ interface Props {
 }
 
 export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props) {
+  // While this screen is open, the header ? opens its help.
+  useHelpTopic("practicebuilder");
   const [practice, setPractice]   = useState<Practice | null>(null);
   const [rosters, setRosters]     = useState<Roster[]>([]);
   const [weeks, setWeeks]         = useState<PracticeWeek[]>([]);
