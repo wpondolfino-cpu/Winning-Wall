@@ -4,6 +4,7 @@
 // by RLS on the plays table, not by role checks here).
 
 import { useState, useEffect, useCallback, useRef, lazy, Suspense, type ComponentType } from "react";
+import { useHelpTopic } from "../../lib/help";
 import PlayCanvas, { CANVAS_W, CANVAS_H } from "./PlayCanvas";
 import { hoopPositions } from "./courtGeometry";
 import VideoUrlNote from "../shared/VideoUrlNote";
@@ -72,6 +73,8 @@ const MORE_TOOLS: { tool: Tool; label: string; icon: string }[] = [
 function cloneFrames(frames: PlayFrame[]): PlayFrame[] { return JSON.parse(JSON.stringify(frames)); }
 
 export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onClose }: Props) {
+  // While this screen is open, the header ? opens its help.
+  useHelpTopic("playdesigner");
   const [title, setTitle] = useState(existingPlay?.title ?? "");
   const [tagsInput, setTagsInput] = useState((existingPlay?.tags ?? []).join(", "));
   const [allTags, setAllTags] = useState<string[]>([]);
