@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import {
   HelpAudience, HelpEntry, getHelp, saveHelp, resetHelp, starterHelp, isValidHelpUrl, useCurrentHelpTopic,
+  PLAYER_PAGES, playerKeyFor,
 } from "../../lib/help";
 import { useIsMobile } from "../../hooks/useIsMobile";
 
@@ -147,12 +148,24 @@ function HelpEditor({ entry, onDone, onClose }: { entry: HelpEntry; onDone: () =
   const [draft, setDraft] = useState<HelpEntry>(entry);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Which page's help is being edited for each audience. Players don't have
+  // every coach page (and have a few of their own), so "Players see" gets a
+  // picker that starts on the matching player page, if there is one.
+  const [playerKey, setPlayerKey] = useState<string | null>(
+    entry.audience === "player" ? entry.pageKey : playerKeyFor(entry.pageKey)
+  );
+  const coachKey = entry.audience === "coach" ? entry.pageKey : null;
+  const editKey = audience === "player" ? playerKey : coachKey;
 
-  // Switching "Coaches see / Players see" loads that audience's help.
+  // Switching audience (or player page) loads that help.
   useEffect(() => {
-    if (audience === entry.audience) { setDraft(entry); return; }
-    getHelp(entry.pageKey, audience).then(setDraft).catch(() => {});
-  }, [audience, entry]);
+    if (!editKey) return;
+    if (audience === entry.audience && editKey === entry.pageKey) { setDraft(entry); return; }
+    getHelp(editKey, audience).then(setDraft).catch(() => {
+      // Never leave the other audience's text in the form to be saved here.
+      setDraft({ ...starterHelp(editKey, audience), pageKey: editKey, audience, guideUrl: null, sheetUrl: null, videoUrl: null, edited: false, updatedBy: null, updatedAt: null });
+    });
+  }, [audience, editKey, entry]);
 
   const set = (patch: Partial<HelpEntry>) => setDraft(d => ({ ...d, ...patch }));
   const setStep = (i: number, v: string) => set({ steps: draft.steps.map((s, j) => (j === i ? v : s)) });
@@ -169,14 +182,16 @@ function HelpEditor({ entry, onDone, onClose }: { entry: HelpEntry; onDone: () =
       if (u && u.trim() && !isValidHelpUrl(u)) { setError(`"${u}" doesn't look like a web link — it should start with https://`); return; }
     }
     setBusy(true); setError(null);
-    try { await saveHelp(entry.pageKey, audience, draft); onDone(); }
+    if (!editKey) return;
+    try { await saveHelp(editKey, audience, draft); onDone(); }
     catch (e: any) { setError(e?.message ?? "Couldn't save."); }
     finally { setBusy(false); }
   }
   async function reset() {
+    if (!editKey) return;
     if (!window.confirm("Put back the starter text for this page? Your edits and links for this audience are removed.")) return;
     setBusy(true); setError(null);
-    try { await resetHelp(entry.pageKey, audience); onDone(); }
+    try { await resetHelp(editKey, audience); onDone(); }
     catch (e: any) { setError(e?.message ?? "Couldn't reset."); }
     finally { setBusy(false); }
   }
@@ -191,7 +206,23 @@ function HelpEditor({ entry, onDone, onClose }: { entry: HelpEntry; onDone: () =
     <>
       <Header title={`Edit help · ${entry.title}`} onClose={onClose} />
       <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>{seg("coach", "Coaches see")}{seg("player", "Players see")}</div>
+      {audience === "player" && (
+        <>
+          <div style={label}>Player page</div>
+          <select value={playerKey ?? ""} onChange={e => setPlayerKey(e.target.value || null)} style={input}>
+            {!playerKey && <option value="">Choose a page…</option>}
+            {PLAYER_PAGES.map(p => <option key={p.key} value={p.key}>{p.title}</option>)}
+          </select>
+          {!playerKeyFor(entry.pageKey) && entry.audience === "coach" && (
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Players don't see this page. Pick any player page to edit its help.</div>
+          )}
+        </>
+      )}
+      {audience === "coach" && !coachKey && (
+        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>Open this page as a coach to edit the coach version.</div>
+      )}
       {error && <div className="error-msg">{error}</div>}
+      {editKey && <>
 
       <div style={label}>Title</div>
       <input value={draft.title} onChange={e => set({ title: e.target.value })} style={input} />
@@ -232,6 +263,7 @@ function HelpEditor({ entry, onDone, onClose }: { entry: HelpEntry; onDone: () =
         {draft.edited && <button type="button" onClick={reset} disabled={busy} style={{ ...btn, fontSize: 12 }}>Reset to starter text</button>}
       </div>
       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 10 }}>Saved help shows for everyone straight away.</div>
+      </>}
     </>
   );
 }
