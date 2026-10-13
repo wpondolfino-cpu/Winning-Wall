@@ -292,6 +292,25 @@ const PLAYER: Record<string, Starter> = {
 };
 
 /** The starter help for a page (falls back to the other audience, then generic). */
+/** Every page players can open, for the editor's "Players see" picker. */
+export const PLAYER_PAGES: { key: string; title: string }[] =
+  Object.entries(PLAYER).map(([key, v]) => ({ key, title: v.title }));
+
+// Coach screens whose player version lives under a different key.
+const PLAYER_KEY_FOR: Record<string, string> = {
+  practices: "practiceschedule",
+  "analytics-games": "gamestats",
+  "analytics-reports": "gamestats",
+  "analytics-lineups": "gamestats",
+  "analytics-goals": "gamestats",
+};
+
+/** The player page matching a coach page, or null when players have no version of it. */
+export function playerKeyFor(key: string): string | null {
+  if (PLAYER[key]) return key;
+  return PLAYER_KEY_FOR[key] ?? null;
+}
+
 export function starterHelp(pageKey: string, audience: HelpAudience): Starter {
   const own = audience === "coach" ? COACH : PLAYER;
   return own[pageKey] ?? (audience === "coach" ? PLAYER[pageKey] : undefined)
