@@ -53,7 +53,6 @@ const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "dribble", label: "Dribble", icon: "〜" },
   { tool: "screen", label: "Screen", icon: "⊥" },
   { tool: "dho", label: "Handoff", icon: "⇄" },
-  { tool: "handoff", label: "Handoff marker", icon: "✱" },
   { tool: "shot", label: "Shot", icon: "🥅" },
   { tool: "lob", label: "Lob", icon: "🙌" },
   { tool: "loop", label: "Loop", icon: "↻" },
@@ -1090,8 +1089,6 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↔ Flip entire play</button>
             <button onClick={() => { flipCurrentStep(); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↔ Flip step</button>
-            <button onClick={() => { setTool("handoff"); setStampAction(null); setShowMoreTools(false); }}
-              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "handoff" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>✱ Handoff marker</button>
             <button onClick={() => { setTool("dho"); setStampAction(null); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "dho" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>⇄ Handoff</button>
             <button onClick={() => { redo(); setShowMoreTools(false); }} disabled={!future.length}
