@@ -21,6 +21,16 @@ interface Props {
   onBack: () => void;
   /** Viewer-only, local override — renders this one player (by stable id) with the viewer's own avatar, mirroring the same feature in the 2D canvas. */
   selfOverride?: { playerId: string; avatarUrl: string | null } | null;
+  // ── Playlist ("Play all") hooks; all optional, so the normal viewer is unchanged ──
+  /** Each new value starts the play from the top and plays it through. */
+  autoPlayToken?: number;
+  /** Fired once the last step has finished playing. */
+  onPlayEnd?: () => void;
+  /** Hide "Back to 2D" (the playlist has its own 2D/3D switch). */
+  hideBack?: boolean;
+  /** Starting speed, and a report back when it's changed here. */
+  initialSpeed?: number;
+  onSpeedChange?: (speed: number) => void;
 }
 
 const FACE_COLORS = [0x378add, 0x639922, 0xd85a30, 0xd4537e, 0x7f77dd];
@@ -122,7 +132,7 @@ function zoomedOut(preset: typeof PRESETS_DESKTOP[number], factor: number) {
 }
 const PRESETS_MOBILE = PRESETS_DESKTOP.map((p) => zoomedOut(p, 2.15));
 
-export default function Play3DViewer({ play, roster, onBack, selfOverride = null }: Props) {
+export default function Play3DViewer({ play, roster, onBack, selfOverride = null, autoPlayToken, onPlayEnd, hideBack, initialSpeed, onSpeedChange }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const [frameIdx, setFrameIdx] = useState(0);
@@ -150,7 +160,10 @@ export default function Play3DViewer({ play, roster, onBack, selfOverride = null
     const offset = root.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
     scroller.scrollTop = Math.max(0, scroller.scrollTop + offset - 12);
   }, []);
-  const [speed, setSpeed] = useState(1);
+  const [speed, setSpeedState] = useState(initialSpeed ?? 1);
+  const setSpeed = (v: number) => { setSpeedState(v); onSpeedChange?.(v); };
+  const onPlayEndRef = useRef(onPlayEnd);
+  onPlayEndRef.current = onPlayEnd;
 
   // Mutable refs so the render loop (set up once) can read current props/state.
   const stateRef = useRef({ play, roster, frameIdx, selfOverride, speed });
@@ -497,6 +510,9 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
     let fallStart: number | null = null;
     const FALL_DURATION = 550;
     let lastTickTime = performance.now();
+    // Bumped by each playlist restart, so a finish from an earlier run
+    // can't end the new one.
+    let playGen = 0;
 
     function beginNextBeat(): boolean {
       const { play: p, frameIdx: idx } = stateRef.current;
@@ -515,7 +531,13 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
       const more = isPlayingRef.current && beginNextBeat();
       if (!more) {
         animFromFrame = null; animToFrame = null; elapsed = 0;
-        if (isPlayingRef.current) pause();
+        if (isPlayingRef.current) {
+          pause();
+          // Let a made shot drop through the net before saying it's over
+          // (unless it's been restarted in the meantime).
+          const g = playGen;
+          setTimeout(() => { if (g === playGen) onPlayEndRef.current?.(); }, 650);
+        }
       }
     }
 
@@ -983,6 +1005,21 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
       camera.lookAt(...(lookAt ?? [0, 0, 0]));
     };
     (mount as any)._togglePlayPause = togglePlayPause;
+    (mount as any)._startFromTop = () => {
+      playGen += 1;
+      const g = playGen;
+      const frames = stateRef.current.play.data.frames;
+      stateRef.current = { ...stateRef.current, frameIdx: 0 };
+      setFrameIdx(0);
+      animFromFrame = null; animToFrame = null; elapsed = 0; fallStart = null;
+      buildEntities(frames[0], stateRef.current.roster, stateRef.current.selfOverride);
+      if (frames.length <= 1) {
+        // Nothing moves in a one-step play: hold it a moment, then it's done.
+        setTimeout(() => { if (g === playGen) onPlayEndRef.current?.(); }, 1800);
+        return;
+      }
+      startOrResume();
+    };
 
     return () => {
       cancelAnimationFrame(raf);
@@ -996,6 +1033,14 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Playlist: a new token means "play this from the top". The value the
+  // viewer mounts with belongs to the previous play, so it's ignored.
+  const mountTokenRef = useRef(autoPlayToken);
+  useEffect(() => {
+    if (!autoPlayToken || autoPlayToken === mountTokenRef.current) return;
+    (mountRef.current as any)?._startFromTop?.();
+  }, [autoPlayToken]);
 
   // When the user picks a different beat manually (not via play animation), rebuild entities at that frame.
   useEffect(() => {
@@ -1018,7 +1063,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
   return (
     <div ref={rootRef}>
       <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <button onClick={onBack} style={{ padding: "8px 12px", fontSize: 13 }}>← Back to 2D</button>
+        {!hideBack && <button onClick={onBack} style={{ padding: "8px 12px", fontSize: 13 }}>← Back to 2D</button>}
         <button onClick={handlePlayPauseClick} className="coach-add-btn" style={{ fontSize: 13 }}>{isPlaying ? "⏸ Pause" : "▶ Play"}</button>
         <select
           value={speed}
