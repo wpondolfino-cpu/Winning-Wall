@@ -788,9 +788,23 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
             // window, then rides with the receiver (bouncing if they
             // dribble on). Uses the players' actual positions this frame,
             // so it stays with them however their paths bend.
-            const dhoAction = !passAction && !shotAction && !lobAction
-              ? animFromFrame.actions.find((a) => a.type === "dho" && a.sourcePlayerId && a.targetPlayerId)
-              : undefined;
+            //
+            // A pass, shot or lob drawn AFTER the handoff (the receiver
+            // shoots or kicks it on) must wait its turn: until it actually
+            // starts, the handoff owns the ball. Otherwise the ball jumps
+            // straight to where that shot/pass is drawn from -- the
+            // receiver's end point -- before the handoff even happens.
+            // One drawn BEFORE it (a pass to the giver) hands over to the
+            // handoff once it has landed.
+            const dhoInStep = animFromFrame.actions.find((a) => a.type === "dho" && a.sourcePlayerId && a.targetPlayerId);
+            const otherBall = passAction ?? shotAction ?? lobAction;
+            let dhoOwnsBall = !!dhoInStep && !otherBall;
+            if (dhoInStep && otherBall) {
+              const before = (otherBall.type === "pass" || otherBall.type === "lob") && otherBall.targetPlayerId === dhoInStep.sourcePlayerId;
+              const u = otherBall === shotAction ? shotT : ballLocalT;
+              dhoOwnsBall = before ? u >= 1 : u <= 0;
+            }
+            const dhoAction = dhoOwnsBall ? dhoInStep : undefined;
             const giverIdx = dhoAction ? animFromFrame.players.findIndex((p) => p.id === dhoAction.sourcePlayerId) : -1;
             const recvIdx = dhoAction ? animFromFrame.players.findIndex((p) => p.id === dhoAction.targetPlayerId) : -1;
             if (dhoAction && giverIdx >= 0 && recvIdx >= 0 && playerGroups[giverIdx] && playerGroups[recvIdx]) {
