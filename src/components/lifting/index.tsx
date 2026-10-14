@@ -31,7 +31,7 @@ export default function LiftingPanel({ playerId, playerName, avatarUrl, isCoach 
   // Data
   const [programs, setPrograms] = useState<LiftingProgram[]>([]);
   const [archivedPrograms, setArchivedPrograms] = useState<LiftingProgram[]>([]);
-  const [days, setDays] = useState<Record<string, LiftingDay[]>>({}); // keyed by program_id
+  const [days, setDays] = useState<Record<string, LiftingDay[]>>({}); // keyed by lifting_program_id
   const [dayExercises, setDayExercises] = useState<Record<string, (DayExercise & { exercise: BankExercise })[]>>({}); // keyed by day_id
   const [allPlayerLogs, setAllPlayerLogs] = useState<LiftingLog[]>([]);
 
@@ -57,7 +57,7 @@ export default function LiftingPanel({ playerId, playerName, avatarUrl, isCoach 
       if (progs.length > 0) {
         const progDays = await getDaysForPrograms(progs.map(p => p.id));
         const byProg: Record<string, LiftingDay[]> = {};
-        progDays.forEach(d => { if (!byProg[d.program_id]) byProg[d.program_id] = []; byProg[d.program_id].push(d); });
+        progDays.forEach(d => { if (!byProg[d.lifting_program_id]) byProg[d.lifting_program_id] = []; byProg[d.lifting_program_id].push(d); });
         setDays(byProg);
 
         if (progDays.length > 0) {
