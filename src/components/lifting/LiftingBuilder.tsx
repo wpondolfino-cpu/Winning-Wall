@@ -263,7 +263,7 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
       const { data: progDays } = await supabase
         .from("lifting_days")
         .select("*")
-        .eq("program_id", programId)
+        .eq("lifting_program_id", programId)
         .order("day_number");
       if (!progDays || progDays.length === 0) {
         alert("Program not found in database. Make sure you ran the SQL file in Supabase.");
