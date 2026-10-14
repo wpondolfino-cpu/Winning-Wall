@@ -36,6 +36,7 @@ import GameStatsHub from "./components/game-stats/GameStatsHub";
 import ScoutSheetsHub from "./components/scouting/ScoutSheetsHub";
 import PageErrorBoundary from "./components/PageErrorBoundary";
 import HelpButton from "./components/help/HelpButton";
+import ProgramSwitcher from "./components/ProgramSwitcher";
 import { LiveBanner } from "./components/quizzes/LivePlayer";
 import QuizzesPage, { QuizPrefill } from "./components/quizzes/QuizzesPage";
 import PlayerQuizList from "./components/quizzes/PlayerQuizList";
@@ -731,6 +732,7 @@ export default function App() {
         <div className="header-logo">Winning <span>Wall</span></div>
         <div className="header-role">{roleLabel}</div>
         <div className="header-user">{displayProfile.name}</div>
+        <ProgramSwitcher userId={user.id} />
         {/* Help for the page (or the screen inside it) that's showing. */}
         <HelpButton pageKey={isPlayer ? playerTab : isCoach ? coachTab : adminTab}
           audience={isPlayer ? "player" : "coach"} isAdmin={isAdmin} />
