@@ -1275,8 +1275,9 @@ async function loadSourcePlays(playbookId: string | null, playIds: string[]): Pr
     const rows = await getPlaybookPlays(playbookId);
     // A coach can only read plays they own or that were shared with them;
     // the rest come back empty and are skipped.
-    const plays = rows.filter(r => r && (r as any).id && (r as any).data) as Play[];
-    return { plays, skipped: rows.length - plays.length };
+    // Hidden plays haven't been installed yet, so they stay out of quizzes.
+    const plays = rows.filter(r => r && !r.hidden && (r as any).id && (r as any).data) as Play[];
+    return { plays, skipped: rows.filter(r => !r.hidden).length - plays.length };
   }
   if (!playIds.length) return { plays: [], skipped: 0 };
   const { data, error } = await supabase.from("plays").select("*").in("id", playIds);
