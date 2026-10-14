@@ -146,6 +146,10 @@ body {
   .sidebar { width: 160px; }
   .main-content { padding: 16px; }
   .app-header { padding: 0 12px; gap: 8px; }
+  /* Phones: the program badge takes the name's place on the right. */
+  .app-header .header-user { display: none; }
+  .app-header .program-switcher { margin-left: auto; }
+  .program-switcher-name { max-width: 110px !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 .workout-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; transition: border-color .2s, transform .15s; }
 .workout-card.clickable { cursor: pointer; }
