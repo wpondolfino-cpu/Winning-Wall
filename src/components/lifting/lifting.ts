@@ -33,7 +33,7 @@ export interface LiftingProgram {
 
 export interface LiftingDay {
   id: string;
-  program_id: string;
+  lifting_program_id: string;
   name: string;
   day_number: number;
   is_rest_day: boolean;
@@ -106,9 +106,9 @@ export async function getVisiblePrograms(playerId: string, canManage: boolean): 
 
   const { data: assignments } = await supabase
     .from("lifting_program_assignments")
-    .select("program_id")
+    .select("lifting_program_id")
     .eq("player_id", playerId);
-  const assignedIds = new Set((assignments ?? []).map((a: any) => a.program_id));
+  const assignedIds = new Set((assignments ?? []).map((a: any) => a.lifting_program_id));
   return progs.filter(p =>
     (p.visibility === "public" ||
     assignedIds.has(p.id) ||
@@ -156,15 +156,15 @@ export async function getAssignedPlayers(programId: string): Promise<string[]> {
   const { data } = await supabase
     .from("lifting_program_assignments")
     .select("player_id")
-    .eq("program_id", programId);
+    .eq("lifting_program_id", programId);
   return (data ?? []).map((a: any) => a.player_id);
 }
 
 export async function saveAssignments(programId: string, playerIds: string[]) {
-  await supabase.from("lifting_program_assignments").delete().eq("program_id", programId);
+  await supabase.from("lifting_program_assignments").delete().eq("lifting_program_id", programId);
   if (playerIds.length > 0) {
     await supabase.from("lifting_program_assignments").insert(
-      playerIds.map(pid => ({ program_id: programId, player_id: pid }))
+      playerIds.map(pid => ({ lifting_program_id: programId, player_id: pid }))
     );
   }
 }
@@ -176,19 +176,19 @@ export async function getDaysForPrograms(programIds: string[]): Promise<LiftingD
   const { data } = await supabase
     .from("lifting_days")
     .select("*")
-    .in("program_id", programIds)
+    .in("lifting_program_id", programIds)
     .order("day_number");
   return data ?? [];
 }
 
 export async function saveDays(
   programId: string,
-  days: Omit<LiftingDay, "id" | "program_id">[]
+  days: Omit<LiftingDay, "id" | "lifting_program_id">[]
 ): Promise<LiftingDay[]> {
-  await supabase.from("lifting_days").delete().eq("program_id", programId);
+  await supabase.from("lifting_days").delete().eq("lifting_program_id", programId);
   if (days.length === 0) return [];
   const { data, error } = await supabase.from("lifting_days").insert(
-    days.map(d => ({ ...d, program_id: programId }))
+    days.map(d => ({ ...d, lifting_program_id: programId }))
   ).select();
   if (error) throw error;
   return data ?? [];
