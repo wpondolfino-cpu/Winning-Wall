@@ -1260,14 +1260,49 @@ export async function deletePlaybook(id: string) {
 }
 
 // ── Playbook contents ────────────────────────────────────────
-export async function getPlaybookPlays(playbookId: string): Promise<(Play & { sort_order: number })[]> {
+/** A play as it sits in one playbook: its place, its heading, and whether
+ *  it's hidden from players (176). Players never receive hidden rows --
+ *  the database leaves them out -- so `hidden` is only ever true for staff. */
+export type PlaybookPlay = Play & { sort_order: number; section: string | null; hidden: boolean };
+
+export async function getPlaybookPlays(playbookId: string): Promise<PlaybookPlay[]> {
   const { data, error } = await supabase
     .from("playbook_plays")
-    .select("sort_order, plays(*)")
+    .select("sort_order, section, hidden, plays(*)")
     .eq("playbook_id", playbookId)
     .order("sort_order", { ascending: true });
   if (error) throw error;
-  return (data ?? []).map((row: any) => ({ ...row.plays, sort_order: row.sort_order }));
+  return (data ?? []).map((row: any) => ({ ...row.plays, sort_order: row.sort_order, section: row.section ?? null, hidden: !!row.hidden }));
+}
+
+/** Show or hide one play from the players a playbook is assigned to. */
+export async function setPlaybookPlayHidden(playbookId: string, playId: string, hidden: boolean) {
+  const { error } = await supabase.from("playbook_plays")
+    .update({ hidden }).eq("playbook_id", playbookId).eq("play_id", playId);
+  if (error) throw error;
+}
+
+/** Save a playbook's order and headings in one go: the rows in the order
+ *  given, each with its section. */
+export async function savePlaybookLayout(playbookId: string, rows: { playId: string; section: string | null }[]) {
+  const { error } = await supabase.from("playbook_plays").upsert(
+    rows.map((r, i) => ({ playbook_id: playbookId, play_id: r.playId, sort_order: i, section: r.section?.trim() || null })),
+    { onConflict: "playbook_id,play_id" },
+  );
+  if (error) throw error;
+}
+
+/** Plays grouped under their headings, in playbook order. A heading shows
+ *  wherever its first play sits; plays with no heading form their own
+ *  (unnamed) groups between the others. */
+export function groupBySection<T extends { section: string | null }>(plays: T[]): { section: string | null; plays: T[] }[] {
+  const out: { section: string | null; plays: T[] }[] = [];
+  for (const p of plays) {
+    const last = out[out.length - 1];
+    if (last && last.section === (p.section ?? null)) last.plays.push(p);
+    else out.push({ section: p.section ?? null, plays: [p] });
+  }
+  return out;
 }
 
 /**
