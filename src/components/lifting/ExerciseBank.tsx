@@ -43,7 +43,7 @@ export default function ExerciseBank({ playerId, canManage }: Props) {
   async function checkUsage(ex: BankExercise): Promise<UsageInfo[]> {
     const { data } = await supabase
       .from("lifting_day_exercises")
-      .select("day_id, lifting_days(id, name, day_number, program_id, lifting_programs(id, title))")
+      .select("day_id, lifting_days(id, name, day_number, lifting_program_id, lifting_programs(id, title))")
       .eq("bank_exercise_id", ex.id);
     if (!data) return [];
     return data.map((row: any) => ({
