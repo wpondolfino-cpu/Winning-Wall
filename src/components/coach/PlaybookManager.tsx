@@ -8,11 +8,13 @@ import { useState, useEffect } from "react";
 import { getYouTubeId } from "../../lib/youtube";
 import VideoUrlNote from "../shared/VideoUrlNote";
 import PlayPrintView from "../plays/PlayPrintView";
+import PlaylistPlayer from "../plays/PlaylistPlayer";
 import RosterShareRows from "../shared/RosterShareRows";
 import {
   Playbook, Play, RosterPlayer,
   getPlaybooks, createPlaybook, updatePlaybook, setPlaybookStatus, deletePlaybook,
   getPlaybookPlays, addPlayToPlaybook, removePlayFromPlaybook,
+  setPlaybookPlayHidden, savePlaybookLayout, groupBySection, type PlaybookPlay,
   getPlaybookShares, publishPlaybookTo, unassignPlaybookFrom,
   getMyPlays, getRoster,
 } from "../../lib/plays";
@@ -22,6 +24,10 @@ const STATUS_COLOR: Record<string, { bg: string; color: string; label: string }>
   active:   { bg: "rgba(40,180,80,0.12)",   color: "#5de098",      label: "🌐 Live"     },
   archived: { bg: "rgba(255,255,255,0.06)", color: "var(--muted)", label: "📦 Archived" },
 };
+
+const NEW_SECTION = "__new__";
+const miniBtn = { background: "none", border: "none", color: "var(--muted)", fontSize: 11, cursor: "pointer", padding: "0 2px" } as const;
+const arrowBtn = { background: "none", border: "none", color: "var(--muted)", fontSize: 9, lineHeight: 1, cursor: "pointer", padding: "1px 3px" } as const;
 
 const inputStyle = { width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" as const };
 
@@ -42,6 +48,8 @@ export default function PlaybookManager({ onOpenPlay, initialExpandedId, onMakeQ
   // The playbook currently being printed, if any. Printing takes over the
   // screen the same way it does for a single play.
   const [printing, setPrinting] = useState<{ plays: Play[]; name: string } | null>(null);
+  // "Play all" takes over the screen the same way.
+  const [watching, setWatching] = useState<{ plays: Play[]; name: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [newName, setNewName] = useState("");
@@ -75,6 +83,10 @@ export default function PlaybookManager({ onOpenPlay, initialExpandedId, onMakeQ
   if (printing) {
     const rosterMap: Record<string, RosterPlayer> = Object.fromEntries(roster.map((r) => [r.id, r]));
     return <PlayPrintView plays={printing.plays} playbookName={printing.name} roster={rosterMap} onBack={() => setPrinting(null)} />;
+  }
+  if (watching) {
+    const rosterMap: Record<string, RosterPlayer> = Object.fromEntries(roster.map((r) => [r.id, r]));
+    return <PlaylistPlayer title={watching.name} plays={watching.plays} roster={rosterMap} onClose={() => setWatching(null)} />;
   }
 
   async function createNew() {
@@ -212,6 +224,7 @@ export default function PlaybookManager({ onOpenPlay, initialExpandedId, onMakeQ
                     playbook={pb}
                     onChanged={load}
                     onPrint={(plays) => setPrinting({ plays, name: pb.name })}
+                    onWatch={(plays) => setWatching({ plays, name: pb.name })}
                     onOpenPlay={onOpenPlay ? (play) => onOpenPlay(play, pb.id) : undefined}
                   />
                 )}
@@ -224,13 +237,16 @@ export default function PlaybookManager({ onOpenPlay, initialExpandedId, onMakeQ
   );
 }
 
-function PlaybookDetail({ playbook, onChanged, onPrint, onOpenPlay }: {
+function PlaybookDetail({ playbook, onChanged, onPrint, onWatch, onOpenPlay }: {
   playbook: Playbook;
   onChanged: () => void;
   onPrint: (plays: Play[]) => void;
+  onWatch: (plays: Play[]) => void;
   onOpenPlay?: (play: Play) => void;
 }) {
-  const [plays, setPlays] = useState<Play[]>([]);
+  const [plays, setPlays] = useState<PlaybookPlay[]>([]);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [layoutError, setLayoutError] = useState<string | null>(null);
   const [myPlays, setMyPlays] = useState<Play[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [shares, setShares] = useState<any[]>([]);
@@ -287,6 +303,78 @@ function PlaybookDetail({ playbook, onChanged, onPrint, onOpenPlay }: {
   }
 
   const availablePlays = myPlays.filter((p) => !plays.some((pp) => pp.id === p.id));
+  const visiblePlays = plays.filter((p) => !p.hidden);
+  const sections = [...new Set(plays.map((p) => p.section).filter((x): x is string => !!x))];
+
+  // ── Organizing ──
+  // Every change is shown straight away and saved in the background; if
+  // the save fails, the list reloads from the database so it never shows
+  // an order that isn't really saved.
+  async function commit(next: PlaybookPlay[]) {
+    setPlays(next);
+    setLayoutError(null);
+    try { await savePlaybookLayout(playbook.id, next.map((p) => ({ playId: p.id, section: p.section }))); }
+    catch (e: any) { setLayoutError("Couldn't save the new order: " + (e?.message ?? e)); refresh(); }
+  }
+  /** ▲▼: swap with the neighbour -- or, at the edge of a section, step
+   *  across into the next section instead of jumping past its first play. */
+  function move(i: number, dir: -1 | 1) {
+    const j = i + dir;
+    if (j < 0 || j >= plays.length) return;
+    const next = plays.slice();
+    if ((next[j].section ?? null) !== (next[i].section ?? null)) {
+      next[i] = { ...next[i], section: next[j].section };
+    } else {
+      [next[i], next[j]] = [next[j], next[i]];
+    }
+    commit(next);
+  }
+  /** Drag and drop: the dragged play lands just above the one it's dropped
+   *  on, joining that play's section. */
+  function dropBefore(dragged: string, target: string) {
+    const from = plays.findIndex((p) => p.id === dragged);
+    if (from < 0) return;
+    const moving = plays[from];
+    const rest = plays.filter((p) => p.id !== dragged);
+    const to = rest.findIndex((p) => p.id === target);
+    if (to < 0) return;
+    rest.splice(to, 0, { ...moving, section: rest[to].section });
+    commit(rest);
+  }
+  /** Picking a section moves the play to the end of that section (a new
+   *  section starts at the bottom of the playbook). */
+  function pickSection(playId: string, value: string) {
+    let section: string | null = value || null;
+    if (value === NEW_SECTION) {
+      const name = window.prompt("Name the new section (e.g. Sets, BLOB, 2026)")?.trim();
+      if (!name) return;
+      section = name.slice(0, 60);
+    }
+    const moving = plays.find((p) => p.id === playId);
+    if (!moving) return;
+    const rest = plays.filter((p) => p.id !== playId);
+    let at = rest.length;
+    if (section) {
+      const lastInSection = rest.map((p) => p.section).lastIndexOf(section);
+      if (lastInSection >= 0) at = lastInSection + 1;
+    }
+    rest.splice(at, 0, { ...moving, section });
+    commit(rest);
+  }
+  function renameSection(old: string) {
+    const name = window.prompt("Rename section", old)?.trim();
+    if (!name || name === old) return;
+    commit(plays.map((p) => (p.section === old ? { ...p, section: name.slice(0, 60) } : p)));
+  }
+  function clearSection(old: string) {
+    if (!window.confirm(`Remove the "${old}" heading? Its plays stay in the playbook, just without a heading.`)) return;
+    commit(plays.map((p) => (p.section === old ? { ...p, section: null } : p)));
+  }
+  async function toggleHidden(p: PlaybookPlay) {
+    setPlays((list) => list.map((x) => (x.id === p.id ? { ...x, hidden: !p.hidden } : x)));
+    try { await setPlaybookPlayHidden(playbook.id, p.id, !p.hidden); }
+    catch (e: any) { setLayoutError("Couldn't change that: " + (e?.message ?? e)); refresh(); }
+  }
 
   return (
     <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
@@ -316,28 +404,84 @@ function PlaybookDetail({ playbook, onChanged, onPrint, onOpenPlay }: {
         )}
       </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 6, flexWrap: "wrap" }}>
         <div style={{ fontSize: 12, color: "var(--muted)" }}>Plays in this playbook</div>
-        {plays.length > 0 && (
-          <button onClick={() => onPrint(plays)} style={{ background: "none", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "3px 9px", fontSize: 11, cursor: "pointer" }}>
-            🖨️ Print / export
-          </button>
+        {visiblePlays.length > 0 && (
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={() => onWatch(visiblePlays)} style={{ background: "var(--royal)", border: "none", color: "#fff", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+              ▶ Play all
+            </button>
+            <button onClick={() => onPrint(visiblePlays)} style={{ background: "none", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "3px 9px", fontSize: 11, cursor: "pointer" }}>
+              🖨️ Print / export
+            </button>
+          </div>
         )}
       </div>
-      {plays.map((p) => (
-        <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", fontSize: 13, color: "var(--text)" }}>
-          {onOpenPlay ? (
-            // Checking a play is the thing you most want to do while building
-            // a playbook, so the title opens it rather than being dead text.
-            <button onClick={() => onOpenPlay(p)} style={{ background: "none", border: "none", padding: 0, textAlign: "left", font: "inherit", fontSize: 13, color: "var(--text)", cursor: "pointer", textDecoration: "underline", textDecorationColor: "var(--border)", textUnderlineOffset: 3 }}>
-              {p.title}
-            </button>
-          ) : (
-            <span>{p.title}</span>
-          )}
-          <button onClick={() => removePlay(p.id)} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 8px", fontSize: 11, cursor: "pointer" }}>Remove</button>
+      {plays.length > 1 && (
+        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>
+          Drag a play (or use ▲▼) to reorder. 👁 hides a play from players until you're ready. Pick a section to group plays under a heading.
         </div>
-      ))}
+      )}
+      {layoutError && <div style={{ fontSize: 12, color: "#ff7b7b", marginBottom: 6 }}>{layoutError}</div>}
+      {(() => {
+        let n = 0;
+        return groupBySection(plays).map((g, gi) => (
+          <div key={`${g.section ?? ""}-${gi}`} style={{ marginBottom: 4 }}>
+            {g.section && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "10px 0 2px" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: "var(--gold)" }}>{g.section}</span>
+                <button onClick={() => renameSection(g.section!)} title="Rename this section" style={miniBtn}>✎</button>
+                <button onClick={() => clearSection(g.section!)} title="Remove this heading (the plays stay)" style={miniBtn}>✕</button>
+              </div>
+            )}
+            {g.plays.map((p) => {
+              const i = plays.indexOf(p);
+              n += 1;
+              return (
+                <div key={p.id}
+                  draggable
+                  onDragStart={() => setDragId(p.id)}
+                  onDragEnd={() => setDragId(null)}
+                  onDragOver={(e) => { if (dragId && dragId !== p.id) e.preventDefault(); }}
+                  onDrop={(e) => { e.preventDefault(); if (dragId) dropBefore(dragId, p.id); setDragId(null); }}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", fontSize: 13, color: "var(--text)",
+                    borderTop: "1px solid var(--border)", opacity: dragId === p.id ? 0.4 : 1 }}>
+                  <span title="Drag to reorder" style={{ cursor: "grab", color: "var(--muted)", fontSize: 13, userSelect: "none" }}>⋮⋮</span>
+                  <div style={{ display: "flex", flexDirection: "column" }}>
+                    <button onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up" style={arrowBtn}>▲</button>
+                    <button onClick={() => move(i, 1)} disabled={i === plays.length - 1} aria-label="Move down" style={arrowBtn}>▼</button>
+                  </div>
+                  <span style={{ width: 18, fontSize: 11, color: "var(--muted)", textAlign: "right" }}>{p.hidden ? "–" : n}</span>
+                  <div style={{ flex: 1, minWidth: 0, opacity: p.hidden ? 0.5 : 1 }}>
+                    {onOpenPlay ? (
+                      // Checking a play is the thing you most want to do while building
+                      // a playbook, so the title opens it rather than being dead text.
+                      <button onClick={() => onOpenPlay(p)} style={{ background: "none", border: "none", padding: 0, textAlign: "left", font: "inherit", fontSize: 13, color: "var(--text)", cursor: "pointer", textDecoration: p.hidden ? "line-through" : "underline", textDecorationColor: "var(--border)", textUnderlineOffset: 3 }}>
+                        {p.title}
+                      </button>
+                    ) : (
+                      <span style={{ textDecoration: p.hidden ? "line-through" : "none" }}>{p.title}</span>
+                    )}
+                    {p.hidden && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "var(--gold)", border: "1px solid var(--gold)", borderRadius: 5, padding: "0 5px" }}>HIDDEN</span>}
+                  </div>
+                  <select value={p.section ?? ""} onChange={(e) => pickSection(p.id, e.target.value)} title="Section"
+                    style={{ maxWidth: 110, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--muted)", fontSize: 11, padding: "3px 4px", fontFamily: "inherit" }}>
+                    <option value="">No section</option>
+                    {sections.map((sec) => <option key={sec} value={sec}>{sec}</option>)}
+                    <option value={NEW_SECTION}>+ New section…</option>
+                  </select>
+                  <button onClick={() => toggleHidden(p)} title={p.hidden ? "Hidden from players — tap to show" : "Visible to players — tap to hide"}
+                    aria-label={p.hidden ? "Show to players" : "Hide from players"}
+                    style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "2px 6px", fontSize: 13, cursor: "pointer", opacity: p.hidden ? 0.55 : 1 }}>
+                    {p.hidden ? "🙈" : "👁"}
+                  </button>
+                  <button onClick={() => removePlay(p.id)} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 8px", fontSize: 11, cursor: "pointer" }}>Remove</button>
+                </div>
+              );
+            })}
+          </div>
+        ));
+      })()}
       {plays.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>No plays added yet.</div>}
 
       <button onClick={() => setShowAdd((v) => !v)} style={{ marginTop: 8, background: "none", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 7, padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>
