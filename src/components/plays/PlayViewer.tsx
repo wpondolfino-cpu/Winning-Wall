@@ -8,6 +8,7 @@ import { supabase } from "../../lib/supabase";
 import { getProfile } from "../../lib/auth";
 import PlayCanvas, { CANVAS_W, CANVAS_H } from "./PlayCanvas";
 import PlayPrintView from "./PlayPrintView";
+import PlaylistPlayer from "./PlaylistPlayer";
 import StepNote from "./StepNote";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import PlayerQuizList from "../quizzes/PlayerQuizList";
@@ -21,7 +22,7 @@ import {
   forkPlay, getRoster, Playbook, deletePlay, getStaff, sharePlay, PlayShareTarget,
   getMyForkOrigins, adoptSharedPlaybook, dismissPlayShare, dismissPlaybookShare, type ForkRecord,
   playToExportPayload, importPlayFromExportPayload, PLAY_EXPORT_SCHEMA_VERSION,
-  stepButtonText, playCrop,
+  stepButtonText, playCrop, groupBySection, type PlaybookPlay,
 } from "../../lib/plays";
 import { embedJsonInPdf, extractJsonFromPdf, drawSimpleCoverPage, svgElementToPngBytes } from "../../lib/pdfDataExport";
 
@@ -127,7 +128,9 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
   const [openIn3D, setOpenIn3D] = useState(false);
   const [sharePopupPlay, setSharePopupPlay] = useState<Play | null>(null);
   const [openShareId, setOpenShareId] = useState<string | null>(null);
-  const [openPlaybook, setOpenPlaybook] = useState<{ pb: Playbook & { share_id: string }; plays: Play[] } | null>(null);
+  const [openPlaybook, setOpenPlaybook] = useState<{ pb: Playbook & { share_id: string }; plays: PlaybookPlay[] } | null>(null);
+  // "Play all" for the open playbook.
+  const [watchingPlaybook, setWatchingPlaybook] = useState(false);
   const [roster, setRoster] = useState<RosterPlayer[]>([]);
   const [toast, setToast] = useState("");
 
@@ -362,6 +365,17 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
     );
   }
 
+  if (openPlaybook && watchingPlaybook) {
+    return (
+      <PlaylistPlayer
+        title={openPlaybook.pb.name}
+        plays={openPlaybook.plays.filter((p) => !p.hidden)}
+        roster={rosterMap}
+        onClose={() => setWatchingPlaybook(false)}
+      />
+    );
+  }
+
   if (openPlaybook) {
     return (
       <div>
@@ -381,11 +395,21 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
           </div>
         )}
         {openPlaybook.plays.length > 0 && (
-          <button onClick={() => setPrintPlays({ plays: openPlaybook.plays, playbookName: openPlaybook.pb.name })} style={{ marginBottom: 10, padding: "6px 12px" }}>
-            🖨️ Print / export this playbook
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+            <button onClick={() => setWatchingPlaybook(true)} className="coach-add-btn" style={{ padding: "6px 14px" }}>
+              ▶ Play all
+            </button>
+            <button onClick={() => setPrintPlays({ plays: openPlaybook.plays, playbookName: openPlaybook.pb.name })} style={{ padding: "6px 12px" }}>
+              🖨️ Print / export this playbook
+            </button>
+          </div>
         )}
-        {openPlaybook.plays.map((p) => {
+        {groupBySection(openPlaybook.plays).map((g, gi) => (
+          <div key={`${g.section ?? ""}-${gi}`}>
+            {g.section && (
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: "var(--gold)", margin: "12px 0 6px" }}>{g.section}</div>
+            )}
+        {g.plays.map((p) => {
           const isAdded = !!adoptedState(p);
           return (
             <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--border)", borderRadius: 8, padding: "9px 11px", marginBottom: 6, background: isAdded ? "rgba(255,255,255,0.015)" : "transparent" }}>
@@ -403,6 +427,8 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
             </div>
           );
         })}
+          </div>
+        ))}
         {openPlaybook.plays.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>No plays in this playbook yet.</p>}
       </div>
     );
