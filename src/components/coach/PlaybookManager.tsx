@@ -256,6 +256,23 @@ function PlaybookDetail({ playbook, onChanged, onPrint, onWatch, onOpenPlay }: {
   const [editingVideo, setEditingVideo] = useState(false);
   const [videoDraft, setVideoDraft] = useState(playbook.video_url ?? "");
   const [savingVideo, setSavingVideo] = useState(false);
+  // Rename: the name players see on the playbook and at the top of Play all.
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(playbook.name);
+  const [descDraft, setDescDraft] = useState(playbook.description ?? "");
+  const [savingName, setSavingName] = useState(false);
+
+  async function saveName() {
+    const name = nameDraft.trim();
+    if (!name) return;
+    setSavingName(true);
+    try {
+      await updatePlaybook(playbook.id, { name, description: descDraft.trim() || null });
+      setEditingName(false);
+      onChanged();
+    } catch (e: any) { alert("Error: " + e.message); }
+    finally { setSavingName(false); }
+  }
 
   async function saveVideo() {
     setSavingVideo(true);
@@ -378,6 +395,26 @@ function PlaybookDetail({ playbook, onChanged, onPrint, onWatch, onOpenPlay }: {
 
   return (
     <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+      <div style={{ marginBottom: 14 }}>
+        {editingName ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} placeholder="Playbook name" style={inputStyle} autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter") saveName(); if (e.key === "Escape") setEditingName(false); }} />
+            <input value={descDraft} onChange={(e) => setDescDraft(e.target.value)} placeholder="Description (optional)" style={inputStyle} />
+            <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={saveName} disabled={savingName || !nameDraft.trim()} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 7, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                {savingName ? "Saving…" : "Save"}
+              </button>
+              <button onClick={() => setEditingName(false)} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 7, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => { setNameDraft(playbook.name); setDescDraft(playbook.description ?? ""); setEditingName(true); }}
+            style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 8px", fontSize: 11, cursor: "pointer" }}>
+            ✎ Rename / edit description
+          </button>
+        )}
+      </div>
       <div style={{ marginBottom: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <span style={{ fontSize: 12, color: "var(--muted)" }}>🎬 Walkthrough video</span>
