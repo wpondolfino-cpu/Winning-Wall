@@ -48,6 +48,9 @@ export async function signOut() {
 
 export async function getProfile(userId: string): Promise<Profile | null> {
   const { data } = await supabase.from("profiles").select("*").eq("id", userId).single();
+  // A test player is stored as "test_player" so every player list leaves
+  // it out; the app itself treats it as an ordinary player.
+  if (data && (data as any).role === "test_player") return { ...data, role: "player", is_test: true };
   return data;
 }
 
