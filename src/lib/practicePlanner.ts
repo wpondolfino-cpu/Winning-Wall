@@ -1971,7 +1971,9 @@ export async function getPracticeDrillTags(): Promise<string[]> {
 
 async function ensureTagsExist(tagNames: string[]): Promise<void> {
   if (tagNames.length === 0) return;
-  await supabase.from("practice_drill_tags").upsert(tagNames.map(name => ({ name })), { onConflict: "name", ignoreDuplicates: true });
+  // Tags are per program (migration 180); the program is filled in by the
+  // database, so a tag that already exists in this program is left alone.
+  await supabase.from("practice_drill_tags").upsert(tagNames.map(name => ({ name })), { onConflict: "program_id,name", ignoreDuplicates: true });
 }
 
 export interface DrillFilters {
