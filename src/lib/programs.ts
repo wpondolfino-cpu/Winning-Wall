@@ -16,6 +16,7 @@ export interface ProgramInfo {
   orgShort: string;
   primary: string;   // badge background
   accent: string;    // badge text
+  logoUrl: string | null;     // program's own logo, else the school's; null = show letters
   role: ProgramRole | null;   // null = reachable only as platform admin
 }
 
@@ -37,7 +38,7 @@ export async function loadMyPrograms(userId: string): Promise<MyPrograms> {
   const [adminRes, progRes, memberRes, profileRes] = await Promise.all([
     supabase.from("platform_admins").select("user_id").eq("user_id", userId),
     supabase.from("programs")
-      .select("id, name, primary_color, accent_color, organizations(name, short_name, primary_color, accent_color)")
+      .select("id, name, primary_color, accent_color, logo_url, organizations(name, short_name, primary_color, accent_color, logo_url)")
       .eq("is_active", true)
       .order("name"),
     supabase.from("program_members").select("program_id, role, status").eq("user_id", userId),
@@ -58,6 +59,7 @@ export async function loadMyPrograms(userId: string): Promise<MyPrograms> {
       orgShort: org.short_name ?? shortFrom(org.name ?? p.name),
       primary: p.primary_color ?? org.primary_color ?? DEFAULT_PRIMARY,
       accent:  p.accent_color  ?? org.accent_color  ?? DEFAULT_ACCENT,
+      logoUrl: p.logo_url ?? org.logo_url ?? null,
       role: roleByProgram.get(p.id) ?? null,
     };
   });
