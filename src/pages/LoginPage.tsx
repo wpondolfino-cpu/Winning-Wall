@@ -1,5 +1,5 @@
 // src/pages/LoginPage.tsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { signIn, signUp, GRADE_CATEGORIES, GradeCategory } from "../lib/supabase";
 import { gradYearFromGrade, gradeCategoryFromGradYear, loadAcademicYear } from "../lib/teamDesigner";
 import { supabase } from "../lib/supabase";
@@ -21,12 +21,35 @@ export default function LoginPage() {
   const [error, setError]         = useState("");
   const [loading, setLoading]     = useState(false);
   const [resetSent, setResetSent] = useState(false);
+  // Team code: picks the program a new account asks to join. An invite
+  // link (?join=CODE) fills it in and opens Create Account.
+  const [joinCode, setJoinCode] = useState<string>(() => {
+    try { return (new URLSearchParams(window.location.search).get("join") ?? "").trim().toUpperCase().slice(0, 6); }
+    catch { return ""; }
+  });
+  const [team, setTeam] = useState<{ program: string; school: string } | null>(null);
+  const [teamChecked, setTeamChecked] = useState(false);
+
+  useEffect(() => { if (joinCode) setMode("signup"); }, []);
+
+  useEffect(() => {
+    setTeam(null); setTeamChecked(false);
+    if (joinCode.length !== 6) return;
+    let cancelled = false;
+    supabase.rpc("check_join_code", { code: joinCode }).then(({ data }) => {
+      if (cancelled) return;
+      setTeam((data as any) ?? null);
+      setTeamChecked(true);
+    });
+    return () => { cancelled = true; };
+  }, [joinCode]);
 
   async function handleSubmit() {
     setError("");
     if (!email.trim())    { setError("Please enter your email."); return; }
     if (mode !== "forgot" && !password.trim()) { setError("Please enter your password."); return; }
     if (mode === "signup" && !name.trim()) { setError("Please enter your name."); return; }
+    if (mode === "signup" && !team) { setError("Enter your team code — your coach can give it to you."); return; }
     if (mode === "signup" && role === "player" && !schoolYear) { setError("Please pick your school year."); return; }
     // New passwords need 8+ (Supabase enforces the same). Signing in has no
     // length check, so older 6-7 character passwords keep working.
@@ -62,10 +85,10 @@ export default function LoginPage() {
           role,
           grade_category: role === "player" ? (gradeCategoryFromGradYear(gradYear) ?? GRADE_CATEGORIES[0]) as GradeCategory : undefined,
           graduation_year: gradYear,
-        });
+        }, true, joinCode);
         try {
           // A fixed message the server sends to coaches itself.
-          await supabase.functions.invoke("send-push", { body: { notifyStaff: "new_signup", name: name.trim(), role } });
+          await supabase.functions.invoke("send-push", { body: { notifyStaff: "new_signup", name: name.trim(), role, joinCode } });
         } catch (e) { console.error("Push notification failed to send:", e); }
         setSubmitted(true);
         return;
@@ -85,10 +108,8 @@ export default function LoginPage() {
           <div style={{ fontSize: 48, marginBottom: 16 }}>⏳</div>
           <div className="app-logo" style={{ fontSize: 24 }}>Account Submitted!</div>
           <div style={{ fontSize: 14, color: "var(--muted)", marginTop: 12, lineHeight: 1.7 }}>
-            Your {role} account request has been submitted.
-            {role === "coach"
-              ? " An admin will review and approve your account."
-              : " A coach or admin will review and approve your account."}
+            Your {role} account request has been sent to{team ? ` ${team.school} · ${team.program}` : " your team"}.
+            {" A coach will review and approve your account."}
             <br/><br/>You'll be able to sign in once approved.
           </div>
           <button onClick={() => { setSubmitted(false); setMode("signin"); }}
@@ -206,6 +227,23 @@ export default function LoginPage() {
         {/* Sign up extra fields */}
         {mode === "signup" && (
           <>
+            <div className="form-group">
+              <label>Team code</label>
+              <input value={joinCode} maxLength={6} autoCapitalize="characters" autoComplete="off"
+                onChange={e => setJoinCode(e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 6))}
+                placeholder="6 letters/numbers from your coach"
+                style={{ letterSpacing: 3, fontWeight: 600 }} />
+              {team && (
+                <div style={{ marginTop: 6, fontSize: 13, color: "#5de098" }}>
+                  Joining: {team.school} · {team.program}
+                </div>
+              )}
+              {teamChecked && !team && (
+                <div style={{ marginTop: 6, fontSize: 13, color: "#ff8a8a" }}>
+                  That code doesn't match a team. Check it with your coach.
+                </div>
+              )}
+            </div>
             <div className="form-group">
               <label>Full Name</label>
               <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Marcus Johnson" />
