@@ -8,7 +8,8 @@ export async function signUp(
   email: string,
   password: string,
   profile: Omit<Profile, "id" | "created_at">,
-  selfRegistered = true
+  selfRegistered = true,
+  joinCode?: string,
 ) {
   const pendingRole = selfRegistered
     ? (profile.role === "coach" ? "pending_coach" : "pending_player")
@@ -26,6 +27,9 @@ export async function signUp(
         // graduation year rather than a grade so it advances by itself
         // each August instead of needing a bulk update every summer.
         graduation_year: profile.graduation_year ?? null,
+        // Which program the request goes to (migration 179). The database
+        // looks the code up and files the request with that program's coaches.
+        join_code: joinCode ? joinCode.trim().toUpperCase() : null,
       },
     },
   });
