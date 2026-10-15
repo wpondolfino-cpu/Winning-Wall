@@ -39,6 +39,7 @@ export default function ProgramSwitcher({ userId }: Props) {
   const [tests, setTests] = useState<TestAccount[] | null>(null);
   const [testsError, setTestsError] = useState<string | null>(null);
   const [entering, setEntering] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Who may use View as: the platform admin, or a head coach of the
   // program they're in — and never while already viewing as someone.
@@ -99,6 +100,12 @@ export default function ProgramSwitcher({ userId }: Props) {
   for (const p of reachable) {
     const g = groups.find(x => x.org === p.orgName);
     if (g) g.items.push(p); else groups.push({ org: p.orgName, items: [p] });
+  }
+
+  async function copyInvite() {
+    const link = `${window.location.origin}/?join=${current!.joinCode}`;
+    try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2500); }
+    catch { window.prompt("Copy this invite link:", link); }
   }
 
   async function enter(a: TestAccount) {
@@ -172,9 +179,28 @@ export default function ProgramSwitcher({ userId }: Props) {
           ))}
           {error && <div style={{ padding: "8px 10px", fontSize: 12, color: "#ff8a8a" }}>{error}</div>}
 
-          {canViewAs && (
+          {canViewAs && current.joinCode && (
             <>
               {canSwitch && <div style={{ height: 1, background: "rgba(176,184,200,0.15)", margin: "8px 4px" }} />}
+              <div style={{ padding: "6px 10px", display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
+                  <span style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#8b95ae", fontWeight: 600 }}>Team code</span>
+                  <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: 3 }}>{current.joinCode}</span>
+                </span>
+                <button onClick={copyInvite}
+                  style={{
+                    height: 40, padding: "0 12px", background: "var(--surface2)", color: "var(--text)",
+                    border: "1px solid var(--royal-light)", borderRadius: 10, fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  }}>
+                  {copied ? "Copied!" : "Copy invite link"}
+                </button>
+              </div>
+            </>
+          )}
+
+          {canViewAs && (
+            <>
+              {(canSwitch || current.joinCode) && <div style={{ height: 1, background: "rgba(176,184,200,0.15)", margin: "8px 4px" }} />}
               <div style={{ padding: "4px 10px 6px", display: "flex", alignItems: "center", gap: 8 }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8b95ae" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
                 <span style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#8b95ae", fontWeight: 600 }}>View as · {current.name}</span>
