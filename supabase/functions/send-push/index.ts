@@ -55,6 +55,8 @@ interface SendPushBody {
   notifyStaff?: "reset_request" | "new_signup";
   name?: string;
   role?: string;
+  /** new_signup: the team code typed at signup, so only that program's coaches hear about it. */
+  joinCode?: string;
 }
 
 /** A name typed on the login screen: plain text, short. */
@@ -96,8 +98,28 @@ serve(async (req) => {
     } else {
       return reply({ error: "Unknown notification" }, 400);
     }
-    const { data: staff } = await admin.from("profiles").select("id").in("role", ["coach", "admin"]);
-    playerIds = (staff ?? []).map((s: any) => s.id);
+    // A signup goes to the coaches of the program its team code points to
+    // (migration 179) -- never to every coach in the app; one with no valid
+    // code goes to the platform admin. Password reset requests still go to
+    // every coach until notifications are split by program.
+    let staffIds: string[] = [];
+    const code = typeof body.joinCode === "string" ? body.joinCode.trim().toUpperCase() : "";
+    if (body.notifyStaff === "new_signup" && code) {
+      const { data: prog } = await admin.from("programs").select("id").eq("join_code", code).maybeSingle();
+      if (prog) {
+        const { data: staff } = await admin.from("program_members").select("user_id")
+          .eq("program_id", prog.id).eq("status", "active").in("role", ["head_coach", "coach"]).eq("is_test", false);
+        staffIds = (staff ?? []).map((s: any) => s.user_id);
+      }
+    }
+    if (body.notifyStaff === "reset_request") {
+      const { data: staff } = await admin.from("profiles").select("id").in("role", ["coach", "admin"]);
+      staffIds = (staff ?? []).map((s: any) => s.id);
+    } else if (!staffIds.length) {
+      const { data: pas } = await admin.from("platform_admins").select("user_id");
+      staffIds = (pas ?? []).map((s: any) => s.user_id);
+    }
+    playerIds = staffIds;
     if (!playerIds.length) return reply({ sent: false, reason: "no coaches" });
   } else {
     // ── Everything else: signed-in users only ─────────────────
