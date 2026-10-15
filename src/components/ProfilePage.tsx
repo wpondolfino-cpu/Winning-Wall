@@ -214,7 +214,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
 
       {/* Notifications on/off for this device -- so a "Not now" on the
           first prompt isn't permanent. */}
-      <NotificationToggle playerId={profile.id} />
+      {!profile.is_test && <NotificationToggle playerId={profile.id} />}
 
       {/* ── Streak Bar ── */}
       {(() => {
