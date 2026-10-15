@@ -37,6 +37,8 @@ import ScoutSheetsHub from "./components/scouting/ScoutSheetsHub";
 import PageErrorBoundary from "./components/PageErrorBoundary";
 import HelpButton from "./components/help/HelpButton";
 import ProgramSwitcher from "./components/ProgramSwitcher";
+import ViewAsBanner from "./components/ViewAsBanner";
+import { currentViewAs } from "./lib/viewAs";
 import { LiveBanner } from "./components/quizzes/LivePlayer";
 import QuizzesPage, { QuizPrefill } from "./components/quizzes/QuizzesPage";
 import PlayerQuizList from "./components/quizzes/PlayerQuizList";
@@ -355,6 +357,9 @@ export default function App() {
   // notification permission but never got fully opted in on OneSignal's
   // backend (e.g. from earlier testing), fix it silently on load.
   useEffect(() => {
+    // Never register this device to a test account (View as), or your own
+    // notifications would stop arriving here.
+    if (profile?.is_test || currentViewAs(user?.id)) return;
     if (user && (profile?.role === "player" || profile?.role === "coach" || profile?.role === "admin")) ensurePushTag(user.id);
   }, [user, profile]);
 
@@ -725,7 +730,8 @@ export default function App() {
 
 
   return (
-    <div id="app-screen" className={`screen active${isPlayer ? " has-bottom-tabs" : ""}`}>
+    <div id="app-screen" className={`screen active${isPlayer ? " has-bottom-tabs" : ""}${currentViewAs(user.id) ? " viewing-as" : ""}`}>
+      <ViewAsBanner userId={user.id} />
       {/* Header */}
       <div className="app-header">
         <img src="/logo.png" alt="Open menu" onClick={() => setSidebarOpen(o => !o)} style={{ height: 36, objectFit: "contain", flexShrink: 0, cursor: "pointer" }} />
@@ -796,7 +802,7 @@ export default function App() {
             </div>
           )}
 
-          {(isPlayer || isCoach || isAdmin) && <NotificationOptIn playerId={user.id} />}
+          {(isPlayer || isCoach || isAdmin) && !displayProfile.is_test && !currentViewAs(user.id) && <NotificationOptIn playerId={user.id} />}
 
           {/* Coach announcements on every player page; keyed by tab so it
               refreshes as they move around. */}
