@@ -86,6 +86,8 @@ export interface Profile {
   avatar_prompt_seen?: boolean;
   avatar_config?: any;
   home_roster_id?: string | null;
+  /** Set client-side for a test account (stored role "test_player", shown to the app as "player"). */
+  is_test?: boolean;
 }
 
 export interface Workout {
