@@ -92,7 +92,7 @@ export async function computePracticeSuggestions(usStats: StatRow[], oppStats: S
     return { stat_key: c.stat_key, team: c.team, current_streak: nextStreak, updated_at: new Date().toISOString() };
   });
   if (streakWrites.length) {
-    await supabase.from("stat_flag_streaks").upsert(streakWrites, { onConflict: "stat_key,team" });
+    await supabase.from("stat_flag_streaks").upsert(streakWrites, { onConflict: "program_id,stat_key,team" });
   }
 
   weaknesses.forEach(w => {
