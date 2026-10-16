@@ -397,7 +397,7 @@ export async function upsertStatGoal(
 ) {
   return supabase.from("stat_goals").upsert(
     { stat_key: statKey, team, target_value: targetValue, direction, min_sample_size: minSampleSize ?? null, note: note ?? null, updated_by: userId },
-    { onConflict: "stat_key,team" }
+    { onConflict: "program_id,stat_key,team" }
   );
 }
 
