@@ -187,6 +187,8 @@ serve(async (req) => {
 
   try {
     let recipients = 0;
+    let skipped = 0;
+    let created = 0;
     let last: any = null;
     const reasons: string[] = [];
     for (const batch of batches) {
@@ -202,16 +204,25 @@ serve(async (req) => {
       const result = await res.json();
       if (!res.ok) return reply({ error: "OneSignal error", detail: result }, 502);
       last = result;
-      // OneSignal answers 200 even when nobody received it, and says why in
-      // `errors` -- e.g. "All included players are not subscribed". Pass that
-      // on instead of calling it sent.
+      // OneSignal answers 200 even when nobody received it. If it created a
+      // notification (has an id) it was sent; `errors` may still list
+      // accounts it skipped (invalid_aliases = never turned on push). With
+      // no id, nobody got it, and `errors` says why -- e.g. "All included
+      // players are not subscribed".
       const errs = result?.errors;
-      const why = Array.isArray(errs) ? errs.join("; ") : errs && typeof errs === "object" ? JSON.stringify(errs) : null;
-      if (why || !result?.id) reasons.push(why ?? "No notification was created");
-      else if (typeof result?.recipients === "number") recipients += result.recipients;
+      const invalid = errs && typeof errs === "object" && !Array.isArray(errs)
+        ? (errs.invalid_aliases?.external_id ?? []) : [];
+      if (result?.id) {
+        created++;
+        skipped += Array.isArray(invalid) ? invalid.length : 0;
+        if (typeof result?.recipients === "number") recipients += result.recipients;
+      } else {
+        const why = Array.isArray(errs) ? errs.join("; ") : errs && typeof errs === "object" ? JSON.stringify(errs) : null;
+        reasons.push(why ?? "No notification was created");
+      }
     }
-    if (reasons.length === batches.length) return reply({ sent: false, reason: reasons.join("; "), result: last });
-    return reply({ sent: true, result: { ...last, recipients } });
+    if (created === 0) return reply({ sent: false, reason: reasons.join("; ") || "No notification was created", result: last });
+    return reply({ sent: true, skipped, result: { ...last, recipients } });
   } catch (e) {
     return reply({ error: "Request failed", detail: String(e) }, 500);
   }
