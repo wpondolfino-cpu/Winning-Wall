@@ -13,7 +13,12 @@
 //       Any signed-in user (a challenge notifies its opponent, etc.).
 //       Reaches every device signed into those accounts.
 //   * { title, message, allPlayers: true }
-//       Coaches and admins only.
+//       Coaches of the program you're in (or the platform admin). Reaches
+//       every active member of THAT program only (migration 186) --
+//       before programs, it reached every device in the app.
+//   * { title, message, allPrograms: true }
+//       Platform admin only: every active member of every program
+//       (announcements posted to every program).
 //   * url: only links into the app are kept; anything else is replaced
 //     with the app's address.
 //
@@ -49,8 +54,10 @@ interface SendPushBody {
   url?: string;
   /** Send to these player_id tag values specifically. */
   playerIds?: string[];
-  /** Send to every subscribed player. Coaches and admins only. */
+  /** Send to every member of the program you're in. Its coaches only. */
   allPlayers?: boolean;
+  /** Send to every member of every program. Platform admin only. */
+  allPrograms?: boolean;
   /** A fixed notification to coaches, allowed while logged out. */
   notifyStaff?: "reset_request" | "new_signup";
   name?: string;
@@ -83,7 +90,6 @@ serve(async (req) => {
   let title: string;
   let message: string;
   let playerIds: string[] | undefined;
-  let allPlayers = false;
 
   if (body.notifyStaff) {
     // ── Login-screen notifications: fixed text, coaches only ──
@@ -131,12 +137,33 @@ serve(async (req) => {
     title = String(body.title).slice(0, 120);
     message = String(body.message).slice(0, 500);
 
-    if (body.allPlayers) {
-      const { data: me } = await admin.from("profiles").select("role").eq("id", user.id).single();
-      if (me?.role !== "coach" && me?.role !== "admin") {
+    const { data: pa } = await admin.from("platform_admins").select("user_id").eq("user_id", user.id).maybeSingle();
+    const isPlatformAdmin = !!pa;
+
+    if (body.allPrograms) {
+      if (!isPlatformAdmin) return reply({ error: "Only the platform admin can notify every program." }, 403);
+      const { data: progs } = await admin.from("programs").select("id, is_active");
+      const ids = (progs ?? []).filter((p: any) => p.is_active !== false).map((p: any) => p.id);
+      const { data: members } = ids.length
+        ? await admin.from("program_members").select("user_id").in("program_id", ids).eq("status", "active")
+        : { data: [] };
+      playerIds = [...new Set<string>((members ?? []).map((m: any) => m.user_id))];
+      if (!playerIds.length) return reply({ sent: false, reason: "nobody in any program yet" });
+    } else if (body.allPlayers) {
+      // The program the sender is in right now.
+      const { data: me } = await admin.from("profiles").select("active_program_id").eq("id", user.id).single();
+      const programId = me?.active_program_id as string | null;
+      if (!programId) return reply({ error: "Pick a program first." }, 400);
+      const { data: mine } = await admin.from("program_members").select("role")
+        .eq("program_id", programId).eq("user_id", user.id).eq("status", "active").maybeSingle();
+      const isStaff = mine?.role === "head_coach" || mine?.role === "coach";
+      if (!isStaff && !isPlatformAdmin) {
         return reply({ error: "Only coaches can notify every player." }, 403);
       }
-      allPlayers = true;
+      const { data: members } = await admin.from("program_members").select("user_id")
+        .eq("program_id", programId).eq("status", "active");
+      playerIds = [...new Set<string>((members ?? []).map((m: any) => m.user_id))];
+      if (!playerIds.length) return reply({ sent: false, reason: "nobody in this program yet" });
     } else {
       playerIds = (body.playerIds ?? []).filter((id) => typeof id === "string").slice(0, 500);
       if (!playerIds.length) return reply({ error: "Provide playerIds or set allPlayers: true" }, 400);
@@ -151,37 +178,40 @@ serve(async (req) => {
     url: safeUrl(body.url),
   };
 
-  if (allPlayers) {
-    // Every device the app has tagged with a player_id -- the same targeting
-    // daily-reminders uses. Not the "Subscribed Users" segment: OneSignal
-    // renamed its default segments ("Total Subscriptions"), and a segment
-    // name that doesn't exist in the dashboard reaches nobody.
-    payload.filters = [{ field: "tag", key: "player_id", relation: "exists" }];
-  } else {
-    // Every device signed into these accounts (OneSignal external ID = our
-    // user id, set by the app at sign-in; cleared at sign-out).
-    payload.include_aliases = { external_id: playerIds };
-  }
+  // Every device signed into these accounts (OneSignal external ID = our
+  // user id, set by the app at sign-in; cleared at sign-out). OneSignal
+  // takes up to 2,000 ids per notification, so big audiences go in batches.
+  const ids = playerIds ?? [];
+  const batches: string[][] = [];
+  for (let i = 0; i < ids.length; i += 2000) batches.push(ids.slice(i, i + 2000));
 
   try {
-    const res = await fetch("https://api.onesignal.com/notifications", {
-      method: "POST",
-      headers: {
-        "Authorization": `Key ${ONE_SIGNAL_API_KEY}`,
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-    const result = await res.json();
-    if (!res.ok) return reply({ error: "OneSignal error", detail: result }, 502);
-    // OneSignal answers 200 even when nobody received it, and says why in
-    // `errors` -- e.g. "All included players are not subscribed". Pass that
-    // on instead of calling it sent.
-    const errs = result?.errors;
-    const why = Array.isArray(errs) ? errs.join("; ") : errs && typeof errs === "object" ? JSON.stringify(errs) : null;
-    if (why || !result?.id) return reply({ sent: false, reason: why ?? "No notification was created", result });
-    return reply({ sent: true, result });
+    let recipients = 0;
+    let last: any = null;
+    const reasons: string[] = [];
+    for (const batch of batches) {
+      const res = await fetch("https://api.onesignal.com/notifications", {
+        method: "POST",
+        headers: {
+          "Authorization": `Key ${ONE_SIGNAL_API_KEY}`,
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify({ ...payload, include_aliases: { external_id: batch } }),
+      });
+      const result = await res.json();
+      if (!res.ok) return reply({ error: "OneSignal error", detail: result }, 502);
+      last = result;
+      // OneSignal answers 200 even when nobody received it, and says why in
+      // `errors` -- e.g. "All included players are not subscribed". Pass that
+      // on instead of calling it sent.
+      const errs = result?.errors;
+      const why = Array.isArray(errs) ? errs.join("; ") : errs && typeof errs === "object" ? JSON.stringify(errs) : null;
+      if (why || !result?.id) reasons.push(why ?? "No notification was created");
+      else if (typeof result?.recipients === "number") recipients += result.recipients;
+    }
+    if (reasons.length === batches.length) return reply({ sent: false, reason: reasons.join("; "), result: last });
+    return reply({ sent: true, result: { ...last, recipients } });
   } catch (e) {
     return reply({ error: "Request failed", detail: String(e) }, 500);
   }
