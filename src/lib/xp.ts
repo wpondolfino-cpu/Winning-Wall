@@ -20,7 +20,7 @@ export async function setXpEnabled(enabled: boolean): Promise<void> {
     xp_required: enabled ? 1 : 0,
     description: "Master toggle",
     updated_at:  new Date().toISOString(),
-  }, { onConflict: "perk_key" });
+  }, { onConflict: "program_id,perk_key" });
 }
 
 export async function getXpPerks(): Promise<XpPerk[]> {
