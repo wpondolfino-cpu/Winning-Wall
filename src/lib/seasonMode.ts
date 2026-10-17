@@ -1,5 +1,5 @@
 // src/lib/seasonMode.ts
-// Global in-season/off-season mode — same app_settings cache pattern
+// Per-program in-season/off-season mode — same app_settings cache pattern
 // as periods.ts (period_anchor). Drives which nav icons show and
 // which Leaderboard tab opens by default. A player with no roster
 // assignment (home_roster_id null) always sees the offseason nav
@@ -25,7 +25,7 @@ export async function loadSeasonMode(): Promise<SeasonMode> {
 export async function saveSeasonMode(mode: SeasonMode): Promise<void> {
   await supabase.from("app_settings").upsert(
     { key: "season_mode", value: mode, updated_at: new Date().toISOString() },
-    { onConflict: "key" }
+    { onConflict: "program_id,key" }
   );
   _modeCache = mode;
 }
