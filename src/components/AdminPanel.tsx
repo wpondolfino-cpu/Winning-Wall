@@ -189,7 +189,7 @@ export default function AdminPanel({}: Props) {
     await supabase.from("xp_settings").upsert({
       perk_key: key, perk_name: names[key], xp_required: val,
       description: "XP action value", updated_at: new Date().toISOString(),
-    }, { onConflict: "perk_key" });
+    }, { onConflict: "program_id,perk_key" });
     await loadXpSettings();
     showToast("✅ XP value saved!");
   }
@@ -220,7 +220,7 @@ export default function AdminPanel({}: Props) {
   }
   async function saveXpPerk(perk: XpPerk, newXp: number) {
     setXpSaving(true);
-    await supabase.from("xp_settings").upsert({ perk_key: perk.perk_key, perk_name: perk.perk_name, xp_required: newXp, description: perk.description, updated_at: new Date().toISOString() }, { onConflict: "perk_key" });
+    await supabase.from("xp_settings").upsert({ perk_key: perk.perk_key, perk_name: perk.perk_name, xp_required: newXp, description: perk.description, updated_at: new Date().toISOString() }, { onConflict: "program_id,perk_key" });
     await loadXpSettings(); setXpSaving(false); showToast("✅ XP threshold saved!");
   }
   async function toggleXpSystem() {
@@ -228,7 +228,7 @@ export default function AdminPanel({}: Props) {
     const newVal = !xpEnabled;
     setXpEnabled(newVal);
     localStorage.setItem("xp_enabled", String(newVal));
-    await supabase.from("xp_settings").upsert({ perk_key: "_xp_enabled", perk_name: "XP System Enabled", xp_required: newVal ? 1 : 0, description: "Master toggle", updated_at: new Date().toISOString() }, { onConflict: "perk_key" });
+    await supabase.from("xp_settings").upsert({ perk_key: "_xp_enabled", perk_name: "XP System Enabled", xp_required: newVal ? 1 : 0, description: "Master toggle", updated_at: new Date().toISOString() }, { onConflict: "program_id,perk_key" });
     setXpToggling(false);
     showToast(newVal ? "✅ XP system is now ON" : "⏸️ XP system is now OFF — all perks unlocked for everyone");
   }
