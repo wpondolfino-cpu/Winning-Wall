@@ -99,11 +99,13 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
   async function loadXpData() {
     const [perks, { data: profs }] = await Promise.all([
       getXpPerks(),
-      supabase.from("profiles").select("id,total_xp").eq("role", "player"),
+      // XP is per program (lives on the membership), so read it for the
+      // program you're in rather than from profiles.
+      supabase.rpc("program_xp"),
     ]);
     setXpPerks(perks);
     const map: Record<string, number> = {};
-    (profs ?? []).forEach((p: any) => { map[p.id] = p.total_xp ?? 0; });
+    (profs ?? []).forEach((p: any) => { map[p.player_id] = p.total_xp ?? 0; });
     setXpData(map);
   }
 
