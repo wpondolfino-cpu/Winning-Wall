@@ -221,7 +221,13 @@ serve(async (req) => {
         reasons.push(why ?? "No notification was created");
       }
     }
-    if (created === 0) return reply({ sent: false, reason: reasons.join("; ") || "No notification was created", result: last });
+    if (created === 0) {
+      // Usually: nobody in the audience has turned on notifications yet.
+      const plain = reasons.every((r) => r.includes("invalid_aliases") || r.toLowerCase().includes("not subscribed"))
+        ? `none of the ${ids.length} account${ids.length === 1 ? "" : "s"} it went to ${ids.length === 1 ? "has" : "have"} notifications turned on yet`
+        : reasons.join("; ") || "No notification was created";
+      return reply({ sent: false, reason: plain, result: last });
+    }
     return reply({ sent: true, skipped, result: { ...last, recipients } });
   } catch (e) {
     return reply({ error: "Request failed", detail: String(e) }, 500);
