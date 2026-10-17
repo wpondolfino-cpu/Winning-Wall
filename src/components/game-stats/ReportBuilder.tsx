@@ -11,9 +11,9 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { ReportBody } from "./GameReport";
-import { saveReport, getReportLayout, resolveStatOrder, GAME_GROUPS, gameTypesForGroup, isGameFinal } from "../../lib/gameStats";
+import { saveReport, getReportLayout, resolveStatOrder, GAME_GROUPS, gameTypesForGroup, isGameFinal, STAT_SECTIONS } from "../../lib/gameStats";
 import GameScopePicker, { type ScopeGame } from "./GameScopePicker";
-import type { Possession, PlayCall, StatGoal, PossessionType, SavedReport, StatDef, GameGroup } from "../../lib/gameStats";
+import type { Possession, PlayCall, StatGoal, PossessionType, SavedReport, StatDef, GameGroup, StatSection } from "../../lib/gameStats";
 
 type GameCount = 3 | 5 | 10 | "season";
 type CategoryFilter = "all" | PossessionType;
@@ -63,6 +63,15 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
   const [loading, setLoading] = useState(false);
   const [savingLabel, setSavingLabel] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  // "Show" filter: which sections of the report appear. Empty = all of them.
+  const [sections, setSections] = useState<StatSection[]>(initial?.sections ?? []);
+  const toggleSection = (k: StatSection) => {
+    setSaved(false);
+    setSections((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
+  };
+  const sectionLabel = sections.length
+    ? STAT_SECTIONS.filter((x) => sections.includes(x.key)).map((x) => x.label).join(" + ")
+    : "";
 
   useEffect(() => { loadPool(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [season, gameGroup]);
   useEffect(() => { run(); setSaved(false); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [category, selectedIds.join(",")]);
@@ -127,7 +136,7 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
   async function confirmSave() {
     const groupLabel = GAME_GROUPS.find((g) => g.value === gameGroup)?.label ?? "Games";
     const isWholeSeason = selectedIds.length === pool.length;
-    const label = savingLabel?.trim() || `${gameLabel} · ${CATEGORY_LABEL[category]}`;
+    const label = savingLabel?.trim() || `${gameLabel} · ${CATEGORY_LABEL[category]}${sectionLabel ? ` · ${sectionLabel}` : ""}`;
     const { error } = await saveReport({
       label,
       season,
@@ -140,6 +149,9 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
       // up the games that are recent THEN, not the ones that were recent
       // when it was saved. A hand-picked set is fixed and stores its ids.
       game_ids: pickedByHand && !isWholeSeason ? selectedIds : null,
+      // Which sections to show (migration 182). Left off entirely for a
+      // whole-report save, so saving still works if that column is missing.
+      ...(sections.length ? { sections } : {}),
       created_by: userId,
     });
     if (!error) {
@@ -176,6 +188,16 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
           ))}
         </div>
 
+        <div style={{ fontSize: 12, color: "var(--muted)", margin: "2px 0 6px" }}>Show</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+          <button onClick={() => { setSections([]); setSaved(false); }} style={pillStyle(sections.length === 0)}>All</button>
+          {STAT_SECTIONS.map((x) => (
+            <button key={x.key} onClick={() => toggleSection(x.key)} style={pillStyle(sections.includes(x.key))} aria-pressed={sections.includes(x.key)}>
+              {x.label}
+            </button>
+          ))}
+        </div>
+
         {savingLabel === null ? (
           <button style={pillStyle(false)} onClick={() => setSavingLabel("")} disabled={saved}>
             {saved ? "Saved to history ✓" : "Save this report"}
@@ -204,8 +226,9 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
           goals={goals}
           statOrder={statOrder}
           variant="custom"
-          title={`${gameLabel} · ${CATEGORY_LABEL[category]}`}
+          title={`${gameLabel} · ${CATEGORY_LABEL[category]}${sectionLabel ? ` · ${sectionLabel}` : ""}`}
           canManage={true}
+          sections={sections}
         />
       )}
     </div>
