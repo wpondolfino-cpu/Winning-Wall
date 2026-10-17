@@ -85,7 +85,7 @@ export async function upsertBankExercise(
 ): Promise<BankExercise> {
   const { data, error } = await supabase
     .from("lifting_exercise_bank")
-    .upsert({ name, muscle_group, video_url: video_url || null, default_rest_secs, created_by, default_notes: default_notes || null }, { onConflict: "name" })
+    .upsert({ name, muscle_group, video_url: video_url || null, default_rest_secs, created_by, default_notes: default_notes || null }, { onConflict: "program_id,name" })
     .select().single();
   if (error) throw error;
   return data as BankExercise;
