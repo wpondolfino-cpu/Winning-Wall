@@ -67,9 +67,11 @@ export default function AnnouncementPanel({ isAdmin, coachId, coachName }: Props
         setPushStatus(`Posted, but nobody was notified: ${(data as any).reason}`);
       } else {
         const recipients = (data as any)?.result?.recipients;
-        setPushStatus(typeof recipients === "number"
-          ? `Posted and sent to ${recipients} device${recipients === 1 ? "" : "s"}.`
-          : "Posted and sent.");
+        const skipped = (data as any)?.skipped ?? 0;
+        const off = skipped > 0 ? ` (${skipped} account${skipped === 1 ? " has" : "s have"} notifications off)` : "";
+        setPushStatus((typeof recipients === "number" && recipients > 0
+          ? `Posted and sent to ${recipients} device${recipients === 1 ? "" : "s"}`
+          : "Posted and sent") + off + ".");
       }
     } catch (e: any) {
       setPushStatus(`Posted, but the notification didn't send: ${e?.message ?? e}`);
