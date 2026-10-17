@@ -17,8 +17,16 @@ export default function AnnouncementPanel({ isAdmin, coachId, coachName }: Props
   // What happened to the push for the last post. functions.invoke doesn't
   // throw on a failed request, so failures used to vanish silently.
   const [pushStatus, setPushStatus]       = useState<string | null>(null);
+  // Platform admin only: post one announcement into every program.
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+  const [everywhere, setEverywhere]           = useState(false);
 
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (!coachId) return;
+    supabase.from("platform_admins").select("user_id").eq("user_id", coachId)
+      .then(({ data }) => setIsPlatformAdmin((data ?? []).length > 0));
+  }, [coachId]);
 
   async function load() {
     const { data } = await supabase.from("announcements").select("*")
@@ -30,10 +38,15 @@ export default function AnnouncementPanel({ isAdmin, coachId, coachName }: Props
   async function post() {
     if (!newMsg.trim()) return;
     setPosting(true);
-    await supabase.from("announcements").insert({
-      coach_id: coachId, coach_name: coachName,
-      message: newMsg.trim(), is_pinned: isPinned,
-    });
+    if (everywhere && isPlatformAdmin) {
+      const { error } = await supabase.rpc("post_announcement_everywhere", { p_message: newMsg.trim(), p_pinned: isPinned });
+      if (error) { setPushStatus(`Not posted: ${error.message}`); setPosting(false); return; }
+    } else {
+      await supabase.from("announcements").insert({
+        coach_id: coachId, coach_name: coachName,
+        message: newMsg.trim(), is_pinned: isPinned,
+      });
+    }
 
     // Notify all subscribed players
     // The announcement is posted either way; this reports on the push.
@@ -42,7 +55,8 @@ export default function AnnouncementPanel({ isAdmin, coachId, coachName }: Props
         body: {
           title: isPinned ? "📌 New pinned announcement" : "📢 New announcement from Coach",
           message: newMsg.trim(),
-          allPlayers: true,
+          // Everyone in this program, or everyone in every program.
+          ...(everywhere && isPlatformAdmin ? { allPrograms: true } : { allPlayers: true }),
         },
       });
       if (error) {
@@ -61,13 +75,21 @@ export default function AnnouncementPanel({ isAdmin, coachId, coachName }: Props
       setPushStatus(`Posted, but the notification didn't send: ${e?.message ?? e}`);
     }
 
-    setNewMsg(""); setIsPinned(false); setShowForm(false);
+    setNewMsg(""); setIsPinned(false); setEverywhere(false); setShowForm(false);
     await load();
     setPosting(false);
   }
 
-  async function del(id: string) {
-    await supabase.from("announcements").delete().eq("id", id);
+  async function del(ann: any) {
+    // A post to every program: the platform admin can take it down everywhere.
+    if (ann.broadcast_id && isPlatformAdmin
+        && window.confirm("This was posted to every program. Remove it from every program?\n\nOK = every program · Cancel = just this one")) {
+      const { error } = await supabase.rpc("delete_announcement_everywhere", { p_broadcast_id: ann.broadcast_id });
+      if (error) alert("Error: " + error.message);
+      load();
+      return;
+    }
+    await supabase.from("announcements").delete().eq("id", ann.id);
     load();
   }
 
@@ -103,9 +125,15 @@ export default function AnnouncementPanel({ isAdmin, coachId, coachName }: Props
               <input type="checkbox" checked={isPinned} onChange={e => setIsPinned(e.target.checked)} />
               📌 Pin to top
             </label>
+            {isPlatformAdmin && (
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: everywhere ? "var(--gold)" : "var(--muted)", cursor: "pointer" }}>
+                <input type="checkbox" checked={everywhere} onChange={e => setEverywhere(e.target.checked)} />
+                🌐 Post to every program
+              </label>
+            )}
             <button onClick={post} disabled={posting || !newMsg.trim()}
               style={{ marginLeft: "auto", background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
-              {posting ? "Posting…" : "Post Announcement"}
+              {posting ? "Posting…" : everywhere && isPlatformAdmin ? "Post to Every Program" : "Post Announcement"}
             </button>
           </div>
         </div>
@@ -120,12 +148,13 @@ export default function AnnouncementPanel({ isAdmin, coachId, coachName }: Props
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                 <div style={{ flex: 1 }}>
                   {ann.is_pinned && <span style={{ fontSize: 10, fontWeight: 700, color: "var(--gold)", marginRight: 6 }}>📌 PINNED</span>}
+                  {ann.broadcast_id && <span style={{ fontSize: 10, fontWeight: 700, color: "#93b4ff", marginRight: 6 }}>🌐 ALL PROGRAMS</span>}
                   <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.5 }}>{ann.message}</div>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>{ann.coach_name} · {new Date(ann.created_at).toLocaleDateString()}</div>
                 </div>
                 <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                   {canEdit(ann) && <button onClick={() => togglePin(ann)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: ann.is_pinned ? "var(--gold)" : "var(--muted)" }}>📌</button>}
-                  {canEdit(ann) && <button onClick={() => del(ann.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#ff7b7b" }}>🗑</button>}
+                  {canEdit(ann) && <button onClick={() => del(ann)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#ff7b7b" }}>🗑</button>}
                 </div>
               </div>
             </div>
