@@ -37,10 +37,10 @@ export async function getTeams(competitionId: string): Promise<Team[]> {
       const { data: xpSettings } = await supabase
         .from("xp_settings").select("xp_required").eq("perk_key", "team_bonus").single();
       const threshold = xpSettings?.xp_required ?? 1250;
-      const { data: memberXp } = await supabase
-        .from("profiles").select("total_xp")
-        .in("id", memberIds).gte("total_xp", threshold).limit(1);
-      hasTeamBoost = (memberXp ?? []).length > 0;
+      // XP is per program (lives on the membership)
+      const { data: xpRows } = await supabase.rpc("program_xp");
+      const ids = new Set(memberIds);
+      hasTeamBoost = (xpRows ?? []).some((r: any) => ids.has(r.player_id) && (r.total_xp ?? 0) >= threshold);
     }
 
     const score = drillScore + (hasTeamBoost ? 3 : 0);
