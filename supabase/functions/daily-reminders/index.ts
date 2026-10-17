@@ -18,6 +18,11 @@
 //
 // Each section fails on its own; one breaking never stops the others.
 //
+// Multi-program (migration 185): sections 0 and 4 run each program in
+// turn inside the database; sections 2 and 3 go only to the people in
+// the program the competition belongs to (plus platform admins for the
+// crown reminder). Deploy right after running 185.
+//
 // Deploy: supabase functions deploy daily-reminders
 // Deploy AFTER migration 147 -- sections 0, 2 and 3 read its tables.
 //
@@ -68,8 +73,27 @@ async function sendPushToPlayers(playerIds: string[], title: string, message: st
   return sendPushTo({ include_aliases: { external_id: playerIds } }, title, message);
 }
 
-function sendPushToAllPlayers(title: string, message: string) {
-  return sendPush([{ field: "tag", key: "player_id", relation: "exists" }], title, message);
+/** Active members of one program (players and staff) -- who used to get
+ *  "everyone" pushes when there was only one program. */
+async function programMemberIds(programId: string): Promise<string[]> {
+  const { data } = await supabase.from("program_members")
+    .select("user_id").eq("program_id", programId).eq("status", "active");
+  return [...new Set<string>((data ?? []).map((m: { user_id: string }) => m.user_id))];
+}
+
+/** A program's coaches, plus platform admins (who oversee every program). */
+async function programStaffIds(programId: string): Promise<string[]> {
+  const [{ data: staff }, { data: admins }] = await Promise.all([
+    supabase.from("program_members").select("user_id")
+      .eq("program_id", programId).eq("status", "active").in("role", ["head_coach", "coach"]),
+    supabase.from("platform_admins").select("user_id"),
+  ]);
+  return [...new Set<string>([...(staff ?? []), ...(admins ?? [])].map((r: { user_id: string }) => r.user_id))];
+}
+
+async function programNames(): Promise<Map<string, string>> {
+  const { data } = await supabase.from("programs").select("id, name");
+  return new Map((data ?? []).map((p: { id: string; name: string }) => [p.id, p.name]));
 }
 
 /** A moment's calendar date in Eastern time, as YYYY-MM-DD. Competition boundaries are midnight Eastern. */
@@ -134,7 +158,7 @@ serve(async () => {
 
     if (error) throw error;
 
-    const playerIds = (streaks ?? []).map((s) => s.player_id);
+    const playerIds = [...new Set<string>((streaks ?? []).map((s: { player_id: string }) => s.player_id))];
     if (playerIds.length > 0) {
       results.streakReminder = await sendPushToPlayers(
         playerIds,
@@ -154,33 +178,42 @@ serve(async () => {
     const nowIso = new Date().toISOString();
     const { data: running, error } = await supabase
       .from("competitions")
-      .select("id, name, starts_at, ends_at, ending_warned_at")
+      .select("id, name, starts_at, ends_at, ending_warned_at, program_id")
       .lte("starts_at", nowIso)
       .gt("ends_at", nowIso)
-      .limit(1);
+      .order("starts_at", { ascending: true });
     if (error) throw error;
 
-    const c = running?.[0];
-    if (!c) {
-      results.endingReminder = { sent: false, reason: "no competition running" };
-    } else if (c.ending_warned_at) {
-      results.endingReminder = { sent: false, reason: "already warned", competition: c.name };
-    } else {
-      const lengthDays = Math.round((Date.parse(c.ends_at) - Date.parse(c.starts_at)) / DAY_MS);
-      // ends_at is the midnight AFTER the last day, so 1 = today is the last day.
-      const daysUntilEnd = daysBetween(easternDate(new Date()), easternDate(new Date(c.ends_at)));
-      const warnAt = lengthDays >= 2 ? 2 : 1;
+    // One running competition per program (the first, as before).
+    const perProgram = new Map<string, NonNullable<typeof running>[number]>();
+    for (const c of running ?? []) if (!perProgram.has(c.program_id)) perProgram.set(c.program_id, c);
 
-      if (daysUntilEnd === warnAt) {
-        const [title, message] =
-          lengthDays >= 7 ? ["⏰ 2 days left!", `${c.name} ends in 2 days — every point counts!`]
-          : lengthDays >= 2 ? ["⏰ Ends tomorrow!", `${c.name} ends tomorrow night — get your work in!`]
-          : ["⏰ Last day!", `${c.name} ends tonight — get your work in!`];
-        results.endingReminder = await sendPushToAllPlayers(title, message);
-        await supabase.from("competitions").update({ ending_warned_at: nowIso }).eq("id", c.id);
-      } else {
-        results.endingReminder = { sent: false, competition: c.name, daysUntilEnd, warnAt };
+    if (perProgram.size === 0) {
+      results.endingReminder = { sent: false, reason: "no competition running" };
+    } else {
+      const out: unknown[] = [];
+      for (const c of perProgram.values()) {
+        if (c.ending_warned_at) {
+          out.push({ sent: false, reason: "already warned", competition: c.name });
+          continue;
+        }
+        const lengthDays = Math.round((Date.parse(c.ends_at) - Date.parse(c.starts_at)) / DAY_MS);
+        // ends_at is the midnight AFTER the last day, so 1 = today is the last day.
+        const daysUntilEnd = daysBetween(easternDate(new Date()), easternDate(new Date(c.ends_at)));
+        const warnAt = lengthDays >= 2 ? 2 : 1;
+
+        if (daysUntilEnd === warnAt) {
+          const [title, message] =
+            lengthDays >= 7 ? ["⏰ 2 days left!", `${c.name} ends in 2 days — every point counts!`]
+            : lengthDays >= 2 ? ["⏰ Ends tomorrow!", `${c.name} ends tomorrow night — get your work in!`]
+            : ["⏰ Last day!", `${c.name} ends tonight — get your work in!`];
+          out.push(await sendPushToPlayers(await programMemberIds(c.program_id), title, message));
+          await supabase.from("competitions").update({ ending_warned_at: nowIso }).eq("id", c.id);
+        } else {
+          out.push({ sent: false, competition: c.name, daysUntilEnd, warnAt });
+        }
       }
+      results.endingReminder = out.length === 1 ? out[0] : out;
     }
   } catch (e) {
     results.endingReminder = { error: String(e) };
@@ -188,37 +221,47 @@ serve(async () => {
 
   // ── 3. Crown reminder (escalating digest) ────────────────
   try {
-    const { data: waiting, error } = await supabase
+    const { data: allWaiting, error } = await supabase
       .from("competitions")
-      .select("id, name, ends_at")
+      .select("id, name, ends_at, program_id")
       .lte("ends_at", new Date().toISOString())
       .is("crowned_at", null)
       .is("skipped_at", null)
       .order("ends_at", { ascending: true });
     if (error) throw error;
 
-    if (!waiting || waiting.length === 0) {
+    if (!allWaiting || allWaiting.length === 0) {
       results.crowningReminder = { sent: false, reason: "nothing waiting to be crowned" };
     } else {
-      const { data: staff } = await supabase.from("profiles").select("id").in("role", ["coach", "admin"]);
-      const staffIds = (staff ?? []).map((s) => s.id);
-      const oldest = waiting[0];
-      const daysSince = Math.max(0, daysBetween(easternDate(new Date(oldest.ends_at)), easternDate(new Date())));
-      const n = waiting.length;
-      const what = n === 1 ? oldest.name : `${n} competitions`;
+      const byProgram = new Map<string, typeof allWaiting>();
+      for (const c of allWaiting) {
+        if (!byProgram.has(c.program_id)) byProgram.set(c.program_id, []);
+        byProgram.get(c.program_id)!.push(c);
+      }
+      const names = await programNames();
+      const multi = byProgram.size > 1;
+      const out: unknown[] = [];
+      for (const [programId, waiting] of byProgram) {
+        const staffIds = await programStaffIds(programId);
+        const oldest = waiting[0];
+        const daysSince = Math.max(0, daysBetween(easternDate(new Date(oldest.ends_at)), easternDate(new Date())));
+        const n = waiting.length;
+        // With more than one program waiting, say which (platform admins get each).
+        const prefix = multi ? `${names.get(programId) ?? "A program"}: ` : "";
+        const what = n === 1 ? oldest.name : `${n} competitions`;
 
-      const title = daysSince === 0 ? "👑 Time to crown champions!"
-        : daysSince === 1 ? "⏰ Champions still not crowned"
-        : "🚨 Champions overdue!";
-      const message = daysSince === 0
-        ? `${what} just ended — crown the champions from the Leaderboard tab.`
-        : daysSince === 1
-        ? `${what} ${n === 1 ? "is" : "are"} waiting — players want to see who won.`
-        : `${what} ${n === 1 ? "is" : "are"} waiting to be crowned${n > 1 ? `, the oldest ${daysSince} days overdue` : ` — ${daysSince} days overdue`}.`;
+        const title = daysSince === 0 ? "👑 Time to crown champions!"
+          : daysSince === 1 ? "⏰ Champions still not crowned"
+          : "🚨 Champions overdue!";
+        const message = prefix + (daysSince === 0
+          ? `${what} just ended — crown the champions from the Leaderboard tab.`
+          : daysSince === 1
+          ? `${what} ${n === 1 ? "is" : "are"} waiting — players want to see who won.`
+          : `${what} ${n === 1 ? "is" : "are"} waiting to be crowned${n > 1 ? `, the oldest ${daysSince} days overdue` : ` — ${daysSince} days overdue`}.`);
 
-      results.crowningReminder = await sendPushToPlayers(staffIds, title, message);
-      results.crowningWaiting = n;
-      results.crowningDaysSince = daysSince;
+        out.push({ program: names.get(programId), waiting: n, daysSince, push: await sendPushToPlayers(staffIds, title, message) });
+      }
+      results.crowningReminder = out.length === 1 ? out[0] : out;
     }
   } catch (e) {
     results.crowningReminder = { error: String(e) };
@@ -233,15 +276,15 @@ serve(async () => {
   try {
     const { data: due, error } = await supabase.rpc("inactivity_nudges_due");
     if (error) throw error;
-    const rows = (due ?? []) as { player_id: string; nudge_days: number; mode: string }[];
+    const rows = (due ?? []) as { player_id: string; nudge_days: number; mode: string; program_id: string }[];
     if (rows.length === 0) {
       results.inactivityNudges = { sent: false, reason: "nobody due" };
     } else {
       // One push per message (players at the same day count share it).
-      const byDays = new Map<string, { days: number; mode: string; ids: string[] }>();
+      const byDays = new Map<string, { days: number; mode: string; programId: string; ids: string[] }>();
       for (const r of rows) {
-        const key = `${r.mode}:${r.nudge_days}`;
-        if (!byDays.has(key)) byDays.set(key, { days: r.nudge_days, mode: r.mode, ids: [] });
+        const key = `${r.program_id}:${r.mode}:${r.nudge_days}`;
+        if (!byDays.has(key)) byDays.set(key, { days: r.nudge_days, mode: r.mode, programId: r.program_id, ids: [] });
         byDays.get(key)!.ids.push(r.player_id);
       }
       const sends: unknown[] = [];
@@ -251,7 +294,7 @@ serve(async () => {
           : ["🏀 Get back in the gym!", `It's been ${g.days} days since you checked in.`];
         sends.push(await sendPushToPlayers(g.ids, title, message));
         // Recorded even if a device wasn't reachable, so nobody is retried daily.
-        await supabase.from("inactivity_nudges").insert(g.ids.map((id) => ({ player_id: id, days: g.days, mode: g.mode })));
+        await supabase.from("inactivity_nudges").insert(g.ids.map((id) => ({ player_id: id, days: g.days, mode: g.mode, program_id: g.programId })));
       }
       results.inactivityNudges = { players: rows.length, sends };
     }
