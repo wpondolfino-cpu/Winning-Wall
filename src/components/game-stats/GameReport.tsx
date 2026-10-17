@@ -15,7 +15,8 @@
 
 import QuizManager from "../quizzes/QuizManager";
 import { createReviewQuiz } from "../../lib/gameReviewQuiz";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import { supabase } from "../../lib/supabase";
 import {
   computeTeamStats,
@@ -26,7 +27,11 @@ import {
   computePressBreakEffectiveness,
   computeInboundsDefense,
   computeHalfCourtStructure,
-  computePaintImpact,
+  computePaintBallMovement,
+  PAINT_THIN_SHOTS,
+  statInSections,
+  StatSection,
+  PaintGroup,
   computeQualityConversion,
   computeTurnoverBreakdown,
   computePeriodSplits,
@@ -223,6 +228,7 @@ export function ReportBody({
   opponentName,
   isPractice,
   canManage = false,
+  sections = null,
 }: {
   possessions: Possession[];
   playCalls: PlayCall[];
@@ -233,11 +239,15 @@ export function ReportBody({
   opponentName?: string;
   isPractice?: boolean;
   canManage?: boolean;
+  /** Report builder "Show" filter. null / empty = every section. */
+  sections?: StatSection[] | null;
 }) {
   const visible = statOrder.filter((s) => {
+    if (!statInSections(s.key, sections)) return false;
     if (s.builderOnly) return variant === "custom";
     return variant === "in_game" ? s.inGame : true;
   });
+  const filtered = !!sections && sections.length > 0;
   const numberStats = visible.filter((s) => s.kind === "number" && !s.goalOnly);
   const specialStats = visible.filter((s) => s.kind !== "number");
 
@@ -294,7 +304,8 @@ export function ReportBody({
   // Their inbounds, split by what we were in -- the mirror of the block above.
   const inboundsD = computeInboundsDefense(possessions, "opponent");
   const halfCourt = computeHalfCourtStructure(possessions);
-  const paint = computePaintImpact(possessions);
+  const paintUs = computePaintBallMovement(possessions, "us");
+  const paintThem = computePaintBallMovement(possessions, "opponent");
   const qualityUs = computeQualityConversion(possessions, "us");
   const qualityThem = computeQualityConversion(possessions, "opponent");
   const tovBreak = computeTurnoverBreakdown(possessions);
@@ -408,18 +419,8 @@ export function ReportBody({
         }
 
         if (s.kind === "paint_impact") {
-          if (!paint.total) return null;
-          return (
-            <div key={s.key}>
-              <SectionDivider label="Paint touch impact" />
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
-                <SplitCard label="With paint touch" row={paint.withTouch} unit="looks" />
-                <SplitCard label="No paint touch" row={paint.withoutTouch} unit="looks" />
-                <SplitCard label="Both sides" row={paint.bothSides} unit="looks" />
-                <SplitCard label="One side only" row={paint.oneSide} unit="looks" />
-              </div>
-            </div>
-          );
+          if (!paintUs.total && !paintThem.total) return null;
+          return <PaintBallMovementBlock key={s.key} us={paintUs} them={paintThem} opponentName={opponentName} />;
         }
 
         if (s.kind === "quality_conversion") {
@@ -633,12 +634,184 @@ export function ReportBody({
         return null;
       })}
 
-      {suggestions && <PracticeSuggestionsPanel suggestions={suggestions} canManage={canManage} />}
+      {suggestions && !filtered && <PracticeSuggestionsPanel suggestions={suggestions} canManage={canManage} />}
     </div>
   );
 }
 
 /** `unit` says what was counted: whole trips (points per possession) or looks (points per look, each look bringing only what it scored). */
+// ── Paint touch & ball movement (report builder) ──────────────────────
+// Four groups that don't overlap, so they can be compared head to head.
+// Cards on a phone, one table on a wider screen.
+type PaintResult = ReturnType<typeof computePaintBallMovement>;
+
+const QUALITY_COLORS = { great: "#1f7a4d", good: "#2f9e63", live: "#c48a1f", tough: "#8a2f2f" } as const;
+
+function QualityMix({ g, height = 12 }: { g: PaintGroup; height?: number }) {
+  if (!g.qualityGraded) return <span style={{ fontSize: 11, color: "var(--muted)" }}>no graded shots</span>;
+  return (
+    <div style={{ display: "flex", height, borderRadius: height / 2, overflow: "hidden" }}
+      title={`Great ${g.quality.great}% · Good ${g.quality.good}% · Live ${g.quality.live}% · Tough ${g.quality.tough}%`}>
+      {(["great", "good", "live", "tough"] as const).map((k) => (
+        <div key={k} style={{ width: `${g.quality[k]}%`, background: QUALITY_COLORS[k] }} />
+      ))}
+    </div>
+  );
+}
+
+function PaintBallMovementBlock({ us, them, opponentName }: { us: PaintResult; them: PaintResult; opponentName?: string }) {
+  const [side, setSide] = useState<"us" | "them">("us");
+  const [explain, setExplain] = useState(false);
+  const r = side === "us" ? us : them;
+  const maxPps = Math.max(1.5, ...r.groups.map((g) => g.pps));
+  const vsAll = (g: PaintGroup) => {
+    if (g.thin || r.all.thin) return null;
+    const d = Math.round((g.efg - r.all.efg) * 10) / 10;
+    // For "them" a higher eFG is worse for us, so the colour flips.
+    const good = side === "us" ? d >= 0 : d <= 0;
+    return <span style={{ fontSize: 11, color: good ? "#6fd3a0" : "#e07b6e" }}>{d >= 0 ? "+" : "−"}{Math.abs(d)} vs all</span>;
+  };
+  // Same convention as the rest of the built reports: an amber ⚠ on a
+  // number from too few to lean on (explained once at the top, tap it for
+  // the count) -- not fading, which the app doesn't use anywhere else.
+  const fade = (_g: PaintGroup) => 1;
+  const [sampleOpen, setSampleOpen] = useState<string | null>(null);
+  const anyThin = r.groups.some((g) => g.thin);
+  const warn = (g: PaintGroup) => g.thin ? (
+    <button onClick={() => setSampleOpen(sampleOpen === g.key ? null : g.key)} title="Why this is flagged"
+      style={{ background: "none", border: 0, padding: "0 0 0 4px", color: "#e8a33d", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>⚠</button>
+  ) : null;
+  const sampleNote = (g: PaintGroup) => sampleOpen === g.key ? (
+    <div style={{ fontSize: 12, lineHeight: 1.5, color: "#e8a33d", padding: "4px 0" }}>
+      From <b>{g.fga}</b> shot{g.fga === 1 ? "" : "s"}. Reads reliably from about <b>{PAINT_THIN_SHOTS}</b>{g.fga >= PAINT_THIN_SHOTS * 0.6 ? " — close; another game or two should do it." : " — run it over more games."}
+    </div>
+  ) : null;
+  const tab = (key: "us" | "them", label: string) => (
+    <button onClick={() => setSide(key)} style={{
+      height: 32, padding: "0 14px", border: 0, borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer",
+      background: side === key ? "var(--royal)" : "transparent", color: side === key ? "#f5f7fc" : "var(--muted)",
+    }}>{label}</button>
+  );
+  const cell: CSSProperties = { padding: "10px 8px", borderTop: "1px solid var(--border)", fontSize: 13 };
+  const sub = (a: number, b: number) => <span style={{ color: "var(--muted)" }}> {a}/{b}</span>;
+
+  return (
+    <div>
+      <style>{`
+        .pbm-table { display: grid; }
+        .pbm-cards { display: none; }
+        @media (max-width: 700px) { .pbm-table { display: none; } .pbm-cards { display: flex; } }
+      `}</style>
+      <div style={{ borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 10, marginBottom: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <button onClick={() => setExplain((v) => !v)} style={{ background: "none", border: 0, padding: 0, color: "var(--muted)", fontSize: 13, fontFamily: "inherit", cursor: "pointer", flex: 1, textAlign: "left" }}>
+          Paint touch &amp; ball movement · {r.total} half-court looks <span style={{ fontSize: 11 }}>ⓘ</span>
+        </button>
+        <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 10, padding: 3, gap: 2 }}>
+          {tab("us", "Us")}
+          {tab("them", opponentName ? opponentName : "Them")}
+        </div>
+      </div>
+      {explain && (
+        <div style={{ fontSize: 12, lineHeight: 1.55, color: "var(--muted)", marginBottom: 10 }}>
+          {STAT_EXPLAINERS.paint_impact?.what}
+        </div>
+      )}
+
+      {!r.total ? (
+        <div style={{ fontSize: 13, color: "var(--muted)", padding: "6px 0" }}>No half-court looks with a paint touch answer yet.</div>
+      ) : (
+        <>
+          {anyThin && (
+            <div style={{ fontSize: 11, color: "#e8a33d", marginBottom: 8, lineHeight: 1.5 }}>
+              ⚠ marks a group with too few shots to lean on. Tap it to see how many, and how close it is to reading reliably.
+            </div>
+          )}
+          {/* Points per shot, all four groups at a glance */}
+          <div className="stat-card" style={{ display: "grid", gridTemplateColumns: "130px minmax(0, 1fr) 40px", gap: "6px 8px", alignItems: "center", fontSize: 12, marginBottom: 10 }}>
+            <span style={{ gridColumn: "1 / -1", color: "var(--muted)" }}>Points per shot</span>
+            {r.groups.map((g) => (
+              <Fragment key={g.key}>
+                <span style={{ opacity: fade(g) }}>{g.label}{warn(g)}</span>
+                <div style={{ height: 14, background: "var(--surface)", borderRadius: 4, opacity: fade(g) }}>
+                  <div style={{ width: `${Math.min(100, (g.pps / maxPps) * 100)}%`, height: 14, borderRadius: 4, background: r.best === g.key ? "var(--gold)" : "var(--royal-light)" }} />
+                </div>
+                <span style={{ textAlign: "right", fontWeight: 600, opacity: fade(g) }}>{g.pps.toFixed(2)}</span>
+              </Fragment>
+            ))}
+            <span style={{ color: "var(--muted)" }}>All half-court</span>
+            <div style={{ height: 14, background: "var(--surface)", borderRadius: 4 }}>
+              <div style={{ width: `${Math.min(100, (r.all.pps / maxPps) * 100)}%`, height: 14, borderRadius: 4, border: "1px dashed var(--muted)", boxSizing: "border-box" }} />
+            </div>
+            <span style={{ textAlign: "right", color: "var(--muted)" }}>{r.all.pps.toFixed(2)}</span>
+          </div>
+
+          {/* Wide screens: one table */}
+          <div className="pbm-table" style={{ gridTemplateColumns: "190px 90px repeat(6, minmax(0, 1fr)) 60px 150px", overflowX: "auto" }}>
+            {["Group", "Looks", "FG%", "2PT%", "3PT%", "eFG%", "Pts / shot", "Pts / look", "TO%", "Shot quality"].map((h) => (
+              <span key={h} style={{ padding: "6px 8px", fontSize: 12, color: "var(--muted)" }}>{h}</span>
+            ))}
+            {[...r.groups, r.all].map((g) => {
+              const isAll = g.key === "all";
+              const bg = r.best === g.key ? "rgba(240,192,64,0.08)" : undefined;
+              const st: CSSProperties = { ...cell, background: bg, opacity: fade(g), color: isAll ? "var(--muted)" : undefined, borderTop: isAll ? "1px dashed var(--border)" : cell.borderTop };
+              return (
+                <Fragment key={g.key}>
+                  <span style={{ ...st, fontWeight: 600 }}>{g.label}{!isAll && warn(g)}</span>
+                  <span style={st}>{g.looks}{!isAll && <span style={{ color: "var(--muted)" }}> {Math.round(g.share)}%</span>}</span>
+                  <span style={st}>{g.fgPct}{sub(g.fgm, g.fga)}</span>
+                  <span style={st}>{g.fg2Pct}{sub(g.fg2m, g.fg2a)}</span>
+                  <span style={st}>{g.fg3Pct}{sub(g.fg3m, g.fg3a)}</span>
+                  <span style={{ ...st, fontWeight: 600 }}>{g.efg}</span>
+                  <span style={{ ...st, fontWeight: 600 }}>{g.pps.toFixed(2)}</span>
+                  <span style={st}>{g.ppl.toFixed(2)}</span>
+                  <span style={st}>{g.tovPct}</span>
+                  <span style={{ ...st, display: "flex", alignItems: "center" }}><span style={{ flex: 1 }}><QualityMix g={g} /></span></span>
+                </Fragment>
+              );
+            })}
+          </div>
+
+          <div className="pbm-table" style={{ display: "block" }}>{r.groups.map((g) => <Fragment key={g.key}>{sampleNote(g)}</Fragment>)}</div>
+
+          {/* Phones: a card per group */}
+          <div className="pbm-cards" style={{ flexDirection: "column", gap: 8 }}>
+            {r.groups.map((g) => (
+              <div key={g.key} className="stat-card" style={{ display: "flex", flexDirection: "column", gap: 10, opacity: fade(g), borderColor: r.best === g.key ? "var(--gold)" : undefined }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                  <span style={{ fontSize: 15, fontWeight: 600 }}>{g.label}{warn(g)}</span>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>{g.looks} looks · {Math.round(g.share)}%</span>
+                </div>
+                {sampleNote(g)}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+                  <div style={{ display: "flex", flexDirection: "column" }}><span style={{ fontSize: 11, color: "var(--muted)" }}>eFG%</span><span style={{ fontSize: 20, fontWeight: 600 }}>{g.efg}</span>{vsAll(g)}</div>
+                  <div style={{ display: "flex", flexDirection: "column" }}><span style={{ fontSize: 11, color: "var(--muted)" }}>Pts / shot</span><span style={{ fontSize: 20, fontWeight: 600 }}>{g.pps.toFixed(2)}</span></div>
+                  <div style={{ display: "flex", flexDirection: "column" }}><span style={{ fontSize: 11, color: "var(--muted)" }}>Pts / look</span><span style={{ fontSize: 20, fontWeight: 600 }}>{g.ppl.toFixed(2)}</span></div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6, fontSize: 12 }}>
+                  <div style={{ display: "flex", flexDirection: "column" }}><span style={{ color: "var(--muted)" }}>FG%</span><span>{g.fgPct}{sub(g.fgm, g.fga)}</span></div>
+                  <div style={{ display: "flex", flexDirection: "column" }}><span style={{ color: "var(--muted)" }}>2PT%</span><span>{g.fg2Pct}{sub(g.fg2m, g.fg2a)}</span></div>
+                  <div style={{ display: "flex", flexDirection: "column" }}><span style={{ color: "var(--muted)" }}>3PT%</span><span>{g.fg3Pct}{sub(g.fg3m, g.fg3a)}</span></div>
+                  <div style={{ display: "flex", flexDirection: "column" }}><span style={{ color: "var(--muted)" }}>TO%</span><span>{g.tovPct}</span></div>
+                </div>
+                <QualityMix g={g} />
+                {g.qualityGraded > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--muted)" }}>
+                    <span>Great {g.quality.great}%</span><span>Good {g.quality.good}%</span><span>Live {g.quality.live}%</span><span>Tough {g.quality.tough}%</span>
+                  </div>
+                )}
+              </div>
+            ))}
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "10px 14px", border: "1px dashed var(--border)", borderRadius: 12, fontSize: 13 }}>
+              <span style={{ fontWeight: 600 }}>All half-court</span>
+              <span style={{ color: "var(--muted)" }}>eFG {r.all.efg} · {r.all.pps.toFixed(2)} pts/shot · FG {r.all.fgm}/{r.all.fga} · TO {r.all.tovPct}%</span>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function SplitCard({ label, row, unit = "trips" }: { label: string; row: { trips: number; points: number; ppp: number }; unit?: "trips" | "looks" }) {
   return (
     <div className="stat-card">
