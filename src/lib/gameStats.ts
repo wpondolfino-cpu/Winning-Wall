@@ -430,6 +430,49 @@ export interface StatDef {
   usOnly?: boolean;      // no opponent-side equivalent, so no Opponent goal input. Nothing uses it now that shot quality is graded on both ends, but the mechanism stays for the next stat that needs it
 }
 
+/**
+ * Report builder "Show" filter: every stat belongs to exactly one section,
+ * so a coach can pull up just shooting, or just paint touch, instead of the
+ * whole report. A stat missing from this map only appears under "All".
+ */
+export type StatSection =
+  | "shooting" | "paint" | "quality" | "play_types"
+  | "possessions" | "play_calls" | "defense" | "flow";
+
+export const STAT_SECTIONS: { key: StatSection; label: string }[] = [
+  { key: "shooting",    label: "Shooting" },
+  { key: "paint",       label: "Paint touch & ball movement" },
+  { key: "quality",     label: "Shot quality" },
+  { key: "play_types",  label: "Play types" },
+  { key: "possessions", label: "Possessions & turnovers" },
+  { key: "play_calls",  label: "Play calls & sets" },
+  { key: "defense",     label: "Defense" },
+  { key: "flow",        label: "By period / game flow" },
+];
+
+export const STAT_SECTION_OF: Record<string, StatSection> = {
+  efg_pct: "shooting", fg2_pct: "shooting", fg3_pct: "shooting", ft_pct: "shooting",
+  ft_rate: "shooting", ts_pct: "shooting", three_rate: "shooting",
+  paint_touch_single: "paint", paint_touch_both: "paint", paint_impact: "paint",
+  shot_quality: "quality", quality_shot_pct: "quality", quality_conversion: "quality",
+  transition_pct: "play_types", transition_ppp: "play_types", halfcourt_ppp: "play_types",
+  half_court_structure: "play_types", press_break: "play_types",
+  oreb_pct: "possessions", tov_pct: "possessions", extra_possessions: "possessions",
+  points_off_live_to: "possessions", second_chance_points: "possessions",
+  second_chance_ppp: "possessions", ppp: "possessions", possessions: "possessions",
+  turnover_breakdown: "possessions",
+  set_plays: "play_calls", oob_plays: "play_calls",
+  defense_schemes: "defense",
+  period_splits: "flow", prev_possession: "flow", streaks: "flow",
+};
+
+/** null / empty = everything (today's behaviour). */
+export function statInSections(key: string, sections: StatSection[] | null | undefined): boolean {
+  if (!sections || sections.length === 0) return true;
+  const sec = STAT_SECTION_OF[key];
+  return !!sec && sections.includes(sec);
+}
+
 export const DEFAULT_STAT_ORDER: StatDef[] = [
   { key: "efg_pct", label: "eFG%", kind: "number", inGame: true, defaultDirection: "higher_better" },
   { key: "fg2_pct", label: "2PT FG%", kind: "number", inGame: true, defaultDirection: "higher_better" },
@@ -468,7 +511,7 @@ export const DEFAULT_STAT_ORDER: StatDef[] = [
   { key: "ppp", label: "PPP", kind: "number", inGame: false, builderOnly: true, defaultDirection: "higher_better" },
   { key: "second_chance_ppp", label: "Second chance PPP", kind: "number", inGame: false, builderOnly: true, defaultDirection: "higher_better" },
   { key: "possessions", label: "Possessions", kind: "number", inGame: false, builderOnly: true },
-  { key: "paint_impact", label: "Paint touch impact", kind: "paint_impact", inGame: false, builderOnly: true },
+  { key: "paint_impact", label: "Paint touch & ball movement", kind: "paint_impact", inGame: false, builderOnly: true },
   { key: "quality_conversion", label: "Shot quality conversion", kind: "quality_conversion", inGame: false, builderOnly: true },
   { key: "turnover_breakdown", label: "Turnover breakdown", kind: "turnover_breakdown", inGame: false, builderOnly: true },
   { key: "period_splits", label: "By period", kind: "period_splits", inGame: false, builderOnly: true },
@@ -497,7 +540,7 @@ export const STAT_EXPLAINERS: Record<string, { what: string; how: string }> = {
   ppp: { what: "Points per possession overall. Every other PPP row on this report is a slice of this one.", how: "points / possessions" },
   second_chance_ppp: { what: "Points per offensive rebound. Says whether the boards you win actually turn into points, which the raw second-chance points total can't.", how: "points scored after an OREB / offensive rebounds" },
   possessions: { what: "Trips counted. Excludes intentional-foul, technical and flagrant free throws, since those aren't possessions.", how: "count" },
-  paint_impact: { what: "What a paint touch is worth, rather than just how often you get one. The gap between the two figures is the argument for demanding it. Putbacks are left out, since the question isn't asked on them.", how: "points per half-court look with a paint touch vs without" },
+  paint_impact: { what: "Whether getting a paint touch, swinging it to both sides, doing both, or doing neither leads to better shots. Every half-court look lands in exactly one of the four groups, so they can be compared head to head. Rebounded misses count as attempts. Transition, putbacks and inbounds plays are left out, since the question isn't asked on them. A group with fewer than 15 shots gets an amber warning mark -- too few to lean on yet.", how: "per group: FG%, 2PT%, 3PT%, eFG% = (FGM + 0.5 x 3PM) / FGA, points per shot = FG points / FGA, points per look = all points / looks, TO% = turnovers / looks, shot quality mix of the graded shots" },
   quality_conversion: { what: "How each grade of shot actually converted, including misses that were rebounded. Two readings: whether the team finishes the shots it generates, and whether the grading itself is calibrated -- if great shots come back below your good shots, the grading is drifting.", how: "eFG% within each shot quality grade" },
   turnover_breakdown: { what: "Turnovers split by type. Live-ball giveaways are the expensive ones because they run the other way; dead balls and charges don't.", how: "count by turnover type" },
   period_splits: { what: "PPP for and against, and possessions, by period. Where a game was actually won or lost, and the number behind a habit like slow third quarters.", how: "points / possessions, per period" },
@@ -919,6 +962,8 @@ export interface SavedReport {
   game_group: GameGroup;
   /** Explicit game set for a hand-picked report. Null means it stays relative and re-resolves from game_count. */
   game_ids?: string[] | null;
+  /** Report builder "Show" filter (migration 182). Null = the whole report. */
+  sections?: StatSection[] | null;
   created_by: string;
   created_at: string;
 }
@@ -1689,16 +1734,94 @@ export function computeAwardedFts(possessions: Possession[]) {
   return { us: forTeam("us"), opponent: forTeam("opponent") };
 }
 
-/** What a paint touch is actually worth, not just how often it happens. Half-court looks that set up only (not putbacks), since that's where the flag is asked. */
-export function computePaintImpact(possessions: Possession[]) {
-  const looks = countedLooks(possessions, "us").filter((r) => r.look.type === "half_court" && !r.look.putback);
-  return {
-    total: looks.length,
-    withTouch: lookSplitRow(looks.filter((r) => r.look.paint_touch), "With paint touch"),
-    withoutTouch: lookSplitRow(looks.filter((r) => !r.look.paint_touch), "No paint touch"),
-    bothSides: lookSplitRow(looks.filter((r) => r.look.paint_touch_both_sides), "Both sides"),
-    oneSide: lookSplitRow(looks.filter((r) => r.look.paint_touch && !r.look.paint_touch_both_sides), "One side only"),
+export type PaintGroupKey = "neither" | "paint_only" | "both_only" | "paint_and_both" | "all";
+
+export interface PaintGroup {
+  key: PaintGroupKey;
+  label: string;
+  looks: number;
+  /** Share of all half-court looks, 0-100. */
+  share: number;
+  fga: number; fgm: number;
+  fg2a: number; fg2m: number;
+  fg3a: number; fg3m: number;
+  fgPct: number; fg2Pct: number; fg3Pct: number; efg: number;
+  /** Field-goal points per field-goal attempt. */
+  pps: number;
+  /** Every point (free throws included) per look. */
+  ppl: number;
+  turnovers: number;
+  tovPct: number;
+  /** Mix of the graded shots, 0-100 each. */
+  quality: Record<ShotQuality, number>;
+  qualityGraded: number;
+  /** Under 15 shots: flagged with the amber ⚠, too few to lean on. */
+  thin: boolean;
+}
+
+export const PAINT_THIN_SHOTS = 15;
+
+/**
+ * Paint touch & ball movement (report builder only).
+ *
+ * Every half-court look that set up -- not transition, not a putback, not
+ * an inbounds look; the tracker only asks paint touch on those -- lands in
+ * exactly ONE group: neither, paint touch only, both sides only, or paint
+ * touch + both sides. Unlike the old overlapping cards, the four groups add
+ * up to the whole, so they can be compared head to head.
+ *
+ * Per look, so a miss that was rebounded is an attempt in the group of the
+ * look it came from.
+ */
+export function computePaintBallMovement(possessions: Possession[], team: Team) {
+  const looks = countedLooks(possessions, team).filter((r) => r.look.type === "half_court" && !r.look.putback);
+  const total = looks.length;
+
+  const build = (key: PaintGroupKey, label: string, rows: LookRow[]): PaintGroup => {
+    const shots = rows.map((r) => r.look).filter((l) => l.outcome === "fg_made" || l.outcome === "fg_missed");
+    const twos = shots.filter((l) => l.shot_type !== 3);
+    const threes = shots.filter((l) => l.shot_type === 3);
+    const made = (ls: Look[]) => ls.filter((l) => l.outcome === "fg_made").length;
+    const fga = shots.length, fgm = made(shots);
+    const fg2a = twos.length, fg2m = made(twos);
+    const fg3a = threes.length, fg3m = made(threes);
+    const points = rows.reduce((s, r) => s + r.look.points, 0);
+    const turnovers = rows.filter((r) => r.look.outcome === "turnover").length;
+    const graded = shots.filter((l) => l.shot_quality != null);
+    const q = (g: ShotQuality) => graded.length ? Math.round((graded.filter((l) => l.shot_quality === g).length / graded.length) * 100) : 0;
+    const pct = (a: number, b: number) => (b ? round1((a / b) * 100) : 0);
+    return {
+      key, label,
+      looks: rows.length,
+      share: pct(rows.length, total),
+      fga, fgm, fg2a, fg2m, fg3a, fg3m,
+      fgPct: pct(fgm, fga), fg2Pct: pct(fg2m, fg2a), fg3Pct: pct(fg3m, fg3a),
+      efg: fga ? round1(((fgm + 0.5 * fg3m) / fga) * 100) : 0,
+      pps: fga ? round2((2 * fg2m + 3 * fg3m) / fga) : 0,
+      ppl: rows.length ? round2(points / rows.length) : 0,
+      turnovers,
+      tovPct: pct(turnovers, rows.length),
+      quality: { great: q("great"), good: q("good"), live: q("live"), tough: q("tough") },
+      qualityGraded: graded.length,
+      thin: fga < PAINT_THIN_SHOTS,
+    };
   };
+
+  const touch = (r: LookRow) => r.look.paint_touch;
+  const both = (r: LookRow) => r.look.paint_touch_both_sides;
+  const groups = [
+    build("neither", "Neither", looks.filter((r) => !touch(r) && !both(r))),
+    build("paint_only", "Paint touch only", looks.filter((r) => touch(r) && !both(r))),
+    build("both_only", "Both sides only", looks.filter((r) => !touch(r) && both(r))),
+    build("paint_and_both", "Paint touch + both sides", looks.filter((r) => touch(r) && both(r))),
+  ];
+  const all = build("all", "All half-court", looks);
+
+  // The group with the best points per shot, among groups with enough shots.
+  const trusted = groups.filter((g) => !g.thin);
+  const best = trusted.length ? trusted.reduce((a, b) => (b.pps > a.pps ? b : a)).key : null;
+
+  return { total, groups, all, best };
 }
 
 /**
