@@ -235,13 +235,19 @@ export default function AdminPanel({}: Props) {
 
   async function randomizeTeams() {
     // Get all active players — only those with enough XP for team eligibility (300 XP)
-    const { data: allPlayers } = await supabase.from("profiles")
-      .select("id,name,grade_category,avatar_url,total_xp")
-      .eq("role", "player")
-      .order("name");
+    const [{ data: allPlayers }, { data: xpRows }] = await Promise.all([
+      supabase.from("profiles")
+        .select("id,name,grade_category,avatar_url")
+        .eq("role", "player")
+        .order("name"),
+      // XP is per program (lives on the membership)
+      supabase.rpc("program_xp"),
+    ]);
+    const xpOf: Record<string, number> = {};
+    (xpRows ?? []).forEach((r: any) => { xpOf[r.player_id] = r.total_xp ?? 0; });
     // Only gate by XP if XP system is enabled
     const players = xpEnabled
-      ? (allPlayers ?? []).filter((p: any) => (p.total_xp ?? 0) >= 300)
+      ? (allPlayers ?? []).filter((p: any) => (xpOf[p.id] ?? 0) >= 300)
       : (allPlayers ?? []);
     if (players.length < numTeams) {
       showToast(`Not enough ${xpEnabled ? "eligible (300+ XP) " : ""}players (need ${numTeams}, have ${players.length}).`);
