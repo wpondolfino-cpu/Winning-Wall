@@ -28,18 +28,18 @@ export async function getXpPerks(): Promise<XpPerk[]> {
   return data && data.length > 0 ? data : DEFAULT_PERKS;
 }
 
+// XP is per program: it lives on the player's membership in the program
+// you're in (migration 185), not on their profile.
 export async function getPlayerXp(playerId: string): Promise<number> {
-  const { data } = await supabase
-    .from("profiles").select("total_xp").eq("id", playerId).single();
-  return data?.total_xp ?? 0;
+  const { data } = await supabase.rpc("member_xp", { p_user: playerId });
+  return (data as number | null) ?? 0;
 }
 
-export async function awardXp(playerId: string, amount: number, reason: string): Promise<void> {
-  await supabase.from("xp_log").insert({ player_id: playerId, xp_amount: amount, reason });
-  const { data: prof } = await supabase
-    .from("profiles").select("total_xp").eq("id", playerId).single();
-  const current = prof?.total_xp ?? 0;
-  await supabase.from("profiles").update({ total_xp: current + amount }).eq("id", playerId);
+// XP is awarded by the server when workouts and challenges are logged
+// (log_workout / respond_challenge). Nothing in the app calls this any
+// more; kept so old imports still compile.
+export async function awardXp(_playerId: string, _amount: number, _reason: string): Promise<void> {
+  console.warn("awardXp is no longer used -- XP is awarded on the server.");
 }
 
 export function getPlayerTier(
