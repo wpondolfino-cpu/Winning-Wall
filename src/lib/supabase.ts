@@ -88,6 +88,8 @@ export interface Profile {
   home_roster_id?: string | null;
   /** Set client-side for the platform admin: "Head Coach" or "Platform Admin" in the header. */
   admin_label?: string;
+  /** Set client-side: this account is the platform admin (sees the Platform page). */
+  is_platform_admin?: boolean;
   /** Set client-side for a test account (stored role "test_player", shown to the app as "player"). */
   is_test?: boolean;
 }
