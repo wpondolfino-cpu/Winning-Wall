@@ -46,7 +46,7 @@ import SchedulePage from "./components/schedule/SchedulePage";
 import NavModeChangePopup from "./components/NavModeChangePopup";
 import GameDaySheetsList from "./components/gameday/GameDaySheetsList";
 import { confirmNavAway } from "./lib/navGuard";
-import PlatformPage from "./components/platform/PlatformPage";
+import PlatformPage, { PlatformSection } from "./components/platform/PlatformPage";
 import { loadFeaturesOff, tabsOff } from "./lib/features";
 
 type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "scoutsheets" | "quizzes" | "schedule" | "practiceschedule" | "more";
@@ -55,7 +55,7 @@ type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profi
 // those strings back. Dropping it from the type would break that read for
 // anyone who customised their nav before Playbooks moved into Plays.
 type CoachTab  = "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "quizzes" | "gameday" | "practices" | "practicelibrary" | "settings" | "profile";
-type AdminTab  = "platform" | "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "quizzes" | "gameday" | "practices" | "practicelibrary" | "profile";
+type AdminTab  = "platform" | "platform-schools" | "platform-trainers" | "platform-announcements" | "platform-library" | "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "quizzes" | "gameday" | "practices" | "practicelibrary" | "profile";
 
 // "Drill Library" and "Practice Drills" both sounded like a place drills
 // live, so which held what was a guess. They're genuinely different things:
@@ -127,7 +127,8 @@ const PLAYER_URL_TABS = new Set<string>([
 const COACH_URL_TABS = new Set<string>(COACH_NAV_DEFAULT_ORDER);
 // "platform" is the platform admin's page (reached from the program
 // switcher, not the nav); the page itself is only rendered for them.
-const ADMIN_URL_TABS = new Set<string>([...ADMIN_NAV_DEFAULT_ORDER, "platform"]);
+const PLATFORM_TABS = ["platform", "platform-schools", "platform-trainers", "platform-announcements", "platform-library"];
+const ADMIN_URL_TABS = new Set<string>([...ADMIN_NAV_DEFAULT_ORDER, ...PLATFORM_TABS]);
 
 function urlTabsForRole(role: string | undefined): Set<string> | null {
   if (role === "player") return PLAYER_URL_TABS;
@@ -675,7 +676,10 @@ export default function App() {
   const isPlayer = profile.role === "player";
   const isCoach  = profile.role === "coach";
   const isAdmin  = profile.role === "admin";
-  const roleLabel      = isAdmin ? ((ownLocalProfile ?? profile).admin_label ?? "Head Coach") : isCoach ? "🏀 Coach" : "⚡ Player";
+  // The platform admin on a Platform page gets the platform sidebar
+  // instead of the program's (no in-season / offseason pages there).
+  const inPlatform = isAdmin && PLATFORM_TABS.includes(adminTab) && !!(ownLocalProfile ?? profile).is_platform_admin;
+  const roleLabel      = inPlatform ? "Platform Admin" : isAdmin ? ((ownLocalProfile ?? profile).admin_label ?? "Head Coach") : isCoach ? "🏀 Coach" : "⚡ Player";
   const displayProfile = ownLocalProfile ?? profile;
   const effectiveMode = effectiveModeFor(displayProfile);
 
@@ -795,7 +799,24 @@ export default function App() {
               <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)" }}><span className="nav-icon">🚪</span> Sign Out</div>
             </>
           )}
-          {isAdmin && (
+          {inPlatform && (
+            <>
+              <div style={{ padding: "10px 14px 6px", fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "var(--gold)" }}>PLATFORM</div>
+              {([["platform", "🏠", "Home"], ["platform-schools", "🏫", "Schools"], ["platform-trainers", "🏋️", "Trainers"],
+                 ["platform-announcements", "📢", "Announcements"], ["platform-library", "📚", "Winning Wall library"]] as [AdminTab, string, string][]).map(([key, icon, text]) => (
+                <div key={key} className={`nav-item ${adminTab === key ? "active" : ""}`}
+                  onClick={() => { if (!navigateFromNav(() => setAdminTab(key))) return; if (window.innerWidth < 768) setSidebarOpen(false); }}>
+                  <span className="nav-icon">{icon}</span> {text}
+                </div>
+              ))}
+              <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
+              <div className="nav-item" onClick={() => { if (!navigateFromNav(() => setAdminTab(homeTabFor(displayProfile) as AdminTab))) return; if (window.innerWidth < 768) setSidebarOpen(false); }}>
+                <span className="nav-icon">↩️</span> Back to program
+              </div>
+              <div className="nav-item" onClick={signOut} style={{ color: "var(--muted)" }}><span className="nav-icon">🚪</span> Sign Out</div>
+            </>
+          )}
+          {isAdmin && !inPlatform && (
             <>
               {renderGroupedNav(adminNavOrder, ADMIN_NAV_CONFIG, adminTab, (key) => setAdminTab(key as AdminTab))}
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
@@ -843,7 +864,10 @@ export default function App() {
               This part of the app isn't turned on for your program.
             </div>
           ) : (<>
-          {isAdmin && adminTab === "platform" && displayProfile.is_platform_admin && <PlatformPage />}
+          {inPlatform && (
+            <PlatformPage page={(adminTab === "platform" ? "home" : adminTab.replace("platform-", "")) as PlatformSection}
+              onGoTo={(p) => navigateFromNav(() => setAdminTab((p === "home" ? "platform" : `platform-${p}`) as AdminTab))} />
+          )}
           {/* Player panels */}
           {isPlayer && playerTab === "workouts" && <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} onDismiss={() => { if (returnToLibrary) { setReturnToLibrary(false); setPlayerTab("library"); } }} onLogged={(msg) => { showLogToast(msg); if (returnToLibrary) { setReturnToLibrary(false); setPlayerTab("library"); } }} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} canChallengeFromLibrary={!xpEnabled || (xpPerks.length > 0 && playerXp >= (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150))} onChallengeDrill={(id) => { setChallengePrefillWorkoutId(id); setPlayerTab("h2h"); }} />}
           {isPlayer && playerTab === "leaderboard" && <LeaderboardHub currentUserId={user.id} profile={displayProfile} />}
