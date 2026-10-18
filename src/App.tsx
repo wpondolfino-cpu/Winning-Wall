@@ -49,7 +49,7 @@ import { confirmNavAway } from "./lib/navGuard";
 import PlatformPage, { PlatformSection } from "./components/platform/PlatformPage";
 import { loadFeaturesOff, tabsOff } from "./lib/features";
 import { unreadMessages } from "./lib/messages";
-import CoachMessages from "./components/messages/CoachMessages";
+import CoachAnnouncements from "./components/messages/CoachAnnouncements";
 
 type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "scoutsheets" | "quizzes" | "schedule" | "practiceschedule" | "more";
 // "playbooks" stays in these unions deliberately: a coach who reordered
@@ -346,7 +346,7 @@ export default function App() {
           if (window.innerWidth < 768) setSidebarOpen(false);
         }}>
         <span className="nav-icon">{item.icon}</span> {item.label}
-        {item.key === "settings" && msgUnread > 0 && <span aria-label={`${msgUnread} unread from Winning Wall`} style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{msgUnread}</span>}
+        {item.key === "announcements" && msgUnread > 0 && <span aria-label={`${msgUnread} unread from Winning Wall`} style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{msgUnread}</span>}
         {item.key === "players" && pendingApprovals > 0 && <span style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{pendingApprovals}</span>}
       </div>
     );
@@ -1000,7 +1000,11 @@ export default function App() {
           {isAdmin && adminTab === "practices" && <PracticeWeeksList initialPracticeId={scheduleTarget?.practiceId ?? null} key={scheduleTarget?.practiceId ?? "list"} />}
           {isAdmin && adminTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
           {isAdmin && adminTab === "leaderboard" && <LeaderboardHub canManage={true} profile={displayProfile} />}
-          {isAdmin && adminTab === "announcements" && (<><AnnouncementPanel isAdmin={true} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
+          {/* Head coaches also get their inbox with Winning Wall here; the
+              platform admin uses Platform › Messages instead. */}
+          {isAdmin && adminTab === "announcements" && (displayProfile.is_platform_admin
+            ? (<><AnnouncementPanel isAdmin={true} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)
+            : <CoachAnnouncements coachId={user.id} coachName={displayProfile.name} programId={(displayProfile as any).active_program_id ?? null} unread={msgUnread} onMessagesRead={refreshMsgUnread} />)}
           {isAdmin && adminTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isAdmin={true} />}
           {isAdmin && adminTab === "hof" && <HallOfFame canDelete={true} onViewWorkout={(id) => { setAdminTab("workouts"); setDeepLinkWorkoutId(id); }} />}
           {isAdmin && adminTab === "challenges" && (
@@ -1012,9 +1016,6 @@ export default function App() {
             <div className="panel active">
               <div className="section-title">Settings</div>
               <div className="section-sub" style={{ marginBottom: 20 }}>Configure your Winning Wall platform</div>
-              {/* Head coaches' conversation with Winning Wall (the platform
-                  admin uses Platform › Messages instead). */}
-              {!displayProfile.is_platform_admin && <CoachMessages programId={(displayProfile as any).active_program_id ?? null} onRead={refreshMsgUnread} />}
               {renderHomePagePicker(adminNavOrder, ADMIN_NAV_CONFIG)}
               <button onClick={() => setShowReorderModal(true)} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 20 }}>
                 🔀 Customize Sidebar
