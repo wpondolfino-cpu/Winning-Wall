@@ -16,8 +16,10 @@ import {
   newJoinCode, createProgram, createSchool, createTrainer, updateProgram, updateSchool, uploadLogo, inviteLink,
   saveOrgNotes, programLog, postToPrograms,
 } from "../../lib/platform";
+import { InboxRow, loadInbox } from "../../lib/messages";
+import MessageThread from "../messages/MessageThread";
 
-export type PlatformSection = "home" | "schools" | "trainers" | "announcements" | "library";
+export type PlatformSection = "home" | "schools" | "trainers" | "announcements" | "messages" | "library";
 
 const card: CSSProperties = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16 };
 const btn: CSSProperties = { height: 42, padding: "0 16px", borderRadius: 10, border: 0, background: "var(--royal)", color: "var(--white)", fontFamily: "inherit", fontSize: 14, fontWeight: 600, cursor: "pointer" };
@@ -60,7 +62,7 @@ function Title({ text, action }: { text: string; action?: ReactNode }) {
   );
 }
 
-export default function PlatformPage({ page, onGoTo }: { page: PlatformSection; onGoTo: (p: PlatformSection) => void }) {
+export default function PlatformPage({ page, onGoTo, onMessagesRead }: { page: PlatformSection; onGoTo: (p: PlatformSection) => void; onMessagesRead?: () => void }) {
   const [orgs, setOrgs] = useState<PlatformSchool[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [managing, setManaging] = useState<string | null>(null);
@@ -85,6 +87,8 @@ export default function PlatformPage({ page, onGoTo }: { page: PlatformSection; 
         <OrgsPage kind={page === "schools" ? "school" : "trainer"} orgs={orgs} onManage={setManaging} onChanged={refresh} />
       ) : page === "announcements" ? (
         <Announcements orgs={orgs} />
+      ) : page === "messages" ? (
+        <Messages orgs={orgs} onRead={onMessagesRead} />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <Title text="Winning Wall library" />
@@ -121,7 +125,8 @@ function Home({ onManage, onGoTo }: { onManage: (id: string) => void; onGoTo: (p
     </button>
   );
 
-  const attention = h ? h.no_head_coach.length + h.waiting.length + h.quiet.length : 0;
+  const unread = h?.unread_messages ?? 0;
+  const attention = h ? h.no_head_coach.length + h.waiting.length + h.quiet.length + (unread ? 1 : 0) : 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -141,6 +146,13 @@ function Home({ onManage, onGoTo }: { onManage: (id: string) => void; onGoTo: (p
           <section style={{ ...card, padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
             <span style={h2}>Needs attention</span>
             {attention === 0 && <span style={{ fontSize: 14, color: "#5de098" }}>Nothing right now.</span>}
+            {unread > 0 && (
+              <button onClick={() => onGoTo("messages")}
+                style={{ display: "flex", alignItems: "center", gap: 12, background: "rgba(229,57,53,0.12)", borderRadius: 12, padding: "12px 14px", border: "1px solid rgba(229,57,53,0.35)", color: "var(--text)", fontFamily: "inherit", textAlign: "left", cursor: "pointer", minHeight: 52 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{unread} unread message{unread === 1 ? "" : "s"} from head coaches</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a3adc4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+              </button>
+            )}
             {h.no_head_coach.length > 0 && <span style={{ ...muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>No head coach</span>}
             {h.no_head_coach.map(r => row("n" + r.program_id, r.program, r.org, r.program_id))}
             {h.waiting.length > 0 && <span style={{ ...muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Signups waiting 3+ days</span>}
@@ -713,6 +725,83 @@ function Announcements({ orgs }: { orgs: PlatformSchool[] | null }) {
             }}>{busy ? "Posting…" : picked.size === 0 ? "Pick who it goes to" : `Post to ${picked.size} program${picked.size === 1 ? "" : "s"}`}</button>
         </section>
       </div>
+    </div>
+  );
+}
+
+// ── Messages with head coaches ────────────────────────────────
+function Messages({ orgs, onRead }: { orgs: PlatformSchool[] | null; onRead?: () => void }) {
+  const [inbox, setInbox] = useState<InboxRow[] | null>(null);
+  const [open, setOpen] = useState<{ id: string; name: string } | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [q, setQ] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+
+  async function refresh() {
+    try { setInbox(await loadInbox()); } catch (e: any) { setErr(e?.message ?? "Couldn't load messages."); setInbox([]); }
+  }
+  useEffect(() => { refresh(); }, []);
+
+  const programs = (orgs ?? []).flatMap(o => o.programs.map(p => ({ id: p.id, name: p.name, org: o.name, hc: p.head_coaches.length })));
+  const needle = q.trim().toLowerCase();
+
+  if (open) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <button onClick={() => { setOpen(null); refresh(); }} style={{ alignSelf: "flex-start", background: "transparent", border: 0, color: "#a3adc4", fontFamily: "inherit", fontSize: 13, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", minHeight: 44, padding: 0 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
+          All messages
+        </button>
+        <Title text={open.name} />
+        <section style={{ ...card, padding: 20 }}>
+          <MessageThread programId={open.id} programName={open.name} asPlatform onActivity={onRead} />
+        </section>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <Title text="Messages" action={<button style={btn} onClick={() => setStarting(s => !s)}>{starting ? "Cancel" : "+ New message"}</button>} />
+      {err && <div style={{ color: "#ff8a8a", fontSize: 13 }}>{err}</div>}
+
+      {starting && (
+        <section style={{ ...card, padding: 20, display: "flex", flexDirection: "column", gap: 10 }}>
+          <span style={h2}>Message a program's head coaches</span>
+          <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Find a school, trainer or program" aria-label="Find a program" style={input} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 320, overflowY: "auto" }}>
+            {programs.filter(p => !needle || p.name.toLowerCase().includes(needle) || p.org.toLowerCase().includes(needle)).map(p => (
+              <button key={p.id} onClick={() => { setStarting(false); setOpen({ id: p.id, name: p.name }); }}
+                style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--surface2)", borderRadius: 10, padding: "10px 14px", border: 0, color: "var(--text)", fontFamily: "inherit", textAlign: "left", cursor: "pointer", minHeight: 48 }}>
+                <span style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>{p.name}</span>
+                  <span style={{ fontSize: 12, color: p.hc ? "#a3adc4" : "#e8a33d" }}>{p.org}{p.hc ? "" : " · no head coach yet, nobody will see it"}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {inbox === null && <div style={muted}>Loading…</div>}
+      {inbox !== null && inbox.length === 0 && !starting && (
+        <div style={{ ...card, padding: 20, ...muted, fontSize: 14 }}>No messages yet. Head coaches can message you from their Settings page, or start one with "+ New message".</div>
+      )}
+      {(inbox ?? []).map(r => (
+        <button key={r.program_id} onClick={() => setOpen({ id: r.program_id, name: r.program })}
+          style={{ ...card, display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", color: "var(--text)", fontFamily: "inherit", textAlign: "left", cursor: "pointer", minHeight: 64 }}>
+          <span style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 15, fontWeight: r.unread ? 700 : 600 }}>{r.program} <span style={{ fontWeight: 400, color: "#8b95ae", fontSize: 13 }}>· {r.org}</span></span>
+            <span style={{ fontSize: 13, color: r.unread ? "var(--text)" : "#a3adc4", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {r.last_from_platform ? "You: " : ""}{r.last_body}
+            </span>
+          </span>
+          <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
+            <span style={{ fontSize: 12, color: "#8b95ae" }}>{when(r.last_at)}</span>
+            {r.unread > 0 && <span style={{ minWidth: 22, height: 22, padding: "0 6px", borderRadius: 11, background: "#e53935", color: "#fff", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{r.unread}</span>}
+          </span>
+        </button>
+      ))}
     </div>
   );
 }
