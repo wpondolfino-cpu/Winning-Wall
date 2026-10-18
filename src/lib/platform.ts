@@ -45,6 +45,7 @@ export interface HomeRow { program_id: string; program: string; org: string; cou
 export interface PlatformHome {
   schools: number; trainers: number; programs: number; paused: number; players: number; active_week: number;
   no_head_coach: HomeRow[]; waiting: HomeRow[]; quiet: HomeRow[];
+  unread_messages?: number;
   recent: { at: string; action: string; detail: string | null; program: string | null; org: string | null }[];
 }
 
