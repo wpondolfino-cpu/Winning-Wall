@@ -52,9 +52,32 @@ export async function signOut() {
 
 export async function getProfile(userId: string): Promise<Profile | null> {
   const { data } = await supabase.from("profiles").select("*").eq("id", userId).single();
+  if (!data) return data;
   // A test player is stored as "test_player" so every player list leaves
   // it out; the app itself treats it as an ordinary player.
-  if (data && (data as any).role === "test_player") return { ...data, role: "player", is_test: true };
+  if ((data as any).role === "test_player") return { ...data, role: "player", is_test: true };
+
+  // Which screens you get follows your role in the program you're in
+  // (migration 187): head coach -> admin screens, coach -> coach screens.
+  // The platform admin gets admin screens in every program. Pending and
+  // inactive accounts keep their profile role.
+  const pid = (data as any).active_program_id as string | null;
+  if (pid && ["player", "coach", "admin"].includes((data as any).role)) {
+    const [{ data: pa }, { data: m }] = await Promise.all([
+      supabase.from("platform_admins").select("user_id").eq("user_id", userId),
+      supabase.from("program_members").select("role,status")
+        .eq("program_id", pid).eq("user_id", userId).maybeSingle(),
+    ]);
+    if ((pa ?? []).length > 0) {
+      // Head coach here too -> "Head Coach"; otherwise just platform access.
+      const here = m && (m as any).status === "active" && (m as any).role === "head_coach";
+      return { ...data, role: "admin", admin_label: here ? "Head Coach" : "Platform Admin" } as Profile;
+    }
+    if (m && (m as any).status === "active") {
+      const r = (m as any).role === "head_coach" ? "admin" : (m as any).role === "coach" ? "coach" : "player";
+      return { ...data, role: r } as Profile;
+    }
+  }
   return data;
 }
 
