@@ -598,7 +598,8 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     try {
       // Changing a coach's role is admin-only (migration 150); say so rather than fail silently.
       const { error } = await supabase.from("profiles").update({ name: editCoach.name, role: editCoach.role }).eq("id", editCoach.id);
-      if (error) throw new Error(/admin/i.test(error.message) ? "Only an admin can change a coach's role." : error.message);
+      if (error) throw new Error(/platform admin/i.test(error.message) ? "Only the platform admin can add or remove head coaches."
+        : /admin/i.test(error.message) ? "Only an admin can change a coach's role." : error.message);
       setEditCoach(null); await loadCoaches();
     }
     catch(e: any) { alert("Error: " + e.message); }
