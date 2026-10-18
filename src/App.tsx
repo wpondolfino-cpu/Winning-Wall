@@ -46,6 +46,8 @@ import SchedulePage from "./components/schedule/SchedulePage";
 import NavModeChangePopup from "./components/NavModeChangePopup";
 import GameDaySheetsList from "./components/gameday/GameDaySheetsList";
 import { confirmNavAway } from "./lib/navGuard";
+import PlatformPage from "./components/platform/PlatformPage";
+import { loadFeaturesOff, tabsOff } from "./lib/features";
 
 type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "scoutsheets" | "quizzes" | "schedule" | "practiceschedule" | "more";
 // "playbooks" stays in these unions deliberately: a coach who reordered
@@ -53,7 +55,7 @@ type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profi
 // those strings back. Dropping it from the type would break that read for
 // anyone who customised their nav before Playbooks moved into Plays.
 type CoachTab  = "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "quizzes" | "gameday" | "practices" | "practicelibrary" | "settings" | "profile";
-type AdminTab  = "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "quizzes" | "gameday" | "practices" | "practicelibrary" | "profile";
+type AdminTab  = "platform" | "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "quizzes" | "gameday" | "practices" | "practicelibrary" | "profile";
 
 // "Drill Library" and "Practice Drills" both sounded like a place drills
 // live, so which held what was a guess. They're genuinely different things:
@@ -123,7 +125,9 @@ const PLAYER_URL_TABS = new Set<string>([
   "scoutsheets", "quizzes", "lifting", "progress", "hof", "profile", "library", "more",
 ]);
 const COACH_URL_TABS = new Set<string>(COACH_NAV_DEFAULT_ORDER);
-const ADMIN_URL_TABS = new Set<string>(ADMIN_NAV_DEFAULT_ORDER);
+// "platform" is the platform admin's page (reached from the program
+// switcher, not the nav); the page itself is only rendered for them.
+const ADMIN_URL_TABS = new Set<string>([...ADMIN_NAV_DEFAULT_ORDER, "platform"]);
 
 function urlTabsForRole(role: string | undefined): Set<string> | null {
   if (role === "player") return PLAYER_URL_TABS;
@@ -205,6 +209,14 @@ export default function App() {
 
   const [coachTab, setCoachTab]     = useState<CoachTab>(() => initialTabFromUrl<CoachTab>(COACH_URL_TABS, "workouts"));
   const [adminTab, setAdminTab]     = useState<AdminTab>(() => initialTabFromUrl<AdminTab>(ADMIN_URL_TABS, "workouts"));
+  // Pages hidden because their feature group is switched off for this
+  // program (Platform page). Loaded once per program; switching programs
+  // reloads the app.
+  const [offTabs, setOffTabs] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const pid = (profile as any)?.active_program_id as string | null | undefined;
+    loadFeaturesOff(pid).then(off => setOffTabs(tabsOff(off))).catch(() => setOffTabs(new Set()));
+  }, [(profile as any)?.active_program_id]);
   // A playbook's "Make quiz" / "Open quiz" hands off to the Quizzes page.
   const [quizPrefill, setQuizPrefill] = useState<QuizPrefill | null>(null);
   // Set when a Schedule row routes to another tab, so that tab can open
@@ -309,6 +321,7 @@ export default function App() {
   function renderGroupedNav(navOrder: string[], navConfig: NavItemConfig[], activeKey: string, onSelect: (key: string) => void) {
     const grouped: Record<NavSection, NavItemConfig[]> = { inseason: [], offseason: [], always: [] };
     navOrder.forEach(key => {
+      if (offTabs.has(key)) return;   // feature switched off for this program
       const item = navConfig.find(i => i.key === key);
       if (item) grouped[resolveSection(item)].push(item);
     });
@@ -716,7 +729,7 @@ export default function App() {
     "gamestats", "scoutsheets", "quizzes", "lifting", "progress", "hof", "profile",
   ];
 
-  const barKeys = PLAYER_NAV[effectiveMode === "inseason" ? "inseason" : "offseason"].bar;
+  const barKeys = PLAYER_NAV[effectiveMode === "inseason" ? "inseason" : "offseason"].bar.filter(k => !offTabs.has(k));
   const bottomTabs: BottomTabConfig[] = barKeys.map(k => ({
     key: k,
     label: PLAYER_TAB_META[k].label,
@@ -724,8 +737,9 @@ export default function App() {
   }));
   const bottomTabKeys = bottomTabs.map(t => t.key);
   const sidebarItems: SidebarItem[] = PLAYER_TAB_ORDER
+    .filter(k => !offTabs.has(k))
     .map(k => ({ key: k, label: PLAYER_TAB_META[k].label, emoji: PLAYER_TAB_META[k].emoji }));
-  const moreGroupTabs: PlayerTab[] = (PLAYER_TAB_ORDER.filter(k => !bottomTabKeys.includes(k)) as PlayerTab[])
+  const moreGroupTabs: PlayerTab[] = (PLAYER_TAB_ORDER.filter(k => !bottomTabKeys.includes(k) && !offTabs.has(k)) as PlayerTab[])
     .concat(["more"] as PlayerTab[]);
 
 
@@ -738,7 +752,7 @@ export default function App() {
         <div className="header-logo">Winning <span>Wall</span></div>
         <div className="header-role">{roleLabel}</div>
         <div className="header-user">{displayProfile.name}</div>
-        <ProgramSwitcher userId={user.id} />
+        <ProgramSwitcher userId={user.id} onOpenPlatform={isAdmin && displayProfile.is_platform_admin ? () => { if (navigateFromNav(() => setAdminTab("platform"))) window.scrollTo(0, 0); } : undefined} />
         {/* Help for the page (or the screen inside it) that's showing. */}
         <HelpButton pageKey={isPlayer ? playerTab : isCoach ? coachTab : adminTab}
           audience={isPlayer ? "player" : "coach"} isAdmin={isAdmin} />
@@ -824,6 +838,12 @@ export default function App() {
           {isPlayer && <LiveBanner />}
           {/* One page crashing shows an error card instead of blanking the app. */}
           <PageErrorBoundary key={`${isPlayer ? playerTab : isCoach ? coachTab : adminTab}-${navNonce}`}>
+          {offTabs.has(isPlayer ? playerTab : isCoach ? coachTab : adminTab) ? (
+            <div className="panel active" style={{ textAlign: "center", padding: "60px 20px", color: "var(--muted)", fontSize: 14 }}>
+              This part of the app isn't turned on for your program.
+            </div>
+          ) : (<>
+          {isAdmin && adminTab === "platform" && displayProfile.is_platform_admin && <PlatformPage />}
           {/* Player panels */}
           {isPlayer && playerTab === "workouts" && <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} onDismiss={() => { if (returnToLibrary) { setReturnToLibrary(false); setPlayerTab("library"); } }} onLogged={(msg) => { showLogToast(msg); if (returnToLibrary) { setReturnToLibrary(false); setPlayerTab("library"); } }} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} canChallengeFromLibrary={!xpEnabled || (xpPerks.length > 0 && playerXp >= (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150))} onChallengeDrill={(id) => { setChallengePrefillWorkoutId(id); setPlayerTab("h2h"); }} />}
           {isPlayer && playerTab === "leaderboard" && <LeaderboardHub currentUserId={user.id} profile={displayProfile} />}
@@ -967,6 +987,7 @@ export default function App() {
               <ProfileEditor profile={displayProfile} onUpdated={handleProfileUpdated} />
             </div>
           )}
+          </>)}
           </PageErrorBoundary>
         </div>
       </div>
