@@ -71,7 +71,7 @@ export async function getProfile(userId: string): Promise<Profile | null> {
     if ((pa ?? []).length > 0) {
       // Head coach here too -> "Head Coach"; otherwise just platform access.
       const here = m && (m as any).status === "active" && (m as any).role === "head_coach";
-      return { ...data, role: "admin", admin_label: here ? "Head Coach" : "Platform Admin" } as Profile;
+      return { ...data, role: "admin", admin_label: here ? "Head Coach" : "Platform Admin", is_platform_admin: true } as Profile;
     }
     if (m && (m as any).status === "active") {
       const r = (m as any).role === "head_coach" ? "admin" : (m as any).role === "coach" ? "coach" : "player";
