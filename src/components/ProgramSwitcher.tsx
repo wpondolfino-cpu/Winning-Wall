@@ -8,7 +8,11 @@ import { useEffect, useRef, useState } from "react";
 import { loadMyPrograms, switchProgram, roleLabel, MyPrograms, ProgramInfo } from "../lib/programs";
 import { listTestAccounts, enterViewAs, currentViewAs, TestAccount } from "../lib/viewAs";
 
-interface Props { userId: string; }
+interface Props {
+  userId: string;
+  /** Platform admin only: opens the Platform page (schools, programs, features, library). */
+  onOpenPlatform?: () => void;
+}
 
 function Badge({ p, size }: { p: ProgramInfo; size: number }) {
   const [broken, setBroken] = useState(false);
@@ -30,7 +34,7 @@ function Badge({ p, size }: { p: ProgramInfo; size: number }) {
   );
 }
 
-export default function ProgramSwitcher({ userId }: Props) {
+export default function ProgramSwitcher({ userId, onOpenPlatform }: Props) {
   const [data, setData] = useState<MyPrograms | null>(null);
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState<string | null>(null);
@@ -86,7 +90,7 @@ export default function ProgramSwitcher({ userId }: Props) {
   const canSwitch = reachable.length > 1;
   const canViewAs = viewAsAllowed(data);
 
-  if (!canSwitch && !canViewAs) {
+  if (!canSwitch && !canViewAs && !data.isPlatformAdmin) {
     return (
       <div className="program-switcher" style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <Badge p={current} size={28} />
@@ -149,6 +153,26 @@ export default function ProgramSwitcher({ userId }: Props) {
           background: "var(--surface)", border: "1px solid rgba(176,184,200,0.22)", borderRadius: 16,
           boxShadow: "0 18px 40px rgba(0,0,0,0.55)", padding: 8, display: "flex", flexDirection: "column", gap: 2,
         }}>
+          {data.isPlatformAdmin && onOpenPlatform && (
+            <>
+              <button role="menuitem" onClick={() => { setOpen(false); onOpenPlatform(); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 12, minHeight: 56, padding: "8px 10px",
+                  background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.35)", borderRadius: 12,
+                  color: "var(--text)", fontFamily: "inherit", textAlign: "left", cursor: "pointer",
+                }}>
+                <span style={{ width: 36, height: 36, borderRadius: 10, background: "var(--gold)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0a0c14" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>
+                </span>
+                <span style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700 }}>Platform</span>
+                  <span style={{ fontSize: 12, color: "#a3adc4" }}>Schools, programs, features, library</span>
+                </span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a3adc4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+              </button>
+              <div style={{ height: 1, background: "rgba(176,184,200,0.15)", margin: "6px 4px" }} />
+            </>
+          )}
           {canSwitch && groups.map(g => (
             <div key={g.org} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <div style={{ padding: "10px 10px 6px", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#8b95ae", fontWeight: 600 }}>{g.org}</div>
