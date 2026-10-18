@@ -16,6 +16,8 @@
 //       Coaches of the program you're in (or the platform admin). Reaches
 //       every active member of THAT program only (migration 186) --
 //       before programs, it reached every device in the app.
+//   * { title, message, programIds: [...] }
+//       Platform admin only: every active member of the chosen programs.
 //   * { title, message, allPrograms: true }
 //       Platform admin only: every active member of every program
 //       (announcements posted to every program).
@@ -58,6 +60,8 @@ interface SendPushBody {
   allPlayers?: boolean;
   /** Send to every member of every program. Platform admin only. */
   allPrograms?: boolean;
+  /** Send to every member of these programs. Platform admin only. */
+  programIds?: string[];
   /** A fixed notification to coaches, allowed while logged out. */
   notifyStaff?: "reset_request" | "new_signup";
   name?: string;
@@ -140,10 +144,11 @@ serve(async (req) => {
     const { data: pa } = await admin.from("platform_admins").select("user_id").eq("user_id", user.id).maybeSingle();
     const isPlatformAdmin = !!pa;
 
-    if (body.allPrograms) {
-      if (!isPlatformAdmin) return reply({ error: "Only the platform admin can notify every program." }, 403);
+    if (body.allPrograms || Array.isArray(body.programIds)) {
+      if (!isPlatformAdmin) return reply({ error: "Only the platform admin can notify several programs." }, 403);
       const { data: progs } = await admin.from("programs").select("id, is_active");
-      const ids = (progs ?? []).filter((p: any) => p.is_active !== false).map((p: any) => p.id);
+      const wanted = Array.isArray(body.programIds) ? new Set(body.programIds.filter((x) => typeof x === "string")) : null;
+      const ids = (progs ?? []).filter((p: any) => p.is_active !== false && (!wanted || wanted.has(p.id))).map((p: any) => p.id);
       const { data: members } = ids.length
         ? await admin.from("program_members").select("user_id").in("program_id", ids).eq("status", "active")
         : { data: [] };
