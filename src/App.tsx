@@ -48,6 +48,8 @@ import GameDaySheetsList from "./components/gameday/GameDaySheetsList";
 import { confirmNavAway } from "./lib/navGuard";
 import PlatformPage, { PlatformSection } from "./components/platform/PlatformPage";
 import { loadFeaturesOff, tabsOff } from "./lib/features";
+import { unreadMessages } from "./lib/messages";
+import CoachMessages from "./components/messages/CoachMessages";
 
 type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "scoutsheets" | "quizzes" | "schedule" | "practiceschedule" | "more";
 // "playbooks" stays in these unions deliberately: a coach who reordered
@@ -55,7 +57,7 @@ type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profi
 // those strings back. Dropping it from the type would break that read for
 // anyone who customised their nav before Playbooks moved into Plays.
 type CoachTab  = "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "quizzes" | "gameday" | "practices" | "practicelibrary" | "settings" | "profile";
-type AdminTab  = "platform" | "platform-schools" | "platform-trainers" | "platform-announcements" | "platform-library" | "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "quizzes" | "gameday" | "practices" | "practicelibrary" | "profile";
+type AdminTab  = "platform" | "platform-schools" | "platform-trainers" | "platform-announcements" | "platform-messages" | "platform-library" | "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "quizzes" | "gameday" | "practices" | "practicelibrary" | "profile";
 
 // "Drill Library" and "Practice Drills" both sounded like a place drills
 // live, so which held what was a guess. They're genuinely different things:
@@ -127,7 +129,7 @@ const PLAYER_URL_TABS = new Set<string>([
 const COACH_URL_TABS = new Set<string>(COACH_NAV_DEFAULT_ORDER);
 // "platform" is the platform admin's page (reached from the program
 // switcher, not the nav); the page itself is only rendered for them.
-const PLATFORM_TABS = ["platform", "platform-schools", "platform-trainers", "platform-announcements", "platform-library"];
+const PLATFORM_TABS = ["platform", "platform-schools", "platform-trainers", "platform-announcements", "platform-messages", "platform-library"];
 const ADMIN_URL_TABS = new Set<string>([...ADMIN_NAV_DEFAULT_ORDER, ...PLATFORM_TABS]);
 
 function urlTabsForRole(role: string | undefined): Set<string> | null {
@@ -214,6 +216,16 @@ export default function App() {
   // program (Platform page). Loaded once per program; switching programs
   // reloads the app.
   const [offTabs, setOffTabs] = useState<Set<string>>(new Set());
+  // Unread messages with Winning Wall: for the platform admin, from every
+  // program's head coaches; for a head coach, replies in their program.
+  const [msgUnread, setMsgUnread] = useState(0);
+  const refreshMsgUnread = () => { unreadMessages().then(setMsgUnread).catch(() => {}); };
+  useEffect(() => {
+    if ((profile as any)?.role !== "admin") return;
+    refreshMsgUnread();
+    const t = setInterval(refreshMsgUnread, 120000);
+    return () => clearInterval(t);
+  }, [(profile as any)?.role, (profile as any)?.active_program_id]);
   useEffect(() => {
     const pid = (profile as any)?.active_program_id as string | null | undefined;
     loadFeaturesOff(pid).then(off => setOffTabs(tabsOff(off))).catch(() => setOffTabs(new Set()));
@@ -334,6 +346,7 @@ export default function App() {
           if (window.innerWidth < 768) setSidebarOpen(false);
         }}>
         <span className="nav-icon">{item.icon}</span> {item.label}
+        {item.key === "settings" && msgUnread > 0 && <span aria-label={`${msgUnread} unread from Winning Wall`} style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{msgUnread}</span>}
         {item.key === "players" && pendingApprovals > 0 && <span style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{pendingApprovals}</span>}
       </div>
     );
@@ -803,10 +816,12 @@ export default function App() {
             <>
               <div style={{ padding: "10px 14px 6px", fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "var(--gold)" }}>PLATFORM</div>
               {([["platform", "🏠", "Home"], ["platform-schools", "🏫", "Schools"], ["platform-trainers", "🏋️", "Trainers"],
-                 ["platform-announcements", "📢", "Announcements"], ["platform-library", "📚", "Winning Wall library"]] as [AdminTab, string, string][]).map(([key, icon, text]) => (
+                 ["platform-announcements", "📢", "Announcements"], ["platform-messages", "💬", "Messages"],
+                 ["platform-library", "📚", "Winning Wall library"]] as [AdminTab, string, string][]).map(([key, icon, text]) => (
                 <div key={key} className={`nav-item ${adminTab === key ? "active" : ""}`}
                   onClick={() => { if (!navigateFromNav(() => setAdminTab(key))) return; if (window.innerWidth < 768) setSidebarOpen(false); }}>
                   <span className="nav-icon">{icon}</span> {text}
+                  {key === "platform-messages" && msgUnread > 0 && <span aria-label={`${msgUnread} unread`} style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{msgUnread}</span>}
                 </div>
               ))}
               <div style={{ height: 1, background: "var(--border)", margin: "8px 4px" }} />
@@ -866,7 +881,8 @@ export default function App() {
           ) : (<>
           {inPlatform && (
             <PlatformPage page={(adminTab === "platform" ? "home" : adminTab.replace("platform-", "")) as PlatformSection}
-              onGoTo={(p) => navigateFromNav(() => setAdminTab((p === "home" ? "platform" : `platform-${p}`) as AdminTab))} />
+              onGoTo={(p) => navigateFromNav(() => setAdminTab((p === "home" ? "platform" : `platform-${p}`) as AdminTab))}
+              onMessagesRead={refreshMsgUnread} />
           )}
           {/* Player panels */}
           {isPlayer && playerTab === "workouts" && <WorkoutsPanel workouts={workouts} myScores={myScores} playerId={user.id} onScoreLogged={loadMyScores} onDismiss={() => { if (returnToLibrary) { setReturnToLibrary(false); setPlayerTab("library"); } }} onLogged={(msg) => { showLogToast(msg); if (returnToLibrary) { setReturnToLibrary(false); setPlayerTab("library"); } }} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} canChallengeFromLibrary={!xpEnabled || (xpPerks.length > 0 && playerXp >= (xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150))} onChallengeDrill={(id) => { setChallengePrefillWorkoutId(id); setPlayerTab("h2h"); }} />}
@@ -996,6 +1012,9 @@ export default function App() {
             <div className="panel active">
               <div className="section-title">Settings</div>
               <div className="section-sub" style={{ marginBottom: 20 }}>Configure your Winning Wall platform</div>
+              {/* Head coaches' conversation with Winning Wall (the platform
+                  admin uses Platform › Messages instead). */}
+              {!displayProfile.is_platform_admin && <CoachMessages programId={(displayProfile as any).active_program_id ?? null} onRead={refreshMsgUnread} />}
               {renderHomePagePicker(adminNavOrder, ADMIN_NAV_CONFIG)}
               <button onClick={() => setShowReorderModal(true)} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 20 }}>
                 🔀 Customize Sidebar
