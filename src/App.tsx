@@ -662,7 +662,7 @@ export default function App() {
   const isPlayer = profile.role === "player";
   const isCoach  = profile.role === "coach";
   const isAdmin  = profile.role === "admin";
-  const roleLabel      = isAdmin ? "👑 Admin" : isCoach ? "🏀 Coach" : "⚡ Player";
+  const roleLabel      = isAdmin ? ((ownLocalProfile ?? profile).admin_label ?? "Head Coach") : isCoach ? "🏀 Coach" : "⚡ Player";
   const displayProfile = ownLocalProfile ?? profile;
   const effectiveMode = effectiveModeFor(displayProfile);
 
