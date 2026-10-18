@@ -21,11 +21,17 @@ export interface PlatformProgram {
   pending: number;
   head_coaches: PlatformPerson[];
   features_off: FeatureKey[];
+  last_active: string | null;
 }
+
+export type OrgKind = "school" | "trainer";
 
 export interface PlatformSchool {
   id: string;
   name: string;
+  kind: OrgKind;
+  notes: string | null;
+  plan: string | null;
   short_name: string | null;
   primary_color: string | null;
   secondary_color: string | null;
@@ -33,6 +39,53 @@ export interface PlatformSchool {
   logo_url: string | null;
   timezone: string | null;
   programs: PlatformProgram[];
+}
+
+export interface HomeRow { program_id: string; program: string; org: string; count?: number; oldest?: string; last_active?: string | null; }
+export interface PlatformHome {
+  schools: number; trainers: number; programs: number; paused: number; players: number; active_week: number;
+  no_head_coach: HomeRow[]; waiting: HomeRow[]; quiet: HomeRow[];
+  recent: { at: string; action: string; detail: string | null; program: string | null; org: string | null }[];
+}
+
+export async function loadHome(): Promise<PlatformHome> {
+  const { data, error } = await supabase.rpc("platform_home");
+  if (error) throw error;
+  return data as PlatformHome;
+}
+
+export async function programLog(programId: string): Promise<{ at: string; action: string; detail: string | null }[]> {
+  const { data, error } = await supabase.rpc("platform_program_log", { p_program: programId });
+  if (error) throw error;
+  return (data ?? []) as any[];
+}
+
+export async function createTrainer(t: { name: string; short_name: string; primary_color: string; secondary_color: string; accent_color: string }): Promise<string> {
+  const { data, error } = await supabase.rpc("platform_create_trainer", {
+    p_name: t.name, p_short: t.short_name, p_primary: t.primary_color, p_secondary: t.secondary_color, p_accent: t.accent_color,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+export async function saveOrgNotes(orgId: string, notes: string, plan: string): Promise<void> {
+  const { error } = await supabase.from("platform_org_notes")
+    .upsert({ org_id: orgId, notes: notes || null, plan: plan || null, updated_at: new Date().toISOString() }, { onConflict: "org_id" });
+  if (error) throw error;
+}
+
+/** Posts one announcement into each chosen program and pushes it to their
+ *  members. Returns how many programs got it and how the push went. */
+export async function postToPrograms(programIds: string[], message: string, pinned: boolean): Promise<{ count: number; push: string }> {
+  const { data: n, error } = await supabase.rpc("post_announcement_to", { p_programs: programIds, p_message: message, p_pinned: pinned });
+  if (error) throw error;
+  const { data, error: pushErr } = await supabase.functions.invoke("send-push", {
+    body: { title: pinned ? "📌 New pinned announcement" : "📢 New announcement", message, programIds },
+  });
+  const push = pushErr ? "the notification didn't send"
+    : (data as any)?.sent === false ? `nobody was notified (${(data as any).reason})`
+    : "sent";
+  return { count: (n as number) ?? 0, push };
 }
 
 export interface PersonMatch { id: string; name: string; email: string | null; profile_role: string; programs: string | null; }
