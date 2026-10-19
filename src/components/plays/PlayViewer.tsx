@@ -52,7 +52,7 @@ interface Props {
   onExitInitialPlay?: () => void;
 }
 
-type Tab = "mine" | "shared" | "playbooks";
+type Tab = "mine" | "shared" | "playbooks" | "staff";
 
 /** A play shared with me, with the share row and sharer's name attached. */
 type SharedPlay = Play & { share_id: string; shared_by: string; shared_by_name: string | null; shared_by_role: string | null; dismissed_at: string | null };
@@ -148,6 +148,8 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const isStaff = currentUserRole === "coach" || currentUserRole === "admin";
+  const isHeadCoach = currentUserRole === "admin";
+  const [staffPlays, setStaffPlays] = useState<(Play & { author: string })[]>([]);
 
   useEffect(() => { if (initialPlay) setOpenPlay(initialPlay); }, [initialPlay]);
 
@@ -161,6 +163,20 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
   async function load() {
     const [mine, shared, pbs] = await Promise.all([getMyPlays(), getPlaysSharedWithMe(), getMyAssignedPlaybooks()]);
     setMyPlays(mine); setSharedPlays(shared); setPlaybooks(pbs);
+    if (isHeadCoach) loadStaffPlays().catch(console.error);
+  }
+
+  /** Head coaches: every play the program's other coaches have drawn, view
+   *  only (migration 197). Editing stays with whoever drew it. */
+  async function loadStaffPlays() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase.from("plays").select("*").neq("created_by", user.id).order("updated_at", { ascending: false });
+    const rows = (data ?? []) as Play[];
+    const ids = [...new Set(rows.map((p: any) => p.created_by).filter(Boolean))] as string[];
+    const { data: profs } = ids.length ? await supabase.from("profiles").select("id,name").in("id", ids) : { data: [] as any[] };
+    const names = new Map(((profs ?? []) as any[]).map(p => [p.id, p.name as string]));
+    setStaffPlays(rows.map((p: any) => ({ ...p, author: names.get(p.created_by) ?? "Another coach" })));
   }
 
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(""), 3000); }
@@ -442,6 +458,9 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
       <div style={{ display: "flex", background: "var(--surface2)", borderRadius: 12, padding: 5, marginBottom: 20, border: "1px solid var(--border)" }}>
         <button onClick={() => setTab("mine")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "mine" ? "var(--royal)" : "transparent", color: tab === "mine" ? "#fff" : "var(--muted)", transition: "all .2s" }}>My plays</button>
         <button onClick={() => setTab("shared")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "shared" ? "var(--royal)" : "transparent", color: tab === "shared" ? "#fff" : "var(--muted)", transition: "all .2s" }}>Shared with me</button>
+        {isHeadCoach && (
+          <button onClick={() => setTab("staff")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "staff" ? "var(--royal)" : "transparent", color: tab === "staff" ? "#fff" : "var(--muted)", transition: "all .2s" }}>Staff plays</button>
+        )}
         {currentUserRole !== "coach" && currentUserRole !== "admin" && (
           <button onClick={() => setTab("playbooks")} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, background: tab === "playbooks" ? "var(--royal)" : "transparent", color: tab === "playbooks" ? "#fff" : "var(--muted)", transition: "all .2s" }}>From Coach</button>
         )}
@@ -477,7 +496,7 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
         </div>
       )}
 
-      {(tab === "mine" || tab === "shared") && (
+      {(tab === "mine" || tab === "shared" || tab === "staff") && (
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -524,6 +543,34 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
           {myPlays.length > 0 && mineFiltered.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>No plays match this filter.</p>}
         </>
       )}
+
+      {tab === "staff" && isHeadCoach && (() => {
+        const shown = filterPlays(staffPlays, search) as (Play & { author: string })[];
+        const authors = [...new Set(shown.map(p => p.author))].sort();
+        return (
+          <>
+            <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 10px" }}>
+              Every play your coaches have drawn, view only. To change one, open it and tap “Duplicate as my own”, or ask the coach who drew it.
+            </p>
+            {authors.map(a => (
+              <div key={a} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>{a}</div>
+                {shown.filter(p => p.author === a).map(p => (
+                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6, border: "1px solid var(--border)", borderRadius: 8 }}>
+                    <button onClick={() => { setOpenShareId(null); setOpenPlay(p); }} style={{ flex: 1, textAlign: "left", padding: "10px 12px", background: "none", border: "none", color: "var(--text)", cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>
+                      {p.title}
+                      {(p as any).category && <span style={{ fontSize: 11, color: "var(--muted)", marginLeft: 8 }}>{(p as any).category}</span>}
+                    </button>
+                    <button title="Watch live" onClick={() => { setOpenShareId(null); setOpenPlay(p); setOpenIn3D(true); }} style={{ padding: "8px 10px", fontSize: 15, marginRight: 6 }}>🧊</button>
+                  </div>
+                ))}
+              </div>
+            ))}
+            {staffPlays.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>Your other coaches haven't drawn any plays yet.</p>}
+            {staffPlays.length > 0 && shown.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>No plays match this search.</p>}
+          </>
+        );
+      })()}
 
       {tab === "shared" && isPlayer && (() => {
         // Anything from a coach lives under From Coach, so this tab is
