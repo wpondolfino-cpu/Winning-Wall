@@ -25,6 +25,8 @@ import {
   stepButtonText, playCrop, groupBySection, type PlaybookPlay,
 } from "../../lib/plays";
 import { embedJsonInPdf, extractJsonFromPdf, drawSimpleCoverPage, svgElementToPngBytes } from "../../lib/pdfDataExport";
+import NewInSharedLibrary from "../library/NewInSharedLibrary";
+import AddToSharedLibrary from "../library/AddToSharedLibrary";
 
 // Lazy-loaded: three.js is a large dependency, and most people watching a
 // play never open the 3D view — this keeps it out of everyone's initial
@@ -446,6 +448,10 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
       </div>
 
       {tab === "mine" && isStaff && (
+        <NewInSharedLibrary kinds={["play"]} onAdded={() => { load(); getPlayCategories().then(setPlayCategories).catch(console.error); }} />
+      )}
+
+      {tab === "mine" && isStaff && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
           {["All", ...playCategories.map((c) => c.name)].map((c) => (
             <button key={c} onClick={() => { setCategoryFilter(c); setTagFilter(null); }}
@@ -864,6 +870,7 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
         <button onClick={onPrint} style={{ padding: "8px 12px" }}>🖨️ Print / export</button>
         <button onClick={onExport} style={{ padding: "8px 12px" }}>💾 Export (re-importable)</button>
         {onEdit && canManageShares && <button onClick={() => onEdit(play)} style={{ padding: "8px 12px" }}>Edit</button>}
+        <AddToSharedLibrary kind="play" id={play.id} style={{ padding: "8px 12px", fontSize: 13 }} />
         {canManageShares && <button onClick={() => setShowSharePopup(true)} style={{ padding: "8px 12px", display: "inline-flex", alignItems: "center", gap: 6 }}><ShareIcon /> Manage sharing</button>}
         {canManageShares && (
           <button
