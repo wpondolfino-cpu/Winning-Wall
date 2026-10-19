@@ -61,6 +61,10 @@ export const TOP_STYLES: { value: string; label: string }[] = [
   { value: "theCaesarAndSidePart", label: "Caesar w/ part" },
   { value: "shaggyMullet", label: "Shaggy mullet" },
   { value: "shortCurly", label: "Short curly" },
+  { value: "straight01", label: "Long straight" },
+  { value: "bob", label: "Bob" },
+  { value: "curly", label: "Long curly" },
+  { value: "bigHair", label: "Big hair" },
 ];
 
 export const EYE_STYLES: { value: string; label: string }[] = [
