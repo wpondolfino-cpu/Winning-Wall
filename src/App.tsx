@@ -817,7 +817,7 @@ export default function App() {
               <div style={{ padding: "10px 14px 6px", fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "var(--gold)" }}>PLATFORM</div>
               {([["platform", "🏠", "Home"], ["platform-schools", "🏫", "Schools"], ["platform-trainers", "🏋️", "Trainers"],
                  ["platform-announcements", "📢", "Announcements"], ["platform-messages", "💬", "Messages"],
-                 ["platform-library", "📚", "Winning Wall library"]] as [AdminTab, string, string][]).map(([key, icon, text]) => (
+                 ["platform-library", "📚", "Shared Library"]] as [AdminTab, string, string][]).map(([key, icon, text]) => (
                 <div key={key} className={`nav-item ${adminTab === key ? "active" : ""}`}
                   onClick={() => { if (!navigateFromNav(() => setAdminTab(key))) return; if (window.innerWidth < 768) setSidebarOpen(false); }}>
                   <span className="nav-icon">{icon}</span> {text}
