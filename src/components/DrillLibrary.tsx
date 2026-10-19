@@ -12,6 +12,8 @@ import { renderRichText } from "../lib/richtext";
 import WorkoutBuilder from "./coach/WorkoutBuilder";
 import RandomDrillModal from "./RandomDrillModal";
 import CategoryManagerModal from "./CategoryManagerModal";
+import NewInSharedLibrary from "./library/NewInSharedLibrary";
+import AddToSharedLibrary from "./library/AddToSharedLibrary";
 
 interface Props {
   canManage: boolean;
@@ -169,6 +171,8 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
       <div className="section-sub" style={{ marginBottom: 16 }}>
         {filtered.length} drill{filtered.length !== 1 ? "s" : ""} · {canManage ? "Click ✏️ to edit, 📦 to archive, 🗑 to delete" : "Tap a drill to practice — 1 point per drill per day, personal bests always count"}
       </div>
+
+      {canManage && <NewInSharedLibrary kinds={["drill"]} onAdded={() => { load(); loadCategories(); onChanged?.(); }} />}
 
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search drills…"
         style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", marginBottom: 10 }} />
@@ -372,6 +376,7 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
                 Close
               </button>
             </div>
+            <div style={{ marginTop: 10 }}><AddToSharedLibrary kind="drill" id={viewDrill.id} /></div>
           </div>
         </div>
       )}
