@@ -658,10 +658,10 @@ export default function App() {
       </div>
     );
   }
-  if (authState === "invite") return <ChangePassword title="Welcome to Attleboro Winning Wall! 🦅" subtitle="Your account is ready. Please create your own personal password before continuing." onComplete={() => window.location.reload()} />;
+  if (authState === "invite") return <ChangePassword title="Welcome to Winning Wall! 🦅" subtitle="Your account is ready. Please create your own personal password before continuing." onComplete={() => window.location.reload()} />;
   if (authState === "recovery") return <ChangePassword title="Reset Your Password" subtitle="Enter your new password below." onComplete={() => window.location.reload()} />;
   if (!user || !profile) return <LoginPage />;
-  if (profile.must_change_password === true) return <ChangePassword title="Welcome to Attleboro Winning Wall! 🦅" subtitle="Your account was set up by a coach. Please create your own personal password before continuing." onComplete={() => window.location.reload()} />;
+  if (profile.must_change_password === true) return <ChangePassword title="Welcome to Winning Wall! 🦅" subtitle="Your account was set up by a coach. Please create your own personal password before continuing." onComplete={() => window.location.reload()} />;
 
   if (profile.role === "pending_player" || profile.role === "pending_coach") {
     const isCoachRequest = profile.role === "pending_coach";
