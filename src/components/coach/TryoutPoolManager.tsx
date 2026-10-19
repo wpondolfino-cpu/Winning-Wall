@@ -21,6 +21,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
+import { GRADE_COLORS, GRADE_LABELS, gradeFromGradYear } from "../../lib/teamDesigner";
 import {
   TryoutPlayer, getTryoutPlayers, addTryoutPlayer, addTryoutPlayersBulk,
   updateTryoutPlayer, deleteTryoutPlayer, clearTryoutPool, Roster,
@@ -34,6 +35,28 @@ interface Props {
    *  practice so the common path needs no picking at all. */
   defaultRosterIds?: string[];
   rosters?: Roster[];
+}
+
+/** Fr/So/Jr/Sr in the Team Designer colours. Tap the chosen one again to clear it. */
+function GradePicker({ value, onChange, small }: { value: number | null; onChange: (g: number | null) => void; small?: boolean }) {
+  return (
+    <span style={{ display: "inline-flex", gap: 3, flexShrink: 0 }}>
+      {[9, 10, 11, 12].map(g => {
+        const on = value === g;
+        return (
+          <button key={g} type="button" title={`${g}th grade`} onClick={() => onChange(on ? null : g)}
+            style={{
+              fontSize: small ? 10 : 11, fontWeight: 700, padding: small ? "1px 6px" : "5px 8px", borderRadius: 5, cursor: "pointer", fontFamily: "inherit",
+              border: `1px solid ${on ? GRADE_COLORS[g] : "var(--border)"}`,
+              background: on ? GRADE_COLORS[g] + "33" : "transparent",
+              color: on ? GRADE_COLORS[g] : "var(--muted)",
+            }}>
+            {GRADE_LABELS[g]}
+          </button>
+        );
+      })}
+    </span>
+  );
 }
 
 interface Account { id: string; name: string; home_roster_id: string | null; graduation_year: number | null; }
@@ -55,6 +78,8 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
   const [loading, setLoading] = useState(true);
   const [showCut, setShowCut] = useState(false);
   const [newName, setNewName] = useState("");
+  // Grade drives the Team Designer colour (Fr blue, So green, Jr amber, Sr violet).
+  const [newGrade, setNewGrade] = useState<number | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [notesFor, setNotesFor] = useState<string | null>(null);
@@ -119,7 +144,7 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
   async function handleAdd() {
     if (!newName.trim()) return;
     const typed = newName.trim();
-    const { error } = await addTryoutPlayer(seasonId, newName, null, null, defaultRosterIds ?? []);
+    const { error } = await addTryoutPlayer(seasonId, newName, newGrade, null, defaultRosterIds ?? []);
     if (error) { setMsg(error); return; }
     setNewName("");
     setMsg(matchNote([typed]).trim() || null);
@@ -188,6 +213,7 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
             placeholder="Add a name"
             style={{ ...input, flex: 1 }}
           />
+          <GradePicker value={newGrade} onChange={setNewGrade} />
           <button onClick={handleAdd} style={primary}>Add</button>
           <button onClick={() => setBulkOpen(v => !v)} style={btn}>Paste list</button>
           <button onClick={() => { setAcctOpen(v => !v); setAcctQuery(""); }}
@@ -227,7 +253,7 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
             <textarea
               value={bulkText}
               onChange={e => setBulkText(e.target.value)}
-              placeholder={"One name per line —\nConnor Houle\nDevin Dufresne\n…"}
+              placeholder={"One per line, grade after a comma (optional) —\nConnor Houle, 9\nDevin Dufresne, 11\n…"}
               rows={6}
               style={{ ...input, width: "100%", boxSizing: "border-box", resize: "vertical" }}
             />
@@ -269,6 +295,19 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
                       {displayName(p)}
                       {p.linked_profile_id && (
                         <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 5, marginLeft: 6, background: "rgba(147,180,255,0.15)", color: "#93b4ff" }}>Account</span>
+                      )}
+                    </div>
+                    <div style={{ marginTop: 3 }}>
+                      {p.linked_profile_id ? (() => {
+                        const g = gradeFromGradYear(accountById.get(p.linked_profile_id!)?.graduation_year ?? null);
+                        return g && GRADE_COLORS[g]
+                          ? <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 5, background: GRADE_COLORS[g] + "33", color: GRADE_COLORS[g] }}>{GRADE_LABELS[g]} · from account</span>
+                          : <span style={{ fontSize: 10, color: "var(--muted)" }}>no class year on the account</span>;
+                      })() : (
+                        <GradePicker small value={p.grade} onChange={async g => {
+                          await updateTryoutPlayer(p.id, { grade: g });
+                          await load(); onChanged?.();
+                        }} />
                       )}
                     </div>
                     {matchesFor(p).slice(0, 2).map(a => (
