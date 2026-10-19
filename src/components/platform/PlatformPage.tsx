@@ -17,6 +17,7 @@ import {
   saveOrgNotes, programLog, postToPrograms, inviteHeadCoach, setupSteps, InviteResult,
 } from "../../lib/platform";
 import MessageInbox, { ProgramOption } from "../messages/MessageInbox";
+import DownloadProgramDataButton from "../DownloadProgramDataButton";
 import {
   KIND_LABEL, LibraryKind, LibraryOverview, LibraryItem, BrowseRow, loadLibrary, setLibraryFlags,
   removeFromLibrary, openInLibrary, browseProgram, addToLibrary,
@@ -582,6 +583,16 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
             </div>
             <button style={btn} disabled={busy || !name.trim()}
               onClick={() => run(() => updateProgram(p.id, { name: name.trim(), ...colors }), "Saved.")}>Save</button>
+          </section>
+
+          <section style={{ ...card, padding: 20, display: "flex", flexDirection: "column", gap: 10 }}>
+            <span style={h2}>Program data</span>
+            <span style={muted}>
+              One Excel file with a tab each for the roster (with emails), leaderboard, drill scores, drills, Hall of Fame,
+              practices and attendance, games, lifting, plays, playbooks and announcements. Test accounts are left out.
+              It has players' names and emails, so keep it somewhere private.
+            </span>
+            <DownloadProgramDataButton programId={p.id} style={{ height: 42, padding: "0 16px", fontSize: 14 }} />
           </section>
 
           <section style={{ ...card, border: "1px solid rgba(255,140,140,0.25)", padding: 20, display: "flex", flexDirection: "column", gap: 10 }}>
