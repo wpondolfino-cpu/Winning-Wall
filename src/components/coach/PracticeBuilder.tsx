@@ -31,6 +31,7 @@ import GroupingEditor from "./GroupingEditor";
 import StationsEditor from "./StationsEditor";
 import CopyDrillPicker from "./CopyDrillPicker";
 import SaveTemplateModal from "./SaveTemplateModal";
+import AddToSharedLibrary from "../library/AddToSharedLibrary";
 import TryoutPoolManager from "./TryoutPoolManager";
 import PracticeDrillLibrary from "./PracticeDrillLibrary";
 import PracticePrintView from "./PracticePrintView";
@@ -1063,6 +1064,8 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
                         {t.drillCount > 0 ? `${t.drillCount} drill${t.drillCount === 1 ? "" : "s"}` : "timings only"}
                       </span>
                     </button>
+                    <AddToSharedLibrary kind="template" id={t.id} compact
+                      style={{ background: "none", border: "none", padding: 0, fontSize: 11, borderRadius: 0 }} />
                     <button onClick={() => handleDeleteTemplate(t)} title="Delete this template"
                       style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
                   </span>
