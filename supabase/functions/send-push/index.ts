@@ -32,10 +32,21 @@
 //                         key (starts with os_v2_app_...) from
 //                         Dashboard → Settings → Keys & IDs. Legacy keys
 //                         stopped working in 2026.
-// SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided automatically.
+// SUPABASE_URL and the server key are provided automatically.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+// The server key. Prefers the new secret key (Settings > API Keys >
+// "Publishable and secret API keys"), falling back to the legacy
+// service_role key while that's still switched on.
+function serverKey(): string {
+  try {
+    const keys = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}");
+    if (typeof keys?.default === "string" && keys.default) return keys.default;
+  } catch { /* not set */ }
+  return Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+}
 
 const ONE_SIGNAL_APP_ID = Deno.env.get("ONE_SIGNAL_APP_ID")!;
 const ONE_SIGNAL_API_KEY = Deno.env.get("ONE_SIGNAL_API_KEY")!;
@@ -89,7 +100,7 @@ serve(async (req) => {
   let body: SendPushBody;
   try { body = await req.json(); } catch { return reply({ error: "Invalid JSON body" }, 400); }
 
-  const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const admin = createClient(Deno.env.get("SUPABASE_URL")!, serverKey());
 
   let title: string;
   let message: string;
