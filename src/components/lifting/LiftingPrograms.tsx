@@ -5,6 +5,8 @@ import LiftingDayCard from "./LiftingDay";
 import LiftingResults from "./LiftingResults";
 import ProgramComplete from "./ProgramComplete";
 import EditDayModal from "./EditDayModal";
+import NewInSharedLibrary from "../library/NewInSharedLibrary";
+import AddToSharedLibrary from "../library/AddToSharedLibrary";
 
 interface Props {
   playerId: string;
@@ -180,6 +182,10 @@ export default function LiftingPrograms({
                 📊 Results
               </button>
             )}
+            {canManage && !isPersonal && !isArchived && (
+              <AddToSharedLibrary kind="lifting" id={prog.id} compact
+                style={{ borderRadius: 7, padding: "5px 9px", fontSize: 11 }} />
+            )}
             {canEditThis && !isArchived && (
               <button onClick={e => { e.stopPropagation(); onEdit(prog); }}
                 style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--silver-light)", borderRadius: 7, padding: "5px 9px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️</button>
@@ -282,6 +288,8 @@ export default function LiftingPrograms({
       <div className="section-sub" style={{ marginBottom: 20 }}>
         {canManage ? "Create and manage lifting programs" : "Log your sets, reps, and weight"}
       </div>
+
+      {canManage && <NewInSharedLibrary kinds={["lifting"]} onAdded={onRefresh} />}
 
       {isEmpty ? (
         <div style={{ textAlign: "center", padding: "60px 20px", color: "var(--muted)" }}>
