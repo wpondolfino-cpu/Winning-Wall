@@ -14,7 +14,7 @@ import { FEATURE_GROUPS, FeatureKey, setFeature } from "../../lib/features";
 import {
   PlatformSchool, PlatformProgram, PersonMatch, PlatformHome, OrgKind, loadPlatform, loadHome, searchPeople, setHeadCoach,
   newJoinCode, createProgram, createSchool, createTrainer, updateProgram, updateSchool, uploadLogo, inviteLink,
-  saveOrgNotes, programLog, postToPrograms,
+  saveOrgNotes, programLog, postToPrograms, inviteHeadCoach, setupSteps, InviteResult,
 } from "../../lib/platform";
 import MessageInbox, { ProgramOption } from "../messages/MessageInbox";
 
@@ -270,7 +270,7 @@ function OrgBlock({ org, programs, open, onToggle, onManage, onChanged }: {
 
       {open && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, padding: 18 }}>
-          {programs.map(p => <ProgramCard key={p.id} p={p} onManage={() => onManage(p.id)} />)}
+          {programs.map(p => <ProgramCard key={p.id} p={p} org={org} onManage={() => onManage(p.id)} />)}
           {adding ? (
             <AddProgram org={org} onDone={() => { setAdding(false); onChanged(); }} onCancel={() => setAdding(false)} />
           ) : !isTrainer && (
@@ -287,8 +287,10 @@ function OrgBlock({ org, programs, open, onToggle, onManage, onChanged }: {
   );
 }
 
-function ProgramCard({ p, onManage }: { p: PlatformProgram; onManage: () => void }) {
+function ProgramCard({ p, org, onManage }: { p: PlatformProgram; org: PlatformSchool; onManage: () => void }) {
   const [going, setGoing] = useState(false);
+  const steps = setupSteps(p, org);
+  const doneSteps = steps.filter(s => s.done).length;
   const off = p.features_off.length;
   const stat = (n: number, l: string) => (
     <div style={{ background: "var(--surface)", borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 2 }}>
@@ -299,6 +301,9 @@ function ProgramCard({ p, onManage }: { p: PlatformProgram; onManage: () => void
     <div style={{ background: "var(--surface2)", borderRadius: 14, padding: 18, display: "flex", flexDirection: "column", gap: 14, opacity: p.is_active ? 1 : 0.7 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <span style={{ fontSize: 17, fontWeight: 700, color: "var(--white)", flex: 1 }}>{p.name}</span>
+        {p.is_active && doneSteps < steps.length && (
+          <span style={{ fontSize: 12, fontWeight: 600, color: "#93b4ff", background: "rgba(147,180,255,0.12)", padding: "4px 10px", borderRadius: 99 }}>Setup {doneSteps}/{steps.length}</span>
+        )}
         {!p.is_active ? (
           <span style={{ fontSize: 12, fontWeight: 600, color: "#ff9a9a", background: "rgba(255,140,140,0.12)", padding: "4px 10px", borderRadius: 99 }}>Paused</span>
         ) : (
@@ -344,6 +349,13 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
   const [name, setName] = useState(p.name);
   const [copied, setCopied] = useState(false);
   const [log, setLog] = useState<{ at: string; action: string; detail: string | null }[] | null>(null);
+  const [invEmail, setInvEmail] = useState("");
+  const [invName, setInvName] = useState("");
+  const [invLinkOnly, setInvLinkOnly] = useState(false);
+  const [invResult, setInvResult] = useState<InviteResult | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const steps = setupSteps(p, org);
+  const setupDone = steps.every(s => s.done);
 
   useEffect(() => { programLog(p.id).then(setLog).catch(() => setLog([])); }, [p.id, p.features_off.join(), p.is_active, p.join_code, p.head_coaches.length]);
   useEffect(() => {
@@ -380,6 +392,28 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
 
       {(msg || err) && <div role="status" style={{ fontSize: 13, color: err ? "#ff8a8a" : "#5de098" }}>{err ?? msg}</div>}
 
+      {p.is_active && !setupDone && (
+        <section style={{ ...card, border: "1px solid rgba(147,180,255,0.35)", padding: 20, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ ...h2, flex: 1 }}>Getting {p.name} set up</span>
+            <span style={{ fontSize: 13, color: "#93b4ff", fontWeight: 600 }}>{steps.filter(s => s.done).length} of {steps.length} done</span>
+          </div>
+          {steps.map(s => (
+            <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                background: s.done ? "#1f7a4d" : "transparent", border: s.done ? "none" : "2px solid rgba(176,184,200,0.4)" }}>
+                {s.done && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>}
+              </span>
+              <span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: s.done ? "#a3adc4" : "var(--text)", textDecoration: s.done ? "line-through" : "none" }}>{s.label}</span>
+                {!s.done && <span style={{ fontSize: 12, color: "#8b95ae" }}>{s.hint}</span>}
+              </span>
+            </div>
+          ))}
+          <span style={muted}>This box goes away once everything is done.</span>
+        </section>
+      )}
+
       <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-start" }}>
         <div style={{ flex: "999 1 520px", minWidth: 0, display: "flex", flexDirection: "column", gap: 20 }}>
 
@@ -395,6 +429,7 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
                 <span style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 160 }}>
                   <span style={{ fontSize: 14, fontWeight: 600 }}>{h.name}</span>
                   <span style={{ fontSize: 12, color: "#a3adc4" }}>{h.email ?? ""}</span>
+                  {!h.last_seen && <span style={{ fontSize: 12, color: "#e8a33d" }}>Invited · hasn't signed in yet</span>}
                 </span>
                 <button style={{ ...danger, height: 38 }} disabled={busy}
                   onClick={() => {
@@ -403,8 +438,41 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
                   }}>Remove</button>
               </div>
             ))}
+            <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "var(--white)" }}>Invite a head coach by email</span>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
+                <label style={label}>Their name<input value={invName} onChange={e => setInvName(e.target.value)} placeholder="e.g. Pat Smith" style={input} /></label>
+                <label style={label}>Email<input type="email" value={invEmail} onChange={e => setInvEmail(e.target.value)} placeholder="coach@school.org" style={input} /></label>
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#a3adc4", cursor: "pointer" }}>
+                <input type="checkbox" checked={invLinkOnly} onChange={e => setInvLinkOnly(e.target.checked)} /> Just give me a link to send them myself (no email)
+              </label>
+              <button style={{ ...btn, alignSelf: "flex-start" }} disabled={busy || !invEmail.trim()}
+                onClick={() => run(async () => {
+                  setInvResult(null); setLinkCopied(false);
+                  const r = await inviteHeadCoach(p.id, invEmail.trim(), invName.trim(), invLinkOnly);
+                  setInvResult(r); setInvEmail(""); setInvName("");
+                }, "Done.")}>{busy ? "Working…" : invLinkOnly ? "Make invite link" : "Send invite"}</button>
+              {invResult && (
+                <div role="status" style={{ fontSize: 13, lineHeight: 1.5, color: "#c8cfde", display: "flex", flexDirection: "column", gap: 8 }}>
+                  {invResult.status === "promoted" && <span style={{ color: "#5de098" }}>{invResult.name} already had an account and is now a head coach of {p.name}.</span>}
+                  {invResult.status === "invited" && invResult.emailed && <span style={{ color: "#5de098" }}>Invite emailed to {invResult.name}. They'll set a password and land as head coach of {p.name}.</span>}
+                  {invResult.status === "invited" && !invResult.emailed && invResult.link && (
+                    <>
+                      <span>{invLinkOnly ? "Here's the invite link." : "Supabase couldn't send the email, so here's the invite link instead."} Send it to {invResult.name} by text or email; it works once and they'll set their own password.</span>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <input readOnly value={invResult.link} aria-label="Invite link" onFocus={e => e.currentTarget.select()} style={{ ...input, flex: "1 1 240px", width: "auto", fontSize: 12 }} />
+                        <button style={ghost} onClick={async () => {
+                          try { await navigator.clipboard.writeText(invResult.link!); setLinkCopied(true); } catch { window.prompt("Copy this invite link:", invResult.link!); }
+                        }}>{linkCopied ? "Copied!" : "Copy link"}</button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
             <label style={label}>
-              Add a head coach (someone already signed up)
+              Or pick someone who's already signed up
               <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search by name or email" style={input} />
             </label>
             {matches.length > 0 && (
