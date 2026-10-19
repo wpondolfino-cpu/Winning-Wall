@@ -5,7 +5,7 @@
 import { supabase } from "./supabase";
 import type { FeatureKey } from "./features";
 
-export interface PlatformPerson { id: string; name: string; email: string | null; }
+export interface PlatformPerson { id: string; name: string; email: string | null; last_seen?: string | null; }
 
 export interface PlatformProgram {
   id: string;
@@ -147,4 +147,34 @@ export async function uploadLogo(kind: "program" | "school", id: string, file: F
 
 export function inviteLink(code: string): string {
   return `${window.location.origin}/?join=${code}`;
+}
+
+export interface InviteResult { status: "promoted" | "invited"; emailed?: boolean; link?: string; name?: string; }
+
+/** Make someone head coach by email (edge function invite-coach). An
+ *  existing account is promoted right away; a new person gets an invite
+ *  email, or -- if Supabase can't send it, or linkOnly -- a link to pass on. */
+export async function inviteHeadCoach(programId: string, email: string, name: string, linkOnly: boolean): Promise<InviteResult> {
+  const { data, error } = await supabase.functions.invoke("invite-coach", {
+    body: { program_id: programId, email, name, link_only: linkOnly },
+  });
+  if (error) {
+    let detail = error.message;
+    try { const b = await (error as any).context?.json?.(); if (b?.error) detail = b.error; } catch { /* keep */ }
+    throw new Error(detail);
+  }
+  if ((data as any)?.error) throw new Error((data as any).error);
+  return data as InviteResult;
+}
+
+export interface SetupStep { label: string; done: boolean; hint: string; }
+
+/** What a new program still needs. Shown until everything is done. */
+export function setupSteps(p: PlatformProgram, org: PlatformSchool): SetupStep[] {
+  return [
+    { label: "Head coach added", done: p.head_coaches.length > 0, hint: "Invite one below." },
+    { label: "Head coach has signed in", done: p.head_coaches.some(h => !!h.last_seen), hint: "They need to open their invite." },
+    { label: "Logo", done: !!(p.logo_url || org.logo_url), hint: "Upload one under Name, logo & colors (or on the school)." },
+    { label: "First player joined", done: p.players > 0, hint: "Share the team code or invite link with the team." },
+  ];
 }
