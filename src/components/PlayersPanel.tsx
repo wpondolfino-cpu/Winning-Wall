@@ -785,11 +785,18 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
             </div>
           )}
 
-          {/* Pending Approvals */}
-          {(pendingPlayers.length > 0 || pendingCoaches.length > 0) && (
+          {/* Pending Approvals -- players only here; coach requests are
+              listed (and approved) on the Coaches tab, so counting them
+              here showed a number over an empty box. */}
+          {pendingCoaches.length > 0 && (
+            <button onClick={() => setActiveTab("coaches")} style={{ display: "block", width: "100%", textAlign: "left", background: "rgba(176,122,255,0.08)", border: "1px solid rgba(176,122,255,0.3)", color: "#c9a8ff", borderRadius: 12, padding: "10px 16px", marginBottom: 12, fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+              ⏳ {pendingCoaches.length} coach request{pendingCoaches.length === 1 ? "" : "s"} waiting — open the Coaches tab ›
+            </button>
+          )}
+          {pendingPlayers.length > 0 && (
             <div style={{ background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 14, padding: "16px 20px", marginBottom: 20 }}>
               <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 14 }}>
-                ⏳ Pending Approvals ({pendingPlayers.length + pendingCoaches.length})
+                ⏳ Pending Approvals ({pendingPlayers.length})
               </div>
               {pendingPlayers.map(p => (
                 <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: "var(--surface2)", borderRadius: 10, marginBottom: 8, border: "1px solid var(--border)", flexWrap: "wrap", gap: 8 }}>
