@@ -542,12 +542,22 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   // duplicate that linking exists to avoid.
   // Pool names are shaped as PlayerLite so every grouping path downstream
   // is unchanged.
+  // An account in the pool appears once: through its roster when it's on
+  // one of this practice's rosters (or called up), otherwise as its pool
+  // entry under the account's name. Each way keeps a stable id, so groups
+  // made earlier still resolve.
+  const onTickedRoster = new Set<string>([
+    ...relevantPlayers.map(p => p.id),
+    ...overrides.filter(o => o.override_type === "call_up").map(o => o.player_id),
+  ]);
+  const accountName = new Map<string, string>(players.map(p => [p.id, p.name]));
   const effectiveAttendees = isTryout
     ? [
         ...rosterAttendees,
         ...tryoutPool
           .filter(t => tryoutPresent.size === 0 || tryoutPresent.has(t.id))
-          .map(t => ({ id: t.id, name: t.name, home_roster_id: null } as any)),
+          .filter(t => !(t.linked_profile_id && onTickedRoster.has(t.linked_profile_id)))
+          .map(t => ({ id: t.id, name: (t.linked_profile_id && accountName.get(t.linked_profile_id)) || t.name, home_roster_id: null } as any)),
       ]
     : rosterAttendees;
   const absentIds = new Set(overrides.filter(o => o.override_type === "absent").map(o => o.player_id));
