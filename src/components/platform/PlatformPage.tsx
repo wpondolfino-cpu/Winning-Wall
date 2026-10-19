@@ -4,7 +4,7 @@
 //   schools       schools and their programs (search + filters)
 //   trainers      trainers and their program (search + filters)
 //   announcements post to chosen programs / schools / trainers / all
-//   library       Winning Wall library (next update)
+//   library       Shared Library: starter pack, "New" offers (migration 194)
 // Managing one program opens over whichever page you came from. Only the
 // platform admin ever sees these; the database checks every call too.
 
@@ -17,6 +17,10 @@ import {
   saveOrgNotes, programLog, postToPrograms, inviteHeadCoach, setupSteps, InviteResult,
 } from "../../lib/platform";
 import MessageInbox, { ProgramOption } from "../messages/MessageInbox";
+import {
+  KIND_LABEL, LibraryKind, LibraryOverview, LibraryItem, BrowseRow, loadLibrary, setLibraryFlags,
+  removeFromLibrary, openInLibrary, browseProgram, addToLibrary,
+} from "../../lib/library";
 
 export type PlatformSection = "home" | "schools" | "trainers" | "announcements" | "messages" | "library";
 
@@ -89,12 +93,7 @@ export default function PlatformPage({ page, onGoTo, onMessagesRead }: { page: P
       ) : page === "messages" ? (
         <Messages orgs={orgs} onRead={onMessagesRead} />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          <Title text="Winning Wall library" />
-          <div style={{ ...card, padding: 20, ...muted, fontSize: 14 }}>
-            The Winning Wall library (starter pack and "New from Winning Wall") comes in a later update.
-          </div>
-        </div>
+        <SharedLibrary orgs={orgs} />
       )}
     </div>
   );
@@ -804,5 +803,227 @@ function Messages({ orgs, onRead }: { orgs: PlatformSchool[] | null; onRead?: ()
       <Title text="Messages" />
       <MessageInbox asPlatform programs={programs} onActivity={onRead} />
     </div>
+  );
+}
+
+// ── Shared Library ────────────────────────────────────────────
+const LIB_FILTERS: [string, string, LibraryKind[]][] = [
+  ["all", "All", ["drill", "team_drill", "template", "play", "lifting"]],
+  ["drill", "Player drills", ["drill"]],
+  ["team", "Team drills & templates", ["team_drill", "template"]],
+  ["play", "Plays", ["play"]],
+  ["lifting", "Lifting", ["lifting"]],
+];
+const ADD_KINDS: LibraryKind[] = ["drill", "team_drill", "template", "play", "lifting"];
+
+function chip(on: boolean, color: string): CSSProperties {
+  return {
+    height: 36, padding: "0 12px", borderRadius: 99, fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer",
+    ...(on ? { border: `1px solid ${color}`, background: color, color: "#0a0c14" }
+           : { border: "1px solid rgba(176,184,200,0.3)", background: "transparent", color: "#a3adc4" }),
+  };
+}
+
+function SharedLibrary({ orgs }: { orgs: PlatformSchool[] | null }) {
+  const [lib, setLib] = useState<LibraryOverview | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [filter, setFilter] = useState("all");
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  async function refresh() {
+    try { setLib(await loadLibrary()); setErr(null); }
+    catch (e: any) { setErr(e?.message ?? "Couldn't load the Shared Library."); }
+  }
+  useEffect(() => { refresh(); }, []);
+
+  const kinds = LIB_FILTERS.find(f => f[0] === filter)?.[2] ?? [];
+  const needle = q.trim().toLowerCase();
+  const items = (lib?.items ?? []).filter(i => kinds.includes(i.kind) && (!needle || i.title.toLowerCase().includes(needle)));
+  const all = lib?.items ?? [];
+
+  async function flip(i: LibraryItem, flags: { starter?: boolean; offered?: boolean }) {
+    setBusy(i.id);
+    try { await setLibraryFlags(i.id, flags); await refresh(); }
+    catch (e: any) { setErr(e?.message ?? "Couldn't save."); }
+    setBusy(null);
+  }
+  async function remove(i: LibraryItem) {
+    if (!window.confirm(`Remove "${i.title}" from the Shared Library?\n\nPrograms that already added it keep their copy.`)) return;
+    setBusy(i.id);
+    try { await removeFromLibrary(i.id); await refresh(); }
+    catch (e: any) { setErr(e?.message ?? "Couldn't remove it."); }
+    setBusy(null);
+  }
+  async function edit(kind: LibraryKind) {
+    if (!lib?.library_program_id) return;
+    try { await openInLibrary(lib.library_program_id, kind); }
+    catch (e: any) { setErr(e?.message ?? "Couldn't open the Shared Library."); }
+  }
+
+  function uptake(i: LibraryItem): string {
+    const parts: string[] = [];
+    if (i.offered || i.added > 0) parts.push(`Added by ${i.added} program${i.added === 1 ? "" : "s"}`);
+    if (i.dismissed > 0) parts.push(`${i.dismissed} said not now`);
+    if (!parts.length) return i.starter ? "Starter pack only" : "Saved here, not shared yet";
+    return parts.join(" · ");
+  }
+
+  const tile = (n: number, l: string) => (
+    <div style={{ ...card, padding: 16, display: "flex", flexDirection: "column", gap: 4 }}>
+      <span style={{ fontSize: 26, fontWeight: 600 }}>{n}</span>
+      <span style={{ fontSize: 13, color: "#a3adc4" }}>{l}</span>
+    </div>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <Title text="Shared Library" action={
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button style={btn} onClick={() => setAdding(a => !a)}>{adding ? "Done adding" : "+ Add from a program"}</button>
+          <button style={ghost} disabled={!lib?.library_program_id} onClick={() => edit("drill")}
+            title="Switch into the Shared Library to edit items or make new ones">Open Shared Library</button>
+        </div>
+      } />
+      {err && <div style={{ color: "#ff8a8a", fontSize: 13 }}>{err}</div>}
+
+      {adding && <AddFromProgram orgs={orgs} onAdded={refresh} />}
+
+      {!lib && !err && <div style={muted}>Loading…</div>}
+      {lib && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+            {tile(all.length, "In your Shared Library")}
+            {tile(all.filter(i => i.starter).length, "In the starter pack, so new programs get these")}
+            {tile(all.filter(i => i.offered).length, "Offered to existing programs under \"New\"")}
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            {LIB_FILTERS.map(([k, l]) => (
+              <button key={k} onClick={() => setFilter(k)} style={{ ...chip(filter === k, "#1a3fa8"), ...(filter === k ? { color: "#f5f7fc" } : {}) }}>{l}</button>
+            ))}
+            {all.length > 6 && (
+              <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search the library" aria-label="Search the library"
+                style={{ ...input, width: 220, height: 36 }} />
+            )}
+          </div>
+
+          {all.length === 0 && (
+            <div style={{ ...card, padding: 20, display: "flex", flexDirection: "column", gap: 8 }}>
+              <span style={h2}>Nothing in the Shared Library yet</span>
+              <span style={{ ...muted, fontSize: 13 }}>
+                Use <b>+ Add from a program</b> above, or the <b>📚 Add to Shared Library</b> button on a drill, practice template,
+                play or lifting program (only you see it). Either one saves a copy here; the original stays where it is.
+              </span>
+            </div>
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {items.map(i => (
+              <div key={i.id} style={{ ...card, padding: "14px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, opacity: busy === i.id ? 0.6 : 1 }}>
+                <div style={{ flex: "1 1 260px", minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "var(--gold)" }}>{KIND_LABEL[i.kind]}</span>
+                  <span style={{ fontSize: 15, fontWeight: 600, color: "var(--white)" }}>{i.title}</span>
+                  <span style={muted}>{[i.meta, i.source.startsWith("Made") ? i.source : `from ${i.source}`, `added ${new Date(i.created_at).toLocaleDateString([], { month: "short", day: "numeric" })}`].filter(Boolean).join(" · ")}</span>
+                  <span style={{ fontSize: 12, color: "#93b4ff" }}>{uptake(i)}</span>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <button disabled={busy === i.id} onClick={() => flip(i, { starter: !i.starter })} style={chip(i.starter, "#f0c040")}
+                    aria-pressed={i.starter} aria-label={(i.starter ? "Remove from" : "Add to") + " the starter pack"}>
+                    {i.starter ? "✓ " : ""}Starter pack
+                  </button>
+                  <button disabled={busy === i.id} onClick={() => flip(i, { offered: !i.offered })} style={chip(i.offered, "#93b4ff")}
+                    aria-pressed={i.offered} aria-label={(i.offered ? "Stop offering" : "Offer") + " to existing programs"}>
+                    {i.offered ? "✓ " : ""}Offered
+                  </button>
+                  <button style={{ ...ghost, height: 36 }} onClick={() => edit(i.kind)}>Edit</button>
+                  <button style={{ ...danger, height: 36 }} disabled={busy === i.id} onClick={() => remove(i)}>Remove</button>
+                </div>
+              </div>
+            ))}
+            {all.length > 0 && items.length === 0 && <div style={muted}>Nothing here matches.</div>}
+          </div>
+
+          <div style={{ ...muted, fontSize: 13 }}>
+            <b>Starter pack:</b> a new program gets a copy of these when its first head coach joins. <b>Offered:</b> head coaches
+            of existing programs see it under "New in Shared Library" and choose Add or Not now. Every copy is the program's own to
+            edit; changing or removing something here never changes theirs. <b>Edit</b> switches you into the Shared Library
+            program (use the program switcher to come back).
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function AddFromProgram({ orgs, onAdded }: { orgs: PlatformSchool[] | null; onAdded: () => void }) {
+  const programs = (orgs ?? []).flatMap(o => o.programs.map(p => ({ id: p.id, name: `${o.short_name || o.name} · ${p.name}` })));
+  const [programId, setProgramId] = useState<string>("");
+  const [kind, setKind] = useState<LibraryKind>("drill");
+  const [rows, setRows] = useState<BrowseRow[] | null>(null);
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => { if (!programId && programs.length) setProgramId(programs[0].id); }, [programs.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!programId) return;
+    let on = true;
+    setRows(null);
+    browseProgram(programId, kind).then(r => { if (on) setRows(r); }).catch((e: any) => { if (on) { setRows([]); setMsg({ ok: false, text: e?.message ?? "Couldn't load." }); } });
+    return () => { on = false; };
+  }, [programId, kind]);
+
+  const needle = q.trim().toLowerCase();
+  const shown = (rows ?? []).filter(r => !needle || r.title.toLowerCase().includes(needle));
+
+  async function add(r: BrowseRow) {
+    setBusy(r.id); setMsg(null);
+    try {
+      const res = await addToLibrary(kind, r.id);
+      setRows(list => (list ?? []).map(x => x.id === r.id ? { ...x, in_library: true } : x));
+      setMsg({ ok: true, text: res.status === "already" ? `"${res.title}" was already in the Shared Library.` : `Added "${res.title}".` });
+      onAdded();
+    } catch (e: any) { setMsg({ ok: false, text: e?.message ?? "Couldn't add it." }); }
+    setBusy(null);
+  }
+
+  return (
+    <section style={{ ...card, padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
+      <span style={h2}>Add from a program</span>
+      <span style={muted}>Pick what to copy. The program keeps its original; the Shared Library gets its own copy.</span>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <label style={{ ...label, flex: "1 1 220px" }}>Program
+          <select value={programId} onChange={e => setProgramId(e.target.value)} style={input}>
+            {programs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </label>
+        <label style={{ ...label, flex: "1 1 220px" }}>Search
+          <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Find by name" style={input} />
+        </label>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {ADD_KINDS.map(k => (
+          <button key={k} onClick={() => setKind(k)} style={{ ...chip(kind === k, "#1a3fa8"), ...(kind === k ? { color: "#f5f7fc" } : {}) }}>{KIND_LABEL[k]}s</button>
+        ))}
+      </div>
+      {msg && <div role="status" style={{ fontSize: 13, color: msg.ok ? "#5de098" : "#ff8a8a" }}>{msg.text}</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 360, overflowY: "auto" }}>
+        {rows === null && <span style={muted}>Loading…</span>}
+        {rows !== null && shown.length === 0 && <span style={muted}>Nothing to add here.</span>}
+        {shown.map(r => (
+          <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--surface2)", borderRadius: 10, padding: "8px 12px", minHeight: 44 }}>
+            <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+              <span style={{ fontSize: 14, color: "var(--text)" }}>{r.title}</span>
+              {r.meta && <span style={{ fontSize: 11, color: "#8b95ae" }}>{r.meta}</span>}
+            </span>
+            {r.in_library
+              ? <span style={{ fontSize: 12, color: "#5de098", fontWeight: 600 }}>✓ In library</span>
+              : <button style={{ ...btn, height: 34, padding: "0 12px", fontSize: 13 }} disabled={busy === r.id} onClick={() => add(r)}>{busy === r.id ? "Adding…" : "Add"}</button>}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
