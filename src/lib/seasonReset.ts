@@ -12,8 +12,18 @@ import { resetPlayerScores } from "./scores";
 // ── Offseason: extracted from AdminSettings' existing reset flow ──
 // (season_history snapshot + resetPlayerScores) so the new toggle and
 // the original Settings button can eventually share one implementation.
-/** Writes the offseason archive and returns the new rows' ids (for rollback). Clears nothing. */
-async function archiveOffseason(seasonLabel: string, seasonId?: string | null): Promise<string[]> {
+export interface OffseasonStanding {
+  player_id: string; overall_rank: number | null; group_rank: number | null; grade_category: string | null;
+  total_points: number; drill_wins: number; h2h_wins: number;
+}
+export interface InSeasonStanding {
+  player_id: string; roster_id: string | null; roster_name: string | null;
+  overall_rank: number | null; roster_rank: number | null; total_wins: number;
+}
+
+/** Current offseason standings, worked out exactly as the archive does --
+ *  the archive and the Leaderboard's Export/Print share this. Reads only. */
+export async function offseasonStandings(): Promise<OffseasonStanding[]> {
   const [{ data: profiles }, { data: allScores }, { data: chalWins }, { data: drillBests }] = await Promise.all([
     supabase.from("profiles").select("id,grade_category").eq("role", "player"),
     supabase.from("scores").select("player_id,points"),
@@ -57,18 +67,32 @@ async function archiveOffseason(seasonLabel: string, seasonId?: string | null): 
     ids.sort((a, b) => (ptMap[b] || 0) - (ptMap[a] || 0)).forEach((id, i) => { gradeRankMap[id] = i + 1; });
   });
 
-  const snapshots = profiles.map((p: any) => ({
+  return profiles.map((p: any) => ({
     player_id: p.id,
-    season_label: seasonLabel,
-    // The season this belongs to. The label stays for archives written
-    // before seasons were linked, which are matched by name instead.
-    season_id: seasonId ?? null,
     overall_rank: sorted.findIndex(([id]) => id === p.id) + 1 || null,
     group_rank: gradeRankMap[p.id] || null,
     grade_category: p.grade_category,
     total_points: ptMap[p.id] || 0,
     drill_wins: drillWinMap[p.id] || 0,
     h2h_wins: h2hMap[p.id] || 0,
+  }));
+}
+
+/** Writes the offseason archive and returns the new rows' ids (for rollback). Clears nothing. */
+async function archiveOffseason(seasonLabel: string, seasonId?: string | null): Promise<string[]> {
+  const rows = await offseasonStandings();
+  const snapshots = rows.map(r => ({
+    player_id: r.player_id,
+    season_label: seasonLabel,
+    // The season this belongs to. The label stays for archives written
+    // before seasons were linked, which are matched by name instead.
+    season_id: seasonId ?? null,
+    overall_rank: r.overall_rank,
+    group_rank: r.group_rank,
+    grade_category: r.grade_category,
+    total_points: r.total_points,
+    drill_wins: r.drill_wins,
+    h2h_wins: r.h2h_wins,
     team_wins: 0,
   }));
 
@@ -78,8 +102,9 @@ async function archiveOffseason(seasonLabel: string, seasonId?: string | null): 
 }
 
 // ── In-season: same shape, new data source ──
-/** Writes the in-season archive. Clears nothing. */
-async function archiveInSeason(seasonLabel: string, seasonId?: string | null): Promise<void> {
+/** Current in-season standings (practice wins), worked out exactly as the
+ *  archive does. Reads only. */
+export async function inSeasonStandings(): Promise<InSeasonStanding[]> {
   const [{ data: wins }, { data: players }, { data: rosters }] = await Promise.all([
     supabase.from("practice_wins").select("player_id"),
     supabase.from("profiles").select("id, home_roster_id").eq("role", "player").not("home_roster_id", "is", null),
@@ -103,17 +128,30 @@ async function archiveInSeason(seasonLabel: string, seasonId?: string | null): P
     group.sort((a: any, b: any) => (counts[b.id] || 0) - (counts[a.id] || 0)).forEach((p: any, i: number) => { rosterRankMap[p.id] = i + 1; });
   });
 
-  const snapshots = players.map((p: any) => ({
+  return players.map((p: any) => ({
     player_id: p.id,
-    season_label: seasonLabel,
-    // The season this belongs to. The label stays for archives written
-    // before seasons were linked, which are matched by name instead.
-    season_id: seasonId ?? null,
     roster_id: p.home_roster_id,
     roster_name: p.home_roster_id ? rosterName.get(p.home_roster_id) ?? null : null,
     overall_rank: sorted.findIndex((sp: any) => sp.id === p.id) + 1 || null,
     roster_rank: rosterRankMap[p.id] || null,
     total_wins: counts[p.id] || 0,
+  }));
+}
+
+/** Writes the in-season archive. Clears nothing. */
+async function archiveInSeason(seasonLabel: string, seasonId?: string | null): Promise<void> {
+  const rows = await inSeasonStandings();
+  const snapshots = rows.map(r => ({
+    player_id: r.player_id,
+    season_label: seasonLabel,
+    // The season this belongs to. The label stays for archives written
+    // before seasons were linked, which are matched by name instead.
+    season_id: seasonId ?? null,
+    roster_id: r.roster_id,
+    roster_name: r.roster_name,
+    overall_rank: r.overall_rank,
+    roster_rank: r.roster_rank,
+    total_wins: r.total_wins,
   }));
 
   const { error: snapshotErr } = await supabase.from("inseason_history").insert(snapshots);
