@@ -117,7 +117,14 @@ export default function TeamDesigner() {
     await refresh();
   }
 
-  const onBoard = new Set(cards.flatMap(c => [c.profile_id, c.tryout_player_id].filter(Boolean) as string[]));
+  // A pool entry linked to an account and the account itself are one
+  // person: once either is on the board, both drop out of the add lists.
+  const poolById = new Map(pool.map(t => [t.id, t]));
+  const onBoard = new Set(cards.flatMap(c => [
+    c.profile_id, c.tryout_player_id,
+    c.tryout_player_id ? poolById.get(c.tryout_player_id)?.linked_profile_id : null,
+  ].filter(Boolean) as string[]));
+  const playerName = new Map(players.map(p => [p.id, p.name]));
 
   if (loading) return <div style={{ fontSize: 13, color: "var(--muted)" }}>Loading…</div>;
 
@@ -183,14 +190,17 @@ export default function TeamDesigner() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 <div style={listCol}>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Tryout pool ({pool.length})</div>
-                  {pool.filter(t => !onBoard.has(t.id)).map(t => (
-                    <button key={t.id} onClick={async () => {
-                      const { error } = await addSlot(plan.id, { display_name: t.name, tryout_player_id: t.id });
-                      if (error) setMsg(error); else refresh();
-                    }} style={rowBtn}>
-                      {t.name}{t.grade ? ` · ${t.grade}` : ""}
-                    </button>
-                  ))}
+                  {pool.filter(t => !onBoard.has(t.id) && !(t.linked_profile_id && onBoard.has(t.linked_profile_id))).map(t => {
+                    const name = (t.linked_profile_id && playerName.get(t.linked_profile_id)) || t.name;
+                    return (
+                      <button key={t.id} onClick={async () => {
+                        const { error } = await addSlot(plan.id, { display_name: name, tryout_player_id: t.id });
+                        if (error) setMsg(error); else refresh();
+                      }} style={rowBtn}>
+                        {name}{t.grade ? ` · ${t.grade}` : ""}{t.linked_profile_id ? "  · account" : ""}
+                      </button>
+                    );
+                  })}
                   {pool.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>Empty — add names with Tryout pool (top right).</div>}
                 </div>
                 <div style={listCol}>
