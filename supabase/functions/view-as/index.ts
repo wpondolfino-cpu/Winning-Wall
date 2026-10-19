@@ -19,6 +19,17 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// The server key. Prefers the new secret key (Settings > API Keys >
+// "Publishable and secret API keys"), falling back to the legacy
+// service_role key while that's still switched on.
+function serverKey(): string {
+  try {
+    const keys = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}");
+    if (typeof keys?.default === "string" && keys.default) return keys.default;
+  } catch { /* not set */ }
+  return Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -46,7 +57,7 @@ Deno.serve(async (req) => {
   try {
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      serverKey(),
     );
 
     // ── Who is calling? ──────────────────────────────────────
