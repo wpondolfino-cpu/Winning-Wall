@@ -27,13 +27,28 @@
 // Deploy AFTER migration 147 -- sections 0, 2 and 3 read its tables.
 //
 // Env vars (same as notify-inactive / send-push):
-//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ONE_SIGNAL_APP_ID, ONE_SIGNAL_API_KEY
+//   SUPABASE_URL, SUPABASE_SECRET_KEYS (or the legacy SUPABASE_SERVICE_ROLE_KEY),
+//   ONE_SIGNAL_APP_ID, ONE_SIGNAL_API_KEY, CRON_SECRET (migration 196)
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// The server key. Prefers the new secret key (Settings > API Keys >
+// "Publishable and secret API keys"), falling back to the legacy
+// service_role key while that's still switched on.
+function serverKey(): string {
+  try {
+    const keys = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}");
+    if (typeof keys?.default === "string" && keys.default) return keys.default;
+  } catch { /* not set */ }
+  return Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+}
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_SERVICE_KEY = serverKey();
+// Only the scheduled job knows this (it reads it from the database Vault).
+// JWT verification is off for this function, so this is the only gate.
+const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
 const ONE_SIGNAL_APP_ID = Deno.env.get("ONE_SIGNAL_APP_ID")!;
 const ONE_SIGNAL_API_KEY = Deno.env.get("ONE_SIGNAL_API_KEY")!;
 const APP_URL = "https://attleborowinningwall.vercel.app";
@@ -106,7 +121,11 @@ function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(to) - Date.parse(from)) / DAY_MS);
 }
 
-serve(async () => {
+serve(async (req) => {
+  // Anyone could otherwise set off a round of pushes by calling this URL.
+  if (!CRON_SECRET || req.headers.get("x-cron-secret") !== CRON_SECRET) {
+    return new Response(JSON.stringify({ error: "Not allowed." }), { status: 401 });
+  }
   const results: Record<string, unknown> = {};
 
   // ── 0. Start the next repeating competition ───────────────
