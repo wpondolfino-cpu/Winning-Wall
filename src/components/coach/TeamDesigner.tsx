@@ -17,7 +17,8 @@ import {
   ensurePositions, addPosition, renamePosition, deletePosition,
   getSlots, addSlot, cutPlayersNotInPlan, gradeColor, gradeFromGradYear,
 } from "../../lib/teamDesigner";
-import { getCurrentSeason, getTryoutPlayers, TryoutPlayer } from "../../lib/practicePlanner";
+import { getCurrentSeason, getTryoutPlayers, TryoutPlayer, getRosters } from "../../lib/practicePlanner";
+import TryoutPoolManager from "./TryoutPoolManager";
 import DepthChartBoard from "./DepthChartBoard";
 
 interface PlayerLite { id: string; name: string; graduation_year: number | null; home_roster_id: string | null; }
@@ -30,6 +31,11 @@ export default function TeamDesigner() {
   const [positions, setPositions] = useState<TeamPosition[]>([]);
   const [cards, setCards] = useState<BoardCard[]>([]);
   const [pool, setPool] = useState<TryoutPlayer[]>([]);
+  // The pool lives here too: names go in before tryouts, cuts happen here,
+  // so this is the natural place to fill it (a tryout practice keeps its
+  // own shortcut to the same list).
+  const [showPool, setShowPool] = useState(false);
+  const [poolRosters, setPoolRosters] = useState<any[]>([]);
   const [players, setPlayers] = useState<PlayerLite[]>([]);
   const [hideGraduating, setHideGraduating] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -136,7 +142,20 @@ export default function TeamDesigner() {
             await deletePlan(plan.id); setPlanId(null); await boot();
           }} style={{ ...btn, color: "#b8342e" }}>Delete plan</button>
         )}
+        <button onClick={async () => { setShowPool(true); getRosters().then(setPoolRosters).catch(() => {}); }}
+          style={{ ...btn, marginLeft: "auto", border: "1px solid var(--royal)", color: "#93b4ff", fontWeight: 600 }}>
+          👥 Tryout pool ({pool.length})
+        </button>
       </div>
+
+      {showPool && (
+        <TryoutPoolManager
+          seasonId={seasonId}
+          rosters={poolRosters}
+          onClose={() => setShowPool(false)}
+          onChanged={() => { getTryoutPlayers(seasonId).then(setPool).catch(() => {}); }}
+        />
+      )}
 
       {plan && (
         <>
@@ -172,7 +191,7 @@ export default function TeamDesigner() {
                       {t.name}{t.grade ? ` · ${t.grade}` : ""}
                     </button>
                   ))}
-                  {pool.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>Empty — add names in the tryout pool.</div>}
+                  {pool.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>Empty — add names with Tryout pool (top right).</div>}
                 </div>
                 <div style={listCol}>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Players with accounts ({players.filter(p => !onBoard.has(p.id)).length})</div>
