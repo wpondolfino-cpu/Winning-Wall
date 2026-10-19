@@ -14,6 +14,8 @@ import {
   getRecentlyUsedDrills, getPlaysForLinking, importWorkoutAsPracticeDrill,
 } from "../../lib/practicePlanner";
 import { Workout, getWorkouts } from "../../lib/supabase";
+import NewInSharedLibrary from "../library/NewInSharedLibrary";
+import AddToSharedLibrary from "../library/AddToSharedLibrary";
 
 interface Props {
   canManage?: boolean;
@@ -185,6 +187,8 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
         </div>
       )}
 
+      {!isPicker && canManage && <NewInSharedLibrary kinds={["team_drill", "template"]} onAdded={load} />}
+
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search drills…" style={{ ...inputStyle, width: "100%", marginBottom: 10, boxSizing: "border-box" }} />
 
       <div style={{ display: source === "player" ? "none" : "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
@@ -274,6 +278,7 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
               {canManage && <button onClick={() => startEditDrill(viewDrill)} style={smallBtn}>Edit</button>}
               {canManage && <button onClick={() => handleDeleteDrill(viewDrill)} style={dangerSmallBtn}>Delete</button>}
             </div>
+            {!isPicker && <div style={{ marginTop: 10 }}><AddToSharedLibrary kind="team_drill" id={viewDrill.id} /></div>}
           </div>
         </div>
       )}
