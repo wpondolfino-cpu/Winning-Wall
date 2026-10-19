@@ -15,7 +15,7 @@ import {
   getPlans, createPlan, renamePlan, deletePlan, duplicatePlan,
   getLanes, addLane, renameLane, deleteLane,
   ensurePositions, addPosition, renamePosition, deletePosition,
-  getSlots, addSlot, cutPlayersNotInPlan, gradeColor, gradeFromGradYear,
+  getSlots, addSlot, cutPlayersNotInPlan, gradeColor, gradeFromGradYear, GRADE_COLORS,
 } from "../../lib/teamDesigner";
 import { getCurrentSeason, getTryoutPlayers, TryoutPlayer, getRosters } from "../../lib/practicePlanner";
 import TryoutPoolManager from "./TryoutPoolManager";
@@ -125,6 +125,16 @@ export default function TeamDesigner() {
     c.tryout_player_id ? poolById.get(c.tryout_player_id)?.linked_profile_id : null,
   ].filter(Boolean) as string[]));
   const playerName = new Map(players.map(p => [p.id, p.name]));
+  const playerById = new Map(players.map(p => [p.id, p]));
+  // Accounts already in the tryout pool are listed there, not twice.
+  const inPool = new Set(pool.map(t => t.linked_profile_id).filter(Boolean) as string[]);
+  /** A pool name's colour: the account's class year if linked, else the grade typed in. */
+  const poolColor = (t: TryoutPlayer) => {
+    if (t.linked_profile_id) return gradeColor(playerById.get(t.linked_profile_id)?.graduation_year ?? null);
+    return t.grade && GRADE_COLORS[t.grade] ? GRADE_COLORS[t.grade] : "#6b7280";
+  };
+  const poolGrade = (t: TryoutPlayer) =>
+    t.linked_profile_id ? gradeFromGradYear(playerById.get(t.linked_profile_id)?.graduation_year ?? null) : t.grade;
 
   if (loading) return <div style={{ fontSize: 13, color: "var(--muted)" }}>Loading…</div>;
 
@@ -196,16 +206,16 @@ export default function TeamDesigner() {
                       <button key={t.id} onClick={async () => {
                         const { error } = await addSlot(plan.id, { display_name: name, tryout_player_id: t.id });
                         if (error) setMsg(error); else refresh();
-                      }} style={rowBtn}>
-                        {name}{t.grade ? ` · ${t.grade}` : ""}{t.linked_profile_id ? "  · account" : ""}
+                      }} style={{ ...rowBtn, borderLeft: `4px solid ${poolColor(t)}` }}>
+                        {name}{poolGrade(t) ? ` · ${poolGrade(t)}` : ""}{t.linked_profile_id ? "  · account" : ""}
                       </button>
                     );
                   })}
                   {pool.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>Empty — add names with Tryout pool (top right).</div>}
                 </div>
                 <div style={listCol}>
-                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Players with accounts ({players.filter(p => !onBoard.has(p.id)).length})</div>
-                  {players.filter(p => !onBoard.has(p.id)).map(p => {
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Players with accounts ({players.filter(p => !onBoard.has(p.id) && !inPool.has(p.id)).length})</div>
+                  {players.filter(p => !onBoard.has(p.id) && !inPool.has(p.id)).map(p => {
                     const g = gradeFromGradYear(p.graduation_year);
                     return (
                       <button key={p.id} onClick={async () => {
