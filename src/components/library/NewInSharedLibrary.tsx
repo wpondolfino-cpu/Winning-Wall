@@ -9,7 +9,7 @@ import { KIND_LABEL, LibraryKind, NewItem, loadNew, pickNew } from "../../lib/li
 const AFTER_ADD: Record<LibraryKind, string> = {
   drill: "It starts switched off, so publish it when you're ready.",
   team_drill: "",
-  template: "Find it under Templates when you build a practice.",
+  template: "Find it under 📋 Templates on the Practices page.",
   play: "",
   lifting: "It's a draft until you share it with players.",
 };
