@@ -187,7 +187,7 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
         </div>
       )}
 
-      {!isPicker && canManage && <NewInSharedLibrary kinds={["team_drill", "template"]} onAdded={load} />}
+      {!isPicker && canManage && <NewInSharedLibrary kinds={["team_drill"]} onAdded={load} />}
 
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search drills…" style={{ ...inputStyle, width: "100%", marginBottom: 10, boxSizing: "border-box" }} />
 
