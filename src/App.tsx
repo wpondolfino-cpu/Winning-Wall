@@ -38,6 +38,7 @@ import PageErrorBoundary from "./components/PageErrorBoundary";
 import HelpButton from "./components/help/HelpButton";
 import ProgramSwitcher from "./components/ProgramSwitcher";
 import ViewAsBanner from "./components/ViewAsBanner";
+import { useInSandbox } from "./lib/sandbox";
 import { currentViewAs } from "./lib/viewAs";
 import { LiveBanner } from "./components/quizzes/LivePlayer";
 import QuizzesPage, { QuizPrefill } from "./components/quizzes/QuizzesPage";
@@ -57,7 +58,7 @@ type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profi
 // those strings back. Dropping it from the type would break that read for
 // anyone who customised their nav before Playbooks moved into Plays.
 type CoachTab  = "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "quizzes" | "gameday" | "practices" | "practicelibrary" | "settings" | "profile";
-type AdminTab  = "platform" | "platform-schools" | "platform-trainers" | "platform-announcements" | "platform-messages" | "platform-library" | "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "quizzes" | "gameday" | "practices" | "practicelibrary" | "profile";
+type AdminTab  = "platform" | "platform-schools" | "platform-trainers" | "platform-announcements" | "platform-messages" | "platform-library" | "platform-sandbox" | "schedule" | "workouts" | "leaderboard" | "players" | "hof" | "lifting" | "admin" | "settings" | "challenges" | "announcements" | "library" | "plays" | "playbooks" | "gamestats" | "scoutsheets" | "quizzes" | "gameday" | "practices" | "practicelibrary" | "profile";
 
 // "Drill Library" and "Practice Drills" both sounded like a place drills
 // live, so which held what was a guess. They're genuinely different things:
@@ -129,7 +130,7 @@ const PLAYER_URL_TABS = new Set<string>([
 const COACH_URL_TABS = new Set<string>(COACH_NAV_DEFAULT_ORDER);
 // "platform" is the platform admin's page (reached from the program
 // switcher, not the nav); the page itself is only rendered for them.
-const PLATFORM_TABS = ["platform", "platform-schools", "platform-trainers", "platform-announcements", "platform-messages", "platform-library"];
+const PLATFORM_TABS = ["platform", "platform-schools", "platform-trainers", "platform-announcements", "platform-messages", "platform-library", "platform-sandbox"];
 const ADMIN_URL_TABS = new Set<string>([...ADMIN_NAV_DEFAULT_ORDER, ...PLATFORM_TABS]);
 
 function urlTabsForRole(role: string | undefined): Set<string> | null {
@@ -168,6 +169,8 @@ function homeTabFor(profile: Profile | null | undefined): string {
 export default function App() {
   const { user, profile, authState } = useAuth();
   const { workouts, refresh: refreshWorkouts } = useWorkouts();
+  // The platform admin's sandbox (migration 198): gold bar on every page.
+  const inSandbox = useInSandbox(user?.id);
   const [myScores, setMyScores]     = useState<Score[]>([]);
   const [allScores, setAllScores]   = useState<Score[]>([]);
   const [playerTab, setPlayerTab]   = useState<PlayerTab>(() => initialTabFromUrl<PlayerTab>(PLAYER_URL_TABS, "workouts"));
@@ -761,15 +764,15 @@ export default function App() {
 
 
   return (
-    <div id="app-screen" className={`screen active${isPlayer ? " has-bottom-tabs" : ""}${currentViewAs(user.id) ? " viewing-as" : ""}`}>
-      <ViewAsBanner userId={user.id} />
+    <div id="app-screen" className={`screen active${isPlayer ? " has-bottom-tabs" : ""}${currentViewAs(user.id) || inSandbox ? " viewing-as" : ""}`}>
+      <ViewAsBanner userId={user.id} inSandbox={inSandbox} />
       {/* Header */}
       <div className="app-header">
         <img src="/logo.png" alt="Open menu" onClick={() => setSidebarOpen(o => !o)} style={{ height: 36, objectFit: "contain", flexShrink: 0, cursor: "pointer" }} />
         <div className="header-logo">Winning <span>Wall</span></div>
         <div className="header-role">{roleLabel}</div>
         <div className="header-user">{displayProfile.name}</div>
-        <ProgramSwitcher userId={user.id} onOpenPlatform={isAdmin && displayProfile.is_platform_admin ? () => { if (navigateFromNav(() => setAdminTab("platform"))) window.scrollTo(0, 0); } : undefined} />
+        <ProgramSwitcher userId={user.id} onOpenPlatform={isAdmin && displayProfile.is_platform_admin ? (page) => { if (navigateFromNav(() => setAdminTab(page ? `platform-${page}` as AdminTab : "platform"))) window.scrollTo(0, 0); } : undefined} />
         {/* Help for the page (or the screen inside it) that's showing. */}
         <HelpButton pageKey={isPlayer ? playerTab : isCoach ? coachTab : adminTab}
           audience={isPlayer ? "player" : "coach"} isAdmin={isAdmin} />
@@ -817,7 +820,7 @@ export default function App() {
               <div style={{ padding: "10px 14px 6px", fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "var(--gold)" }}>PLATFORM</div>
               {([["platform", "🏠", "Home"], ["platform-schools", "🏫", "Schools"], ["platform-trainers", "🏋️", "Trainers"],
                  ["platform-announcements", "📢", "Announcements"], ["platform-messages", "💬", "Messages"],
-                 ["platform-library", "📚", "Shared Library"]] as [AdminTab, string, string][]).map(([key, icon, text]) => (
+                 ["platform-library", "📚", "Shared Library"], ["platform-sandbox", "🧪", "Sandbox"]] as [AdminTab, string, string][]).map(([key, icon, text]) => (
                 <div key={key} className={`nav-item ${adminTab === key ? "active" : ""}`}
                   onClick={() => { if (!navigateFromNav(() => setAdminTab(key))) return; if (window.innerWidth < 768) setSidebarOpen(false); }}>
                   <span className="nav-icon">{icon}</span> {text}
