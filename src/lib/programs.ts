@@ -19,6 +19,8 @@ export interface ProgramInfo {
   logoUrl: string | null;     // program's own logo, else the school's; null = show letters
   joinCode: string | null;    // team code new players sign up with
   role: ProgramRole | null;   // null = reachable only as platform admin
+  /** The organization's kind: school, trainer, library (Shared Library) or sandbox. */
+  kind: string;
 }
 
 export interface MyPrograms {
@@ -39,7 +41,7 @@ export async function loadMyPrograms(userId: string): Promise<MyPrograms> {
   const [adminRes, progRes, memberRes, profileRes] = await Promise.all([
     supabase.from("platform_admins").select("user_id").eq("user_id", userId),
     supabase.from("programs")
-      .select("id, name, join_code, primary_color, accent_color, logo_url, organizations(name, short_name, primary_color, accent_color, logo_url)")
+      .select("id, name, join_code, primary_color, accent_color, logo_url, organizations(name, short_name, kind, primary_color, accent_color, logo_url)")
       .eq("is_active", true)
       .order("name"),
     supabase.from("program_members").select("program_id, role, status").eq("user_id", userId),
@@ -63,6 +65,7 @@ export async function loadMyPrograms(userId: string): Promise<MyPrograms> {
       logoUrl: p.logo_url ?? org.logo_url ?? null,
       joinCode: p.join_code ?? null,
       role: roleByProgram.get(p.id) ?? null,
+      kind: org.kind ?? "school",
     };
   });
 
@@ -73,9 +76,22 @@ export async function loadMyPrograms(userId: string): Promise<MyPrograms> {
   };
 }
 
+// The last few programs switched into, newest first (this device only),
+// so the platform admin's menu can offer them without listing everything.
+const RECENT_KEY = "ww_recent_programs";
+export function recentProgramIds(): string[] {
+  try { const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]"); return Array.isArray(v) ? v : []; }
+  catch { return []; }
+}
+function rememberProgram(id: string) {
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify([id, ...recentProgramIds().filter(x => x !== id)].slice(0, 6))); }
+  catch { /* storage blocked: no recents, nothing breaks */ }
+}
+
 export async function switchProgram(programId: string): Promise<void> {
   const { error } = await supabase.rpc("set_active_program", { pid: programId });
   if (error) throw error;
+  rememberProgram(programId);
   // A full reload is the simplest way to guarantee no page keeps showing
   // the previous program's data from its own state.
   window.location.reload();
