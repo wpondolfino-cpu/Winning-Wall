@@ -1111,6 +1111,24 @@ export async function savePracticeAsTemplate(
   return { id: data.id, error: null };
 }
 
+/** A blank template, built from scratch (+ New template on the Practices page). */
+export async function createEmptyTemplate(name: string, rosterLabel?: string | null): Promise<{ id: string | null; error: string | null }> {
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from("practices")
+    .insert({
+      is_template: true, template_name: name.trim() || "Untitled template",
+      roster_label: rosterLabel?.trim() || null,
+      // Same placeholders as savePracticeAsTemplate: nothing reads them.
+      practice_date: new Date().toISOString().slice(0, 10),
+      start_time: "00:00:00", roster_ids: [], week_id: null,
+      status: "draft", created_by: user?.id,
+    })
+    .select("id").single();
+  if (error || !data) return { id: null, error: error?.message ?? "Couldn't create the template." };
+  return { id: data.id, error: null };
+}
+
 /** Pour a template's blocks into an existing practice. */
 export async function applyTemplateToPractice(templateId: string, practiceId: string): Promise<{ error: string | null }> {
   try {
