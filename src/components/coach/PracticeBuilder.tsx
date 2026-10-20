@@ -24,14 +24,13 @@ import {
   computeEffectiveAttendees, computeBlockTimes, totalDurationMinutes,
   formatDuration, columnTotals, getSavedGroupings, getAssignableCoaches, CoachLite, getGroupCountsForDrills,
   TryoutPlayer, getTryoutPlayers, getTryoutAttendance, setTryoutAttendance, getCurrentSeason,
-  getPracticeTemplates, savePracticeAsTemplate, applyTemplateToPractice,
-  deletePracticeTemplate, PracticeTemplate,
+  savePracticeAsTemplate, applyTemplateToPractice,
+  deletePracticeTemplate, renamePracticeTemplate,
 } from "../../lib/practicePlanner";
 import GroupingEditor from "./GroupingEditor";
 import StationsEditor from "./StationsEditor";
 import CopyDrillPicker from "./CopyDrillPicker";
 import SaveTemplateModal from "./SaveTemplateModal";
-import AddToSharedLibrary from "../library/AddToSharedLibrary";
 import TryoutPoolManager from "./TryoutPoolManager";
 import PracticeDrillLibrary from "./PracticeDrillLibrary";
 import PracticePrintView from "./PracticePrintView";
@@ -44,9 +43,13 @@ interface Props {
   practiceId?: string;   // omit to create a new practice
   onClose: () => void;
   onSaved: () => void;   // let the parent (weeks list) refresh
+  /** New practice only: copy this template's blocks in when it's created. */
+  startFromTemplate?: { id: string; name: string } | null;
+  /** Template editor only: "Use for a new practice". */
+  onUseTemplate?: (template: { id: string; name: string }) => void;
 }
 
-export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props) {
+export default function PracticeBuilder({ practiceId, onClose, onSaved, startFromTemplate, onUseTemplate }: Props) {
   // While this screen is open, the header ? opens its help.
   useHelpTopic("practicebuilder");
   const [practice, setPractice]   = useState<Practice | null>(null);
@@ -66,14 +69,12 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   const [groupingTarget, setGroupingTarget] = useState<{ drill: SegmentDrill; segment: BlockSegment } | null>(null);
   const [stationsTarget, setStationsTarget] = useState<{ segment: BlockSegment; drills: SegmentDrill[]; block: PracticeBlock } | null>(null);
   const [copyTarget, setCopyTarget] = useState<{ segment: BlockSegment; block: PracticeBlock; orderIndex: number } | null>(null);
-  const [templates, setTemplates] = useState<PracticeTemplate[]>([]);
-  const [applyingTemplate, setApplyingTemplate] = useState(false);
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
-  const [showTemplates, setShowTemplates] = useState(false);
-  const [templateSearch, setTemplateSearch] = useState("");
   const [savingTemplate, setSavingTemplate] = useState(false);
-
-  useEffect(() => { getPracticeTemplates().then(setTemplates).catch(console.error); }, []);
+  // Templates all live under 📋 Templates on the Practices page now. A new
+  // practice started from there carries the template it should copy in
+  // when it's created; "Don't use it" clears it.
+  const [pendingTemplate, setPendingTemplate] = useState(startFromTemplate ?? null);
 
   async function handleSaveAsTemplate(name: string, label: string, withDrills: boolean) {
     if (!practice) return;
@@ -81,24 +82,24 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
     const { error } = await savePracticeAsTemplate(practice.id, name, label, withDrills);
     setSavingTemplate(false);
     if (error) { alert("Couldn't save the template: " + error); return; }
-    setTemplates(await getPracticeTemplates());
     setShowSaveTemplate(false);
+    alert(`Saved “${name.trim()}”. Find it under 📋 Templates on the Practices page.`);
   }
 
-  async function handleApplyTemplate(t: PracticeTemplate) {
-    if (!practice) { alert("Save the practice first."); return; }
-    setApplyingTemplate(true);
-    const { error } = await applyTemplateToPractice(t.id, practice.id);
-    setApplyingTemplate(false);
-    if (error) { alert("Couldn't apply the template: " + error); return; }
-    await reloadStructure(practice.id);
+  // A template is a practice row with is_template set, so it opens here
+  // like any practice. In that mode the date, teams, week, publishing and
+  // attendance are hidden -- they belong to a practice, and applying a
+  // template only ever copies its blocks.
+  const isTemplate = Boolean((practice as any)?.is_template);
+  const [tplName, setTplName] = useState("");
+  const [tplLabel, setTplLabel] = useState("");
+  async function saveTemplateMeta(name: string, label: string) {
+    if (!practice) return;
+    const { error } = await renamePracticeTemplate(practice.id, name.trim() || "Untitled template", label);
+    if (error) alert("Couldn't save: " + error);
+    else onSaved();
   }
 
-  async function handleDeleteTemplate(t: PracticeTemplate) {
-    if (!window.confirm(`Delete the template “${t.template_name}”? Practices built from it are untouched.`)) return;
-    await deletePracticeTemplate(t.id);
-    setTemplates(await getPracticeTemplates());
-  }
   const [savedGroupingsCache, setSavedGroupingsCache] = useState<Record<string, SavedGrouping[]>>({});
   const [tryoutPool, setTryoutPool] = useState<TryoutPlayer[]>([]);
   const [showTryoutPool, setShowTryoutPool] = useState(false);
@@ -197,7 +198,11 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
       if (pr) {
         setPractice(pr);
         setTryoutDraft(Boolean((pr as any)?.is_tryout));
-        setDate(pr.practice_date); setStartTime(pr.start_time.slice(0, 5)); setExpectedEnd(pr.expected_end_time?.slice(0, 5) ?? "");
+        setTplName((pr as any).template_name ?? ""); setTplLabel((pr as any).roster_label ?? "");
+        // Templates are saved with a 00:00 placeholder start; show a normal
+        // afternoon start so the block clock times read sensibly.
+        const st = pr.start_time.slice(0, 5);
+        setDate(pr.practice_date); setStartTime((pr as any).is_template && st === "00:00" ? "14:30" : st); setExpectedEnd(pr.expected_end_time?.slice(0, 5) ?? "");
         setRosterIds(pr.roster_ids); setWeekId(pr.week_id);
         const ov = await getAttendanceOverrides(pr.id);
         setOverrides(ov);
@@ -226,6 +231,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
   // ── Save practice metadata (create or update) ───────────────
 
   async function ensurePracticeSaved(): Promise<string | null> {
+    if (practice && (practice as any).is_template) return practice.id;
     if (practice) {
       await updatePractice(practice.id, { practice_date: date, start_time: startTime, roster_ids: rosterIds, week_id: weekId });
       return practice.id;
@@ -241,8 +247,14 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
     }
     const { id, error } = await createPractice({ practice_date: date, start_time: startTime, expected_end_time: expectedEnd || null, roster_ids: rosterIds, week_id: finalWeekId, is_tryout: tryoutDraft });
     if (error || !id) { alert("Couldn't create practice: " + error); return null; }
+    if (pendingTemplate) {
+      const { error: tplErr } = await applyTemplateToPractice(pendingTemplate.id, id);
+      if (tplErr) alert("The practice was created, but copying the template failed: " + tplErr);
+      setPendingTemplate(null);
+    }
     const pr = await getPractice(id);
     setPractice(pr); setWeekId(finalWeekId);
+    await reloadStructure(id);
     return id;
   }
 
@@ -279,6 +291,12 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
 
   async function handleDelete() {
     if (!practice) { onClose(); return; }
+    if (isTemplate) {
+      if (!window.confirm(`Delete the template “${tplName || "Untitled template"}”? Practices built from it are untouched.`)) return;
+      await deletePracticeTemplate(practice.id);
+      onSaved(); onClose();
+      return;
+    }
     if (!window.confirm("Delete this practice? This can't be undone.")) return;
     await deletePractice(practice.id);
     onSaved(); onClose();
@@ -611,9 +629,14 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <div>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1 }}>
-            {practice ? "Edit practice" : "New practice"}
+            {isTemplate ? "Edit template" : practice ? "Edit practice" : "New practice"}
           </div>
-          {practice && (
+          {isTemplate && (
+            <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "rgba(147,180,255,0.15)", color: "#93b4ff" }}>
+              📋 Template
+            </span>
+          )}
+          {practice && !isTemplate && (
             <span style={{
               fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
               background: practice.status === "published" ? "rgba(40,180,80,0.15)" : "rgba(240,192,64,0.12)",
@@ -623,6 +646,17 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
             </span>
           )}
         </div>
+        {isTemplate ? (
+          <div style={{ display: "flex", gap: 8 }}>
+            {onUseTemplate && practice && (
+              <button onClick={() => onUseTemplate({ id: practice.id, name: tplName.trim() || "Untitled template" })} style={primaryBtn}>
+                Use for a new practice
+              </button>
+            )}
+            <button onClick={handleDelete} style={dangerBtn}>Delete template</button>
+            <button onClick={onClose} style={secondaryBtn}>Done</button>
+          </div>
+        ) : (
         <div style={{ display: "flex", gap: 8 }}>
           {practice?.status === "published" && <button onClick={handleUnpublish} style={secondaryBtn}>Revert to draft</button>}
           {practice?.status === "draft" && <button onClick={handlePublish} style={primaryBtn}>Publish</button>}
@@ -637,11 +671,31 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
           )}
           <button onClick={onClose} style={secondaryBtn}>Close</button>
         </div>
+        )}
       </div>
 
       {/* Re-teach items sent from a quiz's results. Renders nothing when empty. */}
-      {practice && <PracticeCoverList practiceId={practice.id} />}
+      {practice && !isTemplate && <PracticeCoverList practiceId={practice.id} />}
 
+      {isTemplate ? (
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+          <div>
+            <div style={fieldLabel}>Template name</div>
+            <input value={tplName} onChange={e => setTplName(e.target.value)}
+              onBlur={() => saveTemplateMeta(tplName, tplLabel)} style={{ ...inputStyle, minWidth: 220 }} />
+          </div>
+          <div>
+            <div style={fieldLabel}>Team label</div>
+            <input value={tplLabel} onChange={e => setTplLabel(e.target.value)} placeholder="Optional, e.g. Varsity"
+              onBlur={() => saveTemplateMeta(tplName, tplLabel)} style={inputStyle} />
+          </div>
+          <div>
+            <div style={fieldLabel}>Start time</div>
+            <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} style={inputStyle} />
+            <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3 }}>Only for the clock times below</div>
+          </div>
+        </div>
+      ) : (
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
         <div>
           <div style={fieldLabel}>Date</div>
@@ -744,13 +798,17 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
         </div>
       </div>
 
+      )}
+
       {practice && (
         <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: -8, marginBottom: 12 }}>
-          Everything here saves as you change it.
+          {isTemplate
+            ? "Everything here saves as you change it. Practices already built from this template don't change."
+            : "Everything here saves as you change it."}
         </div>
       )}
 
-      {practice && rosterIds.length > 0 && (
+      {practice && !isTemplate && rosterIds.length > 0 && (
         <div style={{ marginBottom: 14 }}>
           <button onClick={() => setShowAttendance(s => !s)} style={smallBtn}>
             {showAttendance ? "Hide" : "Show"} attendance ({effectiveAttendees.length} attending)
@@ -819,6 +877,12 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
         </div>
       )}
 
+      {!practice && pendingTemplate && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "rgba(44,76,155,0.12)", border: "1px solid rgba(44,76,155,0.4)", borderRadius: 9, padding: "10px 12px", marginBottom: 14, fontSize: 12.5, color: "var(--text)" }}>
+          <span style={{ flex: 1 }}>📋 Starting from <strong>{pendingTemplate.name}</strong>. Its blocks and drills are copied in when you create the practice.</span>
+          <button onClick={() => setPendingTemplate(null)} style={smallBtn}>Don't use it</button>
+        </div>
+      )}
       {!practice && <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>Create the practice first, then add blocks below.</div>}
 
       {practice && (
@@ -1026,66 +1090,6 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved }: Props)
               </tbody>
             </table>
           </div>
-
-          {/* Open by itself on an empty practice, where starting from a
-              template is the likely next move. Once there are blocks it
-              collapses to a link rather than disappearing — hiding it
-              meant one stray click locked you out of your own templates
-              until you started another practice. */}
-          {templates.length > 0 && !showTemplates && blocks.length > 0 && (
-            <button onClick={() => setShowTemplates(true)}
-              style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11.5, cursor: "pointer", padding: "0 0 8px" }}>
-              ▸ Templates ({templates.length})
-            </button>
-          )}
-          {templates.length > 0 && (showTemplates || blocks.length === 0) && (
-            <div style={{ background: "rgba(44,76,155,0.12)", border: "1px solid rgba(44,76,155,0.4)", borderRadius: 9, padding: 12, marginBottom: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <span style={{ fontSize: 12, color: "#93b4ff", fontWeight: 600 }}>
-                  {blocks.length === 0 ? "Start from a template" : "Templates"}
-                </span>
-                {blocks.length > 0 && (
-                  <button onClick={() => setShowTemplates(false)}
-                    style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11, cursor: "pointer", padding: 0 }}>
-                    hide
-                  </button>
-                )}
-              </div>
-              {/* Scrolls rather than wrapping. Ten templates as wrapping
-                  chips would push the whole practice down the page every
-                  time you opened this. */}
-              {templates.length > 4 && (
-                <input value={templateSearch} onChange={e => setTemplateSearch(e.target.value)}
-                  placeholder="Search templates…"
-                  style={{ ...inputStyle, width: "100%", marginBottom: 8, fontSize: 12, padding: "6px 9px", boxSizing: "border-box" }} />
-              )}
-              <div style={{ display: "flex", gap: 6, alignItems: "center", overflowX: "auto", paddingBottom: 4 }}>
-                {templates
-                  .filter(t => !templateSearch.trim() ||
-                    `${t.template_name} ${t.roster_label ?? ""}`.toLowerCase().includes(templateSearch.trim().toLowerCase()))
-                  .map(t => (
-                  <span key={t.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", borderRadius: 7, padding: "6px 9px", flexShrink: 0, whiteSpace: "nowrap" }}>
-                    <button disabled={applyingTemplate} onClick={() => handleApplyTemplate(t)}
-                      style={{ background: "none", border: "none", color: "var(--text)", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
-                      {t.template_name}
-                      <span style={{ color: "var(--muted)" }}>
-                        {t.roster_label ? ` · ${t.roster_label}` : ""}
-                        {` · ${t.blockCount} block${t.blockCount === 1 ? "" : "s"}, `}
-                        {t.drillCount > 0 ? `${t.drillCount} drill${t.drillCount === 1 ? "" : "s"}` : "timings only"}
-                      </span>
-                    </button>
-                    <AddToSharedLibrary kind="template" id={t.id} compact
-                      style={{ background: "none", border: "none", padding: 0, fontSize: 11, borderRadius: 0 }} />
-                    <button onClick={() => handleDeleteTemplate(t)} title="Delete this template"
-                      style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
-                  </span>
-                ))}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
-                {blocks.length === 0 ? "or build it blank below" : "applying one adds its blocks after yours"}
-              </div>
-            </div>
-          )}
 
           <button onClick={handleAddBlock} style={{ ...secondaryBtn, width: "100%", padding: "10px", border: "1px dashed var(--border)" }}>
             + Add time block
