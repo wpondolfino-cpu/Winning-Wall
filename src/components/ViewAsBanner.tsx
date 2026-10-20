@@ -1,13 +1,29 @@
 // src/components/ViewAsBanner.tsx
 // Gold bar across the top while viewing as a test account (approved
 // design: option B). Return puts you back in your own account.
+// In the platform admin's sandbox (migration 198) the bar is always there,
+// viewing as someone or not, so it's never mistaken for a real program.
 
 import { useState } from "react";
 import { currentViewAs, returnFromViewAs } from "../lib/viewAs";
 
-export default function ViewAsBanner({ userId }: { userId: string }) {
+export default function ViewAsBanner({ userId, inSandbox = false }: { userId: string; inSandbox?: boolean }) {
   const [leaving, setLeaving] = useState(false);
   const m = currentViewAs(userId);
+  if (!m && inSandbox) {
+    return (
+      <div role="status" style={{
+        background: "#f0c040", color: "#14110a", padding: "8px 14px",
+        display: "flex", alignItems: "center", gap: 10, flexShrink: 0, minHeight: 56, boxSizing: "border-box",
+      }}>
+        <span style={{ fontSize: 18 }} aria-hidden="true">🧪</span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 1, flex: 1, minWidth: 0 }}>
+          <span style={{ fontSize: 13, fontWeight: 700 }}>Sandbox</span>
+          <span style={{ fontSize: 11, color: "#3d3418" }}>Nothing here reaches a real program. Switch programs (top right) to leave.</span>
+        </div>
+      </div>
+    );
+  }
   if (!m) return null;
 
   return (
@@ -21,7 +37,7 @@ export default function ViewAsBanner({ userId }: { userId: string }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 1, flex: 1, minWidth: 0 }}>
         <span style={{ fontSize: 13, fontWeight: 600 }}>Viewing as {m.testName}</span>
         <span style={{ fontSize: 11, color: "#3d3418", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {m.programName} · actions are real
+          {inSandbox ? "🧪 Sandbox · nothing here reaches a real program" : `${m.programName} · actions are real`}
         </span>
       </div>
       <button
