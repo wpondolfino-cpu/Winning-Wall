@@ -11,6 +11,7 @@ import {
   getPracticeAttentionCount, suggestNextWeekName, renamePracticeWeek,
   deletePracticeWeek, deletePractice, movePracticesToWeek, getRosters, getSeasons, getCurrentSeason,
   getTryoutPlayers, clearTryoutPool,
+  getPracticeTemplates, deletePracticeTemplate, createEmptyTemplate, PracticeTemplate,
   practiceToExportPayload, importPracticeFromExportPayload, PRACTICE_EXPORT_SCHEMA_VERSION,
 } from "../../lib/practicePlanner";
 import { embedJsonInPdf, extractJsonFromPdf, drawTextDocument } from "../../lib/pdfDataExport";
@@ -21,6 +22,8 @@ import PracticeTimePanel from "./PracticeTimePanel";
 import TryoutPoolManager from "./TryoutPoolManager";
 import PracticeDayAttendance from "./PracticeDayAttendance";
 import PracticeWinsTool from "./PracticeWinsTool";
+import AddToSharedLibrary from "../library/AddToSharedLibrary";
+import NewInSharedLibrary from "../library/NewInSharedLibrary";
 
 interface WeekRowState {
   week: PracticeWeek;
@@ -40,6 +43,36 @@ export default function PracticeWeeksList(props: Props) {
   const [openWeekId, setOpenWeekId] = useState<string | null>(null);
   const [openPracticeId, setOpenPracticeId] = useState<string | null>(initialPracticeId);
   const [creatingNew, setCreatingNew] = useState(false);
+  // Templates: the list on this page, and the one open for editing.
+  const [showTemplateList, setShowTemplateList] = useState(false);
+  const [templateList, setTemplateList] = useState<PracticeTemplate[] | null>(null);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  // "Use": a new practice that copies this template in when it's created.
+  const [startTemplate, setStartTemplate] = useState<{ id: string; name: string } | null>(null);
+  const [newTemplate, setNewTemplate] = useState<{ name: string; label: string } | null>(null);
+  const [creatingTemplate, setCreatingTemplate] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState("");
+  const reloadTemplates = useCallback(() => {
+    getPracticeTemplates().then(setTemplateList).catch(() => setTemplateList([]));
+  }, []);
+  useEffect(() => { reloadTemplates(); }, [editingTemplateId, reloadTemplates]);
+
+  function beginFromTemplate(t: { id: string; name: string }) {
+    setEditingTemplateId(null);
+    setOpenPracticeId(null);
+    setStartTemplate(t);
+    setCreatingNew(true);
+  }
+
+  async function createTemplate() {
+    if (!newTemplate || !newTemplate.name.trim()) return;
+    setCreatingTemplate(true);
+    const { id, error } = await createEmptyTemplate(newTemplate.name, newTemplate.label);
+    setCreatingTemplate(false);
+    if (error || !id) { alert("Couldn't create the template: " + (error ?? "unknown error")); return; }
+    setNewTemplate(null);
+    setEditingTemplateId(id);
+  }
   const [selectedForPrint, setSelectedForPrint] = useState<Set<string>>(new Set());
   const [printIds, setPrintIds] = useState<string[] | null>(null);
   const [editingWeekId, setEditingWeekId] = useState<string | null>(null);
@@ -256,11 +289,26 @@ export default function PracticeWeeksList(props: Props) {
     return <PracticeWinsTool practiceId={winsForId} onClose={() => setWinsForId(null)} />;
   }
 
+  // Templates open from the 📋 Templates list; Done comes back to it.
+  if (editingTemplateId) {
+    return (
+      <PracticeBuilder
+        key={editingTemplateId}
+        practiceId={editingTemplateId}
+        onClose={() => setEditingTemplateId(null)}
+        onSaved={() => {}}
+        onUseTemplate={beginFromTemplate}
+      />
+    );
+  }
+
   if (openPracticeId || creatingNew) {
     return (
       <PracticeBuilder
+        key={startTemplate?.id ?? openPracticeId ?? "new"}
         practiceId={openPracticeId ?? undefined}
-        onClose={() => { setOpenPracticeId(null); setCreatingNew(false); }}
+        startFromTemplate={creatingNew ? startTemplate : null}
+        onClose={() => { setOpenPracticeId(null); setCreatingNew(false); setStartTemplate(null); }}
         onSaved={() => { load(); }}
       />
     );
@@ -355,9 +403,94 @@ export default function PracticeWeeksList(props: Props) {
               🖨️ Print Selected ({selectedForPrint.size})
             </button>
           )}
+          <button onClick={() => setShowTemplateList(v => !v)} style={secondaryBtn}>
+            📋 Templates{templateList ? ` (${templateList.length})` : ""}
+          </button>
           <button onClick={() => setCreatingNew(true)} style={primaryBtn}>+ New practice</button>
         </div>
       </div>
+
+      {newTemplate && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+             onClick={() => !creatingTemplate && setNewTemplate(null)}>
+          <div onClick={e => e.stopPropagation()}
+               style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 20, width: "100%", maxWidth: 400 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 12 }}>New template</div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Template name</div>
+            <input autoFocus value={newTemplate.name} placeholder="e.g. Tuesday standard"
+              onChange={e => setNewTemplate({ ...newTemplate, name: e.target.value })}
+              onKeyDown={e => { if (e.key === "Enter") createTemplate(); }}
+              style={{ ...inputStyle, width: "100%", boxSizing: "border-box", marginBottom: 10 }} />
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Team label (optional)</div>
+            <input value={newTemplate.label} placeholder="e.g. Varsity"
+              onChange={e => setNewTemplate({ ...newTemplate, label: e.target.value })}
+              onKeyDown={e => { if (e.key === "Enter") createTemplate(); }}
+              style={{ ...inputStyle, width: "100%", boxSizing: "border-box", marginBottom: 4 }} />
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 14 }}>
+              Just a label to help you find it. Any team's practice can use it.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={createTemplate} disabled={creatingTemplate || !newTemplate.name.trim()}
+                style={{ ...primaryBtn, flex: 1, opacity: newTemplate.name.trim() ? 1 : 0.5 }}>
+                {creatingTemplate ? "Creating…" : "Create and start building"}
+              </button>
+              <button onClick={() => setNewTemplate(null)} disabled={creatingTemplate} style={secondaryBtn}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTemplateList && templateList && (
+        <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Practice templates</div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button onClick={() => setNewTemplate({ name: "", label: "" })} style={primaryBtn}>+ New template</button>
+              <button onClick={() => setShowTemplateList(false)}
+                style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11, cursor: "pointer", padding: 0 }}>hide</button>
+            </div>
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "3px 0 8px" }}>
+            Use one to start a practice already filled in. To save a practice you've built, open it and tap 📋 Save as template.
+            Editing a template doesn't change practices already built from it.
+          </div>
+          <NewInSharedLibrary kinds={["template"]} onAdded={reloadTemplates} />
+          {templateList.length === 0 && (
+            <div style={{ fontSize: 12, color: "var(--muted)", padding: "8px 0" }}>No templates yet.</div>
+          )}
+          {templateList.length > 5 && (
+            <input value={templateSearch} onChange={e => setTemplateSearch(e.target.value)} placeholder="Search templates…"
+              style={{ ...inputStyle, width: "100%", boxSizing: "border-box", marginTop: 4, fontSize: 12, padding: "6px 9px" }} />
+          )}
+          {templateList
+            .filter(t => !templateSearch.trim() ||
+              `${t.template_name} ${t.roster_label ?? ""}`.toLowerCase().includes(templateSearch.trim().toLowerCase()))
+            .map(t => (
+            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 8, marginTop: 6 }}>
+              <div style={{ flex: 1, minWidth: 160, fontSize: 12.5, color: "var(--text)" }}>
+                <strong>{t.template_name}</strong>
+                <span style={{ color: "var(--muted)", fontSize: 11.5 }}>
+                  {t.roster_label ? ` · ${t.roster_label}` : ""}
+                  {` · ${t.blockCount} block${t.blockCount === 1 ? "" : "s"}`}
+                  {t.blockCount > 0 ? `, ${t.drillCount > 0 ? `${t.drillCount} drill${t.drillCount === 1 ? "" : "s"}` : "timings only"}` : ""}
+                </span>
+              </div>
+              <button onClick={() => beginFromTemplate({ id: t.id, name: t.template_name })} disabled={t.blockCount === 0}
+                title={t.blockCount === 0 ? "Add some blocks to this template first" : "Start a new practice from this template"}
+                style={{ ...primaryBtn, opacity: t.blockCount === 0 ? 0.4 : 1 }}>Use</button>
+              <button onClick={() => setEditingTemplateId(t.id)} style={secondaryBtn}>✎ Edit</button>
+              <AddToSharedLibrary kind="template" id={t.id} compact />
+              <button title="Delete this template"
+                onClick={async () => {
+                  if (!window.confirm(`Delete the template “${t.template_name}”? Practices built from it are untouched.`)) return;
+                  await deletePracticeTemplate(t.id);
+                  reloadTemplates();
+                }}
+                style={{ ...secondaryBtn, color: "#ff7b7b" }}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {error && <div className="error-msg">{error}</div>}
       <input ref={importFileRef} type="file" accept="application/pdf" style={{ display: "none" }} onChange={handleImportFileChosen} />
