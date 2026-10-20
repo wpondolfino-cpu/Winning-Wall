@@ -3,15 +3,20 @@
 // someone in several (or the platform admin) gets a menu to switch.
 // Head coaches (their Test Player) and the platform admin (every test
 // account) also get a "View as" section.
+//
+// The platform admin can reach every program, so their menu doesn't list
+// them all: their own programs, the last few they went into, a search
+// once there are more than 8, the Sandbox and Shared Library, and "All
+// programs" (the Schools page). Everyone else sees their programs as before.
 
 import { useEffect, useRef, useState } from "react";
-import { loadMyPrograms, switchProgram, roleLabel, MyPrograms, ProgramInfo } from "../lib/programs";
+import { loadMyPrograms, switchProgram, roleLabel, recentProgramIds, MyPrograms, ProgramInfo } from "../lib/programs";
 import { listTestAccounts, enterViewAs, currentViewAs, TestAccount } from "../lib/viewAs";
 
 interface Props {
   userId: string;
-  /** Platform admin only: opens the Platform page (schools, programs, features, library). */
-  onOpenPlatform?: () => void;
+  /** Platform admin only: opens the Platform pages (home, or a given page). */
+  onOpenPlatform?: (page?: "schools") => void;
 }
 
 function Badge({ p, size }: { p: ProgramInfo; size: number }) {
@@ -44,6 +49,8 @@ export default function ProgramSwitcher({ userId, onOpenPlatform }: Props) {
   const [testsError, setTestsError] = useState<string | null>(null);
   const [entering, setEntering] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [query, setQuery] = useState("");
+  const [peopleQuery, setPeopleQuery] = useState("");
 
   // Who may use View as: the platform admin, or a head coach of the
   // program they're in — and never while already viewing as someone.
@@ -118,6 +125,52 @@ export default function ProgramSwitcher({ userId, onOpenPlatform }: Props) {
     catch (e: any) { setEntering(null); setTestsError(e?.message ?? "Couldn't open that account."); }
   }
 
+  const inSandbox = current.kind === "sandbox";
+  const personInitials = (name: string) => name.split(/\s+/).filter(Boolean).map(w => w[0]).join("").slice(0, 2).toUpperCase();
+
+  // Platform admin menu: a short list however many programs there are.
+  const special = (p: ProgramInfo) => p.kind === "sandbox" || p.kind === "library";
+  const regular = reachable.filter(p => !special(p));
+  const mine = regular.filter(p => p.role !== null);
+  const recent: ProgramInfo[] = [];
+  for (const id of [current.id, ...recentProgramIds()]) {
+    const p = regular.find(x => x.id === id);
+    if (p && !mine.includes(p) && !recent.includes(p)) recent.push(p);
+    if (recent.length >= 4) break;
+  }
+  const extras = reachable.filter(special).sort((a, b) => (a.kind === "sandbox" ? -1 : 1) - (b.kind === "sandbox" ? -1 : 1));
+  const q = query.trim().toLowerCase();
+  const matches = q ? regular.filter(p => `${p.name} ${p.orgName} ${p.orgShort}`.toLowerCase().includes(q)).slice(0, 10) : [];
+
+  const sectionLabel = (text: string) => (
+    <div style={{ padding: "10px 10px 6px", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#8b95ae", fontWeight: 600 }}>{text}</div>
+  );
+  const programRow = (p: ProgramInfo, sub: string) => {
+    const isCurrent = p.id === current.id;
+    const isSandbox = p.kind === "sandbox";
+    return (
+      <button key={p.id} role="menuitem" onClick={() => pick(p)} disabled={!!switching}
+        style={{
+          display: "flex", alignItems: "center", gap: 12, minHeight: 56, padding: "8px 10px",
+          background: isCurrent ? "var(--surface2)" : isSandbox ? "rgba(240,192,64,0.08)" : "transparent",
+          border: `1px solid ${isCurrent ? p.primary : isSandbox ? "rgba(240,192,64,0.35)" : "transparent"}`, borderRadius: 12,
+          color: "var(--text)", fontFamily: "inherit", textAlign: "left", cursor: switching ? "wait" : "pointer",
+        }}>
+        {isSandbox ? (
+          <span style={{ width: 36, height: 36, borderRadius: 10, background: "#f0c040", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>🧪</span>
+        ) : <Badge p={p} size={36} />}
+        <span style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 0 }}>
+          <span style={{ fontSize: 14, fontWeight: 600 }}>{p.name}</span>
+          <span style={{ fontSize: 12, color: "#a3adc4" }}>{switching === p.id ? "Switching…" : sub}</span>
+        </span>
+        {isCurrent && (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={p.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Current program"><path d="M20 6L9 17l-5-5" /></svg>
+        )}
+      </button>
+    );
+  };
+  const orgSub = (p: ProgramInfo) => [p.orgName, p.role ? roleLabel(p.role) : null].filter(Boolean).join(" · ");
+
   const TEST_COLORS: Record<TestAccount["role"], [string, string, string]> = {
     player:     ["#18402a", "#5de098", "TP"],
     coach:      ["#1d2a52", "#93b4ff", "TC"],
@@ -173,7 +226,39 @@ export default function ProgramSwitcher({ userId, onOpenPlatform }: Props) {
               <div style={{ height: 1, background: "rgba(176,184,200,0.15)", margin: "6px 4px" }} />
             </>
           )}
-          {canSwitch && groups.map(g => (
+          {data.isPlatformAdmin && (
+            <>
+              {regular.length > 8 && (
+                <input value={query} onChange={e => setQuery(e.target.value)} placeholder="🔍 Search programs…" aria-label="Search programs"
+                  style={{ height: 40, margin: "2px 4px 4px", padding: "0 12px", borderRadius: 10, border: "1px solid rgba(176,184,200,0.25)", background: "var(--surface2)", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }} />
+              )}
+              {q ? (
+                <>
+                  {sectionLabel(`${matches.length} match${matches.length === 1 ? "" : "es"}`)}
+                  {matches.map(p => programRow(p, orgSub(p)))}
+                </>
+              ) : (
+                <>
+                  {mine.length > 0 && <>{sectionLabel("Your programs")}{mine.map(p => programRow(p, orgSub(p)))}</>}
+                  {recent.length > 0 && <>{sectionLabel("Recent")}{recent.map(p => programRow(p, orgSub(p)))}</>}
+                  {extras.length > 0 && (
+                    <>
+                      <div style={{ height: 1, background: "rgba(176,184,200,0.15)", margin: "6px 4px" }} />
+                      {extras.map(p => programRow(p, p.kind === "sandbox" ? "Only you see this · nothing here reaches a real program" : "Library copies, edited like any program"))}
+                    </>
+                  )}
+                  {onOpenPlatform && (
+                    <button role="menuitem" onClick={() => { setOpen(false); onOpenPlatform("schools"); }}
+                      style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44, padding: "8px 10px", background: "transparent", border: 0, borderRadius: 12, color: "#93b4ff", fontFamily: "inherit", fontSize: 14, fontWeight: 600, textAlign: "left", cursor: "pointer" }}>
+                      <span style={{ flex: 1 }}>All programs →</span>
+                      <span style={{ fontSize: 12, color: "#8b95ae", fontWeight: 400 }}>{regular.length}</span>
+                    </button>
+                  )}
+                </>
+              )}
+            </>
+          )}
+          {!data.isPlatformAdmin && canSwitch && groups.map(g => (
             <div key={g.org} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <div style={{ padding: "10px 10px 6px", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#8b95ae", fontWeight: 600 }}>{g.org}</div>
               {g.items.map(p => {
@@ -229,9 +314,16 @@ export default function ProgramSwitcher({ userId, onOpenPlatform }: Props) {
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8b95ae" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
                 <span style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#8b95ae", fontWeight: 600 }}>View as · {current.name}</span>
               </div>
-              {tests === null && <div style={{ padding: "8px 10px", fontSize: 13, color: "#a3adc4" }}>Getting test accounts ready…</div>}
-              {(tests ?? []).map(a => {
-                const [bg, fg, initials] = TEST_COLORS[a.role];
+              {tests === null && <div style={{ padding: "8px 10px", fontSize: 13, color: "#a3adc4" }}>{inSandbox ? "Getting the sandbox ready (the first time takes about a minute)…" : "Getting test accounts ready…"}</div>}
+              {inSandbox && tests && tests.length > 0 && (
+                <input value={peopleQuery} onChange={e => setPeopleQuery(e.target.value)} placeholder="Find a player…" aria-label="Find a sandbox player"
+                  style={{ height: 38, margin: "2px 4px 4px", padding: "0 12px", borderRadius: 10, border: "1px solid rgba(176,184,200,0.25)", background: "var(--surface2)", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }} />
+              )}
+              {(tests ?? []).filter(a => !inSandbox || a.role !== "player"
+                  || (peopleQuery.trim() !== "" && a.name.toLowerCase().includes(peopleQuery.trim().toLowerCase())))
+                .slice(0, inSandbox ? 12 : undefined).map(a => {
+                const [bg, fg, testInitials] = TEST_COLORS[a.role];
+                const initials = inSandbox ? personInitials(a.name) : testInitials;
                 return (
                   <button key={a.user_id} role="menuitem" onClick={() => enter(a)} disabled={!!entering}
                     style={{
@@ -241,13 +333,17 @@ export default function ProgramSwitcher({ userId, onOpenPlatform }: Props) {
                     }}>
                     <span style={{ width: 30, height: 30, borderRadius: "50%", background: bg, color: fg, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initials}</span>
                     <span style={{ flex: 1 }}>{entering === a.user_id ? "Opening…" : a.name}</span>
-                    <span style={{ fontSize: 11, color: "#a3adc4", border: "1px dashed rgba(176,184,200,0.4)", borderRadius: 6, padding: "2px 6px" }}>TEST</span>
+                    <span style={{ fontSize: 11, color: "#a3adc4", border: "1px dashed rgba(176,184,200,0.4)", borderRadius: 6, padding: "2px 6px" }}>
+                      {inSandbox ? (a.role === "head_coach" ? "HEAD COACH" : a.role === "coach" ? "COACH" : "PLAYER") : "TEST"}
+                    </span>
                   </button>
                 );
               })}
               {testsError && <div style={{ padding: "8px 10px", fontSize: 12, color: "#ff8a8a" }}>{testsError}</div>}
               <div style={{ padding: "8px 10px 6px", fontSize: 12, lineHeight: 1.45, color: "#8b95ae" }}>
-                Only test accounts are listed; real players can never be entered.
+                {inSandbox
+                  ? `${(tests ?? []).filter(a => a.role === "player").length} players: type a name above, or use the Sandbox page to pick by team.`
+                  : "Only test accounts are listed; real players can never be entered."}
               </div>
             </>
           )}
