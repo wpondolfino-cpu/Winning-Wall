@@ -695,6 +695,9 @@ export default function App() {
   // The platform admin on a Platform page gets the platform sidebar
   // instead of the program's (no in-season / offseason pages there).
   const inPlatform = isAdmin && PLATFORM_TABS.includes(adminTab) && !!(ownLocalProfile ?? profile).is_platform_admin;
+  // The gold sandbox bar belongs on the sandbox's own pages, not on the
+  // Platform pages (which aren't inside any program).
+  const sandboxBar = inSandbox && !inPlatform;
   const roleLabel      = inPlatform ? "Platform Admin" : isAdmin ? ((ownLocalProfile ?? profile).admin_label ?? "Head Coach") : isCoach ? "🏀 Coach" : "⚡ Player";
   const displayProfile = ownLocalProfile ?? profile;
   const effectiveMode = effectiveModeFor(displayProfile);
@@ -764,8 +767,8 @@ export default function App() {
 
 
   return (
-    <div id="app-screen" className={`screen active${isPlayer ? " has-bottom-tabs" : ""}${currentViewAs(user.id) || inSandbox ? " viewing-as" : ""}`}>
-      <ViewAsBanner userId={user.id} inSandbox={inSandbox} />
+    <div id="app-screen" className={`screen active${isPlayer ? " has-bottom-tabs" : ""}${currentViewAs(user.id) || sandboxBar ? " viewing-as" : ""}`}>
+      <ViewAsBanner userId={user.id} inSandbox={sandboxBar} />
       {/* Header */}
       <div className="app-header">
         <img src="/logo.png" alt="Open menu" onClick={() => setSidebarOpen(o => !o)} style={{ height: 36, objectFit: "contain", flexShrink: 0, cursor: "pointer" }} />
