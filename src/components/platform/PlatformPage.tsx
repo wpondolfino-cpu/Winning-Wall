@@ -5,6 +5,7 @@
 //   trainers      trainers and their program (search + filters)
 //   announcements post to chosen programs / schools / trainers / all
 //   library       Shared Library: starter pack, "New" offers (migration 194)
+//   sandbox       the platform admin's sandbox: its people, View as, reset (198)
 // Managing one program opens over whichever page you came from. Only the
 // platform admin ever sees these; the database checks every call too.
 
@@ -22,8 +23,11 @@ import {
   KIND_LABEL, LibraryKind, LibraryOverview, LibraryItem, BrowseRow, loadLibrary, setLibraryFlags,
   removeFromLibrary, openInLibrary, browseProgram, addToLibrary,
 } from "../../lib/library";
+import { SandboxOverview, SandboxPerson, loadSandbox, buildSandbox, resetSandbox } from "../../lib/sandbox";
+import { enterViewAs } from "../../lib/viewAs";
+import { gradeFromGradYear, gradeColor, GRADE_LABELS } from "../../lib/teamDesigner";
 
-export type PlatformSection = "home" | "schools" | "trainers" | "announcements" | "messages" | "library";
+export type PlatformSection = "home" | "schools" | "trainers" | "announcements" | "messages" | "library" | "sandbox";
 
 const card: CSSProperties = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16 };
 const btn: CSSProperties = { height: 42, padding: "0 16px", borderRadius: 10, border: 0, background: "var(--royal)", color: "var(--white)", fontFamily: "inherit", fontSize: 14, fontWeight: 600, cursor: "pointer" };
@@ -93,6 +97,8 @@ export default function PlatformPage({ page, onGoTo, onMessagesRead }: { page: P
         <Announcements orgs={orgs} />
       ) : page === "messages" ? (
         <Messages orgs={orgs} onRead={onMessagesRead} />
+      ) : page === "sandbox" ? (
+        <SandboxPage />
       ) : (
         <SharedLibrary orgs={orgs} />
       )}
@@ -1036,5 +1042,165 @@ function AddFromProgram({ orgs, onAdded }: { orgs: PlatformSchool[] | null; onAd
         ))}
       </div>
     </section>
+  );
+}
+
+
+// ── Sandbox (migration 198) ───────────────────────────────────
+// A walled-off program with made-up people: 36 players (12 each on
+// Varsity, JV and Freshman) and 3 coaches. Go in, view as anyone, try
+// anything; Reset wipes what was made there.
+function SandboxPage() {
+  const [data, setData] = useState<SandboxOverview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [rosterFilter, setRosterFilter] = useState<string>("all");
+  const [showReset, setShowReset] = useState(false);
+  const [rebuild, setRebuild] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function load() {
+    try { setData(await loadSandbox()); setError(null); }
+    catch (e: any) {
+      setError(/sandbox_overview/.test(e?.message ?? "") ? "Run migration 198 first, then come back." : (e?.message ?? "Couldn't load the sandbox."));
+    }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function setUp() {
+    setBusy("build"); setNote(null);
+    try { const n = await buildSandbox(false); setNote(n ? `Added ${n} ${n === 1 ? "person" : "people"}.` : "Everyone's already there."); await load(); }
+    catch (e: any) { setError(e?.message ?? "Couldn't set up the sandbox."); }
+    setBusy(null);
+  }
+
+  async function doReset() {
+    setBusy("reset"); setNote(null);
+    try {
+      const r = await resetSandbox();
+      let msg = `Cleared ${r.cleared} item${r.cleared === 1 ? "" : "s"}${r.starter_items ? ` and put back ${r.starter_items} starter-pack item${r.starter_items === 1 ? "" : "s"}` : ""}.`;
+      if (rebuild) { await buildSandbox(true); msg += " Players, coaches and rosters rebuilt."; }
+      setNote(msg); setShowReset(false); setRebuild(false);
+      await load();
+    } catch (e: any) { setError(e?.message ?? "Couldn't reset the sandbox."); }
+    setBusy(null);
+  }
+
+  async function viewAs(p: SandboxPerson) {
+    setBusy(p.user_id);
+    try { await enterViewAs({ user_id: p.user_id, role: p.role, name: p.name }, "Sandbox"); }
+    catch (e: any) { setError(e?.message ?? "Couldn't open that account."); setBusy(null); }
+  }
+
+  const coaches = (data?.people ?? []).filter(p => p.role !== "player");
+  const players = (data?.people ?? []).filter(p => p.role === "player");
+  const shown = rosterFilter === "all" ? players : players.filter(p => p.roster_id === rosterFilter);
+  const c = data?.content;
+  const empty = !!data && data.people.length === 0;
+  const viewBtn = (p: SandboxPerson) => (
+    <button style={{ ...ghost, height: 34, padding: "0 12px", fontSize: 13 }} disabled={!!busy} onClick={() => viewAs(p)}>
+      {busy === p.user_id ? "Opening…" : "View as"}
+    </button>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <Title text="🧪 Sandbox" action={data?.program_id && !empty ? (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button style={{ ...btn, background: "var(--gold)", color: "#14110a" }} disabled={!!busy}
+            onClick={async () => { setBusy("open"); try { await switchProgram(data.program_id!); } catch (e: any) { setError(e?.message ?? "Couldn't open it."); setBusy(null); } }}>
+            {busy === "open" ? "Opening…" : "Open sandbox"}
+          </button>
+          <button style={danger} disabled={!!busy} onClick={() => setShowReset(v => !v)}>Reset…</button>
+        </div>
+      ) : undefined} />
+      <div style={muted}>
+        Your private practice program. Nothing done here reaches a real program, and it's left out of your counts, exports,
+        people search and announcements to every program. Use <b>Open sandbox</b> to work in it as yourself, or <b>View as</b> anyone below.
+      </div>
+      {error && <div style={{ color: "#ff8a8a", fontSize: 13 }}>{error}</div>}
+      {note && <div style={{ color: "#5de098", fontSize: 13 }}>{note}</div>}
+      {!data && !error && <div style={muted}>Loading…</div>}
+
+      {empty && (
+        <div style={{ ...card, padding: 20, display: "flex", flexDirection: "column", gap: 12, alignItems: "flex-start" }}>
+          <span style={h2}>Set up the sandbox</span>
+          <span style={muted}>Makes 3 coaches (a head coach and two assistants), Varsity, JV and Freshman rosters, and 12 made-up players on each. Takes about a minute.</span>
+          <button style={btn} disabled={!!busy} onClick={setUp}>{busy === "build" ? "Setting up… (about a minute)" : "Set up the sandbox"}</button>
+        </div>
+      )}
+
+      {showReset && data && (
+        <div style={{ ...card, padding: 18, border: "1px solid rgba(255,140,140,0.35)", display: "flex", flexDirection: "column", gap: 10 }}>
+          <span style={{ ...h2, color: "#ff9a9a" }}>Reset the sandbox</span>
+          <span style={muted}>
+            Wipes everything made in the sandbox: practices, games, plays, playbooks, quizzes, scout sheets, announcements,
+            scores, streaks, XP and attendance. Seasons and settings stay, and the Shared Library starter pack is put back.
+          </span>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "var(--text)", cursor: "pointer" }}>
+            <input type="checkbox" checked={rebuild} onChange={e => setRebuild(e.target.checked)} />
+            Also rebuild the 36 players, 3 coaches and rosters from scratch
+          </label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button style={{ ...btn, background: "#c0392b" }} disabled={!!busy} onClick={doReset}>
+              {busy === "reset" ? (rebuild ? "Resetting and rebuilding… (about a minute)" : "Resetting…") : "Reset now"}
+            </button>
+            <button style={ghost} disabled={!!busy} onClick={() => setShowReset(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {data && !empty && (
+        <>
+          <div style={muted}>
+            {players.length} players · {coaches.length} coaches · {data.rosters.length} rosters
+            {c && ` · ${c.practices} practices, ${c.games} games, ${c.plays} plays, ${c.quizzes} quizzes, ${c.scores} scores logged`}
+            {(players.length < 36 || coaches.length < 3) && (
+              <button style={{ ...ghost, height: 30, padding: "0 10px", fontSize: 12, marginLeft: 10 }} disabled={!!busy} onClick={setUp}>
+                {busy === "build" ? "Adding…" : "Add anyone missing"}
+              </button>
+            )}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, alignItems: "start" }}>
+            <div style={{ ...card, padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+              <span style={h2}>Coaches</span>
+              {coaches.map(p => (
+                <div key={p.user_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "var(--surface2)", borderRadius: 10 }}>
+                  <span style={{ width: 32, height: 32, borderRadius: "50%", background: p.role === "head_coach" ? "#4a3a10" : "#1d2a52", color: p.role === "head_coach" ? "#f0c040" : "#93b4ff", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initials(p.name)}</span>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 14 }}>{p.name}<div style={{ fontSize: 12, color: "#a3adc4" }}>{p.role === "head_coach" ? "Head coach" : "Assistant coach"}</div></span>
+                  {viewBtn(p)}
+                </div>
+              ))}
+            </div>
+            <div style={{ ...card, padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+              <span style={h2}>Players</span>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {[{ id: "all", name: `All ${players.length}` }, ...data.rosters.map(r => ({ id: r.id, name: `${r.name} ${players.filter(p => p.roster_id === r.id).length}` }))].map(f => (
+                  <button key={f.id} onClick={() => setRosterFilter(f.id)}
+                    style={{ height: 32, padding: "0 12px", borderRadius: 99, fontFamily: "inherit", fontSize: 13, cursor: "pointer",
+                      border: `1px solid ${rosterFilter === f.id ? "var(--gold)" : "rgba(176,184,200,0.3)"}`,
+                      background: rosterFilter === f.id ? "rgba(240,192,64,0.12)" : "transparent",
+                      color: rosterFilter === f.id ? "var(--gold)" : "#c3d0ff" }}>{f.name}</button>
+                ))}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 520, overflowY: "auto" }}>
+                {shown.map(p => {
+                  const g = gradeFromGradYear(p.graduation_year);
+                  return (
+                    <div key={p.user_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", background: "var(--surface2)", borderRadius: 10 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: "50%", background: gradeColor(p.graduation_year), flexShrink: 0 }} />
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 14 }}>{p.name}
+                        <span style={{ fontSize: 12, color: "#a3adc4" }}> · {g != null ? GRADE_LABELS[g] ?? `Gr ${g}` : "—"}{p.roster ? ` · ${p.roster}` : ""}</span>
+                      </span>
+                      {viewBtn(p)}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
