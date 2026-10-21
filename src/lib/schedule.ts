@@ -310,6 +310,12 @@ export async function updateScheduleFields(item: ScheduleItem, patch: {
       ...noteFor,
       updated_at: stamp,
     }).eq("id", item.id);
+    // Unticking Scout sheet used to leave the game's (blank) sheet behind on
+    // the opponent page. A blank one goes with it; one with scouting on it
+    // stays until it's deleted on purpose.
+    if (!error && patch.uses_scout_sheet === false) {
+      try { await (await import("./scoutSheets")).removeEmptyScoutSheetForGame(item.id); } catch (e) { console.error(e); }
+    }
     return { error: error?.message ?? null };
   }
   const { error } = await supabase.from("schedule_events").update({

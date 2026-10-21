@@ -89,38 +89,61 @@ export async function uploadOpponentLogo(opponentId: string, file: File): Promis
   return data.publicUrl;
 }
 
-// Last 5 games against this opponent, each paired with its scout sheet
-// id (if one exists) so the profile view can link straight into it.
-export async function getOpponentLastGames(opponentId: string, limit = 5) {
+// Every game against this opponent, newest first, each with its team
+// (roster_id), whether it uses a scout sheet, and its scout sheet if one
+// exists. The opponent page splits these by team, so a JV game no longer
+// takes one of varsity's "last 5" spots.
+export interface OpponentGame {
+  id: string; game_date: string | null; final_score_us: number | null; final_score_them: number | null;
+  status: string | null; roster_id: string | null; uses_scout_sheet: boolean;
+  scout_sheet: { id: string; status: string } | null;
+}
+export async function getOpponentGames(opponentId: string): Promise<OpponentGame[]> {
   const { data, error } = await supabase
     .from("games")
-    .select("id, game_date, final_score_us, final_score_them, status, scout_sheets(id, status)")
+    .select("id, game_date, final_score_us, final_score_them, status, roster_id, uses_scout_sheet, scout_sheets(id, status)")
     .eq("opponent_id", opponentId)
-    .order("game_date", { ascending: false })
-    .limit(limit);
+    .order("game_date", { ascending: false });
   if (error) throw error;
   return (data ?? []).map((g: any) => ({
     ...g,
+    uses_scout_sheet: g.uses_scout_sheet ?? true,
     scout_sheet: Array.isArray(g.scout_sheets) ? (g.scout_sheets[0] ?? null) : (g.scout_sheets ?? null),
   }));
+}
+
+/** Kept for older callers: the last few games regardless of team. */
+export async function getOpponentLastGames(opponentId: string, limit = 5) {
+  return (await getOpponentGames(opponentId)).slice(0, limit);
 }
 
 export async function getScoutSheetsForOpponent(opponentId: string) {
   const { data, error } = await supabase
     .from("scout_sheets")
-    .select("id, game_id, status, created_at, games(game_date)")
+    .select("id, game_id, status, created_at, games(game_date, roster_id)")
     .eq("opponent_id", opponentId)
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data ?? [];
 }
 
-export async function getScoutSheetPrintContext(gameId: string, opponentId: string): Promise<{ gameDate: string | null; opponentName: string }> {
+// ── Teams (for labelling sheets) ─────────────────────────────
+export interface TeamTag { id: string; name: string; color: string }
+const TEAM_FALLBACK_COLORS = ["#2550d4", "#d97706", "#059669", "#9333ea", "#dc2626", "#0891b2"];
+/** The program's teams in their usual order, each with a colour (its own, or a fallback). */
+export async function getTeamTags(): Promise<TeamTag[]> {
+  const { data } = await supabase.from("rosters").select("id, name, color, status").order("sort_order", { ascending: true });
+  return ((data ?? []) as any[])
+    .filter(r => r.status == null || r.status === "active")
+    .map((r, i) => ({ id: r.id, name: r.name, color: r.color || TEAM_FALLBACK_COLORS[i % TEAM_FALLBACK_COLORS.length] }));
+}
+
+export async function getScoutSheetPrintContext(gameId: string, opponentId: string): Promise<{ gameDate: string | null; opponentName: string; rosterId: string | null }> {
   const [{ data: game }, { data: opponent }] = await Promise.all([
-    supabase.from("games").select("game_date").eq("id", gameId).maybeSingle(),
+    supabase.from("games").select("game_date, roster_id").eq("id", gameId).maybeSingle(),
     supabase.from("opponents").select("name").eq("id", opponentId).maybeSingle(),
   ]);
-  return { gameDate: game?.game_date ?? null, opponentName: opponent?.name ?? "Opponent" };
+  return { gameDate: game?.game_date ?? null, opponentName: opponent?.name ?? "Opponent", rosterId: (game as any)?.roster_id ?? null };
 }
 
 // ── Scout sheet shell ────────────────────────────────────────
@@ -237,21 +260,46 @@ export async function isScoutSheetEmpty(sheetId: string): Promise<boolean> {
 }
 
 /**
+ * Scout sheet switched off for a game: removes its sheet if nothing was
+ * ever written on it (no players, sets, specials, defense, keys, record,
+ * tempo or quiz). A sheet with work on it is kept -- delete that one from
+ * the opponent page if you really mean to. Returns true if one was removed.
+ */
+export async function removeEmptyScoutSheetForGame(gameId: string): Promise<boolean> {
+  const sheet = await getScoutSheetByGame(gameId);
+  if (!sheet) return false;
+  const blank = !sheet.team_record && !sheet.tempo
+    && !(sheet.keys_to_game ?? []).some(k => (k ?? "").trim())
+    && !(sheet.team_offensive_strengths ?? []).some(k => (k ?? "").trim());
+  if (!blank || !(await isScoutSheetEmpty(sheet.id))) return false;
+  const { count } = await supabase.from("quizzes").select("id", { count: "exact", head: true }).eq("scout_sheet_id", sheet.id);
+  if ((count ?? 0) > 0) return false;
+  await deleteScoutSheet(sheet.id);
+  return true;
+}
+
+/**
  * The most recent OTHER sheet for this opponent that has something on
  * it -- what the "copy from last time" banner offers.
  */
-export async function getPreviousSheetForOpponent(opponentId: string, excludeSheetId: string): Promise<{ id: string; game_date: string | null } | null> {
+export async function getPreviousSheetForOpponent(opponentId: string, excludeSheetId: string, rosterId?: string | null): Promise<{ id: string; game_date: string | null } | null> {
   const { data, error } = await supabase
     .from("scout_sheets")
-    .select("id, games(game_date)")
+    .select("id, games(game_date, roster_id)")
     .eq("opponent_id", opponentId)
     .neq("id", excludeSheetId);
   if (error) throw error;
   const list = ((data ?? []) as any[])
-    .map(r => ({ id: r.id as string, game_date: (Array.isArray(r.games) ? r.games[0]?.game_date : r.games?.game_date) ?? null }))
+    .map(r => {
+      const g = Array.isArray(r.games) ? r.games[0] : r.games;
+      return { id: r.id as string, game_date: (g?.game_date ?? null) as string | null, roster_id: (g?.roster_id ?? null) as string | null };
+    })
+    // Only the same team's sheets (or ones with no team): JV's scout of
+    // Franklin's JV is no use on varsity's sheet -- different players.
+    .filter(s => !rosterId || !s.roster_id || s.roster_id === rosterId)
     .sort((a, b) => (b.game_date ?? "").localeCompare(a.game_date ?? ""));
   for (const s of list) {
-    if (!(await isScoutSheetEmpty(s.id))) return s;
+    if (!(await isScoutSheetEmpty(s.id))) return { id: s.id, game_date: s.game_date };
   }
   return null;
 }

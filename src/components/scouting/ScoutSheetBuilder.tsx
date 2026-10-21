@@ -20,7 +20,7 @@ import ScoutSheetPrintView from "./ScoutSheetPrintView";
 import QuizManager from "../quizzes/QuizManager";
 import PlayerQuizList from "../quizzes/PlayerQuizList";
 import { getMyQuizzes, MyQuiz } from "../../lib/quizzes";
-import { isScoutSheetEmpty, getPreviousSheetForOpponent, copyScoutSheetInto } from "../../lib/scoutSheets";
+import { isScoutSheetEmpty, getPreviousSheetForOpponent, copyScoutSheetInto, getTeamTags, TeamTag } from "../../lib/scoutSheets";
 import { formatDateOnly } from "../../lib/schedule";
 import { cleanNote } from "../../lib/plays";
 import { OFF_STRENGTH_STARTERS, PLAN_TO_GUARD_STARTERS, DEF_STRENGTH_STARTERS, PLAN_TO_ATTACK_STARTERS, TEAM_OFF_STRENGTH_STARTERS, PRESS_OPTS, PRESS_PLAN_OPTS, BLOB_SLOB_D_OPTS, BLOB_SLOB_D_PLAN_OPTS } from "../../lib/scoutOptions";
@@ -51,6 +51,9 @@ export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: 
   const [blobSlobDPlan, setBlobSlobDPlan] = useState<string[]>([]);
   const [opponentName, setOpponentName] = useState("Opponent");
   const [gameDate, setGameDate] = useState<string | null>(null);
+  // The game's team. undefined = not loaded yet; null = a game with no team.
+  const [sheetRosterId, setSheetRosterId] = useState<string | null | undefined>(undefined);
+  const [team, setTeam] = useState<TeamTag | null>(null);
   const [newName, setNewName] = useState("");
   const [detailPlayerId, setDetailPlayerId] = useState<string | null>(null);
   // Players: this sheet's quiz, for the button at the top of the sheet.
@@ -85,6 +88,8 @@ export default function ScoutSheetBuilder({ scoutSheetId, canManage, onClose }: 
       const ctx = await getScoutSheetPrintContext(s.game_id, s.opponent_id);
       setOpponentName(ctx.opponentName);
       setGameDate(ctx.gameDate);
+      setSheetRosterId(ctx.rosterId);
+      setTeam(ctx.rosterId ? (await getTeamTags()).find(t => t.id === ctx.rosterId) ?? null : null);
     }
   }, [scoutSheetId, canManage]);
 
@@ -328,17 +333,17 @@ function joinHeight(ft: string, inch: string): string {
   const sheetOpponentId = sheet?.opponent_id ?? null;
   useEffect(() => {
     setCopySource(null);
-    if (!canManage || !sheetOpponentId) return;
+    if (!canManage || !sheetOpponentId || sheetRosterId === undefined) return;
     let cancelled = false;
     (async () => {
       try {
         if (!(await isScoutSheetEmpty(scoutSheetId))) return;
-        const prev = await getPreviousSheetForOpponent(sheetOpponentId, scoutSheetId);
+        const prev = await getPreviousSheetForOpponent(sheetOpponentId, scoutSheetId, sheetRosterId);
         if (!cancelled) setCopySource(prev);
       } catch { /* the banner is a convenience; never block the sheet */ }
     })();
     return () => { cancelled = true; };
-  }, [canManage, scoutSheetId, sheetOpponentId]);
+  }, [canManage, scoutSheetId, sheetOpponentId, sheetRosterId]);
 
   async function copyFromPrevious() {
     if (!copySource) return;
@@ -360,6 +365,17 @@ function joinHeight(ft: string, inch: string): string {
     <div className="modal-overlay open" onClick={onClose}>
       <div className="log-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 720, width: "95%" }}>
         <button className="modal-close" onClick={onClose}>✕</button>
+
+        {/* Which game this is: varsity and JV often play the same team on
+            the same night, so the team is shown in its colour. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "0 28px 12px 0" }}>
+          <span style={{ fontWeight: 700, fontSize: 16 }}>{opponentName}</span>
+          {gameDate && <span style={{ fontSize: 12, color: "var(--muted)" }}>{formatDateOnly(gameDate)}</span>}
+          {team && (
+            <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+              background: team.color, color: "#fff" }}>{team.name}</span>
+          )}
+        </div>
 
         {/* Players: a clear way into this scout's quiz, so it isn't hidden
             behind the last tab. Only shown when they have one. */}
