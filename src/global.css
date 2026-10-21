@@ -29,6 +29,27 @@
   --muted-3: #8b95ae;
   --muted-4: #9aa3b8;
   --amber-text: #e8a33d;
+  /* One-off text colours, each named after its exact dark-mode value. */
+  --tx-ff3c3c: #ff3c3c;
+  --tx-ff8c42: #ff8c42;
+  --tx-c9a227: #c9a227;
+  --tx-e0b464: #e0b464;
+  --tx-ff9b9b: #ff9b9b;
+  --tx-ff9a9a: #ff9a9a;
+  --tx-f09595: #f09595;
+  --tx-d98b8b: #d98b8b;
+  --tx-c66: #cc6666;
+  --tx-cc6666: #cc6666;
+  --tx-5cb98b: #5cb98b;
+  --tx-a3d060: #a3d060;
+  --tx-b07aff: #b07aff;
+  --tx-9b6dff: #9b6dff;
+  --tx-c9a8ff: #c9a8ff;
+  --tx-5ecfd6: #5ecfd6;
+  --tx-e8eaf0: #e8eaf0;
+  --tx-cfe0ff: #cfe0ff;
+  --tx-c8cfde: #c8cfde;
+  --tx-8fa8ff: #8fa8ff;
 }
 
 /* ── LIGHT MODE (My Profile → Appearance; migration 199) ──
@@ -38,10 +59,10 @@ html[data-theme="light"] {
   --silver: #5b6478;
   --silver-light: #3d4659;
   --white: #141a2a;          /* "bright text" in dark mode = dark text here */
-  --black: #eef1f6;          /* page background */
-  --surface: #ffffff;
-  --surface2: #f2f4f8;
-  --border: rgba(20, 26, 42, 0.12);
+  --black: #e3e7ee;          /* page background */
+  --surface: #f5f7fa;        /* panels */
+  --surface2: #ffffff;       /* cards and rows: the brightest, so they stand out */
+  --border: rgba(20, 26, 42, 0.16);
   --text: #141a2a;
   --muted: #5b6478;
 
@@ -56,6 +77,26 @@ html[data-theme="light"] {
   --muted-3: #6b7488;
   --muted-4: #6b7488;
   --amber-text: #a3620a;
+  --tx-ff3c3c: #c62828;
+  --tx-ff8c42: #c2560f;
+  --tx-c9a227: #8a6100;
+  --tx-e0b464: #8a6100;
+  --tx-ff9b9b: #b3261e;
+  --tx-ff9a9a: #b3261e;
+  --tx-f09595: #b3261e;
+  --tx-d98b8b: #b3261e;
+  --tx-c66: #b3261e;
+  --tx-cc6666: #b3261e;
+  --tx-5cb98b: #17803f;
+  --tx-a3d060: #4d7c0f;
+  --tx-b07aff: #6d3fd1;
+  --tx-9b6dff: #6d3fd1;
+  --tx-c9a8ff: #6d3fd1;
+  --tx-5ecfd6: #0e7c86;
+  --tx-e8eaf0: #141a2a;
+  --tx-cfe0ff: #2550d4;
+  --tx-c8cfde: #5b6478;
+  --tx-8fa8ff: #1a3fa8;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }

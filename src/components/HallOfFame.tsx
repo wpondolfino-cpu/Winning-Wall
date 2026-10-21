@@ -196,7 +196,7 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
                         <button
                           onClick={() => deleteChampion(c.id, c.player_name)}
                           disabled={deletingId === c.id}
-                          style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontFamily: "inherit", cursor: "pointer", opacity: deletingId === c.id ? 0.6 : 1 }}
+                          style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "var(--tx-ff3c3c)", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontFamily: "inherit", cursor: "pointer", opacity: deletingId === c.id ? 0.6 : 1 }}
                         >
                           {deletingId === c.id ? "…" : "🗑 Delete"}
                         </button>
@@ -245,7 +245,7 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
                         <button
                           onClick={() => deleteRecord(rec.id, meta.label)}
                           disabled={deletingId === rec.id}
-                          style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer", flexShrink: 0, opacity: deletingId === rec.id ? 0.6 : 1 }}
+                          style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "var(--tx-ff3c3c)", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer", flexShrink: 0, opacity: deletingId === rec.id ? 0.6 : 1 }}
                         >
                           {deletingId === rec.id ? "…" : "🗑"}
                         </button>
@@ -307,7 +307,7 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
                           <button
                             onClick={() => deleteRecord(rec.id, rec.workout_title)}
                             disabled={deletingId === rec.id}
-                            style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer", flexShrink: 0, opacity: deletingId === rec.id ? 0.6 : 1 }}
+                            style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "var(--tx-ff3c3c)", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer", flexShrink: 0, opacity: deletingId === rec.id ? 0.6 : 1 }}
                           >
                             {deletingId === rec.id ? "…" : "🗑"}
                           </button>

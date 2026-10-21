@@ -91,7 +91,7 @@ export default function SavedGroupingsManager({ roster, onClose }: Props) {
         </div>
         <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 14 }}>Coach-only — never shown to players. Editing membership only changes future uses.</div>
 
-        {error && <div style={{ fontSize: 12, color: "#f09595", marginBottom: 10 }}>{error}</div>}
+        {error && <div style={{ fontSize: 12, color: "var(--tx-f09595)", marginBottom: 10 }}>{error}</div>}
 
         {loading ? (
           <div style={{ color: "var(--muted)", fontSize: 13 }}>Loading…</div>

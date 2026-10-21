@@ -180,7 +180,7 @@ export default function RotationBuilder({ gameId, userId, rosterId, historySlice
 
       {warnings.length > 0 && (
         <div style={{ background: "#2a1f10", border: "1px solid #7a5a20", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
-          {warnings.map((w, i) => <div key={i} style={{ fontSize: 12, color: "#e0b464" }}>⚠ {w}</div>)}
+          {warnings.map((w, i) => <div key={i} style={{ fontSize: 12, color: "var(--tx-e0b464)" }}>⚠ {w}</div>)}
           <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
             Warnings only — the plan saves either way.
           </div>
@@ -202,7 +202,7 @@ export default function RotationBuilder({ gameId, userId, rosterId, historySlice
                 </span>
                 {proj && (
                   <span style={{ fontSize: 12, textAlign: "right" }}>
-                    <span style={{ color: proj.net == null ? "var(--muted)" : proj.net > 3 ? "#5cb98b" : proj.net < -3 ? "#d98b8b" : "var(--text)" }}>
+                    <span style={{ color: proj.net == null ? "var(--muted)" : proj.net > 3 ? "var(--tx-5cb98b)" : proj.net < -3 ? "var(--tx-d98b8b)" : "var(--text)" }}>
                       {proj.net == null ? "—" : `${proj.net > 0 ? "+" : ""}${proj.net}`}
                     </span>
                     <span style={{ color: "var(--muted)" }}> {proj.observed ? "played" : "projected"}</span>
@@ -241,9 +241,9 @@ export default function RotationBuilder({ gameId, userId, rosterId, historySlice
               {sg.currentNet > 0 ? "+" : ""}{sg.currentNet}. The same five with{" "}
               <span style={{ color: "var(--text)" }}>{name(sg.in)}</span> in for{" "}
               <span style={{ color: "var(--text)" }}>{name(sg.out)}</span> projects{" "}
-              <span style={{ color: "#5cb98b" }}>{sg.suggestedNet > 0 ? "+" : ""}{sg.suggestedNet}</span>.
+              <span style={{ color: "var(--tx-5cb98b)" }}>{sg.suggestedNet > 0 ? "+" : ""}{sg.suggestedNet}</span>.
               {!sg.confident && (
-                <div style={{ color: "#c9a227", fontStyle: "italic", marginTop: 2 }}>
+                <div style={{ color: "var(--tx-c9a227)", fontStyle: "italic", marginTop: 2 }}>
                   ⚠ Thin evidence behind that alternative ({Math.round(sg.evidence)} of {SUGGESTION_EVIDENCE_FLOOR}) —
                   not enough to say this with confidence yet. This caveat drops once those players have played together more.
                 </div>
@@ -263,7 +263,7 @@ export default function RotationBuilder({ gameId, userId, rosterId, historySlice
           const target = plan.minute_targets[id];
           const over = target && mins > target + 0.5;
           return (
-            <span key={id} style={{ fontSize: 12, padding: "4px 9px", borderRadius: 6, background: "var(--surface2)", color: over ? "#e0b464" : "var(--muted)" }}>
+            <span key={id} style={{ fontSize: 12, padding: "4px 9px", borderRadius: 6, background: "var(--surface2)", color: over ? "var(--tx-e0b464)" : "var(--muted)" }}>
               {name(id)} {fmt(mins)}{target ? ` / ${fmt(target)}` : ""}
             </span>
           );
@@ -350,8 +350,8 @@ function chip(kind: "on" | "bench" | "callup"): React.CSSProperties {
     fontSize: 13, padding: "5px 9px", borderRadius: 6, cursor: "pointer",
     userSelect: "none", border: "1px solid transparent",
   };
-  if (kind === "on") return { ...base, background: "#16305c", color: "#cfe0ff" };
-  if (kind === "callup") return { ...base, background: "var(--surface)", borderColor: "#7a5a20", color: "#e0b464" };
+  if (kind === "on") return { ...base, background: "#16305c", color: "var(--tx-cfe0ff)" };
+  if (kind === "callup") return { ...base, background: "var(--surface)", borderColor: "#7a5a20", color: "var(--tx-e0b464)" };
   return { ...base, background: "var(--surface)", borderColor: "var(--border)", color: "var(--muted)" };
 }
 

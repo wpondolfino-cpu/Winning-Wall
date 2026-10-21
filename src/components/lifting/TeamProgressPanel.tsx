@@ -110,7 +110,7 @@ export default function TeamProgressPanel({ programs, days, dayExercises }: Prop
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {entries.map(e => {
             const since = daysSince(e.lastLoggedAt);
-            const statusColor = since === null ? "#ff3c3c" : since <= 2 ? "#5de098" : since <= 5 ? "var(--gold)" : "#ff7b7b";
+            const statusColor = since === null ? "var(--tx-ff3c3c)" : since <= 2 ? "var(--success-text)" : since <= 5 ? "var(--gold-text)" : "var(--danger-text)";
             const statusLabel = since === null ? "Never logged" : since === 0 ? "Today" : since === 1 ? "Yesterday" : `${since} days ago`;
             return (
               <div key={e.playerId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10 }}>

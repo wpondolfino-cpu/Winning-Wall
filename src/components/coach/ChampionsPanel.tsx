@@ -149,7 +149,7 @@ export default function ChampionsPanel() {
         <div style={{ fontSize: 12, color: "var(--silver-light)", marginTop: 10 }}>Nothing waiting to be crowned.</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
-          <div style={{ fontSize: 11, color: "#ff8c42", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Ended, waiting to be crowned</div>
+          <div style={{ fontSize: 11, color: "var(--tx-ff8c42)", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Ended, waiting to be crowned</div>
           {waiting.map(c => (
             <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", background: "rgba(255,140,66,0.08)", border: "1px solid rgba(255,140,66,0.3)", borderRadius: 10, padding: "8px 12px" }}>
               <div style={{ flex: 1, minWidth: 140 }}>

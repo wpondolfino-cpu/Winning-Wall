@@ -147,7 +147,7 @@ export default function ProgramComplete({ program, days, dayExercises, playerId 
                 { label: "Sessions Logged", value: stats.sessionsLogged, sub: `of ${Math.round(stats.totalDays / 7) * 4} training days`, color: "var(--info-text)" },
                 { label: "Total Volume", value: stats.totalVolume > 1000 ? `${Math.round(stats.totalVolume / 1000)}k` : stats.totalVolume, sub: "lbs lifted", color: "var(--gold-text)" },
                 { label: "Sets Completed", value: stats.totalSets, sub: "total sets", color: "var(--success-text)" },
-                { label: "Weeks Done", value: Math.round(stats.totalDays / 7), sub: "week program", color: "#ff8c42" },
+                { label: "Weeks Done", value: Math.round(stats.totalDays / 7), sub: "week program", color: "var(--tx-ff8c42)" },
               ].map(s => (
                 <div key={s.label} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 12px", textAlign: "center" }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>{s.label}</div>
@@ -174,7 +174,7 @@ export default function ProgramComplete({ program, days, dayExercises, playerId 
                 const diffLabel = diff !== null
                   ? `${improved ? "+" : ""}${r.higherIsBetter ? diff : -diff} ${r.unit}`
                   : null;
-                const diffColor = improved ? "#5de098" : diff !== null && diff !== 0 ? "#ff7b7b" : "var(--muted)";
+                const diffColor = improved ? "var(--success-text)" : diff !== null && diff !== 0 ? "var(--danger-text)" : "var(--muted)";
 
                 return (
                   <div key={r.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: i < testResults.length - 1 ? "1px solid var(--border)" : "none" }}>

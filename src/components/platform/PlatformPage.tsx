@@ -32,7 +32,7 @@ export type PlatformSection = "home" | "schools" | "trainers" | "announcements" 
 const card: CSSProperties = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16 };
 const btn: CSSProperties = { height: 42, padding: "0 16px", borderRadius: 10, border: 0, background: "var(--royal)", color: "#fff", fontFamily: "inherit", fontSize: 14, fontWeight: 600, cursor: "pointer" };
 const ghost: CSSProperties = { ...btn, background: "transparent", border: "1px solid rgba(176,184,200,0.3)", color: "var(--info-text-2)" };
-const danger: CSSProperties = { ...btn, background: "transparent", border: "1px solid rgba(255,140,140,0.35)", color: "#ff9a9a" };
+const danger: CSSProperties = { ...btn, background: "transparent", border: "1px solid rgba(255,140,140,0.35)", color: "var(--tx-ff9a9a)" };
 const input: CSSProperties = { height: 44, boxSizing: "border-box", padding: "0 12px", borderRadius: 10, border: "1px solid rgba(176,184,200,0.25)", background: "var(--surface2)", color: "var(--text)", fontFamily: "inherit", fontSize: 14, width: "100%" };
 const label: CSSProperties = { display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--muted-2)" };
 const muted: CSSProperties = { fontSize: 12, color: "var(--muted-3)", lineHeight: 1.5 };
@@ -311,7 +311,7 @@ function ProgramCard({ p, org, onManage }: { p: PlatformProgram; org: PlatformSc
           <span style={{ fontSize: 12, fontWeight: 600, color: "var(--info-text)", background: "rgba(147,180,255,0.12)", padding: "4px 10px", borderRadius: 99 }}>Setup {doneSteps}/{steps.length}</span>
         )}
         {!p.is_active ? (
-          <span style={{ fontSize: 12, fontWeight: 600, color: "#ff9a9a", background: "rgba(255,140,140,0.12)", padding: "4px 10px", borderRadius: 99 }}>Paused</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--tx-ff9a9a)", background: "rgba(255,140,140,0.12)", padding: "4px 10px", borderRadius: 99 }}>Paused</span>
         ) : (
           <span style={{ fontSize: 12, fontWeight: 600, color: off ? "var(--amber-text)" : "var(--success-text)", background: off ? "rgba(232,163,61,0.12)" : "rgba(93,224,152,0.12)", padding: "4px 10px", borderRadius: 99 }}>
             {off ? `${off} feature group${off === 1 ? "" : "s"} off` : "All features on"}
@@ -460,7 +460,7 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
                   setInvResult(r); setInvEmail(""); setInvName("");
                 }, "Done.")}>{busy ? "Working…" : invLinkOnly ? "Make invite link" : "Send invite"}</button>
               {invResult && (
-                <div role="status" style={{ fontSize: 13, lineHeight: 1.5, color: "#c8cfde", display: "flex", flexDirection: "column", gap: 8 }}>
+                <div role="status" style={{ fontSize: 13, lineHeight: 1.5, color: "var(--tx-c8cfde)", display: "flex", flexDirection: "column", gap: 8 }}>
                   {invResult.status === "promoted" && <span style={{ color: "var(--success-text)" }}>{invResult.name} already had an account and is now a head coach of {p.name}.</span>}
                   {invResult.status === "invited" && invResult.emailed && <span style={{ color: "var(--success-text)" }}>Invite emailed to {invResult.name}. They'll set a password and land as head coach of {p.name}.</span>}
                   {invResult.status === "invited" && !invResult.emailed && invResult.link && (
@@ -602,7 +602,7 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
           </section>
 
           <section style={{ ...card, border: "1px solid rgba(255,140,140,0.25)", padding: 20, display: "flex", flexDirection: "column", gap: 10 }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: "#ff9a9a" }}>{p.is_active ? "Pause program" : "Paused"}</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "var(--tx-ff9a9a)" }}>{p.is_active ? "Pause program" : "Paused"}</span>
             <span style={{ fontSize: 12, color: "var(--muted-2)", lineHeight: 1.5 }}>
               {p.is_active ? "Members can't use it and the team code stops working. Nothing is deleted." : "Nobody but you can use this program until it's resumed."}
             </span>
@@ -759,7 +759,7 @@ function Announcements({ orgs }: { orgs: PlatformSchool[] | null }) {
                 {o.name}{o.kind === "school" ? <span style={{ fontWeight: 400, color: "var(--muted-3)", fontSize: 13 }}> · all {ids.length} program{ids.length === 1 ? "" : "s"}</span> : null}
               </label>
               {o.kind === "school" && o.programs.map(p => (
-                <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "#c8cfde", paddingLeft: 28, cursor: "pointer", minHeight: 32 }}>
+                <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--tx-c8cfde)", paddingLeft: 28, cursor: "pointer", minHeight: 32 }}>
                   <input type="checkbox" checked={picked.has(p.id)} onChange={e => toggle([p.id], e.target.checked)} />
                   {p.name} <span style={{ color: "var(--muted-3)", fontSize: 12 }}>· {p.players} players</span>
                 </label>
@@ -795,7 +795,7 @@ function Announcements({ orgs }: { orgs: PlatformSchool[] | null }) {
             <input type="checkbox" checked={pinned} onChange={e => setPinned(e.target.checked)} /> Pin to the top
           </label>
           <span style={muted}>Each chosen program gets its own copy in Announcements (they can pin or remove theirs) and everyone in those programs gets a push. You can remove it from all of them at once from any program's Announcements.</span>
-          {status && <div role="status" style={{ fontSize: 13, color: status.ok ? "var(--success-text)" : "#ff8c42" }}>{status.text}</div>}
+          {status && <div role="status" style={{ fontSize: 13, color: status.ok ? "var(--success-text)" : "var(--tx-ff8c42)" }}>{status.text}</div>}
           <button style={{ ...btn, alignSelf: "flex-start" }} disabled={busy || !text.trim() || picked.size === 0}
             onClick={async () => {
               setBusy(true); setStatus(null);
@@ -918,7 +918,7 @@ function SharedLibrary({ orgs }: { orgs: PlatformSchool[] | null }) {
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             {LIB_FILTERS.map(([k, l]) => (
-              <button key={k} onClick={() => setFilter(k)} style={{ ...chip(filter === k, "#1a3fa8"), ...(filter === k ? { color: "#f5f7fc" } : {}) }}>{l}</button>
+              <button key={k} onClick={() => setFilter(k)} style={{ ...chip(filter === k, "#1a3fa8"), ...(filter === k ? { color: "var(--white)" } : {}) }}>{l}</button>
             ))}
             {all.length > 6 && (
               <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search the library" aria-label="Search the library"
@@ -1022,7 +1022,7 @@ function AddFromProgram({ orgs, onAdded }: { orgs: PlatformSchool[] | null; onAd
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {ADD_KINDS.map(k => (
-          <button key={k} onClick={() => setKind(k)} style={{ ...chip(kind === k, "#1a3fa8"), ...(kind === k ? { color: "#f5f7fc" } : {}) }}>{KIND_LABEL[k]}s</button>
+          <button key={k} onClick={() => setKind(k)} style={{ ...chip(kind === k, "#1a3fa8"), ...(kind === k ? { color: "var(--white)" } : {}) }}>{KIND_LABEL[k]}s</button>
         ))}
       </div>
       {msg && <div role="status" style={{ fontSize: 13, color: msg.ok ? "var(--success-text)" : "var(--danger-text-2)" }}>{msg.text}</div>}
@@ -1132,7 +1132,7 @@ function SandboxPage() {
 
       {showReset && data && (
         <div style={{ ...card, padding: 18, border: "1px solid rgba(255,140,140,0.35)", display: "flex", flexDirection: "column", gap: 10 }}>
-          <span style={{ ...h2, color: "#ff9a9a" }}>Reset the sandbox</span>
+          <span style={{ ...h2, color: "var(--tx-ff9a9a)" }}>Reset the sandbox</span>
           <span style={muted}>
             Wipes everything made in the sandbox: practices, games, plays, playbooks, quizzes, scout sheets, announcements,
             scores, streaks, XP and attendance. Seasons and settings stay, and the Shared Library starter pack is put back.

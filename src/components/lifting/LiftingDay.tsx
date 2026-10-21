@@ -95,7 +95,7 @@ export default function LiftingDayCard({ day, exercises, logs, playerId, playerN
               return (
                 <div key={gi} style={{ borderTop: "1px solid var(--border)", background: isSuperset ? "rgba(147,92,255,0.04)" : "transparent" }}>
                   {isSuperset && (
-                    <div style={{ padding: "4px 16px", fontSize: 9, fontWeight: 700, color: "#9b6dff", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    <div style={{ padding: "4px 16px", fontSize: 9, fontWeight: 700, color: "var(--tx-9b6dff)", textTransform: "uppercase", letterSpacing: 0.5 }}>
                       ⚡ Superset
                     </div>
                   )}

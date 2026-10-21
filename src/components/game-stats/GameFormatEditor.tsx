@@ -225,7 +225,7 @@ export default function GameFormatEditor({ gameId, format, gameType = "regular",
         Possessions aren't moved or changed -- they're stored by period number, so a game tracked as Q1/Q2 is already correct as H1/H2 once relabelled.
       </div>
 
-      {error && <div style={{ fontSize: 12, color: "#c66", marginTop: 8 }}>{error}</div>}
+      {error && <div style={{ fontSize: 12, color: "var(--tx-c66)", marginTop: 8 }}>{error}</div>}
     </div>
   );
 }

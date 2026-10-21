@@ -401,7 +401,7 @@ export default function GameDaySheetEditor({ sheetId, onClose }: Props) {
             {addSectionRow("offense")}
           </div>
 
-          <div style={{ background: "rgba(99,153,34,0.12)", color: "#a3d060", fontWeight: 700, padding: "5px 10px", borderRadius: 6, margin: "14px 0 4px" }}>BLOBS &amp; SLOBS</div>
+          <div style={{ background: "rgba(99,153,34,0.12)", color: "var(--tx-a3d060)", fontWeight: 700, padding: "5px 10px", borderRadius: 6, margin: "14px 0 4px" }}>BLOBS &amp; SLOBS</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
             {sections.filter(x => x.group === "blobsSlobs").map(renderSection)}
             {addSectionRow("blobsSlobs")}
@@ -409,7 +409,7 @@ export default function GameDaySheetEditor({ sheetId, onClose }: Props) {
         </div>
 
         <div>
-          <div style={{ background: "rgba(226,75,74,0.12)", color: "#ff9b9b", fontWeight: 700, padding: "5px 10px", borderRadius: 6, marginBottom: 4 }}>DEFENSE</div>
+          <div style={{ background: "rgba(226,75,74,0.12)", color: "var(--tx-ff9b9b)", fontWeight: 700, padding: "5px 10px", borderRadius: 6, marginBottom: 4 }}>DEFENSE</div>
           {sections.filter(x => x.group === "defense").map(renderSection)}
             {addSectionRow("defense")}
 

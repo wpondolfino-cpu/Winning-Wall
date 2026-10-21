@@ -431,7 +431,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                         {entry.is_period_champion && <span>👑</span>}
                         {entry.name}
                         {entry.id === currentUserId && <span style={{ fontSize: 11, color: "var(--info-text)" }}>(you)</span>}
-                        {(entry.current_streak ?? 0) >= 2 && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 10, background: "rgba(255,100,0,0.2)", color: "#ff8c42", border: "1px solid rgba(255,100,0,0.3)" }}>🔥 {entry.current_streak}d</span>}
+                        {(entry.current_streak ?? 0) >= 2 && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 10, background: "rgba(255,100,0,0.2)", color: "var(--tx-ff8c42)", border: "1px solid rgba(255,100,0,0.3)" }}>🔥 {entry.current_streak}d</span>}
                       </div>
                       {gradeTab === ALL && <div className="lb-pos"><span style={{ color: "var(--muted)" }}>{SHORT[entry.grade_category ?? ""] ?? entry.grade_category}</span></div>}
                     </div>
@@ -485,7 +485,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                         : b.reason === "class_clash_1st" ? "🏆 Class Clash — 1st Place"
                         : b.reason === "class_clash_2nd" ? "🥈 Class Clash — 2nd Place"
                         : "⭐ Bonus";
-                      return <div key={`bonus-${bi}`} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}><div style={{ fontSize: 12, color: "#ff8c42" }}>{label}</div><span style={{ fontSize: 13, fontWeight: 700, color: "#ff8c42" }}>+{b.points}</span></div>;
+                      return <div key={`bonus-${bi}`} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}><div style={{ fontSize: 12, color: "var(--tx-ff8c42)" }}>{label}</div><span style={{ fontSize: 13, fontWeight: 700, color: "var(--tx-ff8c42)" }}>+{b.points}</span></div>;
                     })}
                       </>
                     )}
@@ -610,7 +610,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                         : b.reason === "class_clash_1st" ? "🏆 Class Clash — 1st Place"
                         : b.reason === "class_clash_2nd" ? "🥈 Class Clash — 2nd Place"
                           : "⭐ Bonus";
-                        return <div key={bi} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}><div style={{ fontSize: 12, color: "#ff8c42" }}>{label}</div><span style={{ fontSize: 13, fontWeight: 700, color: "#ff8c42" }}>+{b.points}</span></div>;
+                        return <div key={bi} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(176,184,200,0.06)" }}><div style={{ fontSize: 12, color: "var(--tx-ff8c42)" }}>{label}</div><span style={{ fontSize: 13, fontWeight: 700, color: "var(--tx-ff8c42)" }}>+{b.points}</span></div>;
                       })}
                       <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
                         <span style={{ color: "var(--muted)" }}>Total This Competition</span>
@@ -706,7 +706,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                       <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
                         {canManage && (
                           <button onClick={(e) => { e.stopPropagation(); deleteSnapshot(snap.id); }}
-                            style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 7, padding: "4px 9px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>
+                            style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "var(--tx-ff3c3c)", borderRadius: 7, padding: "4px 9px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>
                             🗑
                           </button>
                         )}

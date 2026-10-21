@@ -235,7 +235,7 @@ export default function ExerciseBank({ playerId, canManage }: Props) {
                               {isEditing ? "Cancel" : "✏️"}
                             </button>
                             <button onClick={() => handleDeleteClick(ex)} disabled={isDeleting || isChecking}
-                              style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer", opacity: isDeleting || isChecking ? 0.6 : 1 }}>
+                              style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "var(--tx-ff3c3c)", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer", opacity: isDeleting || isChecking ? 0.6 : 1 }}>
                               {isChecking ? "…" : isDeleting ? "…" : "🗑"}
                             </button>
                           </>
@@ -291,7 +291,7 @@ export default function ExerciseBank({ playerId, canManage }: Props) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
           onClick={() => setUsageModal(null)}>
           <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(480px, 96vw)", padding: 24 }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "#ff3c3c", marginBottom: 6 }}>⚠️ Exercise In Use</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--tx-ff3c3c)", marginBottom: 6 }}>⚠️ Exercise In Use</div>
             <div style={{ fontSize: 13, color: "var(--text)", marginBottom: 16 }}>
               <strong>{usageModal.ex.name}</strong> is currently used in {usageModal.usages.length} place{usageModal.usages.length !== 1 ? "s" : ""}:
             </div>
@@ -310,7 +310,7 @@ export default function ExerciseBank({ playerId, canManage }: Props) {
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={() => doDelete(usageModal.ex.id)} disabled={deleting === usageModal.ex.id}
-                style={{ flex: 1, background: "rgba(255,60,60,0.15)", border: "1px solid rgba(255,60,60,0.4)", color: "#ff3c3c", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                style={{ flex: 1, background: "rgba(255,60,60,0.15)", border: "1px solid rgba(255,60,60,0.4)", color: "var(--tx-ff3c3c)", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
                 {deleting === usageModal.ex.id ? "Deleting…" : "Delete Anyway"}
               </button>
               <button onClick={() => setUsageModal(null)}

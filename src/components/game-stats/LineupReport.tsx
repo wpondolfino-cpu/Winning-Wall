@@ -162,7 +162,7 @@ export default function LineupReport({ gameIds }: Props) {
   );
 
   if (loading) return <div className="card">Loading lineups…</div>;
-  if (error) return <div className="card" style={{ color: "#c66", fontSize: 13 }}>{error}</div>;
+  if (error) return <div className="card" style={{ color: "var(--tx-c66)", fontSize: 13 }}>{error}</div>;
   if (!rows.length) {
     return (
       <div className="card">
@@ -295,7 +295,7 @@ export default function LineupReport({ gameIds }: Props) {
           this points at individual and pairs, where the samples are. */}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 11, color: "var(--muted)", marginBottom: 10, paddingBottom: 8, borderBottom: "1px solid var(--border)" }}>
         {ready.map((r) => (
-          <span key={r.level} style={{ color: r.ready ? "var(--muted)" : "#c9a227" }}>
+          <span key={r.level} style={{ color: r.ready ? "var(--muted)" : "var(--tx-c9a227)" }}>
             {COMBO_LEVELS.find((c) => c.value === r.level)?.label}: {r.ready} of {r.total} ready
           </span>
         ))}
@@ -340,7 +340,7 @@ export default function LineupReport({ gameIds }: Props) {
       </div>
 
       {colorOn && !sorted.some((r) => r.qualified) && (
-        <div style={{ fontSize: 12, color: "#c9a227", marginBottom: 8, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 12, color: "var(--tx-c9a227)", marginBottom: 8, lineHeight: 1.6 }}>
           Nothing is colored yet — no {COMBO_LEVELS.find((c) => c.value === level)?.label.toLowerCase()} group
           has reached {SAMPLE_GATES[level].possessions} possessions across {SAMPLE_GATES[level].games} games.
           Color is held back below that on purpose: marking a small sample green would undo the point of the threshold.
@@ -509,7 +509,7 @@ function Row({ row, group, side, level, name, open, onToggle, slices, excludeGar
     return `${v}%`;
   }
 
-  const netColor = row.adjNet == null ? "var(--muted)" : row.adjNet > 3 ? "#5cb98b" : row.adjNet < -3 ? "#d98b8b" : "var(--text)";
+  const netColor = row.adjNet == null ? "var(--muted)" : row.adjNet > 3 ? "var(--tx-5cb98b)" : row.adjNet < -3 ? "var(--tx-d98b8b)" : "var(--text)";
 
   return (
     <div style={{ borderBottom: "1px solid var(--border)" }}>
@@ -567,7 +567,7 @@ function Row({ row, group, side, level, name, open, onToggle, slices, excludeGar
                     <span style={{ flex: 1 }}>{f.label}</span>
                     <span style={{ width: 56, textAlign: "right" }}>{f.on == null ? "—" : f.on}</span>
                     <span style={{ width: 56, textAlign: "right" }}>{f.off == null ? "—" : f.off}</span>
-                    <span style={{ width: 56, textAlign: "right", color: good == null ? "var(--muted)" : good ? "#5cb98b" : "#d98b8b" }}>
+                    <span style={{ width: 56, textAlign: "right", color: good == null ? "var(--muted)" : good ? "var(--tx-5cb98b)" : "var(--tx-d98b8b)" }}>
                       {f.diff == null ? "—" : `${f.diff > 0 ? "+" : ""}${f.diff}`}
                     </span>
                   </div>
@@ -577,7 +577,7 @@ function Row({ row, group, side, level, name, open, onToggle, slices, excludeGar
           )}
           {level === 2 && <TogetherApart slices={slices} a={row.playerIds[0]} b={row.playerIds[1]} name={name} excludeGarbage={excludeGarbage} />}
           {!row.qualified && (
-            <div style={{ color: "#c9a227", marginTop: 6 }}>
+            <div style={{ color: "var(--tx-c9a227)", marginTop: 6 }}>
               Below the {SAMPLE_GATES[level].possessions}-possession / {SAMPLE_GATES[level].games}-game threshold — directional only.
             </div>
           )}

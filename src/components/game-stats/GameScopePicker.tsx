@@ -148,7 +148,7 @@ export default function GameScopePicker({ games, selected, onChange, noun = "gam
                       <input type="checkbox" checked={selected.includes(g.id)} onChange={() => toggleGame(g.id)} />
                       {g.game_date}
                       {g.won !== null && (
-                        <span style={{ color: g.won ? "#5cb98b" : "#d98b8b" }}>{g.won ? "W" : "L"}</span>
+                        <span style={{ color: g.won ? "var(--tx-5cb98b)" : "var(--tx-d98b8b)" }}>{g.won ? "W" : "L"}</span>
                       )}
                     </label>
                   ))}

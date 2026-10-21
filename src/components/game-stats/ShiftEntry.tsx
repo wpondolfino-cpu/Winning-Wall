@@ -361,7 +361,7 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
             {rosters.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         </label>
-        <span style={{ fontSize: 12, color: players.length ? "var(--muted)" : "#c9a227" }}>
+        <span style={{ fontSize: 12, color: players.length ? "var(--muted)" : "var(--tx-c9a227)" }}>
           {players.length} player{players.length === 1 ? "" : "s"} available
         </span>
         <button onClick={() => (callUpOpen ? setCallUpOpen(false) : openCallUp())} style={iconBtn}>
@@ -380,16 +380,16 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
       {problems.length > 0 && (
         <div style={{ background: "#2a1f10", border: "1px solid #7a5a20", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
           {problems.map((p, i) => (
-            <div key={i} style={{ fontSize: 12, color: "#e0b464" }}>⚠ {p}</div>
+            <div key={i} style={{ fontSize: 12, color: "var(--tx-e0b464)" }}>⚠ {p}</div>
           ))}
         </div>
       )}
 
-      {error && <div style={{ fontSize: 12, color: "#c66", marginBottom: 8 }}>{error}</div>}
+      {error && <div style={{ fontSize: 12, color: "var(--tx-c66)", marginBottom: 8 }}>{error}</div>}
 
       {callUpOpen && (
         <div style={{ background: "var(--surface2)", border: "1px solid #7a5a20", borderRadius: 8, padding: 12, marginBottom: 10 }}>
-          <div style={{ fontSize: 12, color: "#e0b464", marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: "var(--tx-e0b464)", marginBottom: 8 }}>
             Call up for this game only — tap to add or remove. A permanent move belongs in Players &amp; coaches instead.
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -403,7 +403,7 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
                     fontSize: 13, padding: "5px 9px", borderRadius: 6, cursor: "pointer",
                     background: up ? "#2a1f10" : "var(--surface)",
                     border: `1px solid ${up ? "#7a5a20" : "var(--border)"}`,
-                    color: up ? "#e0b464" : "var(--muted)",
+                    color: up ? "var(--tx-e0b464)" : "var(--muted)",
                   }}
                 >
                   {c.jersey != null ? `${c.jersey} ${c.name}` : c.name}
@@ -499,7 +499,7 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
                   <button
                     onClick={() => pinToPrevious(p, covering ?? null)}
                     title={(p as any).shift_override_id ? "Back to the five on the floor" : "Credit this to the previous five — for a free throw after a substitution"}
-                    style={{ ...iconBtn, color: (p as any).shift_override_id ? "#e0b464" : "var(--muted)" }}
+                    style={{ ...iconBtn, color: (p as any).shift_override_id ? "var(--tx-e0b464)" : "var(--muted)" }}
                   >
                     ↰
                   </button>
@@ -507,7 +507,7 @@ export default function ShiftEntry({ gameId, userId, rosterId, format = DEFAULT_
               </div>
 
               {foulsHere.map((e) => (
-                <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 10px 4px 47px", fontSize: 12, color: "#e0b464" }}>
+                <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 10px 4px 47px", fontSize: 12, color: "var(--tx-e0b464)" }}>
                   <span>⚠ {label(e.player_id)} — {e.detail} foul</span>
                   <button onClick={() => removeFoul(e.id)} style={{ ...iconBtn, color: "var(--muted)" }}>✕</button>
                 </div>
@@ -597,7 +597,7 @@ function SubPanel(props: {
             <span
               onClick={() => setFoulPlayer(foulPlayer === id ? null : id)}
               title="Foul trouble"
-              style={{ cursor: "pointer", fontSize: 12, padding: "4px 5px", color: foulPlayer === id ? "#e0b464" : "var(--muted)" }}
+              style={{ cursor: "pointer", fontSize: 12, padding: "4px 5px", color: foulPlayer === id ? "var(--tx-e0b464)" : "var(--muted)" }}
             >
               ⚠
             </span>
@@ -609,7 +609,7 @@ function SubPanel(props: {
 
       {foulPlayer && (
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 10, padding: "8px 10px", background: "#2a1f10", border: "1px solid #7a5a20", borderRadius: 8 }}>
-          <span style={{ fontSize: 12, color: "#e0b464" }}>Which foul for {labelFor(foulPlayer)}?</span>
+          <span style={{ fontSize: 12, color: "var(--tx-e0b464)" }}>Which foul for {labelFor(foulPlayer)}?</span>
           {FOUL_LEVELS.map((f) => (
             <span
               key={f}
@@ -626,7 +626,7 @@ function SubPanel(props: {
       <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Bench</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
         {props.rosterHint && !bench.length && !inList.length && (
-          <span style={{ fontSize: 12, color: "#c9a227" }}>{props.rosterHint}</span>
+          <span style={{ fontSize: 12, color: "var(--tx-c9a227)" }}>{props.rosterHint}</span>
         )}
         {inList.map((id) => <Chip key={id} label={labelFor(id)} kind="in" match={jersey} onClick={() => onToggle(id)} />)}
         {bench.map((p) => (
@@ -681,11 +681,11 @@ function Chip({ label, kind, match, onClick }: {
     border: "1px solid transparent",
   };
   const styles: Record<string, React.CSSProperties> = {
-    on: { background: "#16305c", color: "#cfe0ff" },
+    on: { background: "#16305c", color: "var(--tx-cfe0ff)" },
     out: { background: "#3a1a1a", color: "#e2a0a0", textDecoration: "line-through" },
     in: { background: "#1c3a18", color: "#bfe6ac" },
     bench: { background: "var(--surface)", borderColor: "var(--border)", color: "var(--muted)" },
-    callup: { background: "var(--surface)", borderColor: "#7a5a20", color: "#e0b464" },
+    callup: { background: "var(--surface)", borderColor: "#7a5a20", color: "var(--tx-e0b464)" },
   };
   // Highlight while a jersey number is being typed, so the keyboard path
   // and the tapping path point at the same chip.

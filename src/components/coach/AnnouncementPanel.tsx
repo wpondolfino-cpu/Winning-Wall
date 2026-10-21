@@ -115,7 +115,7 @@ export default function AnnouncementPanel({ isAdmin, coachId, coachName }: Props
         </button>
       </div>
       {pushStatus && (
-        <div style={{ fontSize: 12, marginBottom: 12, color: pushStatus.startsWith("Posted and") ? "var(--success-text)" : "#ff8c42" }}>{pushStatus}</div>
+        <div style={{ fontSize: 12, marginBottom: 12, color: pushStatus.startsWith("Posted and") ? "var(--success-text)" : "var(--tx-ff8c42)" }}>{pushStatus}</div>
       )}
 
       {showForm && (

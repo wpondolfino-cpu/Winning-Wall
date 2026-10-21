@@ -442,7 +442,7 @@ export default function GamesHistory({ userId, onOpenGame, onOpenShifts, onEditG
                     fontSize: 11, marginLeft: 6, padding: "2px 8px", borderRadius: 7, cursor: "pointer",
                     background: "var(--surface2)",
                     border: `1px solid ${gamesWithShifts.has(g.id) ? "var(--border)" : "#7a5a20"}`,
-                    color: gamesWithShifts.has(g.id) ? "var(--muted)" : "#c9a227",
+                    color: gamesWithShifts.has(g.id) ? "var(--muted)" : "var(--tx-c9a227)",
                   }}
                 >
                   {gamesWithShifts.has(g.id) ? "shifts →" : "no shifts yet →"}

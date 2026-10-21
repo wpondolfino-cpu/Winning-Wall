@@ -752,7 +752,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
           {tempPw && <TempPasswordNotice name={tempPw.name} password={tempPw.password} onClose={() => setTempPw(null)} />}
           {passwordResets.length > 0 && (
             <div style={{ background: "rgba(255,140,66,0.08)", border: "1px solid rgba(255,140,66,0.35)", borderRadius: 14, padding: "16px 20px", marginBottom: 20 }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#ff8c42", letterSpacing: 1, marginBottom: 14 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--tx-ff8c42)", letterSpacing: 1, marginBottom: 14 }}>
                 🔑 Password Reset Requests ({passwordResets.length})
               </div>
               <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
@@ -771,7 +771,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                     <button
                       onClick={() => handlePasswordReset(req)}
                       disabled={resetting === req.id}
-                      style={{ background: "rgba(255,140,66,0.15)", border: "1px solid rgba(255,140,66,0.4)", color: "#ff8c42", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                      style={{ background: "rgba(255,140,66,0.15)", border: "1px solid rgba(255,140,66,0.4)", color: "var(--tx-ff8c42)", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
                       {resetting === req.id ? "Resetting…" : "🔑 Reset Password"}
                     </button>
                     <button
@@ -789,7 +789,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
               listed (and approved) on the Coaches tab, so counting them
               here showed a number over an empty box. */}
           {pendingCoaches.length > 0 && (
-            <button onClick={() => setActiveTab("coaches")} style={{ display: "block", width: "100%", textAlign: "left", background: "rgba(176,122,255,0.08)", border: "1px solid rgba(176,122,255,0.3)", color: "#c9a8ff", borderRadius: 12, padding: "10px 16px", marginBottom: 12, fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+            <button onClick={() => setActiveTab("coaches")} style={{ display: "block", width: "100%", textAlign: "left", background: "rgba(176,122,255,0.08)", border: "1px solid rgba(176,122,255,0.3)", color: "var(--tx-c9a8ff)", borderRadius: 12, padding: "10px 16px", marginBottom: 12, fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
               ⏳ {pendingCoaches.length} coach request{pendingCoaches.length === 1 ? "" : "s"} waiting — open the Coaches tab ›
             </button>
           )}
@@ -847,17 +847,17 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 </div>
                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
                   <button onClick={() => openEditPlayer(p)} style={{ background: "rgba(26,63,168,0.15)", border: "1px solid rgba(26,63,168,0.3)", color: "var(--info-text)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
-                  <button onClick={() => openEditScores(p.id)} style={{ background: "rgba(147,92,255,0.1)", border: "1px solid rgba(147,92,255,0.3)", color: "#b07aff", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>📊 Scores</button>
+                  <button onClick={() => openEditScores(p.id)} style={{ background: "rgba(147,92,255,0.1)", border: "1px solid rgba(147,92,255,0.3)", color: "var(--tx-b07aff)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>📊 Scores</button>
                   {/* Beside Scores rather than inside Edit: both are things
                       you look up, not things you change. */}
-                  <button onClick={() => setAttendanceFor({ id: p.id, name: p.name })} style={{ background: "rgba(94,207,214,0.1)", border: "1px solid rgba(94,207,214,0.32)", color: "#5ecfd6", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗓 Attendance</button>
+                  <button onClick={() => setAttendanceFor({ id: p.id, name: p.name })} style={{ background: "rgba(94,207,214,0.1)", border: "1px solid rgba(94,207,214,0.32)", color: "var(--tx-5ecfd6)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗓 Attendance</button>
                   {inactiveTab ? (
                     <button onClick={() => reactivatePlayer(p.id)} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "var(--success-text)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>↩️ Restore</button>
                   ) : (
                     <button onClick={() => removePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.16)", color: "var(--muted)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🚫 Remove</button>
                   )}
                   <button onClick={() => resetPerks(p.id, p.name)} style={{ background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", color: "var(--gold-text)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🔄 Perks</button>
-                  <button onClick={() => deletePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗑 Delete</button>
+                  <button onClick={() => deletePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "var(--tx-ff3c3c)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗑 Delete</button>
                 </div>
               </div>
             ))}
@@ -897,7 +897,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
           )}
           {pendingCoaches.length > 0 && (
             <div style={{ background: "rgba(147,92,255,0.08)", border: "1px solid rgba(147,92,255,0.3)", borderRadius: 14, padding: "16px 20px", marginBottom: 16 }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#b07aff", letterSpacing: 1, marginBottom: 14 }}>🏀 Pending Coach Approvals ({pendingCoaches.length})</div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--tx-b07aff)", letterSpacing: 1, marginBottom: 14 }}>🏀 Pending Coach Approvals ({pendingCoaches.length})</div>
               {pendingCoaches.map(c => (
                 <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: "var(--surface2)", borderRadius: 10, marginBottom: 8, border: "1px solid var(--border)", flexWrap: "wrap", gap: 8 }}>
                   <div><div style={{ fontWeight: 600, fontSize: 14 }}>{c.name}</div><div style={{ fontSize: 11, color: "var(--muted)" }}>{c.email}</div></div>
@@ -923,7 +923,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                   <div style={{ display: "flex", gap: 5 }}>
                     <button onClick={() => setEditCoach({ id: c.id, name: c.name, role: c.role })} style={{ background: "rgba(26,63,168,0.15)", border: "1px solid rgba(26,63,168,0.3)", color: "var(--info-text)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
                     <button onClick={() => removeCoach(c.id, c.name)} disabled={removingCoach === c.id} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.16)", color: "var(--muted)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🚫 Remove</button>
-                    <button onClick={() => deleteCoach(c.id, c.name)} disabled={removingCoach === c.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗑 Delete</button>
+                    <button onClick={() => deleteCoach(c.id, c.name)} disabled={removingCoach === c.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "var(--tx-ff3c3c)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗑 Delete</button>
                   </div>
                 </div>
                 {editCoach?.id === c.id && (
@@ -993,7 +993,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 derived from it on save and at every season start, so a
                 hand-picked group here was silently overwritten. */}
             {!editPlayer.graduation_year && (
-            <div style={{ marginBottom: 16 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Leaderboard group <span style={{ color: "#ff8c42" }}>(set a school year instead)</span></label><select value={editPlayer.grade_category} onChange={e => setEditPlayer({ ...editPlayer, grade_category: e.target.value })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }}>{GRADE_CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
+            <div style={{ marginBottom: 16 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Leaderboard group <span style={{ color: "var(--tx-ff8c42)" }}>(set a school year instead)</span></label><select value={editPlayer.grade_category} onChange={e => setEditPlayer({ ...editPlayer, grade_category: e.target.value })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }}>{GRADE_CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
             )}
             <div style={{ marginBottom: 12 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Roster</label><select value={editPlayer.home_roster_id ?? ""} onChange={e => setEditPlayer({ ...editPlayer, home_roster_id: e.target.value || null })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }}><option value="">— No roster —</option>{rosters.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
 
@@ -1017,7 +1017,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                   style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" as const }}
                 />
                 {jerseyClash && (
-                  <div style={{ fontSize: 11, color: "#c9a227", marginTop: 4 }}>{jerseyClash}</div>
+                  <div style={{ fontSize: 11, color: "var(--tx-c9a227)", marginTop: 4 }}>{jerseyClash}</div>
                 )}
               </div>
             )}
@@ -1056,7 +1056,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 20 }}>
                       <button onClick={() => saveScore(sc)} disabled={scoreSaving === sc.id} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>{scoreSaving === sc.id ? "Saving…" : "💾 Save"}</button>
-                      <button onClick={() => deleteScore(sc.id)} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>🗑 Delete</button>
+                      <button onClick={() => deleteScore(sc.id)} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "var(--tx-ff3c3c)", borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>🗑 Delete</button>
                     </div>
                   </div>
                 </div>
@@ -1064,7 +1064,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
             </div>
             <div style={{ marginTop: 24 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#ff8c42", letterSpacing: 1 }}>⭐ Bonuses</div>
+                <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--tx-ff8c42)", letterSpacing: 1 }}>⭐ Bonuses</div>
                 <div style={{ fontSize: 11, color: "var(--muted)" }}>{playerBonuses.length} row{playerBonuses.length !== 1 ? "s" : ""} · {playerBonuses.reduce((s, b) => s + (b.points ?? 0), 0)} pts total</div>
               </div>
               {playerBonuses.length === 0 ? (
@@ -1079,8 +1079,8 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                           <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>{label}</div>
                           <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{new Date(b.awarded_at).toLocaleDateString()}</div>
                         </div>
-                        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "#ff8c42", flexShrink: 0 }}>+{b.points}</div>
-                        <button onClick={() => deleteBonus(b.id)} disabled={bonusDeleting === b.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", flexShrink: 0 }}>{bonusDeleting === b.id ? "…" : "🗑 Delete"}</button>
+                        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--tx-ff8c42)", flexShrink: 0 }}>+{b.points}</div>
+                        <button onClick={() => deleteBonus(b.id)} disabled={bonusDeleting === b.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "var(--tx-ff3c3c)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", flexShrink: 0 }}>{bonusDeleting === b.id ? "…" : "🗑 Delete"}</button>
                       </div>
                     );
                   })}

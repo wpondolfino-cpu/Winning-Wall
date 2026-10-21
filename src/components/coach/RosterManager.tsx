@@ -214,7 +214,7 @@ export default function RosterManager({ onChanged }: Props = {}) {
       </div>
 
       {error && (
-        <div style={{ fontSize: 12, color: "#f09595", background: "rgba(226,75,74,0.08)", border: "1px solid rgba(226,75,74,0.2)", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: "var(--tx-f09595)", background: "rgba(226,75,74,0.08)", border: "1px solid rgba(226,75,74,0.2)", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
           {error}
         </div>
       )}

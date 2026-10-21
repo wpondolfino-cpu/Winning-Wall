@@ -140,10 +140,10 @@ export default function PracticeTimePanel({ seasons, selectedSeasonId, rosters }
                     background: untagged ? "rgba(255,107,107,0.12)" : `rgba(240,192,64,${0.06 + (Math.min(pct, 100) / 100) * 0.12})`,
                   }} />
                   <div style={{ position: "relative", display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12.5 }}>
-                    <span style={{ color: untagged ? "#ff9b9b" : "var(--text)" }}>
+                    <span style={{ color: untagged ? "var(--tx-ff9b9b)" : "var(--text)" }}>
                       {r.tag ?? "Untagged"}
                     </span>
-                    <span style={{ color: untagged ? "#ff9b9b" : "var(--text)", whiteSpace: "nowrap" }}>
+                    <span style={{ color: untagged ? "var(--tx-ff9b9b)" : "var(--text)", whiteSpace: "nowrap" }}>
                       {r.minutes} min
                       <span style={{ color: untagged ? "#c47a7a" : "var(--muted)", fontSize: 11 }}>
                         {" · "}{Math.round(pct)}%

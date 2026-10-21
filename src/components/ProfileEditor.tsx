@@ -102,7 +102,7 @@ export default function ProfileEditor({ profile, onUpdated }: Props) {
     .toUpperCase()
     .slice(0, 2);
 
-  const roleColor = profile.role === "admin" ? "var(--gold)" : profile.role === "coach" ? "#93b4ff" : "#5de098";
+  const roleColor = profile.role === "admin" ? "var(--gold-text)" : profile.role === "coach" ? "var(--info-text)" : "var(--success-text)";
   const roleLabel = profile.role === "admin" ? ((profile as any).admin_label ?? "Head Coach") : profile.role === "coach" ? "🏀 Coach" : "⚡ Player";
 
   return (

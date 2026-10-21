@@ -54,19 +54,19 @@ export default function ChangePassword({
         borderRadius: 20, padding: "40px", width: 380, maxWidth: "94vw",
       }}>
         {/* Logo */}
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "#f5f7fc", textAlign: "center", letterSpacing: 2, marginBottom: 4 }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "var(--white)", textAlign: "center", letterSpacing: 2, marginBottom: 4 }}>
           AHS <span style={{ color: "#f0c040" }}>Winning</span> Wall
         </div>
 
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "#f5f7fc", marginBottom: 8, marginTop: 20 }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--white)", marginBottom: 8, marginTop: 20 }}>
           {title}
         </div>
-        <div style={{ fontSize: 13, color: "#7a85a0", marginBottom: 28, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 28, lineHeight: 1.6 }}>
           {subtitle}
         </div>
 
         <div style={{ marginBottom: 14 }}>
-          <label style={{ display: "block", fontSize: 12, color: "#7a85a0", marginBottom: 5 }}>New Password</label>
+          <label style={{ display: "block", fontSize: 12, color: "var(--muted)", marginBottom: 5 }}>New Password</label>
           <input
             type="password"
             value={newPass}
@@ -74,14 +74,14 @@ export default function ChangePassword({
             placeholder="At least 8 characters"
             style={{
               width: "100%", background: "#1a2235", border: "1px solid rgba(176,184,200,0.15)",
-              borderRadius: 10, padding: "10px 13px", color: "#e8eaf2", fontSize: 14,
+              borderRadius: 10, padding: "10px 13px", color: "var(--text)", fontSize: 14,
               fontFamily: "inherit", outline: "none", boxSizing: "border-box",
             }}
           />
         </div>
 
         <div style={{ marginBottom: 22 }}>
-          <label style={{ display: "block", fontSize: 12, color: "#7a85a0", marginBottom: 5 }}>Confirm Password</label>
+          <label style={{ display: "block", fontSize: 12, color: "var(--muted)", marginBottom: 5 }}>Confirm Password</label>
           <input
             type="password"
             value={confirm}
@@ -90,7 +90,7 @@ export default function ChangePassword({
             onKeyDown={e => e.key === "Enter" && handleSubmit()}
             style={{
               width: "100%", background: "#1a2235", border: "1px solid rgba(176,184,200,0.15)",
-              borderRadius: 10, padding: "10px 13px", color: "#e8eaf2", fontSize: 14,
+              borderRadius: 10, padding: "10px 13px", color: "var(--text)", fontSize: 14,
               fontFamily: "inherit", outline: "none", boxSizing: "border-box",
             }}
           />

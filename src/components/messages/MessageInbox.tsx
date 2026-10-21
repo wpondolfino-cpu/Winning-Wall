@@ -212,7 +212,7 @@ function ConversationRow({ conv: c, asPlatform, open, first, onToggle, onChanged
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button style={{ ...ghost, height: 36, fontSize: 13 }} onClick={onToggle}>Minimize</button>
-            <button style={{ ...ghost, height: 36, fontSize: 13, color: "#ff9a9a", borderColor: "rgba(255,140,140,0.35)" }}
+            <button style={{ ...ghost, height: 36, fontSize: 13, color: "var(--tx-ff9a9a)", borderColor: "rgba(255,140,140,0.35)" }}
               onClick={async () => {
                 if (!window.confirm(`Delete “${c.subject}” from your inbox? ${asPlatform ? "The head coaches" : "Winning Wall"} still keep it, and it comes back if someone replies.`)) return;
                 try { await deleteConversation(c.id); onChanged(); } catch (e: any) { setErr(e?.message ?? "Couldn't delete."); }

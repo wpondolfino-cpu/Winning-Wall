@@ -318,7 +318,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
             const isShield = p.perk_key === "streak_shield";
             const isBoost  = p.perk_key === "score_boost";
             const outlines = ["var(--border)", "#9ca3af", "#c0c0c0", "#2550d4", "#f0c040"];
-            const borderColor = unlocked ? (outlines[i] ?? "var(--gold)") : "var(--border)";
+            const borderColor = unlocked ? (outlines[i] ?? "var(--gold-text)") : "var(--border)";
             return (
               <div key={p.perk_key} style={{ background: unlocked ? "rgba(26,63,168,0.06)" : "var(--surface2)", border: `1px solid ${borderColor}`, borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, opacity: unlocked ? 1 : 0.5 }}>
                 <div style={{ fontSize: 24, flexShrink: 0 }}>
@@ -331,7 +331,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
                   </div>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.description}</div>
                   {!unlocked && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>{p.xp_required - xp} XP to unlock</div>}
-                  {unlocked && (isShield || isBoost) && perkNote && <div style={{ fontSize: 11, color: noCompetition ? "#ff8c42" : "var(--muted)", marginTop: 3 }}>{perkNote}</div>}
+                  {unlocked && (isShield || isBoost) && perkNote && <div style={{ fontSize: 11, color: noCompetition ? "var(--tx-ff8c42)" : "var(--muted)", marginTop: 3 }}>{perkNote}</div>}
                 </div>
                 {unlocked && isShield && (
                   <button onClick={handleUseStreakShield} disabled={streakShieldUsed || usingShield || noCompetition}
@@ -489,7 +489,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
                     { label: "Group Rank",   value: s.group_rank   ? `#${s.group_rank}`   : "—", color: "var(--info-text)" },
                     { label: "Total Points", value: s.total_points ?? 0,                          color: "var(--text)" },
                     { label: "Drill #1s",    value: s.drill_wins   ?? 0,                          color: "var(--success-text)" },
-                    { label: "H2H Wins",     value: s.h2h_wins     ?? 0,                          color: "#ff8c42" },
+                    { label: "H2H Wins",     value: s.h2h_wins     ?? 0,                          color: "var(--tx-ff8c42)" },
                     { label: "Team Wins",    value: s.team_wins    ?? 0,                          color: "#c0c0c0" },
                   ].map(({ label, value, color }) => (
                     <div key={label} style={{ textAlign: "center", background: "var(--surface)", borderRadius: 8, padding: "8px 4px" }}>

@@ -113,7 +113,7 @@ export default function LiftingResults({ program, days, dayExercises, onClose }:
                   </div>
 
                   {exerciseResults.map((r: any) => {
-                    const growthColor = r.growth > 0 ? "#5de098" : r.growth < 0 ? "#ff7b7b" : "var(--muted)";
+                    const growthColor = r.growth > 0 ? "var(--success-text)" : r.growth < 0 ? "var(--danger-text)" : "var(--muted)";
                     const growthLabel = r.growth > 0 ? `+${r.growth} lbs` : r.growth === 0 ? "—" : `${r.growth} lbs`;
                     return (
                       <div key={r.exId} style={{ borderTop: "1px solid var(--border)", padding: "8px 14px" }}>

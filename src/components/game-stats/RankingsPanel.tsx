@@ -113,7 +113,7 @@ export default function RankingsPanel({ gameIds }: { gameIds: string[] }) {
   const levelName = COMBO_LEVELS.find((c) => c.value === level)?.label ?? "";
 
   if (loading) return <div className="card">Loading rankings…</div>;
-  if (error) return <div className="card" style={{ color: "#c66", fontSize: 13 }}>{error}</div>;
+  if (error) return <div className="card" style={{ color: "var(--tx-c66)", fontSize: 13 }}>{error}</div>;
 
   return (
     <div className="card" style={{ width: "100%", maxWidth: 1400 }}>
@@ -220,7 +220,7 @@ function Section({ title, rows, name, rankValue, side, level, scorecards, open, 
               <span style={{ width: 16, color: "var(--muted)", fontSize: 12 }}>{i + 1}</span>
               <span style={{ flex: 1, minWidth: 0 }}>{r.playerIds.map(name).join(" · ")}</span>
               {card && card.total > 0 && (
-                <span style={{ fontSize: 12, color: card.met === card.total ? "#5cb98b" : "var(--muted)" }}>
+                <span style={{ fontSize: 12, color: card.met === card.total ? "var(--tx-5cb98b)" : "var(--muted)" }}>
                   {card.met} of {card.total} goals
                 </span>
               )}
@@ -245,7 +245,7 @@ function Section({ title, rows, name, rankValue, side, level, scorecards, open, 
                   <div style={{ marginTop: 6 }}>
                     {card.items.map((it) => (
                       <div key={it.key} style={{ display: "flex", gap: 8 }}>
-                        <span style={{ width: 14, color: it.met ? "#5cb98b" : "#d98b8b" }}>{it.met ? "✓" : "✗"}</span>
+                        <span style={{ width: 14, color: it.met ? "var(--tx-5cb98b)" : "var(--tx-d98b8b)" }}>{it.met ? "✓" : "✗"}</span>
                         <span style={{ flex: 1 }}>{it.label}</span>
                         <span style={{ width: 120, textAlign: "right" }}>
                           {it.value == null ? "—" : it.value} vs {it.lowerBetter ? "under " : ""}{it.target}
@@ -277,7 +277,7 @@ function DiffStrip({ factors }: { factors: { label: string; diff: number | null;
         return (
           <span key={f.label}>
             {f.label}{" "}
-            <span style={{ color: good ? "#5cb98b" : "#d98b8b" }}>
+            <span style={{ color: good ? "var(--tx-5cb98b)" : "var(--tx-d98b8b)" }}>
               {f.diff! > 0 ? "+" : ""}{f.diff}
             </span>
           </span>

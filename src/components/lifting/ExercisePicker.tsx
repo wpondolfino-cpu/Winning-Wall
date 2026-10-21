@@ -86,7 +86,7 @@ export default function ExercisePicker({ playerId, onSelect, placeholder = "Sear
               style={{
                 width: "100%", background: "rgba(255,255,255,0.08)",
                 border: "1px solid rgba(255,255,255,0.12)",
-                borderRadius: 7, padding: "8px 10px", color: "#e8eaf0", fontSize: 13,
+                borderRadius: 7, padding: "8px 10px", color: "var(--tx-e8eaf0)", fontSize: 13,
                 fontFamily: "inherit", outline: "none", boxSizing: "border-box",
               }}
             />
@@ -102,7 +102,7 @@ export default function ExercisePicker({ playerId, onSelect, placeholder = "Sear
                   padding: "3px 9px", borderRadius: 6, border: "none", cursor: "pointer",
                   fontFamily: "inherit", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap",
                   background: muscleFilter === g ? "#1a3fa8" : "rgba(255,255,255,0.08)",
-                  color: muscleFilter === g ? "#fff" : "#7a85a0", flexShrink: 0,
+                  color: muscleFilter === g ? "#fff" : "var(--muted)", flexShrink: 0,
                 }}
               >
                 {g}
@@ -113,10 +113,10 @@ export default function ExercisePicker({ playerId, onSelect, placeholder = "Sear
           {/* Exercise list — fixed height with scroll */}
           <div style={{ maxHeight: 280, overflowY: "auto", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
             {bank.length === 0 && (
-              <div style={{ padding: "20px 14px", textAlign: "center", color: "#7a85a0", fontSize: 13 }}>Loading exercises…</div>
+              <div style={{ padding: "20px 14px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>Loading exercises…</div>
             )}
             {bank.length > 0 && filtered.length === 0 && (
-              <div style={{ padding: "16px 14px", fontSize: 13, color: "#7a85a0", textAlign: "center" }}>No match — add it below</div>
+              <div style={{ padding: "16px 14px", fontSize: 13, color: "var(--muted)", textAlign: "center" }}>No match — add it below</div>
             )}
             {filtered.slice(0, 40).map(ex => (
               <div
@@ -131,8 +131,8 @@ export default function ExercisePicker({ playerId, onSelect, placeholder = "Sear
                 onMouseLeave={e => (e.currentTarget.style.background = "")}
               >
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, color: "#e8eaf0", fontWeight: 500 }}>{ex.name}</div>
-                  <div style={{ fontSize: 10, color: "#7a85a0", marginTop: 1 }}>{ex.muscle_group} · {ex.default_rest_secs}s rest</div>
+                  <div style={{ fontSize: 13, color: "var(--tx-e8eaf0)", fontWeight: 500 }}>{ex.name}</div>
+                  <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 1 }}>{ex.muscle_group} · {ex.default_rest_secs}s rest</div>
                 </div>
                 {ex.video_url && <span style={{ fontSize: 11, color: "#f0c040" }}>📹</span>}
               </div>
@@ -151,17 +151,17 @@ export default function ExercisePicker({ playerId, onSelect, placeholder = "Sear
             ) : (
               <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
                 <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Exercise name"
-                  style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 7, padding: "7px 10px", color: "#e8eaf0", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+                  style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 7, padding: "7px 10px", color: "var(--tx-e8eaf0)", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                   <select value={newMuscle} onChange={e => setNewMuscle(e.target.value as MuscleGroup)}
-                    style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 7, padding: "7px 10px", color: "#e8eaf0", fontSize: 12, fontFamily: "inherit", outline: "none" }}>
+                    style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 7, padding: "7px 10px", color: "var(--tx-e8eaf0)", fontSize: 12, fontFamily: "inherit", outline: "none" }}>
                     {MUSCLE_GROUPS.map(g => <option key={g}>{g}</option>)}
                   </select>
                   <input type="number" value={newRest} onChange={e => setNewRest(e.target.value)} placeholder="Rest (secs)"
-                    style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 7, padding: "7px 10px", color: "#e8eaf0", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+                    style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 7, padding: "7px 10px", color: "var(--tx-e8eaf0)", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
                 </div>
                 <input value={newVideo} onChange={e => setNewVideo(e.target.value)} placeholder="YouTube link"
-                  style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 7, padding: "7px 10px", color: "#e8eaf0", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+                  style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 7, padding: "7px 10px", color: "var(--tx-e8eaf0)", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
                 <VideoUrlNote url={newVideo} />
                 <div style={{ display: "flex", gap: 6 }}>
                   <button onClick={addNew} disabled={saving || !newName.trim()}
@@ -169,7 +169,7 @@ export default function ExercisePicker({ playerId, onSelect, placeholder = "Sear
                     {saving ? "Saving…" : "Add & Select"}
                   </button>
                   <button onClick={() => setAdding(false)}
-                    style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", color: "#7a85a0", borderRadius: 7, padding: "7px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>
+                    style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", color: "var(--muted)", borderRadius: 7, padding: "7px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>
                     Cancel
                   </button>
                 </div>
@@ -180,7 +180,7 @@ export default function ExercisePicker({ playerId, onSelect, placeholder = "Sear
           {/* Close */}
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", padding: "6px 14px" }}>
             <button onClick={() => setOpen(false)}
-              style={{ background: "none", border: "none", color: "#7a85a0", fontSize: 12, cursor: "pointer", fontFamily: "inherit", width: "100%", textAlign: "center" }}>
+              style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 12, cursor: "pointer", fontFamily: "inherit", width: "100%", textAlign: "center" }}>
               Close
             </button>
           </div>

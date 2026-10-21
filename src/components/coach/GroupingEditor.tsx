@@ -280,7 +280,7 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
         {saveMsg && <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>{saveMsg}</div>}
 
         {unavailableCount > 0 && (
-          <div style={{ fontSize: 12, color: "#c9a227", marginBottom: 10 }}>
+          <div style={{ fontSize: 12, color: "var(--tx-c9a227)", marginBottom: 10 }}>
             ⚠ {unavailableCount} assigned {unavailableCount === 1 ? "player isn't" : "players aren't"} available today — swap or move them to the bench.
           </div>
         )}
@@ -311,7 +311,7 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
                           style={{
                             fontSize: 12, padding: "4px 6px", marginBottom: 3, borderRadius: 6, cursor: "grab",
                             background: excused ? "rgba(226,75,74,0.12)" : "var(--surface)",
-                            color: excused ? "#ff9b9b" : "var(--text)",
+                            color: excused ? "var(--tx-ff9b9b)" : "var(--text)",
                             display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6,
                           }}>
                           <span>{excused ? "⚠ " : ""}{nameOf(pid)}</span>

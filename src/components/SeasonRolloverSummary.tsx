@@ -58,7 +58,7 @@ export default function SeasonRolloverSummary({ sync, seasonName, onClose }: Pro
               <div style={sub}>Their jersey numbers are free again. Their history and scores stay.</div>
             </div>
             {sync.missing_year > 0 && (
-              <div style={{ ...line, color: "#ff8c42" }}>
+              <div style={{ ...line, color: "var(--tx-ff8c42)" }}>
                 {plural(sync.missing_year, "player")} {sync.missing_year === 1 ? "has" : "have"} no school year set
                 <div style={sub}>They couldn't be moved. Set it in Players &amp; coaches → Edit.</div>
               </div>

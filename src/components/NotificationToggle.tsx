@@ -49,7 +49,7 @@ export default function NotificationToggle({ playerId }: { playerId: string }) {
         </button>
       </div>
       {state && !usable && (
-        <div style={{ fontSize: 12, color: "#ff8c42", marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", lineHeight: 1.5 }}>
+        <div style={{ fontSize: 12, color: "var(--tx-ff8c42)", marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", lineHeight: 1.5 }}>
           {HELP[state as keyof typeof HELP]}
         </div>
       )}

@@ -72,7 +72,7 @@ export default function RotationPanel({ gameIds, userId, rosterId }: { gameIds: 
   const playerFindings = useMemo(() => computeFindings(shown, "individual"), [shown]);
 
   if (loading) return <div className="card">Loading rotation…</div>;
-  if (error) return <div className="card" style={{ color: "#c66", fontSize: 13 }}>{error}</div>;
+  if (error) return <div className="card" style={{ color: "var(--tx-c66)", fontSize: 13 }}>{error}</div>;
 
   return (
     <div>
@@ -204,7 +204,7 @@ function FindingRow({ finding, name }: { finding: Finding; name: (id: string) =>
       <div style={{ fontSize: 13, lineHeight: 1.6 }}>
         <span style={{ fontWeight: 500 }}>{finding.label}</span>{" "}
         runs{" "}
-        <span style={{ color: worse ? "#d98b8b" : "#5cb98b" }}>
+        <span style={{ color: worse ? "var(--tx-d98b8b)" : "var(--tx-5cb98b)" }}>
           {Math.abs(finding.diff).toFixed(2)} PPP {worse ? "below" : "above"}
         </span>{" "}
         the rest of the game.
@@ -234,14 +234,14 @@ function FindingRow({ finding, name }: { finding: Finding; name: (id: string) =>
 }
 
 function Caveat({ text }: { text: string }) {
-  return <div style={{ fontSize: 11, color: "#c9a227", marginTop: 4, fontStyle: "italic" }}>⚠ {text}</div>;
+  return <div style={{ fontSize: 11, color: "var(--tx-c9a227)", marginTop: 4, fontStyle: "italic" }}>⚠ {text}</div>;
 }
 
 export function Reliability({ state, detail }: { state: "early" | "building" | "reliable"; detail: string }) {
   const copy = {
-    early: { icon: "⚠", color: "#c9a227", text: "Early days — treat everything here as a curiosity rather than a finding." },
-    building: { icon: "⚠", color: "#c9a227", text: "Building — rows without a caveat are worth reading; the rest aren't there yet." },
-    reliable: { icon: "✓", color: "#5cb98b", text: "Enough data behind this to read it straight." },
+    early: { icon: "⚠", color: "var(--tx-c9a227)", text: "Early days — treat everything here as a curiosity rather than a finding." },
+    building: { icon: "⚠", color: "var(--tx-c9a227)", text: "Building — rows without a caveat are worth reading; the rest aren't there yet." },
+    reliable: { icon: "✓", color: "var(--tx-5cb98b)", text: "Enough data behind this to read it straight." },
   }[state];
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "baseline", fontSize: 12, color: copy.color, marginBottom: 10, lineHeight: 1.6 }}>

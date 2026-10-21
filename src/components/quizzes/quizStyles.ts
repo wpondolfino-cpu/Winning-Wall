@@ -12,7 +12,7 @@ export const secondaryBtn: CSSProperties = {
   padding: "8px 14px", fontSize: 13, fontFamily: "inherit", cursor: "pointer",
 };
 export const dangerBtn: CSSProperties = {
-  background: "rgba(226,75,74,0.1)", color: "#ff7b7b", border: "1px solid rgba(226,75,74,0.3)", borderRadius: 8,
+  background: "rgba(226,75,74,0.1)", color: "var(--danger-text)", border: "1px solid rgba(226,75,74,0.3)", borderRadius: 8,
   padding: "8px 14px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
 };
 export const smallBtn: CSSProperties = {
@@ -29,10 +29,10 @@ export const sectionTitle: CSSProperties = {
 
 export function pill(kind: "good" | "warn" | "bad" | "info" | "plain"): CSSProperties {
   const map = {
-    good:  { background: "rgba(40,180,80,0.15)",  color: "#5de098" },
-    warn:  { background: "rgba(240,192,64,0.12)", color: "var(--gold)" },
-    bad:   { background: "rgba(220,50,50,0.15)",  color: "#ff7b7b" },
-    info:  { background: "rgba(37,80,212,0.18)",  color: "#8fa8ff" },
+    good:  { background: "rgba(40,180,80,0.15)",  color: "var(--success-text)" },
+    warn:  { background: "rgba(240,192,64,0.12)", color: "var(--gold-text)" },
+    bad:   { background: "rgba(220,50,50,0.15)",  color: "var(--danger-text)" },
+    info:  { background: "rgba(37,80,212,0.18)",  color: "var(--tx-8fa8ff)" },
     plain: { background: "var(--surface)",        color: "var(--muted)" },
   } as const;
   return { ...map[kind], fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, whiteSpace: "nowrap" };
@@ -46,7 +46,7 @@ export function optionStyle(state: "idle" | "picked" | "right" | "wrong"): CSSPr
     border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)",
   };
   if (state === "picked") return { ...base, border: "1px solid var(--royal-light)", background: "rgba(37,80,212,0.18)" };
-  if (state === "right")  return { ...base, border: "1px solid rgba(40,180,80,0.5)", background: "rgba(40,180,80,0.15)", color: "#5de098" };
-  if (state === "wrong")  return { ...base, border: "1px solid rgba(220,50,50,0.5)", background: "rgba(220,50,50,0.15)", color: "#ff7b7b" };
+  if (state === "right")  return { ...base, border: "1px solid rgba(40,180,80,0.5)", background: "rgba(40,180,80,0.15)", color: "var(--success-text)" };
+  if (state === "wrong")  return { ...base, border: "1px solid rgba(220,50,50,0.5)", background: "rgba(220,50,50,0.15)", color: "var(--danger-text)" };
   return base;
 }

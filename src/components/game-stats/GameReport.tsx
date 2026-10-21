@@ -689,7 +689,7 @@ function PaintBallMovementBlock({ us, them, opponentName }: { us: PaintResult; t
   const tab = (key: "us" | "them", label: string) => (
     <button onClick={() => setSide(key)} style={{
       height: 32, padding: "0 14px", border: 0, borderRadius: 8, fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer",
-      background: side === key ? "var(--royal)" : "transparent", color: side === key ? "#f5f7fc" : "var(--muted)",
+      background: side === key ? "var(--royal)" : "transparent", color: side === key ? "var(--white)" : "var(--muted)",
     }}>{label}</button>
   );
   const cell: CSSProperties = { padding: "10px 8px", borderTop: "1px solid var(--border)", fontSize: 13 };

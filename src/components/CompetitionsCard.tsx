@@ -270,7 +270,7 @@ export default function CompetitionsCard() {
           Repeat with the same length when it ends
         </label>
         {latestLastDay && first <= latestLastDay && (
-          <div style={{ fontSize: 12, color: "#ff8c42", marginBottom: 10 }}>
+          <div style={{ fontSize: 12, color: "var(--tx-ff8c42)", marginBottom: 10 }}>
             Starts before the last scheduled competition ends ({shortDate(latestLastDay)}). Change that one's last day first, or start after it.
           </div>
         )}

@@ -133,8 +133,8 @@ function WeekGroup({ weekNum, label, weekDays, updateDay, copyDay, removeDay, up
                         <div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 700, minWidth: 16 }}>{ei + 1}</div>
                         <div style={{ flex: 1, fontWeight: 600, fontSize: 12, color: "var(--text)" }}>{ex.exercise.name}</div>
                         <div style={{ fontSize: 9, color: "var(--muted)" }}>{ex.exercise.muscle_group}</div>
-                        {ex.superset_group != null && <span style={{ fontSize: 8, padding: "1px 4px", borderRadius: 4, background: "rgba(147,92,255,0.2)", color: "#9b6dff" }}>SS</span>}
-                        <button onClick={() => markSuperset(di, ei)} style={{ background: "none", border: "none", color: ex.superset_group != null ? "#9b6dff" : "var(--muted)", cursor: "pointer", fontSize: 11, padding: "1px 3px" }}>⚡</button>
+                        {ex.superset_group != null && <span style={{ fontSize: 8, padding: "1px 4px", borderRadius: 4, background: "rgba(147,92,255,0.2)", color: "var(--tx-9b6dff)" }}>SS</span>}
+                        <button onClick={() => markSuperset(di, ei)} style={{ background: "none", border: "none", color: ex.superset_group != null ? "var(--tx-9b6dff)" : "var(--muted)", cursor: "pointer", fontSize: 11, padding: "1px 3px" }}>⚡</button>
                         <button onClick={() => removeExFromDay(di, ei)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", fontSize: 13, padding: "1px 3px" }}>×</button>
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 5 }}>

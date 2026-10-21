@@ -118,7 +118,7 @@ export default function QuizResults({ bundle }: Props) {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
               {[...totals.entries()].map(([t, v]) => {
                 const pct = v.answered ? Math.round((v.correct / v.answered) * 100) : null;
-                const color = pct == null ? "var(--muted)" : pct >= 80 ? "#5de098" : pct >= 60 ? "var(--gold)" : "#ff7b7b";
+                const color = pct == null ? "var(--muted)" : pct >= 80 ? "var(--success-text)" : pct >= 60 ? "var(--gold-text)" : "var(--danger-text)";
                 return (
                   <div key={t} style={{ background: "var(--surface2)", borderRadius: 10, padding: "10px 12px" }}>
                     <div style={{ fontSize: 11, color: "var(--muted)" }}>{bundle.quiz.scout_sheet_id && t === "name_play" ? "Name that set" : PLAY_QTYPE_LABEL[t]}</div>
@@ -136,7 +136,7 @@ export default function QuizResults({ bundle }: Props) {
       <div style={sectionTitle}>Question breakdown</div>
       {results.questions.map(q => {
         const pct = q.answered ? Math.round((q.correct / q.answered) * 100) : null;
-        const color = pct == null ? "var(--muted)" : pct >= 80 ? "#5de098" : pct >= 60 ? "var(--gold)" : "#ff7b7b";
+        const color = pct == null ? "var(--muted)" : pct >= 80 ? "var(--success-text)" : pct >= 60 ? "var(--gold-text)" : "var(--danger-text)";
         return (
           <div key={q.questionId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: "1px solid var(--border)" }}>
             <div style={{ flex: 1, minWidth: 0 }}>

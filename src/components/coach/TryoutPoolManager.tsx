@@ -345,7 +345,7 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
                           );
                         })}
                         {(p.roster_ids ?? []).length === 0 && (
-                          <span style={{ fontSize: 10, color: "#ff9b9b" }}>no teams set</span>
+                          <span style={{ fontSize: 10, color: "var(--tx-ff9b9b)" }}>no teams set</span>
                         )}
                       </div>
                     )}

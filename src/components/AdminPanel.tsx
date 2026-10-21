@@ -803,7 +803,7 @@ export default function AdminPanel({}: Props) {
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                           <span style={{ color: "var(--muted)", fontSize: 16 }}>{isExpanded ? "▲" : "▼"}</span>
-                          <button onClick={e => { e.stopPropagation(); if (window.confirm("Delete this competition and its history?")) deleteCompetition(comp.id); }} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>🗑</button>
+                          <button onClick={e => { e.stopPropagation(); if (window.confirm("Delete this competition and its history?")) deleteCompetition(comp.id); }} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "var(--tx-ff3c3c)", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>🗑</button>
                         </div>
                       </div>
                       {isExpanded && details && (

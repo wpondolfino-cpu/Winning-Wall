@@ -157,7 +157,7 @@ export default function GoalsManager({ userId }: Props) {
         </div>
 
         {saveError && (
-          <div style={{ fontSize: 12, color: "#c66", marginBottom: 8 }}>{saveError}</div>
+          <div style={{ fontSize: 12, color: "var(--tx-c66)", marginBottom: 8 }}>{saveError}</div>
         )}
 
         {goalRows.map((s) => {

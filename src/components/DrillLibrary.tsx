@@ -277,7 +277,7 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
                             {isArchiving ? "…" : (d as any).library_archived ? "♻️" : "📦"}
                           </button>
                           <button onClick={(e) => { e.stopPropagation(); handleDeleteClick(d); }} disabled={isDeleting}
-                            style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer", opacity: isDeleting ? 0.6 : 1 }}>
+                            style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "var(--tx-ff3c3c)", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer", opacity: isDeleting ? 0.6 : 1 }}>
                             {isDeleting ? "…" : "🗑"}
                           </button>
                         </>
@@ -298,7 +298,7 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
           onClick={() => setUsageModal(null)}>
           <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(480px, 96vw)", padding: 24 }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "#ff3c3c", marginBottom: 6 }}>⚠️ Drill Has History</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--tx-ff3c3c)", marginBottom: 6 }}>⚠️ Drill Has History</div>
             <div style={{ fontSize: 13, color: "var(--text)", marginBottom: 16 }}>
               <strong>{usageModal.drill.title}</strong> has real player history attached:
             </div>
@@ -315,7 +315,7 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={() => doDelete(usageModal.drill.id)} disabled={deleting === usageModal.drill.id}
-                style={{ flex: 1, background: "rgba(255,60,60,0.15)", border: "1px solid rgba(255,60,60,0.4)", color: "#ff3c3c", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                style={{ flex: 1, background: "rgba(255,60,60,0.15)", border: "1px solid rgba(255,60,60,0.4)", color: "var(--tx-ff3c3c)", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
                 {deleting === usageModal.drill.id ? "Deleting…" : "Delete Anyway"}
               </button>
               <button onClick={() => { toggleArchive(usageModal.drill); setUsageModal(null); }}

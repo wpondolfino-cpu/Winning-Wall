@@ -665,7 +665,7 @@ export default function App() {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0a0c14", flexDirection: "column", gap: 16 }}>
         <img src="/logo.png" alt="Bombardiers" style={{ height: 80, objectFit: "contain", opacity: 0.8 }} />
-        <div style={{ fontSize: 13, color: "#7a85a0" }}>Loading…</div>
+        <div style={{ fontSize: 13, color: "var(--muted)" }}>Loading…</div>
       </div>
     );
   }
@@ -682,7 +682,7 @@ export default function App() {
         <div style={{ textAlign: "center", maxWidth: 400 }}>
           <div style={{ fontSize: 32 }}>⏳</div>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#f0c040", letterSpacing: 1, marginTop: 10 }}>Awaiting Approval</div>
-          <div style={{ fontSize: 14, color: "#7a85a0", marginTop: 12, lineHeight: 1.7 }}>
+          <div style={{ fontSize: 14, color: "var(--muted)", marginTop: 12, lineHeight: 1.7 }}>
             Your {isCoachRequest ? "coach" : "player"} account is pending approval{isCoachRequest ? " from an admin" : " from a coach or admin"}. You'll be able to log in once approved. Check back soon!
           </div>
           <button onClick={signOut} style={{ marginTop: 24, background: "var(--surface2)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 24px", fontSize: 14, fontFamily: "inherit", cursor: "pointer" }}>Sign Out</button>
