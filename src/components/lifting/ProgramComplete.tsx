@@ -129,7 +129,7 @@ export default function ProgramComplete({ program, days, dayExercises, playerId 
       {/* Header */}
       <div style={{ textAlign: "center", padding: "24px 16px 8px" }}>
         <div style={{ fontSize: 52, marginBottom: 12 }}>🏆</div>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--gold)", letterSpacing: 1, marginBottom: 6 }}>Program Complete!</div>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--title)", letterSpacing: 1, marginBottom: 6 }}>Program Complete!</div>
         <div style={{ fontSize: 14, color: "var(--text)", fontWeight: 600, marginBottom: 4 }}>{program.title}</div>
         {startDate && endDate && (
           <div style={{ fontSize: 12, color: "var(--muted)" }}>{startDate} – {endDate}</div>
@@ -144,9 +144,9 @@ export default function ProgramComplete({ program, days, dayExercises, playerId 
           {stats && (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               {[
-                { label: "Sessions Logged", value: stats.sessionsLogged, sub: `of ${Math.round(stats.totalDays / 7) * 4} training days`, color: "#93b4ff" },
-                { label: "Total Volume", value: stats.totalVolume > 1000 ? `${Math.round(stats.totalVolume / 1000)}k` : stats.totalVolume, sub: "lbs lifted", color: "var(--gold)" },
-                { label: "Sets Completed", value: stats.totalSets, sub: "total sets", color: "#5de098" },
+                { label: "Sessions Logged", value: stats.sessionsLogged, sub: `of ${Math.round(stats.totalDays / 7) * 4} training days`, color: "var(--info-text)" },
+                { label: "Total Volume", value: stats.totalVolume > 1000 ? `${Math.round(stats.totalVolume / 1000)}k` : stats.totalVolume, sub: "lbs lifted", color: "var(--gold-text)" },
+                { label: "Sets Completed", value: stats.totalSets, sub: "total sets", color: "var(--success-text)" },
                 { label: "Weeks Done", value: Math.round(stats.totalDays / 7), sub: "week program", color: "#ff8c42" },
               ].map(s => (
                 <div key={s.label} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 12px", textAlign: "center" }}>
@@ -214,7 +214,7 @@ export default function ProgramComplete({ program, days, dayExercises, playerId 
                     <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{g.name}</div>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{g.firstWeight} lbs → {g.lastWeight} lbs</div>
                   </div>
-                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "#5de098" }}>+{g.gain} lbs</div>
+                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--success-text)" }}>+{g.gain} lbs</div>
                 </div>
               ))}
             </div>
@@ -232,7 +232,7 @@ export default function ProgramComplete({ program, days, dayExercises, playerId 
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{g.first1RM} lbs</span>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>→</span>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: "#5de098" }}>{g.last1RM} lbs</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "var(--success-text)" }}>{g.last1RM} lbs</span>
                   </div>
                 </div>
               ))}
@@ -247,7 +247,7 @@ export default function ProgramComplete({ program, days, dayExercises, playerId 
 
           {/* Motivational footer */}
           <div style={{ textAlign: "center", padding: "16px 20px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 12 }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1, marginBottom: 4 }}>Outwork Everyone</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", letterSpacing: 1, marginBottom: 4 }}>Outwork Everyone</div>
             <div style={{ fontSize: 12, color: "var(--muted)" }}>10 weeks of work. Season starts soon. Let's go. 🏀</div>
           </div>
         </>

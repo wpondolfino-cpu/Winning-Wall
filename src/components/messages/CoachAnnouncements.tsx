@@ -28,7 +28,7 @@ export default function CoachAnnouncements({ coachId, coachName, programId, unre
 
   const tabBtn = (k: "announcements" | "messages", label: string, badge?: number) => (
     <button onClick={() => setTab(k)} aria-pressed={tab === k}
-      style={{ padding: "10px 16px", borderRadius: 9, border: 0, background: tab === k ? "var(--royal)" : "transparent", color: tab === k ? "var(--white)" : "#a3adc4",
+      style={{ padding: "10px 16px", borderRadius: 9, border: 0, background: tab === k ? "var(--royal)" : "transparent", color: tab === k ? "#fff" : "var(--muted-2)",
         fontFamily: "inherit", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
       {label}
       {!!badge && <span style={{ minWidth: 20, height: 20, padding: "0 5px", borderRadius: 10, background: "#ff3c3c", color: "#fff", fontSize: 11, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}

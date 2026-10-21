@@ -70,7 +70,7 @@ export default function CategoryManagerModal({ onClose, onChanged }: Props) {
         </div>
 
         {error && (
-          <div style={{ fontSize: 12, color: "#ff7b7b", marginBottom: 12, padding: "10px 12px", background: "rgba(255,60,60,0.08)", borderRadius: 8, border: "1px solid rgba(255,60,60,0.2)" }}>
+          <div style={{ fontSize: 12, color: "var(--danger-text)", marginBottom: 12, padding: "10px 12px", background: "rgba(255,60,60,0.08)", borderRadius: 8, border: "1px solid rgba(255,60,60,0.2)" }}>
             {error}
           </div>
         )}
@@ -101,7 +101,7 @@ export default function CategoryManagerModal({ onClose, onChanged }: Props) {
                       ✏️
                     </button>
                     <button onClick={() => handleDelete(c.name)} disabled={busyName === c.name}
-                      style={{ background: "transparent", border: "none", color: "#ff7b7b", fontSize: 13, cursor: "pointer", padding: "4px 6px" }}>
+                      style={{ background: "transparent", border: "none", color: "var(--danger-text)", fontSize: 13, cursor: "pointer", padding: "4px 6px" }}>
                       {busyName === c.name ? "…" : "🗑"}
                     </button>
                   </>

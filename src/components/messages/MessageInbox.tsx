@@ -23,8 +23,8 @@ interface Props {
   onActivity?: () => void;
 }
 
-const btn: CSSProperties = { height: 42, padding: "0 16px", borderRadius: 10, border: 0, background: "var(--royal)", color: "var(--white)", fontFamily: "inherit", fontSize: 14, fontWeight: 600, cursor: "pointer" };
-const ghost: CSSProperties = { ...btn, background: "transparent", border: "1px solid rgba(176,184,200,0.3)", color: "#c3d0ff" };
+const btn: CSSProperties = { height: 42, padding: "0 16px", borderRadius: 10, border: 0, background: "var(--royal)", color: "#fff", fontFamily: "inherit", fontSize: 14, fontWeight: 600, cursor: "pointer" };
+const ghost: CSSProperties = { ...btn, background: "transparent", border: "1px solid rgba(176,184,200,0.3)", color: "var(--info-text-2)" };
 const field: CSSProperties = { boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(176,184,200,0.25)", background: "var(--surface2)", color: "var(--text)", fontFamily: "inherit", fontSize: 14, width: "100%" };
 
 function short(iso: string) {
@@ -72,7 +72,7 @@ export default function MessageInbox({ asPlatform, programs, myProgram, onActivi
           onSent={async (id) => { setComposing(false); await refresh(); setOpen(prev => new Set(prev).add(id)); }} />
       )}
 
-      {err && <div style={{ color: "#ff8a8a", fontSize: 13 }}>{err}</div>}
+      {err && <div style={{ color: "var(--danger-text-2)", fontSize: 13 }}>{err}</div>}
       {convs === null && <div style={{ fontSize: 13, color: "var(--muted)" }}>Loading…</div>}
       {convs !== null && convs.length === 0 && !composing && (
         <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 18, fontSize: 14, color: "var(--muted)", lineHeight: 1.5 }}>
@@ -104,7 +104,7 @@ function Compose({ asPlatform, programs, myProgram, onSent }: {
   return (
     <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
       {asPlatform ? (
-        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#a3adc4" }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--muted-2)" }}>
           To (the program's head coaches)
           <select value={to} onChange={e => setTo(e.target.value)} style={{ ...field, height: 44, padding: "0 10px" }}>
             <option value="">Pick a program…</option>
@@ -112,15 +112,15 @@ function Compose({ asPlatform, programs, myProgram, onSent }: {
           </select>
         </label>
       ) : (
-        <span style={{ fontSize: 13, color: "#a3adc4" }}>To: Winning Wall</span>
+        <span style={{ fontSize: 13, color: "var(--muted-2)" }}>To: Winning Wall</span>
       )}
-      <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#a3adc4" }}>
+      <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--muted-2)" }}>
         Subject
         <input value={subject} onChange={e => setSubject(e.target.value)} maxLength={140} placeholder="e.g. Question about team codes" style={{ ...field, height: 44 }} />
       </label>
       <textarea value={body} onChange={e => setBody(e.target.value)} rows={4} maxLength={4000} placeholder="Write your message…" aria-label="Message" style={{ ...field, resize: "vertical" }} />
-      {target && asPlatform && !target.hasHeadCoach && <span style={{ fontSize: 12, color: "#e8a33d" }}>This program has no head coach yet, so nobody will see it until one is added.</span>}
-      {err && <div style={{ color: "#ff8a8a", fontSize: 13 }}>{err}</div>}
+      {target && asPlatform && !target.hasHeadCoach && <span style={{ fontSize: 12, color: "var(--amber-text)" }}>This program has no head coach yet, so nobody will see it until one is added.</span>}
+      {err && <div style={{ color: "var(--danger-text-2)", fontSize: 13 }}>{err}</div>}
       <button style={{ ...btn, alignSelf: "flex-start" }} disabled={busy || !target || !subject.trim() || !body.trim()}
         onClick={async () => {
           if (!target) return;
@@ -157,17 +157,17 @@ function ConversationRow({ conv: c, asPlatform, open, first, onToggle, onChanged
         <span style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, minWidth: 0 }}>
           <span style={{ display: "flex", gap: 8, alignItems: "baseline", minWidth: 0 }}>
             <span style={{ fontSize: 15, fontWeight: unread ? 700 : 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.subject}</span>
-            {c.messages > 1 && <span style={{ fontSize: 12, color: "#8b95ae", flexShrink: 0 }}>{c.messages}</span>}
+            {c.messages > 1 && <span style={{ fontSize: 12, color: "var(--muted-3)", flexShrink: 0 }}>{c.messages}</span>}
           </span>
-          <span style={{ fontSize: 12, color: "#a3adc4", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{who}</span>
+          <span style={{ fontSize: 12, color: "var(--muted-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{who}</span>
           {!open && c.last_body && (
-            <span style={{ fontSize: 13, color: unread ? "var(--text)" : "#8b95ae", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <span style={{ fontSize: 13, color: unread ? "var(--text)" : "var(--muted-3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {c.last_from_platform === asPlatform ? "You: " : ""}{c.last_body}
             </span>
           )}
         </span>
         <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
-          <span style={{ fontSize: 12, color: "#8b95ae" }}>{short(c.last_at)}</span>
+          <span style={{ fontSize: 12, color: "var(--muted-3)" }}>{short(c.last_at)}</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a3adc4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
             style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}><path d="M6 9l6 6 6-6" /></svg>
         </span>
@@ -180,7 +180,7 @@ function ConversationRow({ conv: c, asPlatform, open, first, onToggle, onChanged
             const ours = asPlatform ? m.from_platform : !m.from_platform;
             return (
               <div key={m.id} style={{ alignSelf: ours ? "flex-end" : "flex-start", maxWidth: "min(85%, 560px)", display: "flex", flexDirection: "column", gap: 3, alignItems: ours ? "flex-end" : "flex-start" }}>
-                <span style={{ fontSize: 11, color: "#8b95ae", display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ fontSize: 11, color: "var(--muted-3)", display: "flex", gap: 8, alignItems: "center" }}>
                   {m.mine ? "You" : m.sender_name} · {stamp(m.created_at)}
                   {m.mine && (
                     <button aria-label="Delete this message" title="Delete this message (for both sides)"
@@ -188,17 +188,17 @@ function ConversationRow({ conv: c, asPlatform, open, first, onToggle, onChanged
                         if (!window.confirm("Delete this message? It's removed for both sides.")) return;
                         try { await deleteMessage(m.id); onChanged(); } catch (e: any) { setErr(e?.message ?? "Couldn't delete."); }
                       }}
-                      style={{ background: "transparent", border: 0, color: "#8b95ae", cursor: "pointer", padding: 4, display: "flex" }}>
+                      style={{ background: "transparent", border: 0, color: "var(--muted-3)", cursor: "pointer", padding: 4, display: "flex" }}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
                     </button>
                   )}
                 </span>
                 <div style={{ padding: "10px 14px", borderRadius: 14, fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap", overflowWrap: "anywhere",
-                  background: ours ? "var(--royal)" : "var(--surface)", color: ours ? "var(--white)" : "var(--text)", border: ours ? "none" : "1px solid var(--border)" }}>{m.body}</div>
+                  background: ours ? "var(--royal)" : "var(--surface)", color: ours ? "#fff" : "var(--text)", border: ours ? "none" : "1px solid var(--border)" }}>{m.body}</div>
               </div>
             );
           })}
-          {err && <div style={{ fontSize: 13, color: "#ff8a8a" }}>{err}</div>}
+          {err && <div style={{ fontSize: 13, color: "var(--danger-text-2)" }}>{err}</div>}
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
             <textarea value={text} onChange={e => setText(e.target.value)} rows={2} maxLength={4000} aria-label={`Reply to ${c.subject}`} placeholder="Reply…"
               style={{ ...field, flex: 1, minHeight: 48, resize: "vertical" }} />

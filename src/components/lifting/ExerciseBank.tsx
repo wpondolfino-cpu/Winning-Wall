@@ -217,12 +217,12 @@ export default function ExerciseBank({ playerId, canManage }: Props) {
                           <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{ex.name}</div>
                           <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                             <span>{ex.default_rest_secs}s rest</span>
-                            {ex.default_notes && <span style={{ color: "#93b4ff", fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "rgba(26,63,168,0.15)" }}>{ex.default_notes}</span>}
+                            {ex.default_notes && <span style={{ color: "var(--info-text)", fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "rgba(26,63,168,0.15)" }}>{ex.default_notes}</span>}
                           </div>
                         </div>
                         {vid ? (
                           <a href={ex.video_url} target="_blank" rel="noreferrer"
-                            style={{ fontSize: 11, color: "var(--gold)", textDecoration: "none", fontWeight: 600, padding: "4px 8px", borderRadius: 6, background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.2)" }}>
+                            style={{ fontSize: 11, color: "var(--gold-text)", textDecoration: "none", fontWeight: 600, padding: "4px 8px", borderRadius: 6, background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.2)" }}>
                             📹 Demo
                           </a>
                         ) : (
@@ -260,7 +260,7 @@ export default function ExerciseBank({ playerId, canManage }: Props) {
                           <input value={editDefaultNotes} onChange={e => setEditDefaultNotes(e.target.value)} placeholder='Default notes (e.g. "each leg") — auto-fills in programs'
                             style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 7, padding: "7px 10px", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
                           {editVideo && getYouTubeId(editVideo) && (
-                            <div style={{ fontSize: 11, color: "#5de098" }}>✓ Valid YouTube URL</div>
+                            <div style={{ fontSize: 11, color: "var(--success-text)" }}>✓ Valid YouTube URL</div>
                           )}
                           <div style={{ display: "flex", gap: 8 }}>
                             <button onClick={handleSave} disabled={saving}
@@ -305,7 +305,7 @@ export default function ExerciseBank({ playerId, canManage }: Props) {
                 </div>
               ))}
             </div>
-            <div style={{ fontSize: 12, color: "#ff7b7b", marginBottom: 16, padding: "10px 12px", background: "rgba(255,60,60,0.08)", borderRadius: 8, border: "1px solid rgba(255,60,60,0.2)" }}>
+            <div style={{ fontSize: 12, color: "var(--danger-text)", marginBottom: 16, padding: "10px 12px", background: "rgba(255,60,60,0.08)", borderRadius: 8, border: "1px solid rgba(255,60,60,0.2)" }}>
               Deleting this exercise will remove it from all the programs and days listed above. This cannot be undone.
             </div>
             <div style={{ display: "flex", gap: 10 }}>

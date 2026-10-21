@@ -92,7 +92,7 @@ export default function RandomDrillModal({ drills, canManage, onClose, onLogScor
             )}
 
             {noMatch && (
-              <div style={{ fontSize: 12, color: "#ff7b7b", marginBottom: 14, padding: "10px 12px", background: "rgba(255,60,60,0.08)", borderRadius: 8, border: "1px solid rgba(255,60,60,0.2)" }}>
+              <div style={{ fontSize: 12, color: "var(--danger-text)", marginBottom: 14, padding: "10px 12px", background: "rgba(255,60,60,0.08)", borderRadius: 8, border: "1px solid rgba(255,60,60,0.2)" }}>
                 No drills match those filters — try loosening them up.
               </div>
             )}
@@ -106,7 +106,7 @@ export default function RandomDrillModal({ drills, canManage, onClose, onLogScor
         {step === "result" && (
           <>
             {noMatch || !result ? (
-              <div style={{ fontSize: 12, color: "#ff7b7b", marginBottom: 14, padding: "10px 12px", background: "rgba(255,60,60,0.08)", borderRadius: 8, border: "1px solid rgba(255,60,60,0.2)" }}>
+              <div style={{ fontSize: 12, color: "var(--danger-text)", marginBottom: 14, padding: "10px 12px", background: "rgba(255,60,60,0.08)", borderRadius: 8, border: "1px solid rgba(255,60,60,0.2)" }}>
                 No drills match those filters anymore — try different ones.
               </div>
             ) : (
@@ -117,11 +117,11 @@ export default function RandomDrillModal({ drills, canManage, onClose, onLogScor
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{result.category}</div>
                   <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
                     {((result as any).tags ?? []).map((t: string) => (
-                      <span key={t} style={{ fontSize: 10, color: "var(--gold)" }}>🏷️ {t}</span>
+                      <span key={t} style={{ fontSize: 10, color: "var(--gold-text)" }}>🏷️ {t}</span>
                     ))}
                   </div>
                 </div>
-                {getYouTubeId(result.video_url) && <span style={{ fontSize: 12, color: "var(--gold)" }}>📹</span>}
+                {getYouTubeId(result.video_url) && <span style={{ fontSize: 12, color: "var(--gold-text)" }}>📹</span>}
               </div>
             )}
 
@@ -138,7 +138,7 @@ export default function RandomDrillModal({ drills, canManage, onClose, onLogScor
             </div>
             {(canManage || canChallenge) && result && (result.scoring_type === "competitive" || result.scoring_type === "multi_spot") && (
               <button onClick={() => { onChallenge?.(result.id); onClose(); }}
-                style={{ width: "100%", background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", color: "var(--gold)", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", marginBottom: 8 }}>
+                style={{ width: "100%", background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", color: "var(--gold-text)", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", marginBottom: 8 }}>
                 ⚔️ Challenge Someone in This Drill
               </button>
             )}

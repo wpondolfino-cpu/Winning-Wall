@@ -117,7 +117,7 @@ export default function PracticeWinsTool({ practiceId, onClose }: Props) {
                     fontFamily: "inherit", fontWeight: 600,
                     border: `1px solid ${on ? "var(--gold)" : "var(--border)"}`,
                     background: on ? "rgba(240,192,64,0.12)" : "var(--surface2)",
-                    color: on ? "var(--gold)" : "var(--text)",
+                    color: on ? "var(--gold-text)" : "var(--text)",
                   }}>
                   {d.title}{d.label ? ` · ${d.label}` : ""}
                   {logged > 0 && <span style={{ float: "right", fontSize: 11, color: "var(--muted)", fontWeight: 400 }}>{logged} logged</span>}

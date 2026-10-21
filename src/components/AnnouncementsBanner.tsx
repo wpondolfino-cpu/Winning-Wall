@@ -57,7 +57,7 @@ export default function AnnouncementsBanner({ playerId }: { playerId: string }) 
         }}>
           <div style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.3 }}>{a.is_pinned ? "📌" : "📣"}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, color: a.is_pinned ? "var(--gold)" : "#d4b4ff", fontWeight: a.is_pinned ? 600 : 400, lineHeight: 1.5, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{a.message}</div>
+            <div style={{ fontSize: 13, color: a.is_pinned ? "var(--gold-text)" : "#d4b4ff", fontWeight: a.is_pinned ? 600 : 400, lineHeight: 1.5, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{a.message}</div>
             <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>{a.coach_name} · {ago(a.created_at)}</div>
           </div>
           <button type="button" onClick={() => hide(a.id)} aria-label="Hide this announcement" title="Hide"

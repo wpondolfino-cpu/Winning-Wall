@@ -161,7 +161,7 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
             </div>
           )}
         </div>
-        <button onClick={e => handleToggleStar(d, e)} style={{ background: "none", border: "none", fontSize: 16, cursor: "pointer", color: d.is_starred ? "var(--gold)" : "var(--muted)" }}>
+        <button onClick={e => handleToggleStar(d, e)} style={{ background: "none", border: "none", fontSize: 16, cursor: "pointer", color: d.is_starred ? "var(--gold-text)" : "var(--muted)" }}>
           {d.is_starred ? "★" : "☆"}
         </button>
       </div>
@@ -171,7 +171,7 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
   const content = (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1 }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", letterSpacing: 1 }}>
           {isPicker ? "Add a drill" : "Practice Drill Library"}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -271,7 +271,7 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
                 .filter(Boolean).join(" · ")}
             </div>
             {viewDrill.linked_play_id && plays.find(p => p.id === viewDrill.linked_play_id) && (
-              <div style={{ fontSize: 12, color: "var(--gold)", marginBottom: 10 }}>🏀 Linked play: {plays.find(p => p.id === viewDrill.linked_play_id)?.title}</div>
+              <div style={{ fontSize: 12, color: "var(--gold-text)", marginBottom: 10 }}>🏀 Linked play: {plays.find(p => p.id === viewDrill.linked_play_id)?.title}</div>
             )}
             <div style={{ display: "flex", gap: 8 }}>
               {isPicker && <button onClick={() => onPick!(viewDrill)} style={primaryBtn}>Add to practice</button>}
@@ -355,7 +355,7 @@ const smallBtn: React.CSSProperties = {
   padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer",
 };
 const dangerSmallBtn: React.CSSProperties = {
-  background: "rgba(226,75,74,0.08)", border: "1px solid rgba(226,75,74,0.2)", color: "#ff7b7b", borderRadius: 6,
+  background: "rgba(226,75,74,0.08)", border: "1px solid rgba(226,75,74,0.2)", color: "var(--danger-text)", borderRadius: 6,
   padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer",
 };
 const chip: React.CSSProperties = {

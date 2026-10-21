@@ -29,7 +29,7 @@ export default function CallEntryCard({ entry, myPlays, canManage, onPatch, onRe
           <input value={entry.call_name} onChange={e => onPatch(entry.id, { call_name: e.target.value })}
             style={{ fontSize: 14, fontWeight: 600, background: "none", border: "none", color: "var(--text)", flex: 1 }} />
         ) : <span style={{ fontSize: 14, fontWeight: 600 }}>{entry.call_name}</span>}
-        {canManage && <button type="button" onClick={() => onRemove(entry.id)} style={{ background: "none", border: "none", color: "#ff7b7b", cursor: "pointer", fontSize: 12 }}>Remove</button>}
+        {canManage && <button type="button" onClick={() => onRemove(entry.id)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", fontSize: 12 }}>Remove</button>}
       </div>
 
       <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Description</div>

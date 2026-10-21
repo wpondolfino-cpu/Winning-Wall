@@ -103,7 +103,7 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
 
       {/* Admin mode indicator */}
       {canDelete && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.25)", borderRadius: 10, marginBottom: 16, fontSize: 12, color: "var(--gold)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.25)", borderRadius: 10, marginBottom: 16, fontSize: 12, color: "var(--gold-text)" }}>
           👑 Admin mode — delete buttons visible. Players do not see these.
         </div>
       )}
@@ -157,7 +157,7 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
                       }}>
                         {c.avatar_url
                           ? <img src={c.avatar_url} alt={c.player_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          : <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)" }}>{initials}</span>
+                          : <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--title)" }}>{initials}</span>
                         }
                       </div>
                       {isReigning && <div style={{ position: "absolute", bottom: -4, right: -4, fontSize: 18 }}>👑</div>}
@@ -167,11 +167,11 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         {!isReigning && <span>👑</span>}
-                        <div style={{ fontWeight: 700, fontSize: 16, color: isReigning ? "var(--gold)" : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <div style={{ fontWeight: 700, fontSize: 16, color: isReigning ? "var(--gold-text)" : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {c.player_name}
                         </div>
                         {isReigning && (
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "rgba(240,192,64,0.2)", color: "var(--gold)" }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "rgba(240,192,64,0.2)", color: "var(--gold-text)" }}>
                             REIGNING
                           </span>
                         )}
@@ -189,7 +189,7 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
                     {/* Points + admin delete */}
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, flexShrink: 0 }}>
                       <div style={{ textAlign: "center" }}>
-                        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: isReigning ? "var(--gold)" : "#93b4ff", lineHeight: 1 }}>{c.points}</div>
+                        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: isReigning ? "var(--title)" : "var(--info-text)", lineHeight: 1 }}>{c.points}</div>
                         <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>{c.team_name ? (c.points === 1 ? "win" : "wins") : "pts"}</div>
                       </div>
                       {canDelete && (
@@ -214,7 +214,7 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
       {!loading && tab === "records" && (
         <div>
           {/* All-time records */}
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1, marginBottom: 14 }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", letterSpacing: 1, marginBottom: 14 }}>
             🏅 All-Time Records
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28 }}>
@@ -225,20 +225,20 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
                 <div key={type} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 14 }}>
                   <div style={{ fontSize: 28, flexShrink: 0 }}>{meta.icon}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13, color: "var(--gold)" }}>{meta.label}</div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: "var(--gold-text)" }}>{meta.label}</div>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, lineHeight: 1.4 }}>{meta.desc}</div>
                     {rec && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>{rec.season}</div>}
                   </div>
                   {rec ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
                       <div style={{ textAlign: "right" }}>
-                        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "#93b4ff", lineHeight: 1 }}>{rec.display_value}</div>
+                        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "var(--info-text)", lineHeight: 1 }}>{rec.display_value}</div>
                         <div style={{ fontSize: 11, color: "var(--muted)" }}>{rec.player_name}</div>
                       </div>
                       <div style={{ width: 40, height: 40, borderRadius: "50%", overflow: "hidden", border: "2px solid var(--gold)", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                         {rec.avatar_url
                           ? <img src={rec.avatar_url} alt={rec.player_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          : <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{initials}</span>
+                          : <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold-text)" }}>{initials}</span>
                         }
                       </div>
                       {canDelete && (
@@ -263,7 +263,7 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
           </div>
 
           {/* Best score per drill */}
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1, marginBottom: 14 }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", letterSpacing: 1, marginBottom: 14 }}>
             🎯 Best Score Per Drill
           </div>
           {drillRecords.length === 0 ? (
@@ -294,13 +294,13 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
                         <div style={{ textAlign: "right" }}>
-                          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "var(--gold)", lineHeight: 1 }}>{rec.display_value}</div>
+                          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "var(--title)", lineHeight: 1 }}>{rec.display_value}</div>
                           <div style={{ fontSize: 11, color: "var(--muted)" }}>{rec.player_name}</div>
                         </div>
                         <div style={{ width: 40, height: 40, borderRadius: "50%", overflow: "hidden", border: "2px solid var(--gold)", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                           {rec.avatar_url
                             ? <img src={rec.avatar_url} alt={rec.player_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                            : <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{initials}</span>
+                            : <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold-text)" }}>{initials}</span>
                           }
                         </div>
                         {canDelete && (

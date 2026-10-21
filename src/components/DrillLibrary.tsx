@@ -256,15 +256,15 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
                         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{d.title}</div>
                         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                           {((d as any).tags ?? []).map((t: string) => (
-                            <span key={t} style={{ fontSize: 10, color: "var(--gold)" }}>🏷️ {t}</span>
+                            <span key={t} style={{ fontSize: 10, color: "var(--gold-text)" }}>🏷️ {t}</span>
                           ))}
                           {(d as any).library_archived && <span style={{ fontSize: 10, color: "var(--muted)" }}>📦 Archived</span>}
                         </div>
                       </div>
-                      {vid && <span style={{ fontSize: 11, color: "var(--gold)" }}>📹</span>}
+                      {vid && <span style={{ fontSize: 11, color: "var(--gold-text)" }}>📹</span>}
                       {(canManage || canChallenge) && (d.scoring_type === "competitive" || d.scoring_type === "multi_spot") && (
                         <button onClick={(e) => { e.stopPropagation(); onChallenge?.(d.id); }}
-                          style={{ background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", color: "var(--gold)", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
+                          style={{ background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", color: "var(--gold-text)", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
                           ⚔️ Challenge
                         </button>
                       )}
@@ -306,11 +306,11 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
               {Object.entries(usageModal.counts).filter(([, c]) => c > 0).map(([label, count]) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: "var(--surface2)", borderRadius: 8, border: "1px solid var(--border)" }}>
                   <span style={{ fontSize: 13, color: "var(--text)" }}>{label}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{count}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold-text)" }}>{count}</span>
                 </div>
               ))}
             </div>
-            <div style={{ fontSize: 12, color: "#ff7b7b", marginBottom: 16, padding: "10px 12px", background: "rgba(255,60,60,0.08)", borderRadius: 8, border: "1px solid rgba(255,60,60,0.2)" }}>
+            <div style={{ fontSize: 12, color: "var(--danger-text)", marginBottom: 16, padding: "10px 12px", background: "rgba(255,60,60,0.08)", borderRadius: 8, border: "1px solid rgba(255,60,60,0.2)" }}>
               Deleting this drill will permanently erase all of the above. We'd recommend archiving instead — it hides the drill from the library without losing any history.
             </div>
             <div style={{ display: "flex", gap: 10 }}>
@@ -337,7 +337,7 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
               <span style={{ fontSize: 11, color: "var(--muted)" }}>{viewDrill.category}</span>
               {((viewDrill as any).tags ?? []).map((t: string) => (
-                <span key={t} style={{ fontSize: 10, color: "var(--gold)" }}>🏷️ {t}</span>
+                <span key={t} style={{ fontSize: 10, color: "var(--gold-text)" }}>🏷️ {t}</span>
               ))}
               {(viewDrill as any).library_archived && <span style={{ fontSize: 10, color: "var(--muted)" }}>📦 Archived</span>}
             </div>
@@ -356,7 +356,7 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
               <a href={(viewDrill as any).resource_url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
                 style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "rgba(26,63,168,0.1)", border: "1px solid rgba(26,63,168,0.25)", borderRadius: 10, marginBottom: 14, textDecoration: "none" }}>
                 <span style={{ fontSize: 20 }}>📄</span>
-                <span style={{ flex: 1, fontSize: 13, color: "#93b4ff", fontWeight: 600 }}>View Program / Resource</span>
+                <span style={{ flex: 1, fontSize: 13, color: "var(--info-text)", fontWeight: 600 }}>View Program / Resource</span>
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>↗</span>
               </a>
             )}

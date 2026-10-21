@@ -149,7 +149,7 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
     return (
       <div style={{ textAlign: "center", padding: "12px 0" }}>
         <div style={{ fontSize: 13, color: "var(--muted)" }}>{title}</div>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, color: "var(--gold)", lineHeight: 1.1, margin: "10px 0" }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, color: "var(--title)", lineHeight: 1.1, margin: "10px 0" }}>
           {finished.correct} / {finished.total}
         </div>
         <div style={{ fontSize: 14, marginBottom: 16 }}>{pct}% correct</div>
@@ -190,7 +190,7 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
         <span style={{ fontSize: 13, color: "var(--muted)" }}>{title}</span>
         <span style={{ fontSize: 13, color: "var(--muted)" }}>
           {remaining != null && !feedback && (
-            <span style={{ marginRight: 10, color: remaining <= 5 ? "#ff7b7b" : "var(--text)", fontWeight: 600 }}>⏱ {Math.max(0, remaining)}s</span>
+            <span style={{ marginRight: 10, color: remaining <= 5 ? "var(--danger-text)" : "var(--text)", fontWeight: 600 }}>⏱ {Math.max(0, remaining)}s</span>
           )}
           {question.index} of {question.total}
         </span>
@@ -227,14 +227,14 @@ export default function QuizTaker({ quizId, title, onClose }: Props) {
         </button>
       ))}
 
-      {inputError && <div style={{ fontSize: 13, color: "#ff7b7b", margin: "2px 0 8px" }}>{inputError}</div>}
+      {inputError && <div style={{ fontSize: 13, color: "var(--danger-text)", margin: "2px 0 8px" }}>{inputError}</div>}
 
       {feedback ? (
         <>
           <div style={{
             borderRadius: 10, padding: "10px 12px", margin: "6px 0 12px", fontSize: 13,
             background: feedback.correct ? "rgba(40,180,80,0.15)" : "rgba(220,50,50,0.15)",
-            color: feedback.correct ? "#5de098" : "#ff7b7b",
+            color: feedback.correct ? "var(--success-text)" : "var(--danger-text)",
           }}>
             <strong>{feedback.correct ? "Correct." : feedback.timed_out ? "Time's up." : "Not quite."}</strong>
             {feedback.explanation ? ` ${feedback.explanation}` : ""}

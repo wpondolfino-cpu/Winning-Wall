@@ -367,7 +367,7 @@ export default function AdminPanel({}: Props) {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
         <div className="section-title">Admin Panel</div>
-        <span style={{ background: "rgba(240,192,64,0.2)", color: "var(--gold)", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, border: "1px solid rgba(240,192,64,0.3)" }}>ADMIN</span>
+        <span style={{ background: "rgba(240,192,64,0.2)", color: "var(--gold-text)", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, border: "1px solid rgba(240,192,64,0.3)" }}>ADMIN</span>
       </div>
       <div className="section-sub">Full control — manage players, coaches, and accounts</div>
 
@@ -393,7 +393,7 @@ export default function AdminPanel({}: Props) {
         <div>
           {/* Header + New Badge button */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1 }}>🏅 Badge Manager</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", letterSpacing: 1 }}>🏅 Badge Manager</div>
             <button onClick={() => { setShowNewBadge(s => !s); setEditBadge(null); }} style={{
               background: showNewBadge ? "var(--surface)" : "var(--royal)", color: showNewBadge ? "var(--muted)" : "#fff",
               border: `1px solid ${showNewBadge ? "var(--border)" : "var(--royal)"}`,
@@ -417,7 +417,7 @@ export default function AdminPanel({}: Props) {
                       flexShrink: 0, display: "flex", alignItems: "center", gap: 5,
                       padding: "6px 12px", borderRadius: 20, border: `1px solid ${emojiCategory === i ? "var(--royal)" : "var(--border)"}`,
                       background: emojiCategory === i ? "rgba(26,63,168,0.15)" : "var(--surface)",
-                      color: emojiCategory === i ? "#93b4ff" : "var(--muted)",
+                      color: emojiCategory === i ? "var(--info-text)" : "var(--muted)",
                       cursor: "pointer", fontSize: 12, fontWeight: emojiCategory === i ? 700 : 400,
                       fontFamily: "inherit", whiteSpace: "nowrap",
                     }}>
@@ -516,8 +516,8 @@ export default function AdminPanel({}: Props) {
                             </div>
                             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                               <button onClick={() => { setEditBadge(b); setShowNewBadge(false); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>✏️</button>
-                              <button onClick={() => deleteBadge(b.id!)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#ff7b7b" }}>🗑</button>
-                              <button onClick={() => toggleBadgeActive(b)} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, border: "none", cursor: "pointer", fontWeight: 700, background: b.is_active ? "rgba(40,180,80,0.15)" : "var(--surface)", color: b.is_active ? "#5de098" : "var(--muted)" }}>
+                              <button onClick={() => deleteBadge(b.id!)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "var(--danger-text)" }}>🗑</button>
+                              <button onClick={() => toggleBadgeActive(b)} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, border: "none", cursor: "pointer", fontWeight: 700, background: b.is_active ? "rgba(40,180,80,0.15)" : "var(--surface)", color: b.is_active ? "var(--success-text)" : "var(--muted)" }}>
                                 {b.is_active ? "ON" : "OFF"}
                               </button>
                             </div>
@@ -576,7 +576,7 @@ export default function AdminPanel({}: Props) {
             </div>
             <button onClick={toggleXpSystem} disabled={xpToggling} style={{
               background: xpEnabled ? "rgba(40,180,80,0.15)" : "rgba(255,107,107,0.15)",
-              color: xpEnabled ? "#5de098" : "#ff7b7b",
+              color: xpEnabled ? "var(--success-text)" : "var(--danger-text)",
               border: `1px solid ${xpEnabled ? "rgba(40,180,80,0.3)" : "rgba(255,107,107,0.3)"}`,
               borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 700,
               fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap",
@@ -585,7 +585,7 @@ export default function AdminPanel({}: Props) {
 
           {/* XP per action */}
           <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px", marginBottom: 16 }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 14 }}>XP Per Action</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)", letterSpacing: 1, marginBottom: 14 }}>XP Per Action</div>
             {[
               { key: "_xp_workout",        label: "🏀 Workout log (first 3 per drill per day)",     field: "workout" as const },
               { key: "_xp_challenge_sent", label: "⚔️ Challenger — challenge completed",      field: "challenge_sent" as const },
@@ -605,7 +605,7 @@ export default function AdminPanel({}: Props) {
 
           {/* Perk thresholds */}
           <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px" }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 14 }}>Perk Unlock Thresholds</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)", letterSpacing: 1, marginBottom: 14 }}>Perk Unlock Thresholds</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {xpPerks.map((perk, i) => (
                 <div key={perk.perk_key} style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -633,7 +633,7 @@ export default function AdminPanel({}: Props) {
       {adminTab === "teams" && (
         <div>
       <div style={{ marginTop: 32 }}>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1, marginBottom: 16 }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", letterSpacing: 1, marginBottom: 16 }}>
           🏆 Team Competition
         </div>
 
@@ -641,7 +641,7 @@ export default function AdminPanel({}: Props) {
         {teamComp && (
           <div style={{ background: teamComp.is_active ? "rgba(40,180,80,0.08)" : "rgba(255,107,107,0.08)", border: `1px solid ${teamComp.is_active ? "rgba(40,180,80,0.3)" : "rgba(255,107,107,0.3)"}`, borderRadius: 12, padding: "14px 16px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 14, color: teamComp.is_active ? "#5de098" : "#ff7b7b" }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: teamComp.is_active ? "var(--success-text)" : "var(--danger-text)" }}>
                 {teamComp.is_active ? "🟢 Competition Active" : "🔴 Competition Inactive"}
               </div>
               <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
@@ -651,7 +651,7 @@ export default function AdminPanel({}: Props) {
               {!endingComp ? (
                 <button onClick={() => setEndingComp(true)} style={{
                   background: "rgba(240,192,64,0.15)", border: "1px solid rgba(240,192,64,0.4)",
-                  color: "var(--gold)", borderRadius: 8, padding: "7px 14px",
+                  color: "var(--gold-text)", borderRadius: 8, padding: "7px 14px",
                   fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", marginTop: 8,
                 }}>🏆 End Competition & Award Winner</button>
               ) : (
@@ -685,7 +685,7 @@ export default function AdminPanel({}: Props) {
               )}
             </div>
             <button onClick={() => handleToggleTeams(!teamComp.is_active)} disabled={teamTogglingOff}
-              style={{ background: teamComp.is_active ? "rgba(255,107,107,0.15)" : "rgba(40,180,80,0.15)", color: teamComp.is_active ? "#ff7b7b" : "#5de098", border: `1px solid ${teamComp.is_active ? "rgba(255,107,107,0.3)" : "rgba(40,180,80,0.3)"}`, borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
+              style={{ background: teamComp.is_active ? "rgba(255,107,107,0.15)" : "rgba(40,180,80,0.15)", color: teamComp.is_active ? "var(--danger-text)" : "var(--success-text)", border: `1px solid ${teamComp.is_active ? "rgba(255,107,107,0.3)" : "rgba(40,180,80,0.3)"}`, borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
               {teamTogglingOff ? "Updating…" : teamComp.is_active ? "Turn Off" : "Turn On"}
             </button>
           </div>
@@ -762,7 +762,7 @@ export default function AdminPanel({}: Props) {
                 ))}
               </div>
               <button onClick={confirmTeams} disabled={teamSaving}
-                style={{ width: "100%", marginTop: 12, background: "#5de098", color: "#051a0a", border: "none", borderRadius: 8, padding: "10px", fontSize: 14, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                style={{ width: "100%", marginTop: 12, background: "var(--success-text)", color: "#051a0a", border: "none", borderRadius: 8, padding: "10px", fontSize: 14, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
                 {teamSaving ? "Saving…" : "✅ Confirm Teams"}
               </button>
             </div>
@@ -771,7 +771,7 @@ export default function AdminPanel({}: Props) {
           {/* Competition History */}
           {compHistory.length > 0 && (
             <div style={{ marginTop: 24 }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 12 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)", letterSpacing: 1, marginBottom: 12 }}>
                 📋 Competition History
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -788,12 +788,12 @@ export default function AdminPanel({}: Props) {
                               <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                                 {[...details].sort((a,b) => b.teamScore - a.teamScore).map((t: any, i: number) => (
                                   <span key={t.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                    <span style={{ color: i === 0 ? "var(--gold)" : "var(--text)" }}>{t.name}</span>
-                                    <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: i === 0 ? "var(--gold)" : "#93b4ff" }}>{t.teamScore}</span>
+                                    <span style={{ color: i === 0 ? "var(--gold-text)" : "var(--text)" }}>{t.name}</span>
+                                    <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: i === 0 ? "var(--title)" : "var(--info-text)" }}>{t.teamScore}</span>
                                     {i === 0 && <span style={{ color: "var(--muted)", fontSize: 11 }}>vs</span>}
                                   </span>
                                 ))}
-                                <span style={{ fontSize: 11, color: "#5de098", marginLeft: 4 }}>+{comp.bonus_points} pts</span>
+                                <span style={{ fontSize: 11, color: "var(--success-text)", marginLeft: 4 }}>+{comp.bonus_points} pts</span>
                               </div>
                               <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 3 }}>{comp.start_date} – {comp.end_date}</div>
                             </>
@@ -812,13 +812,13 @@ export default function AdminPanel({}: Props) {
                             <div key={team.id} style={{ background: "var(--surface)", borderRadius: 10, padding: "10px 12px", border: `1px solid ${ti === 0 ? "rgba(240,192,64,0.4)" : "var(--border)"}` }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
                                 <div style={{ width: 10, height: 10, borderRadius: "50%", background: team.color, flexShrink: 0 }} />
-                                <div style={{ fontSize: 13, fontWeight: 700, color: ti === 0 ? "var(--gold)" : "var(--text)" }}>{team.name}</div>
-                                <div style={{ marginLeft: "auto", fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: ti === 0 ? "var(--gold)" : "#93b4ff" }}>{team.teamScore} pts</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: ti === 0 ? "var(--gold-text)" : "var(--text)" }}>{team.name}</div>
+                                <div style={{ marginLeft: "auto", fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: ti === 0 ? "var(--title)" : "var(--info-text)" }}>{team.teamScore} pts</div>
                               </div>
                               {team.players.map((p: any) => (
                                 <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: 11, borderBottom: "1px solid var(--border)" }}>
                                   <span style={{ color: "var(--text)" }}>{p.name}</span>
-                                  <span style={{ color: "#93b4ff", fontWeight: 600 }}>{team.ptMap[p.id] ?? 0} pts</span>
+                                  <span style={{ color: "var(--info-text)", fontWeight: 600 }}>{team.ptMap[p.id] ?? 0} pts</span>
                                 </div>
                               ))}
                             </div>

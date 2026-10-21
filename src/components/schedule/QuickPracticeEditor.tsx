@@ -168,7 +168,7 @@ export default function QuickPracticeEditor({ rosters, defaultDate, existing = [
                 {d.label}
                 <br />
                 <span style={{ fontSize: 10, opacity: on ? 0.85 : 0.6 }}>{d.dayNum}</span>
-                {booked && <span style={{ display: "block", fontSize: 9, color: on ? "#fff" : "var(--gold)" }}>booked</span>}
+                {booked && <span style={{ display: "block", fontSize: 9, color: on ? "#fff" : "var(--gold-text)" }}>booked</span>}
               </button>
             );
           })}
@@ -200,7 +200,7 @@ export default function QuickPracticeEditor({ rosters, defaultDate, existing = [
                       </button>
                       {hasOwn && (
                         <>
-                          <span style={{ fontSize: 10.5, color: "var(--gold)" }}>own time</span>
+                          <span style={{ fontSize: 10.5, color: "var(--gold-text)" }}>own time</span>
                           <button title="Back to the default"
                             onClick={() => setOwn(o => { const c = { ...o }; delete c[i]; return c; })}
                             style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 12, cursor: "pointer", padding: 0 }}>↺</button>
@@ -232,7 +232,7 @@ export default function QuickPracticeEditor({ rosters, defaultDate, existing = [
           </>
         )}
 
-        {err && <div style={{ fontSize: 12, color: "#ff7b7b", marginTop: 10 }}>{err}</div>}
+        {err && <div style={{ fontSize: 12, color: "var(--danger-text)", marginTop: 10 }}>{err}</div>}
 
         <div style={{ marginTop: 14 }}>
           {/* Says how many, so a stray tap doesn't book one you didn't mean. */}

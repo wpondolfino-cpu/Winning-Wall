@@ -44,7 +44,7 @@ export default function QuizAttemptReview({ attemptId, onClose }: Props) {
 
       {review.questions.map((q, i) => (
         <div key={q.question_id} style={{ padding: "12px 0", borderTop: "1px solid var(--border)" }}>
-          <div style={{ fontSize: 12, color: q.is_correct ? "#5de098" : "#ff7b7b", marginBottom: 4 }}>
+          <div style={{ fontSize: 12, color: q.is_correct ? "var(--success-text)" : "var(--danger-text)", marginBottom: 4 }}>
             {i + 1}. {q.is_correct ? "Correct" : q.timed_out ? "Time ran out" : "Missed"}
           </div>
           {q.reveal && (

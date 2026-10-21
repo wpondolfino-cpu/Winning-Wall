@@ -88,7 +88,7 @@ export default function QuizResults({ bundle }: Props) {
           borderColor: "rgba(220,50,50,0.35)" }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>{f.label}</div>
-            <div style={{ fontSize: 12, color: "#ff7b7b" }}>{f.missed} of {f.answered} missed — cover it in pregame or at the next practice</div>
+            <div style={{ fontSize: 12, color: "var(--danger-text)" }}>{f.missed} of {f.answered} missed — cover it in pregame or at the next practice</div>
           </div>
           {added[f.key] ? (
             <span style={pill("good")}>Added to {formatDateOnly(added[f.key], { weekday: "short", month: "short", day: "numeric" })}</span>

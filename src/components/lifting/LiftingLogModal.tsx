@@ -71,7 +71,7 @@ export default function LiftingLogModal({ dayExercise, playerId, playerName, ava
         <div className="modal-title" style={{ marginBottom: 2 }}>{ex?.name}</div>
         <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 14 }}>
           {ex?.muscle_group}
-          {hofEligible && <span style={{ marginLeft: 8, color: "var(--gold)" }}>🏆 HOF Eligible</span>}
+          {hofEligible && <span style={{ marginLeft: 8, color: "var(--gold-text)" }}>🏆 HOF Eligible</span>}
         </div>
 
         {/* Video */}
@@ -82,7 +82,7 @@ export default function LiftingLogModal({ dayExercise, playerId, playerName, ava
           if (isShort) {
             return (
               <a href={ex.video_url} target="_blank" rel="noreferrer"
-                style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px", background: "rgba(255,0,0,0.1)", border: "1px solid rgba(255,0,0,0.2)", borderRadius: 10, marginBottom: 14, color: "#ff7b7b", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px", background: "rgba(255,0,0,0.1)", border: "1px solid rgba(255,0,0,0.2)", borderRadius: 10, marginBottom: 14, color: "var(--danger-text)", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>
                 📱 Watch Demo on YouTube Shorts ↗
               </a>
             );
@@ -97,12 +97,12 @@ export default function LiftingLogModal({ dayExercise, playerId, playerName, ava
         {/* Target */}
         {(dayExercise.target_sets || dayExercise.target_reps || dayExercise.target_weight || (dayExercise as any).notes) && (
           <div style={{ padding: "8px 12px", background: "rgba(26,63,168,0.1)", border: "1px solid rgba(26,63,168,0.25)", borderRadius: 8, fontSize: 12, color: "var(--silver-light)", marginBottom: 12, lineHeight: 1.5 }}>
-            🎯 Target: <strong style={{ color: "#93b4ff" }}>
+            🎯 Target: <strong style={{ color: "var(--info-text)" }}>
               {[dayExercise.target_sets && `${dayExercise.target_sets} sets`, dayExercise.target_reps && `${dayExercise.target_reps} reps`, dayExercise.target_weight && `${dayExercise.target_weight} lbs`].filter(Boolean).join(" × ")}
             </strong>
             {" · "}<span style={{ color: "var(--muted)" }}>{dayExercise.rest_secs ?? 90}s rest</span>
             {(dayExercise as any).notes && (
-              <div style={{ marginTop: 4, color: "#93b4ff", fontWeight: 600 }}>📌 {(dayExercise as any).notes}</div>
+              <div style={{ marginTop: 4, color: "var(--info-text)", fontWeight: 600 }}>📌 {(dayExercise as any).notes}</div>
             )}
           </div>
         )}
@@ -119,7 +119,7 @@ export default function LiftingLogModal({ dayExercise, playerId, playerName, ava
                   <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", background: "var(--surface2)", borderRadius: 6, fontSize: 11 }}>
                     <span style={{ color: "var(--muted)" }}>{new Date(log.logged_at).toLocaleDateString()}</span>
                     <span style={{ color: "var(--silver-light)" }}>{log.sets_data.length} sets</span>
-                    <span style={{ color: "#5de098", fontWeight: 600 }}>{best ? `${best.weight} lbs × ${best.reps}` : "—"}</span>
+                    <span style={{ color: "var(--success-text)", fontWeight: 600 }}>{best ? `${best.weight} lbs × ${best.reps}` : "—"}</span>
                     <span style={{ color: "var(--muted)" }}>{Math.round(vol).toLocaleString()} lbs vol</span>
                   </div>
                 );
@@ -132,14 +132,14 @@ export default function LiftingLogModal({ dayExercise, playerId, playerName, ava
         {restActive && (
           <div style={{ padding: "12px 16px", background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 10, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase" }}>⏱ Rest Timer</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold-text)", textTransform: "uppercase" }}>⏱ Rest Timer</div>
               <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>Set {(completedSetIdx ?? 0) + 1} complete</div>
             </div>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "var(--gold)", lineHeight: 1 }}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "var(--title)", lineHeight: 1 }}>
               {Math.floor(restRemaining / 60)}:{String(restRemaining % 60).padStart(2, "0")}
             </div>
             <button onClick={() => { setRestActive(false); if (restRef.current) clearInterval(restRef.current); }}
-              style={{ background: "none", border: "1px solid rgba(240,192,64,0.4)", color: "var(--gold)", borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
+              style={{ background: "none", border: "1px solid rgba(240,192,64,0.4)", color: "var(--gold-text)", borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
               Skip
             </button>
           </div>
@@ -163,11 +163,11 @@ export default function LiftingLogModal({ dayExercise, playerId, playerName, ava
               <input type="number" inputMode="decimal" value={s.weight} onChange={e => updateSet(i, "weight", e.target.value)} placeholder="0"
                 style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 4px", color: "var(--text)", fontSize: 14, fontWeight: 600, fontFamily: "inherit", outline: "none", textAlign: "center", boxSizing: "border-box" as const, width: "100%" }} />
               <button onClick={() => startRest(i)} title="Mark complete & start rest"
-                style={{ background: s.reps && s.weight ? "rgba(40,180,80,0.2)" : "var(--surface2)", border: `1px solid ${s.reps && s.weight ? "rgba(40,180,80,0.4)" : "var(--border)"}`, color: s.reps && s.weight ? "#5de098" : "var(--muted)", borderRadius: 7, padding: "8px 4px", fontSize: 14, cursor: "pointer" }}>
+                style={{ background: s.reps && s.weight ? "rgba(40,180,80,0.2)" : "var(--surface2)", border: `1px solid ${s.reps && s.weight ? "rgba(40,180,80,0.4)" : "var(--border)"}`, color: s.reps && s.weight ? "var(--success-text)" : "var(--muted)", borderRadius: 7, padding: "8px 4px", fontSize: 14, cursor: "pointer" }}>
                 ✓
               </button>
               {sets.length > 1 && (
-                <button onClick={() => removeSet(i)} style={{ background: "none", border: "none", color: "#ff7b7b", cursor: "pointer", fontSize: 16, padding: "4px" }}>×</button>
+                <button onClick={() => removeSet(i)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", fontSize: 16, padding: "4px" }}>×</button>
               )}
             </div>
           ))}
@@ -179,11 +179,11 @@ export default function LiftingLogModal({ dayExercise, playerId, playerName, ava
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
             <div style={{ padding: "8px 12px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, textAlign: "center" }}>
               <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>Est. 1RM</div>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: "var(--gold)", lineHeight: 1.2 }}>{best1RM} lbs</div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: "var(--title)", lineHeight: 1.2 }}>{best1RM} lbs</div>
             </div>
             <div style={{ padding: "8px 12px", background: "rgba(26,63,168,0.1)", border: "1px solid rgba(26,63,168,0.25)", borderRadius: 8, textAlign: "center" }}>
               <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>Volume</div>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: "#93b4ff", lineHeight: 1.2 }}>{Math.round(totalVolume).toLocaleString()} lbs</div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: "var(--info-text)", lineHeight: 1.2 }}>{Math.round(totalVolume).toLocaleString()} lbs</div>
             </div>
           </div>
         )}

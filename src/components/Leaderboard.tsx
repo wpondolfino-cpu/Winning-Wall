@@ -357,7 +357,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
     return (
       <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", flexShrink: 0, background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${getAvatarOutline(id)}` }}>
         {url ? <img src={url} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          : <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)" }}>{name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()}</span>}
+          : <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gold-text)" }}>{name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()}</span>}
       </div>
     );
   }
@@ -430,14 +430,14 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                       <div className="lb-name" style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                         {entry.is_period_champion && <span>👑</span>}
                         {entry.name}
-                        {entry.id === currentUserId && <span style={{ fontSize: 11, color: "#93b4ff" }}>(you)</span>}
+                        {entry.id === currentUserId && <span style={{ fontSize: 11, color: "var(--info-text)" }}>(you)</span>}
                         {(entry.current_streak ?? 0) >= 2 && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 10, background: "rgba(255,100,0,0.2)", color: "#ff8c42", border: "1px solid rgba(255,100,0,0.3)" }}>🔥 {entry.current_streak}d</span>}
                       </div>
                       {gradeTab === ALL && <div className="lb-pos"><span style={{ color: "var(--muted)" }}>{SHORT[entry.grade_category ?? ""] ?? entry.grade_category}</span></div>}
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
-                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)" }}>{entry.total_points}</div>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--title)" }}>{entry.total_points}</div>
                     <span style={{ color: "var(--muted)", fontSize: 12 }}>{expandedPlayer === entry.id ? "▲" : "▼"}</span>
                   </div>
                 </div>
@@ -451,10 +451,10 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                             <div style={{ fontSize: 12, color: r.competition_id ? "var(--silver-light)" : "var(--muted)" }}>
                               {r.won && <span title="Won this competition">👑 </span>}
                               {r.label}
-                              {r.running && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: "rgba(26,63,168,0.3)", color: "#93b4ff" }}>running</span>}
+                              {r.running && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 8, background: "rgba(26,63,168,0.3)", color: "var(--info-text)" }}>running</span>}
                               {r.competition_id && r.starts_at && r.ends_at && <span style={{ color: "var(--muted)", fontSize: 11 }}> · {competitionRange({ starts_at: r.starts_at, ends_at: r.ends_at })}</span>}
                             </div>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)", whiteSpace: "nowrap" }}>{r.points}</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold-text)", whiteSpace: "nowrap" }}>{r.points}</span>
                           </div>
                         ))}
                       </>
@@ -469,7 +469,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                           <div style={{ fontSize: 12, color: "var(--silver-light)" }}>{w?.emoji ?? "🏀"} {w?.title ?? "Unknown"}</div>
                           <div style={{ display: "flex", gap: 12 }}>
                             <span style={{ fontSize: 11, color: "var(--muted)" }}>Score: {raw}</span>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>+{s.points} pts</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold-text)" }}>+{s.points} pts</span>
                           </div>
                         </div>
                       );
@@ -491,7 +491,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                     )}
                     <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
                       <span style={{ color: "var(--muted)" }}>Total</span>
-                      <span style={{ color: "var(--gold)" }}>{entry.total_points} pts</span>
+                      <span style={{ color: "var(--gold-text)" }}>{entry.total_points} pts</span>
                     </div>
                   </div>
                 )}
@@ -509,7 +509,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
       {mainTab === "current" && !comp && competition.loaded && (
         <div style={{ textAlign: "center", padding: "36px 16px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12 }}>
           <div style={{ fontSize: 28 }}>⏸️</div>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1, marginTop: 6 }}>No competition running</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", letterSpacing: 1, marginTop: 6 }}>No competition running</div>
           {competition.next && (
             <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 6 }}>{competition.next.name} starts {shortDate(firstDay(competition.next))}.</div>
           )}
@@ -523,7 +523,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
           {/* Period banner */}
           <div style={{ marginBottom: 14, padding: "10px 16px", background: "linear-gradient(135deg, rgba(26,63,168,0.2), rgba(240,192,64,0.1))", border: "1px solid rgba(240,192,64,0.25)", borderRadius: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--gold)", letterSpacing: 1 }}>👑 {comp.name}</div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--title)", letterSpacing: 1 }}>👑 {comp.name}</div>
               {comp.name !== competitionRange(comp) && <div style={{ fontSize: 12, color: "var(--muted)" }}>{competitionRange(comp)}</div>}
             </div>
             <div style={{ fontSize: 12, color: "var(--silver-light)" }}>{daysLeft(comp) === 1 ? "Last day" : `${daysLeft(comp)} days left`}</div>
@@ -535,14 +535,14 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
               padding: "6px 14px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600,
               border: `1px solid ${drillView === "overall" ? "var(--royal-light)" : "var(--border)"}`,
               background: drillView === "overall" ? "rgba(26,63,168,0.2)" : "var(--surface2)",
-              color: drillView === "overall" ? "#93b4ff" : "var(--muted)",
+              color: drillView === "overall" ? "var(--info-text)" : "var(--muted)",
             }}>🏆 Overall</button>
             {visibleWorkouts.map(w => (
               <button key={w.id} onClick={() => setDrillView(w.id)} style={{
                 padding: "6px 14px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
                 border: `1px solid ${drillView === w.id ? "var(--royal-light)" : "var(--border)"}`,
                 background: drillView === w.id ? "rgba(26,63,168,0.2)" : "var(--surface2)",
-                color: drillView === w.id ? "#93b4ff" : "var(--muted)",
+                color: drillView === w.id ? "var(--info-text)" : "var(--muted)",
               }}>{w.emoji} {w.title}</button>
             ))}
           </div>
@@ -573,13 +573,13 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                         <div className="lb-name" style={{ display: "flex", alignItems: "center", gap: 5 }}>
                           {entry.is_period_champion && <span>👑</span>}
                           {entry.name}
-                          {entry.player_id === currentUserId && <span style={{ fontSize: 11, color: "#93b4ff" }}>(you)</span>}
+                          {entry.player_id === currentUserId && <span style={{ fontSize: 11, color: "var(--info-text)" }}>(you)</span>}
                         </div>
                         {gradeTab === ALL && <div className="lb-pos"><span style={{ color: "var(--muted)" }}>{SHORT[entry.grade_category ?? ""] ?? entry.grade_category}</span></div>}
                       </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
-                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)" }}>{entry.period_points}</div>
+                      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--title)" }}>{entry.period_points}</div>
                       <span style={{ color: "var(--muted)", fontSize: 12 }}>{expandedPlayer === entry.player_id ? "▲" : "▼"}</span>
                     </div>
                   </div>
@@ -594,7 +594,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                             <div style={{ fontSize: 12, color: "var(--silver-light)" }}>{w?.emoji ?? "🏀"} {w?.title ?? "Unknown"}{d.place ? <span style={{ color: "var(--muted)", fontSize: 11 }}> · #{d.place}</span> : null}</div>
                             <div style={{ display: "flex", gap: 12 }}>
                               <span style={{ fontSize: 11, color: "var(--muted)" }}>{d.source === "self_reported" ? "Self-reported" : `Best: ${raw}`}</span>
-                              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>+{d.points} pts</span>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--gold-text)" }}>+{d.points} pts</span>
                             </div>
                           </div>
                         );
@@ -614,7 +614,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                       })}
                       <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
                         <span style={{ color: "var(--muted)" }}>Total This Competition</span>
-                        <span style={{ color: "var(--gold)" }}>{entry.period_points} pts</span>
+                        <span style={{ color: "var(--gold-text)" }}>{entry.period_points} pts</span>
                       </div>
                     </div>
                   )}
@@ -696,7 +696,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                         {champions.length > 0 && (
                           <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
                             {champions.map((c: any) => (
-                              <span key={c.player_id} style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "rgba(240,192,64,0.15)", color: "var(--gold)" }}>
+                              <span key={c.player_id} style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "rgba(240,192,64,0.15)", color: "var(--gold-text)" }}>
                                 👑 {c.name} · {SHORT[c.grade_category] ?? c.grade_category}
                               </span>
                             ))}
@@ -728,19 +728,19 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
                             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                               <div style={{ width: 28, height: 28, borderRadius: "50%", overflow: "hidden", flexShrink: 0, background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                                 {e.avatar_url ? <img src={e.avatar_url} alt={e.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                                  : <span style={{ fontSize: 9, fontWeight: 700, color: "var(--gold)" }}>{e.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()}</span>}
+                                  : <span style={{ fontSize: 9, fontWeight: 700, color: "var(--gold-text)" }}>{e.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()}</span>}
                               </div>
                               <div>
                                 <div className="lb-name" style={{ fontSize: 13 }}>
                                   {e.is_period_champion && <span>👑 </span>}{e.name}
-                                  {e.player_id === currentUserId && <span style={{ fontSize: 11, color: "#93b4ff" }}> (you)</span>}
+                                  {e.player_id === currentUserId && <span style={{ fontSize: 11, color: "var(--info-text)" }}> (you)</span>}
                                 </div>
                                 {e.team_name
                                   ? <div style={{ fontSize: 11, color: "var(--muted)" }}>{e.team_name}</div>
                                   : gradeTab === ALL && <div style={{ fontSize: 11, color: "var(--muted)" }}>{SHORT[e.grade_category] ?? e.grade_category}</div>}
                               </div>
                             </div>
-                            <div style={{ textAlign: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)" }}>{e.total_points}</div>
+                            <div style={{ textAlign: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)" }}>{e.total_points}</div>
                           </div>
                         ))}
                       </div>
@@ -765,7 +765,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
           <div key={row.playerId} style={{ display: "grid", gridTemplateColumns: "44px 1fr 100px 80px", padding: "11px 16px", alignItems: "center", borderBottom: "1px solid rgba(176,184,200,0.05)", background: row.playerId === currentUserId ? "rgba(26,63,168,0.15)" : undefined }}>
             <div className={`lb-rank ${rankClass(row.rank)}`}>{row.rank}</div>
             <div className="lb-name">
-              {row.name}{row.playerId === currentUserId && <span style={{ fontSize: 11, color: "#93b4ff", marginLeft: 6 }}>(you)</span>}
+              {row.name}{row.playerId === currentUserId && <span style={{ fontSize: 11, color: "var(--info-text)", marginLeft: 6 }}>(you)</span>}
               {/* Only on rows that actually tied on raw score -- otherwise
                   it's noise on every line. Without this a player who lost a
                   tie has nothing on screen explaining why. */}
@@ -774,7 +774,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
               )}
             </div>
             <div style={{ textAlign: "center", fontWeight: 600, color: "var(--silver-light)", fontSize: 14 }}>{row.display}</div>
-            <div style={{ textAlign: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)" }}>{row.points}</div>
+            <div style={{ textAlign: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)" }}>{row.points}</div>
           </div>
         ))}
         {board.length === 0 && <div style={{ padding: 28, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>No scores yet. Be the first! 🏀</div>}

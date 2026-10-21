@@ -58,7 +58,7 @@ function StreakCalendar({ attempts }: { attempts: ScoreAttempt[] }) {
         <button onClick={prevMonth} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 18, cursor: "pointer", padding: "0 6px" }}>‹</button>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--text)", letterSpacing: 1 }}>{monthName}</div>
-          <div style={{ fontSize: 11, color: loggedCount > 0 ? "#5de098" : "var(--muted)" }}>
+          <div style={{ fontSize: 11, color: loggedCount > 0 ? "var(--success-text)" : "var(--muted)" }}>
             {loggedCount} day{loggedCount !== 1 ? "s" : ""} logged
           </div>
         </div>
@@ -76,7 +76,7 @@ function StreakCalendar({ attempts }: { attempts: ScoreAttempt[] }) {
             aspectRatio: "1", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 11, fontWeight: isToday(day) ? 700 : 400,
             background: isLogged(day) ? "var(--royal)" : isToday(day) ? "rgba(26,63,168,0.2)" : "var(--surface)",
-            color: isLogged(day) ? "#fff" : isToday(day) ? "#93b4ff" : "var(--muted)",
+            color: isLogged(day) ? "#fff" : isToday(day) ? "var(--info-text)" : "var(--muted)",
             border: isToday(day) ? "1px solid var(--royal)" : "1px solid transparent",
             position: "relative",
           }}>
@@ -333,7 +333,7 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
         }}>
           <div>
             <div style={{ fontSize: 12, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>Your Current Rank</div>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: myRank <= 3 ? "var(--gold)" : "#93b4ff", lineHeight: 1 }}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: myRank <= 3 ? "var(--title)" : "var(--info-text)", lineHeight: 1 }}>
               #{myRank} <span style={{ fontSize: 14, color: "var(--muted)", fontFamily: "inherit" }}>of {totalPlayers}</span>
             </div>
           </div>
@@ -390,8 +390,8 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
                       <div style={{ fontWeight: 600, color: "var(--text)", fontSize: 13 }}>{w?.emoji ?? "🏀"} {w?.title ?? "Unknown"}</div>
                       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{w?.category}</div>
                     </div>
-                    <div style={{ textAlign: "center", fontWeight: 700, color: "var(--gold)", fontSize: 16 }}>{displayScore}</div>
-                    <div style={{ textAlign: "center", fontSize: 11, color: "#93b4ff" }}>{date}</div>
+                    <div style={{ textAlign: "center", fontWeight: 700, color: "var(--gold-text)", fontSize: 16 }}>{displayScore}</div>
+                    <div style={{ textAlign: "center", fontSize: 11, color: "var(--info-text)" }}>{date}</div>
                   </div>
                 );
               })}
@@ -420,11 +420,11 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
                       <div style={{ fontWeight: 600, color: "var(--text)", fontSize: 13 }}>{w?.title ?? "Unknown"}</div>
                       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>{w?.category}</div>
                     </div>
-                    <div style={{ textAlign: "center", fontWeight: 600, color: a.is_personal_best ? "var(--gold)" : "var(--silver-light)", fontSize: 14 }}>{scoreDisplay}</div>
+                    <div style={{ textAlign: "center", fontWeight: 600, color: a.is_personal_best ? "var(--gold-text)" : "var(--silver-light)", fontSize: 14 }}>{scoreDisplay}</div>
                     <div style={{ textAlign: "center", fontSize: 12, color: "var(--muted)" }}>{new Date(a.attempted_at).toLocaleDateString()}</div>
                     <div style={{ textAlign: "center" }}>
                       {a.is_personal_best
-                        ? <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 6, background: "rgba(240,192,64,0.2)", color: "var(--gold)" }}>🏆 PB</span>
+                        ? <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 6, background: "rgba(240,192,64,0.2)", color: "var(--gold-text)" }}>🏆 PB</span>
                         : <span style={{ fontSize: 11, color: "var(--muted)" }}>—</span>
                       }
                     </div>

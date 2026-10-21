@@ -142,8 +142,8 @@ export default function GameDaySheetsList(props: Props) {
               </div>
             ) : confirmDeleteId === s.id ? (
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 13, color: "#ff7b7b", flex: 1 }}>Delete "{s.name}"? This can't be undone.</span>
-                <button type="button" onClick={() => confirmDelete(s.id)} style={{ background: "rgba(255,107,107,0.15)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 7, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Delete</button>
+                <span style={{ fontSize: 13, color: "var(--danger-text)", flex: 1 }}>Delete "{s.name}"? This can't be undone.</span>
+                <button type="button" onClick={() => confirmDelete(s.id)} style={{ background: "rgba(255,107,107,0.15)", border: "1px solid rgba(255,107,107,0.3)", color: "var(--danger-text)", borderRadius: 7, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Delete</button>
                 <button type="button" onClick={() => setConfirmDeleteId(null)} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 7, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>Cancel</button>
               </div>
             ) : (

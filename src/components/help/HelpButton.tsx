@@ -26,7 +26,7 @@ const btn: React.CSSProperties = {
   background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 8,
   padding: "6px 12px", fontSize: 13, cursor: "pointer", fontFamily: "inherit",
 };
-const label: React.CSSProperties = { fontSize: 11, fontWeight: 700, letterSpacing: 0.6, color: "var(--gold)", textTransform: "uppercase", margin: "16px 0 6px" };
+const label: React.CSSProperties = { fontSize: 11, fontWeight: 700, letterSpacing: 0.6, color: "var(--gold-text)", textTransform: "uppercase", margin: "16px 0 6px" };
 const input: React.CSSProperties = {
   width: "100%", boxSizing: "border-box", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8,
   padding: "8px 10px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none",

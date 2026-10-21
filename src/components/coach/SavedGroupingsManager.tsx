@@ -86,7 +86,7 @@ export default function SavedGroupingsManager({ roster, onClose }: Props) {
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={onClose}>
       <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(480px, 96vw)", maxHeight: "90vh", overflowY: "auto", padding: 22 }} onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)" }}>{roster.name} groupings</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)" }}>{roster.name} groupings</div>
           <button onClick={onClose} style={smallBtn}>Close</button>
         </div>
         <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 14 }}>Coach-only — never shown to players. Editing membership only changes future uses.</div>
@@ -167,6 +167,6 @@ const smallBtn: React.CSSProperties = {
   padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer",
 };
 const dangerSmallBtn: React.CSSProperties = {
-  background: "rgba(226,75,74,0.08)", border: "1px solid rgba(226,75,74,0.2)", color: "#ff7b7b", borderRadius: 6,
+  background: "rgba(226,75,74,0.08)", border: "1px solid rgba(226,75,74,0.2)", color: "var(--danger-text)", borderRadius: 6,
   padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer",
 };

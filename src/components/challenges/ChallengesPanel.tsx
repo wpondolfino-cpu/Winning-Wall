@@ -58,7 +58,7 @@ export default function ChallengesPanel({ currentUserId, currentUserName, workou
             style={{ flex: 1, background: activeTab === tab.key ? "var(--royal)" : "transparent", color: activeTab === tab.key ? "#fff" : "var(--muted)", border: "none", borderRadius: 8, padding: "8px 0", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", transition: "all 0.15s", position: "relative" }}>
             {tab.label}
             {"badge" in tab && tab.badge && (
-              <span style={{ position: "absolute", top: 2, right: 4, background: "#ff7b7b", color: "#fff", fontSize: 9, fontWeight: 700, borderRadius: 99, padding: "1px 4px", lineHeight: 1.4 }}>{tab.badge}</span>
+              <span style={{ position: "absolute", top: 2, right: 4, background: "var(--danger-text)", color: "#fff", fontSize: 9, fontWeight: 700, borderRadius: 99, padding: "1px 4px", lineHeight: 1.4 }}>{tab.badge}</span>
             )}
           </button>
         ))}

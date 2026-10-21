@@ -116,7 +116,7 @@ export default function SeasonManager() {
               <>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 14, fontWeight: 600 }}>{s.name}</span>
-                  {s.is_current && <span style={{ fontSize: 10, fontWeight: 700, color: "var(--gold)", letterSpacing: 0.5 }}>CURRENT</span>}
+                  {s.is_current && <span style={{ fontSize: 10, fontWeight: 700, color: "var(--gold-text)", letterSpacing: 0.5 }}>CURRENT</span>}
                   <span style={{ fontSize: 11, color: "var(--muted)" }}>from {dateLabel(s.start_date)}</span>
                 </div>
                 <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
@@ -136,7 +136,7 @@ export default function SeasonManager() {
                     Rename or move
                   </button>
                   <button type="button" disabled={busy} onClick={() => remove(s)}
-                    style={{ background: "none", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 7, padding: "5px 10px", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit" }}>
+                    style={{ background: "none", border: "1px solid rgba(255,107,107,0.3)", color: "var(--danger-text)", borderRadius: 7, padding: "5px 10px", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit" }}>
                     Delete
                   </button>
                 </div>

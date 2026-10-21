@@ -95,7 +95,7 @@ export default function LiftingResults({ program, days, dayExercises, onClose }:
                     <div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", border: "2px solid var(--border)", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                       {player.avatar_url
                         ? <img src={player.avatar_url} alt={player.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>{initials}</span>}
+                        : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold-text)" }}>{initials}</span>}
                     </div>
                     <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{player.name}</div>
                     <div style={{ marginLeft: "auto", fontSize: 11, color: "var(--muted)" }}>

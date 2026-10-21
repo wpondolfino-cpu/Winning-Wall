@@ -122,7 +122,7 @@ export default function PracticeDayAttendance({ practiceId, onClose, onSaved }: 
     <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: "18px 20px", maxWidth: 480, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
         <div>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1 }}>Practice day</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", letterSpacing: 1 }}>Practice day</div>
           <div style={{ fontSize: 13, color: "var(--muted)" }}>{formatDate(practice.practice_date)} @ {practice.start_time.slice(0, 5)}</div>
         </div>
         <button onClick={onClose} style={secondaryBtn}>Close</button>
@@ -172,7 +172,7 @@ export default function PracticeDayAttendance({ practiceId, onClose, onSaved }: 
                       fontFamily: "inherit",
                       border: flag === value ? "1px solid transparent" : "1px solid var(--border)",
                       background: flag === value ? (value ? "rgba(40,180,80,0.18)" : "rgba(255,107,107,0.15)") : "transparent",
-                      color: flag === value ? (value ? "#5de098" : "#ff7b7b") : "var(--muted)",
+                      color: flag === value ? (value ? "var(--success-text)" : "var(--danger-text)") : "var(--muted)",
                     }}>
                     {label}
                   </button>
@@ -190,7 +190,7 @@ export default function PracticeDayAttendance({ practiceId, onClose, onSaved }: 
                         padding: "9px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)",
                       }}>
                         <span style={{ fontSize: 13, color: "var(--text)" }}>{p.name}</span>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "rgba(40,180,80,0.15)", color: "#5de098" }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "rgba(40,180,80,0.15)", color: "var(--success-text)" }}>
                           Present
                         </span>
                       </div>
@@ -207,7 +207,7 @@ export default function PracticeDayAttendance({ practiceId, onClose, onSaved }: 
                         <span style={{
                           fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
                           background: absent ? "rgba(255,107,107,0.12)" : "rgba(40,180,80,0.15)",
-                          color: absent ? "#ff7b7b" : "#5de098",
+                          color: absent ? "var(--danger-text)" : "var(--success-text)",
                         }}>
                           {absent ? "Absent" : "Present"}
                         </span>
@@ -253,7 +253,7 @@ export default function PracticeDayAttendance({ practiceId, onClose, onSaved }: 
         {completing ? "Saving…" : "✔ Complete attendance"}
       </button>
 
-      {toast && <p style={{ fontSize: 13, color: "var(--gold)", marginTop: 10, textAlign: "center" }}>{toast}</p>}
+      {toast && <p style={{ fontSize: 13, color: "var(--gold-text)", marginTop: 10, textAlign: "center" }}>{toast}</p>}
     </div>
   );
 }

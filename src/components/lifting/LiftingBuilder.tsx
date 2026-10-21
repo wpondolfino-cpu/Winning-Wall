@@ -107,8 +107,8 @@ function WeekGroup({ weekNum, label, weekDays, updateDay, copyDay, removeDay, up
                   <input type="checkbox" checked={day.is_rest_day} onChange={e => updateDay(di, "is_rest_day", e.target.checked)} />
                   💤
                 </label>
-                <button onClick={() => copyDay(di)} title="Copy day" style={{ background: "none", border: "none", color: "#93b4ff", cursor: "pointer", fontSize: 13, padding: "2px 3px" }}>⧉</button>
-                {totalDays > 1 && <button onClick={() => removeDay(di)} style={{ background: "none", border: "none", color: "#ff7b7b", cursor: "pointer", fontSize: 14, padding: "2px 3px" }}>×</button>}
+                <button onClick={() => copyDay(di)} title="Copy day" style={{ background: "none", border: "none", color: "var(--info-text)", cursor: "pointer", fontSize: 13, padding: "2px 3px" }}>⧉</button>
+                {totalDays > 1 && <button onClick={() => removeDay(di)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", fontSize: 14, padding: "2px 3px" }}>×</button>}
               </div>
 
               {/* Exercises */}
@@ -135,7 +135,7 @@ function WeekGroup({ weekNum, label, weekDays, updateDay, copyDay, removeDay, up
                         <div style={{ fontSize: 9, color: "var(--muted)" }}>{ex.exercise.muscle_group}</div>
                         {ex.superset_group != null && <span style={{ fontSize: 8, padding: "1px 4px", borderRadius: 4, background: "rgba(147,92,255,0.2)", color: "#9b6dff" }}>SS</span>}
                         <button onClick={() => markSuperset(di, ei)} style={{ background: "none", border: "none", color: ex.superset_group != null ? "#9b6dff" : "var(--muted)", cursor: "pointer", fontSize: 11, padding: "1px 3px" }}>⚡</button>
-                        <button onClick={() => removeExFromDay(di, ei)} style={{ background: "none", border: "none", color: "#ff7b7b", cursor: "pointer", fontSize: 13, padding: "1px 3px" }}>×</button>
+                        <button onClick={() => removeExFromDay(di, ei)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", fontSize: 13, padding: "1px 3px" }}>×</button>
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 5 }}>
                         {[
@@ -431,7 +431,7 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
           <label>Start Date (optional)</label>
           <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
             style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
-          {startDate && <div style={{ fontSize: 11, color: "#93b4ff", marginTop: 4 }}>📅 Today's day will be highlighted automatically for players</div>}
+          {startDate && <div style={{ fontSize: 11, color: "var(--info-text)", marginTop: 4 }}>📅 Today's day will be highlighted automatically for players</div>}
         </div>
 
         {/* Visibility (coaches only) */}
@@ -452,7 +452,7 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
               ))}
             </div>
             {visibility === "draft" && (
-              <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, fontSize: 12, color: "var(--gold)" }}>
+              <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, fontSize: 12, color: "var(--gold-text)" }}>
                 📝 Draft — players cannot see this program. Change to Everyone or Specific Players when ready to share.
               </div>
             )}
@@ -497,7 +497,7 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
                     <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)", marginBottom: 3 }}>{prog.title}</div>
                     <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.5 }}>{prog.desc}</div>
                   </div>
-                  <div style={{ fontSize: 20, color: "#93b4ff", flexShrink: 0 }}>→</div>
+                  <div style={{ fontSize: 20, color: "var(--info-text)", flexShrink: 0 }}>→</div>
                 </div>
               ))}
             </div>

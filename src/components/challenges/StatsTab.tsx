@@ -90,11 +90,11 @@ export default function StatsTab({ currentUserId }: Props) {
         <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Team Competition Record</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div style={{ textAlign: "center", background: "var(--surface)", borderRadius: 8, padding: "10px" }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "var(--gold)", lineHeight: 1 }}>{teamRecord.wins}</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "var(--title)", lineHeight: 1 }}>{teamRecord.wins}</div>
             <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Wins</div>
           </div>
           <div style={{ textAlign: "center", background: "var(--surface)", borderRadius: 8, padding: "10px" }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "#ff7b7b", lineHeight: 1 }}>{teamRecord.losses}</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, color: "var(--danger-text)", lineHeight: 1 }}>{teamRecord.losses}</div>
             <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Losses</div>
           </div>
         </div>
@@ -105,7 +105,7 @@ export default function StatsTab({ currentUserId }: Props) {
       {completedChallenges.length > 0 && (
         <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px", marginBottom: 24, textAlign: "center" }}>
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Win Rate</div>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 42, color: totalWins / completedChallenges.length >= 0.5 ? "var(--gold)" : "#93b4ff" }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 42, color: totalWins / completedChallenges.length >= 0.5 ? "var(--title)" : "var(--info-text)" }}>
             {Math.round((totalWins / completedChallenges.length) * 100)}%
           </div>
           <div style={{ fontSize: 12, color: "var(--muted)" }}>{completedChallenges.length} completed challenge{completedChallenges.length !== 1 ? "s" : ""}</div>
@@ -115,21 +115,21 @@ export default function StatsTab({ currentUserId }: Props) {
         <>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--muted)", letterSpacing: 1, marginBottom: 10, textTransform: "uppercase" }}>Rival Breakdown</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
-            {mostChallenged && <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>Most Challenged</div><div style={{ fontWeight: 600, color: "var(--text)", marginTop: 2 }}>{mostChallenged.name}</div></div><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#93b4ff" }}>{mostChallenged.challenged}x</div></div>}
-            {mostBeaten && mostBeaten.won > 0 && <div style={{ background: "var(--surface2)", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>Beaten Most</div><div style={{ fontWeight: 600, color: "var(--text)", marginTop: 2 }}>{mostBeaten.name}</div></div><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--gold)" }}>{mostBeaten.won}W</div></div>}
-            {mostLostTo && mostLostTo.lost > 0 && <div style={{ background: "var(--surface2)", border: "1px solid rgba(255,107,107,0.3)", borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>Lost To Most</div><div style={{ fontWeight: 600, color: "var(--text)", marginTop: 2 }}>{mostLostTo.name}</div></div><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#ff7b7b" }}>{mostLostTo.lost}L</div></div>}
+            {mostChallenged && <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>Most Challenged</div><div style={{ fontWeight: 600, color: "var(--text)", marginTop: 2 }}>{mostChallenged.name}</div></div><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--info-text)" }}>{mostChallenged.challenged}x</div></div>}
+            {mostBeaten && mostBeaten.won > 0 && <div style={{ background: "var(--surface2)", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>Beaten Most</div><div style={{ fontWeight: 600, color: "var(--text)", marginTop: 2 }}>{mostBeaten.name}</div></div><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--title)" }}>{mostBeaten.won}W</div></div>}
+            {mostLostTo && mostLostTo.lost > 0 && <div style={{ background: "var(--surface2)", border: "1px solid rgba(255,107,107,0.3)", borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>Lost To Most</div><div style={{ fontWeight: 600, color: "var(--text)", marginTop: 2 }}>{mostLostTo.name}</div></div><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--danger-text)" }}>{mostLostTo.lost}L</div></div>}
           </div>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--muted)", letterSpacing: 1, marginBottom: 10, textTransform: "uppercase" }}>vs. Every Player</div>
           <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 40px 40px 40px 40px", padding: "8px 14px", borderBottom: "1px solid var(--border)", fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>
-              <div>Player</div><div style={{ textAlign: "center" }}>Total</div><div style={{ textAlign: "center", color: "var(--gold)" }}>W</div><div style={{ textAlign: "center", color: "#ff7b7b" }}>L</div><div style={{ textAlign: "center", color: "var(--muted)" }}>T</div>
+              <div>Player</div><div style={{ textAlign: "center" }}>Total</div><div style={{ textAlign: "center", color: "var(--gold-text)" }}>W</div><div style={{ textAlign: "center", color: "var(--danger-text)" }}>L</div><div style={{ textAlign: "center", color: "var(--muted)" }}>T</div>
             </div>
             {[...rivalStats].sort((a, b) => b.won - a.won).map((r, i) => (
               <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 40px 40px 40px 40px", padding: "10px 14px", borderBottom: i < rivalStats.length - 1 ? "1px solid var(--border)" : "none", fontSize: 13 }}>
                 <div style={{ color: "var(--text)", fontWeight: 500 }}>{r.name}</div>
                 <div style={{ textAlign: "center", color: "var(--muted)" }}>{r.challenged}</div>
-                <div style={{ textAlign: "center", color: "var(--gold)", fontWeight: 700 }}>{r.won}</div>
-                <div style={{ textAlign: "center", color: "#ff7b7b", fontWeight: 700 }}>{r.lost}</div>
+                <div style={{ textAlign: "center", color: "var(--gold-text)", fontWeight: 700 }}>{r.won}</div>
+                <div style={{ textAlign: "center", color: "var(--danger-text)", fontWeight: 700 }}>{r.lost}</div>
                 <div style={{ textAlign: "center", color: "var(--muted)" }}>{r.challenged - r.won - r.lost}</div>
               </div>
             ))}

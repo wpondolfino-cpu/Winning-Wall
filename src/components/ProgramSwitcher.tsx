@@ -143,7 +143,7 @@ export default function ProgramSwitcher({ userId, onOpenPlatform }: Props) {
   const matches = q ? regular.filter(p => `${p.name} ${p.orgName} ${p.orgShort}`.toLowerCase().includes(q)).slice(0, 10) : [];
 
   const sectionLabel = (text: string) => (
-    <div style={{ padding: "10px 10px 6px", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#8b95ae", fontWeight: 600 }}>{text}</div>
+    <div style={{ padding: "10px 10px 6px", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "var(--muted-3)", fontWeight: 600 }}>{text}</div>
   );
   const programRow = (p: ProgramInfo, sub: string) => {
     const isCurrent = p.id === current.id;
@@ -161,7 +161,7 @@ export default function ProgramSwitcher({ userId, onOpenPlatform }: Props) {
         ) : <Badge p={p} size={36} />}
         <span style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 0 }}>
           <span style={{ fontSize: 14, fontWeight: 600 }}>{p.name}</span>
-          <span style={{ fontSize: 12, color: "#a3adc4" }}>{switching === p.id ? "Switching…" : sub}</span>
+          <span style={{ fontSize: 12, color: "var(--muted-2)" }}>{switching === p.id ? "Switching…" : sub}</span>
         </span>
         {isCurrent && (
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={p.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Current program"><path d="M20 6L9 17l-5-5" /></svg>
@@ -219,7 +219,7 @@ export default function ProgramSwitcher({ userId, onOpenPlatform }: Props) {
                 </span>
                 <span style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
                   <span style={{ fontSize: 14, fontWeight: 700 }}>Platform</span>
-                  <span style={{ fontSize: 12, color: "#a3adc4" }}>Schools, programs, features, library</span>
+                  <span style={{ fontSize: 12, color: "var(--muted-2)" }}>Schools, programs, features, library</span>
                 </span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a3adc4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
               </button>
@@ -249,9 +249,9 @@ export default function ProgramSwitcher({ userId, onOpenPlatform }: Props) {
                   )}
                   {onOpenPlatform && (
                     <button role="menuitem" onClick={() => { setOpen(false); onOpenPlatform("schools"); }}
-                      style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44, padding: "8px 10px", background: "transparent", border: 0, borderRadius: 12, color: "#93b4ff", fontFamily: "inherit", fontSize: 14, fontWeight: 600, textAlign: "left", cursor: "pointer" }}>
+                      style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44, padding: "8px 10px", background: "transparent", border: 0, borderRadius: 12, color: "var(--info-text)", fontFamily: "inherit", fontSize: 14, fontWeight: 600, textAlign: "left", cursor: "pointer" }}>
                       <span style={{ flex: 1 }}>All programs →</span>
-                      <span style={{ fontSize: 12, color: "#8b95ae", fontWeight: 400 }}>{regular.length}</span>
+                      <span style={{ fontSize: 12, color: "var(--muted-3)", fontWeight: 400 }}>{regular.length}</span>
                     </button>
                   )}
                 </>
@@ -260,7 +260,7 @@ export default function ProgramSwitcher({ userId, onOpenPlatform }: Props) {
           )}
           {!data.isPlatformAdmin && canSwitch && groups.map(g => (
             <div key={g.org} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <div style={{ padding: "10px 10px 6px", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#8b95ae", fontWeight: 600 }}>{g.org}</div>
+              <div style={{ padding: "10px 10px 6px", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "var(--muted-3)", fontWeight: 600 }}>{g.org}</div>
               {g.items.map(p => {
                 const isCurrent = p.id === current.id;
                 return (
@@ -274,7 +274,7 @@ export default function ProgramSwitcher({ userId, onOpenPlatform }: Props) {
                     <Badge p={p} size={36} />
                     <span style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
                       <span style={{ fontSize: 14, fontWeight: 600 }}>{p.name}</span>
-                      <span style={{ fontSize: 12, color: "#a3adc4" }}>
+                      <span style={{ fontSize: 12, color: "var(--muted-2)" }}>
                         {switching === p.id ? "Switching…" : roleLabel(p.role)}
                       </span>
                     </span>
@@ -286,14 +286,14 @@ export default function ProgramSwitcher({ userId, onOpenPlatform }: Props) {
               })}
             </div>
           ))}
-          {error && <div style={{ padding: "8px 10px", fontSize: 12, color: "#ff8a8a" }}>{error}</div>}
+          {error && <div style={{ padding: "8px 10px", fontSize: 12, color: "var(--danger-text-2)" }}>{error}</div>}
 
           {canViewAs && current.joinCode && (
             <>
               {canSwitch && <div style={{ height: 1, background: "rgba(176,184,200,0.15)", margin: "8px 4px" }} />}
               <div style={{ padding: "6px 10px", display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
-                  <span style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#8b95ae", fontWeight: 600 }}>Team code</span>
+                  <span style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "var(--muted-3)", fontWeight: 600 }}>Team code</span>
                   <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: 3 }}>{current.joinCode}</span>
                 </span>
                 <button onClick={copyInvite}
@@ -312,9 +312,9 @@ export default function ProgramSwitcher({ userId, onOpenPlatform }: Props) {
               {(canSwitch || current.joinCode) && <div style={{ height: 1, background: "rgba(176,184,200,0.15)", margin: "8px 4px" }} />}
               <div style={{ padding: "4px 10px 6px", display: "flex", alignItems: "center", gap: 8 }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8b95ae" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
-                <span style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "#8b95ae", fontWeight: 600 }}>View as · {current.name}</span>
+                <span style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "var(--muted-3)", fontWeight: 600 }}>View as · {current.name}</span>
               </div>
-              {tests === null && <div style={{ padding: "8px 10px", fontSize: 13, color: "#a3adc4" }}>{inSandbox ? "Getting the sandbox ready (the first time takes about a minute)…" : "Getting test accounts ready…"}</div>}
+              {tests === null && <div style={{ padding: "8px 10px", fontSize: 13, color: "var(--muted-2)" }}>{inSandbox ? "Getting the sandbox ready (the first time takes about a minute)…" : "Getting test accounts ready…"}</div>}
               {inSandbox && tests && tests.length > 0 && (
                 <input value={peopleQuery} onChange={e => setPeopleQuery(e.target.value)} placeholder="Find a player…" aria-label="Find a sandbox player"
                   style={{ height: 38, margin: "2px 4px 4px", padding: "0 12px", borderRadius: 10, border: "1px solid rgba(176,184,200,0.25)", background: "var(--surface2)", color: "var(--text)", fontFamily: "inherit", fontSize: 14 }} />
@@ -333,14 +333,14 @@ export default function ProgramSwitcher({ userId, onOpenPlatform }: Props) {
                     }}>
                     <span style={{ width: 30, height: 30, borderRadius: "50%", background: bg, color: fg, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initials}</span>
                     <span style={{ flex: 1 }}>{entering === a.user_id ? "Opening…" : a.name}</span>
-                    <span style={{ fontSize: 11, color: "#a3adc4", border: "1px dashed rgba(176,184,200,0.4)", borderRadius: 6, padding: "2px 6px" }}>
+                    <span style={{ fontSize: 11, color: "var(--muted-2)", border: "1px dashed rgba(176,184,200,0.4)", borderRadius: 6, padding: "2px 6px" }}>
                       {inSandbox ? (a.role === "head_coach" ? "HEAD COACH" : a.role === "coach" ? "COACH" : "PLAYER") : "TEST"}
                     </span>
                   </button>
                 );
               })}
-              {testsError && <div style={{ padding: "8px 10px", fontSize: 12, color: "#ff8a8a" }}>{testsError}</div>}
-              <div style={{ padding: "8px 10px 6px", fontSize: 12, lineHeight: 1.45, color: "#8b95ae" }}>
+              {testsError && <div style={{ padding: "8px 10px", fontSize: 12, color: "var(--danger-text-2)" }}>{testsError}</div>}
+              <div style={{ padding: "8px 10px 6px", fontSize: 12, lineHeight: 1.45, color: "var(--muted-3)" }}>
                 {inSandbox
                   ? `${(tests ?? []).filter(a => a.role === "player").length} players: type a name above, or use the Sandbox page to pick by team.`
                   : "Only test accounts are listed; real players can never be entered."}

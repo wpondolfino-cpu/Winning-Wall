@@ -277,7 +277,7 @@ export default function QuizManager({ scoutSheetId, quizId, onDeleted }: Props) 
           background: "rgba(40,180,80,0.14)", border: "1px solid rgba(40,180,80,0.55)" }}>
           <span style={{ fontSize: 26 }}>✅</span>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#5de098" }}>Published!</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--success-text)" }}>Published!</div>
             <div style={{ fontSize: 13 }}>{published} Results will show below as players finish.</div>
           </div>
           <button type="button" onClick={() => setPublished(null)} aria-label="Dismiss"
@@ -666,13 +666,13 @@ function QuestionRow(props: {
         <div style={{ fontSize: 13, fontWeight: 600 }}>{q.prompt}</div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
           {q.options.map(o => (
-            <span key={o.id} style={{ marginRight: 10, color: o.id === correct?.id ? "#5de098" : undefined }}>
+            <span key={o.id} style={{ marginRight: 10, color: o.id === correct?.id ? "var(--success-text)" : undefined }}>
               {o.id === correct?.id ? "✓ " : ""}{o.label}
             </span>
           ))}
           {q.qtype === "tap_place"
-            ? <span style={{ color: "#5de098" }}>✓ Correct spot comes from the play</span>
-            : !correct && <span style={{ color: "#ff7b7b" }}>No correct answer marked</span>}
+            ? <span style={{ color: "var(--success-text)" }}>✓ Correct spot comes from the play</span>
+            : !correct && <span style={{ color: "var(--danger-text)" }}>No correct answer marked</span>}
         </div>
       </div>
       {canEdit && (

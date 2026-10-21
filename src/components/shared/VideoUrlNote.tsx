@@ -16,7 +16,7 @@ export default function VideoUrlNote({ url }: { url?: string | null }) {
   const warning = videoUrlWarning(url);
   if (!warning) return null;
   return (
-    <div style={{ fontSize: 11, color: "var(--gold)", lineHeight: 1.4, marginTop: 4 }}>
+    <div style={{ fontSize: 11, color: "var(--gold-text)", lineHeight: 1.4, marginTop: 4 }}>
       {warning}
     </div>
   );

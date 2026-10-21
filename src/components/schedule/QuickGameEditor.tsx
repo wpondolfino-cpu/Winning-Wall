@@ -163,7 +163,7 @@ export default function QuickGameEditor({ rosters, onClose, onSaved }: {
           ))}
         </div>
 
-        {err && <div style={{ fontSize: 12, color: "#ff7b7b", marginTop: 10 }}>{err}</div>}
+        {err && <div style={{ fontSize: 12, color: "var(--danger-text)", marginTop: 10 }}>{err}</div>}
 
         <div style={{ marginTop: 14 }}>
           <button onClick={save} disabled={saving} style={{ ...primary, opacity: saving ? 0.5 : 1 }}>

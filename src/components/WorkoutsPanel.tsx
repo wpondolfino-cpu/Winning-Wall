@@ -50,14 +50,14 @@ function SpotPBDisplay({ playerId, workoutId, spotConfig, totalBest, isTime = fa
 
   return (
     <div style={{ padding: "10px 14px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, marginBottom: 14 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", marginBottom: 8 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold-text)", marginBottom: 8 }}>
         🏆 Personal Best: {isTime ? formatDuration(totalBest) : totalBest} total
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         {spotPBs.map(pb => (
           <div key={pb.spot_index} style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
             <span style={{ color: "var(--muted)" }}>{pb.spot_name}</span>
-            <span style={{ color: "#93b4ff", fontWeight: 700 }}>{isTime ? formatDuration(pb.best_score) : pb.best_score}</span>
+            <span style={{ color: "var(--info-text)", fontWeight: 700 }}>{isTime ? formatDuration(pb.best_score) : pb.best_score}</span>
           </div>
         ))}
       </div>
@@ -302,7 +302,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
       : "Tiebreak: free throws at the end.";
     return (
       <div style={{ marginBottom: 12, padding: "10px 12px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.25)", borderRadius: 10 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>{line}</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold-text)" }}>{line}</div>
         {instructions && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4, lineHeight: 1.5 }}>{instructions}</div>}
         {mode === "fastest_time" && (
           <div style={{ marginTop: 8 }}>
@@ -346,7 +346,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
         <div style={{ padding: "20px", background: "rgba(40,180,80,0.1)", border: "1px solid rgba(40,180,80,0.25)", borderRadius: 10, textAlign: "center", marginBottom: 16 }}>
           <div style={{ fontSize: 36, marginBottom: 8 }}>✅</div>
           <div style={{ fontWeight: 600, fontSize: 16, color: "var(--text)", marginBottom: 6 }}>Complete this workout to earn</div>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, color: "#5de098", letterSpacing: 1 }}>{w.flat_points} pts</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, color: "var(--success-text)", letterSpacing: 1 }}>{w.flat_points} pts</div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Tap "Log My Score" below to confirm you completed this drill.</div>
         </div>
       );
@@ -371,9 +371,9 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
         <>
           {(w as any).tiebreak_mode && renderTiebreakNotice(w)}
           <div style={{ padding: "10px 14px", background: "rgba(26,63,168,0.1)", border: "1px solid rgba(26,63,168,0.25)", borderRadius: 8, fontSize: 12, color: "var(--silver-light)", marginBottom: 14, lineHeight: 1.6 }}>
-            🎯 <strong style={{ color: "#93b4ff" }}>Multi-Spot</strong> — enter your {isTime ? "time" : "score"} at each spot. Total is ranked in your grade group{isTime ? " — fastest total wins" : ""}.
+            🎯 <strong style={{ color: "var(--info-text)" }}>Multi-Spot</strong> — enter your {isTime ? "time" : "score"} at each spot. Total is ranked in your grade group{isTime ? " — fastest total wins" : ""}.
             <br />
-            <span style={{ color: "var(--gold)" }}>🥇 1st = {w.first_place_pts ?? 3} pts</span>{" · "}
+            <span style={{ color: "var(--gold-text)" }}>🥇 1st = {w.first_place_pts ?? 3} pts</span>{" · "}
             <span style={{ color: "var(--silver)" }}>🥈 2nd = {w.second_place_pts ?? 2} pts</span>{" · "}
             <span style={{ color: "#cd7f32" }}>🥉 3rd = {w.third_place_pts ?? 1} pts</span>
           </div>
@@ -384,7 +384,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
                   <div style={{ flex: 1, fontSize: 14, color: "var(--text)", fontWeight: 500 }}>
                     {spotName}
                     {i === starIdx && (
-                      <span style={{ fontSize: 11, color: "var(--gold)", marginLeft: 6, fontWeight: 700 }}>⭐ breaks ties</span>
+                      <span style={{ fontSize: 11, color: "var(--gold-text)", marginLeft: 6, fontWeight: 700 }}>⭐ breaks ties</span>
                     )}
                   </div>
                   {isTime ? (
@@ -399,7 +399,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
                     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       {(w as any).allow_negative && (
                         <button type="button" onClick={() => setSpotScores(prev => ({ ...prev, [i]: toggleSign(prev[i] ?? "") }))}
-                          style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: (spotScores[i] ?? "").trim().startsWith("-") ? "#ff7b7b" : "var(--muted)", borderRadius: 8, padding: "9px 10px", fontSize: 15, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                          style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: (spotScores[i] ?? "").trim().startsWith("-") ? "var(--danger-text)" : "var(--muted)", borderRadius: 8, padding: "9px 10px", fontSize: 15, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
                           {(spotScores[i] ?? "").trim().startsWith("-") ? "−" : "+"}
                         </button>
                       )}
@@ -418,7 +418,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.25)", borderRadius: 10 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: "var(--muted)" }}>Total {isTime ? "time" : "score"}</div>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: "var(--gold)", lineHeight: 1 }}>{isTime ? formatDuration(total) : total}</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, color: "var(--title)", lineHeight: 1 }}>{isTime ? formatDuration(total) : total}</div>
           </div>
           {(w as any).tiebreak_mode && renderTiebreakField(w)}
         </>
@@ -441,9 +441,9 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
       <>
         {(w as any).tiebreak_mode && renderTiebreakNotice(w)}
         <div style={{ padding: "10px 14px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, fontSize: 12, color: "var(--silver-light)", marginBottom: 14, lineHeight: 1.6 }}>
-          🏆 <strong style={{ color: "var(--gold)" }}>Competitive</strong> — ranked within your grade group.
+          🏆 <strong style={{ color: "var(--gold-text)" }}>Competitive</strong> — ranked within your grade group.
           <br />
-          <span style={{ color: "var(--gold)" }}>🥇 1st = {w.first_place_pts ?? 3} pts</span>{" · "}
+          <span style={{ color: "var(--gold-text)" }}>🥇 1st = {w.first_place_pts ?? 3} pts</span>{" · "}
           <span style={{ color: "var(--silver)" }}>🥈 2nd = {w.second_place_pts ?? 2} pts</span>{" · "}
           <span style={{ color: "#cd7f32" }}>🥉 3rd = {w.third_place_pts ?? 1} pts</span>
         </div>
@@ -460,7 +460,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 {(w as any).allow_negative && (
                   <button type="button" onClick={() => inputSetter(toggleSign(inputValue))}
-                    style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: inputValue.trim().startsWith("-") ? "#ff7b7b" : "var(--muted)", borderRadius: 8, padding: "10px 14px", fontSize: 18, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                    style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: inputValue.trim().startsWith("-") ? "var(--danger-text)" : "var(--muted)", borderRadius: 8, padding: "10px 14px", fontSize: 18, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
                     {inputValue.trim().startsWith("-") ? "−" : "+"}
                   </button>
                 )}
@@ -516,13 +516,13 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
               )}
               {/* Single group label */}
               {groupNames.length === 1 && (
-                <div style={{ marginBottom: 16, padding: "8px 14px", background: "rgba(26,63,168,0.15)", borderRadius: 8, fontSize: 13, color: "#93b4ff", fontWeight: 600, border: "1px solid rgba(26,63,168,0.25)" }}>📁 {groupNames[0]}</div>
+                <div style={{ marginBottom: 16, padding: "8px 14px", background: "rgba(26,63,168,0.15)", borderRadius: 8, fontSize: 13, color: "var(--info-text)", fontWeight: 600, border: "1px solid rgba(26,63,168,0.25)" }}>📁 {groupNames[0]}</div>
               )}
 
               {rankedCompletion.total > 0 && (
                 <div style={{ marginBottom: 16, padding: "12px 16px", background: rankedCompletion.bonusEarned ? "rgba(40,180,80,0.08)" : "rgba(26,63,168,0.1)", border: `1px solid ${rankedCompletion.bonusEarned ? "rgba(40,180,80,0.3)" : "rgba(26,63,168,0.35)"}`, borderRadius: 12 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: rankedCompletion.bonusEarned ? "#5de098" : "var(--gold)" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: rankedCompletion.bonusEarned ? "var(--success-text)" : "var(--gold-text)" }}>
                       {rankedCompletion.bonusEarned ? "✅ Bonus point earned today!" : `🏆 Ranked Workouts: ${rankedCompletion.completed}/${rankedCompletion.total}`}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--muted)" }}>
@@ -530,7 +530,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
                     </div>
                   </div>
                   <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 6, height: 8, overflow: "hidden" }}>
-                    <div style={{ height: "100%", borderRadius: 6, background: rankedCompletion.bonusEarned ? "#5de098" : "var(--royal)", width: `${Math.min(100, (rankedCompletion.completed / rankedCompletion.total) * 100)}%`, transition: "width 0.4s ease" }} />
+                    <div style={{ height: "100%", borderRadius: 6, background: rankedCompletion.bonusEarned ? "var(--success-text)" : "var(--royal)", width: `${Math.min(100, (rankedCompletion.completed / rankedCompletion.total) * 100)}%`, transition: "width 0.4s ease" }} />
                   </div>
                 </div>
               )}
@@ -548,10 +548,10 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
               w.scoring_type === "multi_spot"  ? `🎯 Multi-spot · ${((w as any).spot_config?.length ?? 0)} spots` :
               w.scoring_type === "flat"        ? `✅ ${w.flat_points} pts` : "✏️ Self-reported";
             const scoringColor =
-              w.scoring_type === "competitive" ? { bg: "rgba(240,192,64,0.15)", color: "var(--gold)" } :
-              w.scoring_type === "multi_spot"  ? { bg: "rgba(26,63,168,0.2)", color: "#93b4ff" } :
-              w.scoring_type === "flat"        ? { bg: "rgba(40,180,80,0.15)", color: "#5de098" } :
-              { bg: "rgba(26,63,168,0.2)", color: "#93b4ff" };
+              w.scoring_type === "competitive" ? { bg: "rgba(240,192,64,0.15)", color: "var(--gold-text)" } :
+              w.scoring_type === "multi_spot"  ? { bg: "rgba(26,63,168,0.2)", color: "var(--info-text)" } :
+              w.scoring_type === "flat"        ? { bg: "rgba(40,180,80,0.15)", color: "var(--success-text)" } :
+              { bg: "rgba(26,63,168,0.2)", color: "var(--info-text)" };
 
             return (
               <div className="workout-card clickable" key={w.id} onClick={() => openLog(w)}>
@@ -571,19 +571,19 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
                   {w.deadline && (() => {
                     const days = Math.ceil((new Date(w.deadline).getTime() - Date.now()) / 86400000);
                     if (days < 0) return null;
-                    return <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, color: days <= 2 ? "#ff7b7b" : days <= 5 ? "var(--gold)" : "#93b4ff" }}>⏰ {days === 0 ? "Due today!" : `${days} day${days !== 1 ? "s" : ""} left`}</div>;
+                    return <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, color: days <= 2 ? "var(--danger-text)" : days <= 5 ? "var(--gold-text)" : "var(--info-text)" }}>⏰ {days === 0 ? "Due today!" : `${days} day${days !== 1 ? "s" : ""} left`}</div>;
                   })()}
                   <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8, lineHeight: 1.5 }}>{w.description?.slice(0, 80)}…</div>
                   {vid && (
                     <div className="video-strip" onClick={e => e.stopPropagation()}>
                       <span>📹</span><span style={{ flex: 1 }}>Drill video</span>
-                      <a href={`https://www.youtube.com/watch?v=${vid}`} target="_blank" rel="noreferrer" style={{ color: "var(--gold)", fontWeight: 600, textDecoration: "none", fontSize: 11 }}>Watch ↗</a>
+                      <a href={`https://www.youtube.com/watch?v=${vid}`} target="_blank" rel="noreferrer" style={{ color: "var(--gold-text)", fontWeight: 600, textDecoration: "none", fontSize: 11 }}>Watch ↗</a>
                     </div>
                   )}
                   {resourceUrl && (
                     <div className="video-strip" onClick={e => e.stopPropagation()}>
                       <span>📄</span><span style={{ flex: 1 }}>Program / resource</span>
-                      <a href={resourceUrl} target="_blank" rel="noreferrer" style={{ color: "#93b4ff", fontWeight: 600, textDecoration: "none", fontSize: 11 }}>View ↗</a>
+                      <a href={resourceUrl} target="_blank" rel="noreferrer" style={{ color: "var(--info-text)", fontWeight: 600, textDecoration: "none", fontSize: 11 }}>View ↗</a>
                     </div>
                   )}
                   {logged ? (
@@ -639,7 +639,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
               <a href={(activeWorkout as any).resource_url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
                 style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "rgba(26,63,168,0.1)", border: "1px solid rgba(26,63,168,0.25)", borderRadius: 10, marginBottom: 14, textDecoration: "none" }}>
                 <span style={{ fontSize: 20 }}>📄</span>
-                <span style={{ flex: 1, fontSize: 13, color: "#93b4ff", fontWeight: 600 }}>View Program / Resource</span>
+                <span style={{ flex: 1, fontSize: 13, color: "var(--info-text)", fontWeight: 600 }}>View Program / Resource</span>
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>↗</span>
               </a>
             )}
@@ -652,7 +652,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
             {canChallengeFromLibrary && (activeWorkout.is_active === false || !!randomDrillSession) &&
               (activeWorkout.scoring_type === "competitive" || activeWorkout.scoring_type === "multi_spot") && (
               <button type="button" onClick={() => onChallengeDrill?.(activeWorkout.id)}
-                style={{ width: "100%", background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", color: "var(--gold)", borderRadius: 10, padding: "12px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", marginBottom: 16 }}>
+                style={{ width: "100%", background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", color: "var(--gold-text)", borderRadius: 10, padding: "12px", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", marginBottom: 16 }}>
                 ⚔️ Challenge Someone in This Drill
               </button>
             )}
@@ -674,7 +674,7 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
               const best = s.self_points > 0 ? s.self_points : (s.made + s.reps);
               return (
                 <div style={{ padding: "10px 14px", background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, fontSize: 12, color: "var(--silver-light)", marginBottom: 14, lineHeight: 1.6 }}>
-                  🏆 <strong style={{ color: "var(--gold)" }}>Your personal best: {best}</strong><br />
+                  🏆 <strong style={{ color: "var(--gold-text)" }}>Your personal best: {best}</strong><br />
                   <span style={{ color: "var(--muted)" }}>Log today's attempt — if you beat your best it updates the leaderboard. If not, your best stays and your streak still counts! 🔥</span>
                 </div>
               );

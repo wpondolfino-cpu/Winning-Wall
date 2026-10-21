@@ -628,11 +628,11 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
       {/* ── Header / metadata ── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <div>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1 }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", letterSpacing: 1 }}>
             {isTemplate ? "Edit template" : practice ? "Edit practice" : "New practice"}
           </div>
           {isTemplate && (
-            <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "rgba(147,180,255,0.15)", color: "#93b4ff" }}>
+            <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "rgba(147,180,255,0.15)", color: "var(--info-text)" }}>
               📋 Template
             </span>
           )}
@@ -640,7 +640,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
             <span style={{
               fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
               background: practice.status === "published" ? "rgba(40,180,80,0.15)" : "rgba(240,192,64,0.12)",
-              color: practice.status === "published" ? "#5de098" : "var(--gold)",
+              color: practice.status === "published" ? "var(--success-text)" : "var(--gold-text)",
             }}>
               {practice.status === "published" ? "🌐 Published" : "📝 Draft"}
             </span>
@@ -826,7 +826,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                         fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 5, cursor: "pointer", fontFamily: "inherit",
                         border: flag === value ? "1px solid transparent" : "1px solid var(--border)",
                         background: flag === value ? (value ? "rgba(40,180,80,0.18)" : "rgba(255,107,107,0.15)") : "transparent",
-                        color: flag === value ? (value ? "#5de098" : "#ff7b7b") : "var(--muted)",
+                        color: flag === value ? (value ? "var(--success-text)" : "var(--danger-text)") : "var(--muted)",
                       }}>{label}</button>
                   );
                   return (
@@ -842,7 +842,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
               </div>
               {calledUpIds.size > 0 && (
                 <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 11, color: "var(--gold)", marginBottom: 4 }}>Called up:</div>
+                  <div style={{ fontSize: 11, color: "var(--gold-text)", marginBottom: 4 }}>Called up:</div>
                   {players.filter(p => calledUpIds.has(p.id)).map(p => {
                     const ov = overrides.find(o => o.player_id === p.id && o.override_type === "call_up");
                     const targetRoster = rosters.find(r => r.id === ov?.called_up_to_roster_id);
@@ -910,7 +910,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                   const timeCell = (
                     <td rowSpan={totalRows} style={{ padding: "10px", verticalAlign: "top", borderRight: "1px solid var(--border)", borderTop: blockIndex > 0 ? "2px solid var(--border)" : undefined }}>
                       <div draggable onDragStart={() => handleBlockDragStart(block.id)} onDragOver={e => handleBlockDragOver(block.id, e)} onDragEnd={handleBlockDragEnd} style={{ cursor: "grab" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: "var(--gold)", whiteSpace: "nowrap" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: "var(--gold-text)", whiteSpace: "nowrap" }}>
                           <span style={{ color: "var(--muted)" }}>⠿</span> {block.start}–{block.end}
                         </div>
                         <div style={{ display: "flex", gap: 4, alignItems: "center", marginTop: 4 }}>
@@ -966,7 +966,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                                 {d.drill_id ? (drillsById[d.drill_id]?.title ?? "Loading…") : (d.label ?? "Untitled drill")}
                               </span>
                               <span onClick={() => openDrillDetails(d, block)} title="Edit" style={{ cursor: "pointer", color: "var(--muted)", fontSize: 12 }}>✎</span>
-                              <span onClick={() => handleDeleteDrill(d, block.id)} title="Remove" style={{ cursor: "pointer", color: "#ff7b7b", fontSize: 12, marginLeft: "auto" }}>✕</span>
+                              <span onClick={() => handleDeleteDrill(d, block.id)} title="Remove" style={{ cursor: "pointer", color: "var(--danger-text)", fontSize: 12, marginLeft: "auto" }}>✕</span>
                             </div>
                             {(roster || (d.drill_id && d.label)) && (
                               <div style={{ fontSize: 10, color: roster ? roster.color : "var(--muted)", marginTop: 2, fontWeight: roster ? 700 : 400 }}>
@@ -1097,14 +1097,14 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
 
           {/* ── Totals ── */}
           <div style={{ marginTop: 14, display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ fontSize: 13, color: "var(--text)" }}>Total: <strong style={{ color: "var(--gold)" }}>{formatDuration(total)}</strong></div>
+            <div style={{ fontSize: 13, color: "var(--text)" }}>Total: <strong style={{ color: "var(--gold-text)" }}>{formatDuration(total)}</strong></div>
             {rosterIds.length > 1 && (
               <div style={{ display: "flex", gap: 10, fontSize: 11, color: "var(--muted)" }}>
                 {rosterIds.map(rid => {
                   const r = rosters.find(x => x.id === rid);
                   return <span key={rid}>{r?.name}: {formatDuration(colTotals[rid] ?? 0)}</span>;
                 })}
-                {columnsUnbalanced && <span style={{ color: "var(--gold)" }}>⚠ columns don't match</span>}
+                {columnsUnbalanced && <span style={{ color: "var(--gold-text)" }}>⚠ columns don't match</span>}
               </div>
             )}
           </div>
@@ -1114,7 +1114,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
       {editingDrillDetails && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setEditingDrillDetails(null)}>
           <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(420px, 96vw)", padding: 20 }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", marginBottom: 10 }}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)", marginBottom: 10 }}>
               Edit — {editingDrillDetails.drill.drill_id ? (drillsById[editingDrillDetails.drill.drill_id]?.title ?? "Drill") : "Drill"}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1142,7 +1142,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
       {coachPickerTarget && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setCoachPickerTarget(null)}>
           <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(360px, 96vw)", padding: 20 }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", marginBottom: 10 }}>Coaches</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)", marginBottom: 10 }}>Coaches</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 220, overflowY: "auto", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, marginBottom: 12 }}>
               {coaches.map(c => (
                 <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
@@ -1272,7 +1272,7 @@ const secondaryBtn: React.CSSProperties = {
   padding: "8px 16px", fontSize: 12, fontFamily: "inherit", cursor: "pointer",
 };
 const dangerBtn: React.CSSProperties = {
-  background: "rgba(226,75,74,0.1)", color: "#ff7b7b", border: "1px solid rgba(226,75,74,0.3)", borderRadius: 8,
+  background: "rgba(226,75,74,0.1)", color: "var(--danger-text)", border: "1px solid rgba(226,75,74,0.3)", borderRadius: 8,
   padding: "8px 16px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
 };
 const smallBtn: React.CSSProperties = {
@@ -1280,6 +1280,6 @@ const smallBtn: React.CSSProperties = {
   padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer",
 };
 const dangerSmallBtn: React.CSSProperties = {
-  background: "rgba(226,75,74,0.08)", border: "1px solid rgba(226,75,74,0.2)", color: "#ff7b7b", borderRadius: 6,
+  background: "rgba(226,75,74,0.08)", border: "1px solid rgba(226,75,74,0.2)", color: "var(--danger-text)", borderRadius: 6,
   padding: "3px 8px", fontSize: 11, fontFamily: "inherit", cursor: "pointer",
 };

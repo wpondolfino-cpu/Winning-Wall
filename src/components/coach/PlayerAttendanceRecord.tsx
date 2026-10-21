@@ -60,8 +60,8 @@ export default function PlayerAttendanceRecord({ playerId }: { playerId: string 
           <span style={{ fontSize: 12.5 }}>{r.seasonName}</span>
           <span style={cell}>{r.practices}</span>
           <span style={cell}>{r.absences}</span>
-          <span style={{ ...cell, color: r.excused > 0 ? "#5de098" : undefined }}>{r.excused}</span>
-          <span style={{ ...cell, color: r.unexcused > 0 ? "#ff7b7b" : undefined }}>{r.unexcused}</span>
+          <span style={{ ...cell, color: r.excused > 0 ? "var(--success-text)" : undefined }}>{r.excused}</span>
+          <span style={{ ...cell, color: r.unexcused > 0 ? "var(--danger-text)" : undefined }}>{r.unexcused}</span>
         </div>
       ))}
 

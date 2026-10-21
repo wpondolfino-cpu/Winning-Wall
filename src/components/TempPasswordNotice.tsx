@@ -16,7 +16,7 @@ export default function TempPasswordNotice({ name, password, onClose }: { name: 
     <div className="modal-overlay open" onClick={onClose}>
       <div className="log-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420, width: "92%" }}>
         <button className="modal-close" onClick={onClose}>✕</button>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)", letterSpacing: 1, marginBottom: 6 }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--title)", letterSpacing: 1, marginBottom: 6 }}>
           Password reset
         </div>
         <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 14 }}>

@@ -42,7 +42,7 @@ export default function SeasonRolloverSummary({ sync, seasonName, onClose }: Pro
     <div className="modal-overlay open" onClick={() => !deleting && onClose()}>
       <div className="log-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440, width: "92%" }}>
         <button className="modal-close" onClick={() => !deleting && onClose()}>✕</button>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)", letterSpacing: 1, marginBottom: 4 }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--title)", letterSpacing: 1, marginBottom: 4 }}>
           {seasonName} has started
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>What changed on its own, and one thing that's your call.</div>
@@ -65,7 +65,7 @@ export default function SeasonRolloverSummary({ sync, seasonName, onClose }: Pro
             )}
           </>
         ) : (
-          <div style={{ ...line, color: "#ff7b7b" }}>
+          <div style={{ ...line, color: "var(--danger-text)" }}>
             The season started, but grades couldn't be updated.
             <div style={sub}>Nothing else is affected. Re-saving the season's start date in Settings retries it.</div>
           </div>
@@ -77,21 +77,21 @@ export default function SeasonRolloverSummary({ sync, seasonName, onClose }: Pro
             Last year's "3s Week 1" is full of names that have moved on. Practices that used them keep their groups.
           </div>
           {deleted != null ? (
-            <div style={{ fontSize: 12, color: "#5de098", marginTop: 8 }}>{plural(deleted, "grouping")} deleted.</div>
+            <div style={{ fontSize: 12, color: "var(--success-text)", marginTop: 8 }}>{plural(deleted, "grouping")} deleted.</div>
           ) : oldIds == null ? (
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>Checking…</div>
           ) : oldIds.length === 0 ? (
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>None to clear.</div>
           ) : (
             <button type="button" onClick={clearOld} disabled={deleting}
-              style={{ marginTop: 8, background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+              style={{ marginTop: 8, background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "var(--danger-text)", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
               {deleting ? "Deleting…" : `Delete ${plural(oldIds.length, "old grouping")}`}
             </button>
           )}
           {oldIds != null && oldIds.length > 0 && deleted == null && (
             <div style={sub}>Or keep them: they stay out of the way behind "Show earlier seasons".</div>
           )}
-          {err && <div style={{ fontSize: 12, color: "#ff7b7b", marginTop: 6 }}>{err}</div>}
+          {err && <div style={{ fontSize: 12, color: "var(--danger-text)", marginTop: 6 }}>{err}</div>}
         </div>
 
         <button type="button" onClick={onClose} disabled={deleting}

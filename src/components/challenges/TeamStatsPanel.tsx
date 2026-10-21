@@ -90,8 +90,8 @@ export default function TeamStatsPanel() {
             <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px 90px", gap: 8, alignItems: "center", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px" }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{r.name}</span>
               <span style={{ textAlign: "center", fontSize: 12, color: "var(--text)" }}>{r.h2hWins}-{r.h2hLosses}</span>
-              <span style={{ textAlign: "center", fontSize: 12, color: "var(--gold)" }}>{r.clashWins}</span>
-              <span style={{ textAlign: "center", fontSize: 12, color: "#5de098" }}>{r.teamWins}</span>
+              <span style={{ textAlign: "center", fontSize: 12, color: "var(--gold-text)" }}>{r.clashWins}</span>
+              <span style={{ textAlign: "center", fontSize: 12, color: "var(--success-text)" }}>{r.teamWins}</span>
             </div>
           ))}
         </div>

@@ -199,7 +199,7 @@ export default function PlayQuestionPicker({ quiz, onAdd, onCancel }: Props) {
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>Review</div>
           {drafts.map((d, i) => (
             <div key={i} style={{ marginBottom: 14 }}>
-              {drafts.length > 1 && <div style={{ ...label, color: "var(--gold)" }}>Part {i + 1} of {drafts.length}</div>}
+              {drafts.length > 1 && <div style={{ ...label, color: "var(--gold-text)" }}>Part {i + 1} of {drafts.length}</div>}
               {i === 0 && d.visual && (
                 <div style={{ maxWidth: 420 }}><QuizPlayVisual visual={d.visual} compact /></div>
               )}
@@ -223,11 +223,11 @@ export default function PlayQuestionPicker({ quiz, onAdd, onCancel }: Props) {
                   )}
                 </>
               ) : d.qtype === "tap_place" ? (
-                <div style={{ fontSize: 12, color: "#5de098", marginBottom: 8 }}>✓ The right spot comes from the drawing.</div>
+                <div style={{ fontSize: 12, color: "var(--success-text)", marginBottom: 8 }}>✓ The right spot comes from the drawing.</div>
               ) : (
                 <div style={{ fontSize: 13, marginBottom: 8 }}>
                   {d.options.map((o, j) => (
-                    <span key={j} style={{ marginRight: 12, color: j === d.correctIndex ? "#5de098" : "var(--muted)" }}>
+                    <span key={j} style={{ marginRight: 12, color: j === d.correctIndex ? "var(--success-text)" : "var(--muted)" }}>
                       {j === d.correctIndex ? "✓ " : ""}{o}
                     </span>
                   ))}

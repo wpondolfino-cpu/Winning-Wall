@@ -253,7 +253,7 @@ export default function QuizzesPage({ prefill, onPrefillUsed }: {
                 style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "none", border: "none",
                   padding: "8px 10px", borderRadius: 8, fontSize: 13, fontFamily: "inherit",
                   cursor: opts.disabled ? "default" : "pointer",
-                  color: opts.disabled ? "var(--muted)" : opts.danger ? "#ff7b7b" : "var(--text)" }}>
+                  color: opts.disabled ? "var(--muted)" : opts.danger ? "var(--danger-text)" : "var(--text)" }}>
                 <span aria-hidden="true" style={{ width: 18, textAlign: "center" }}>{icon}</span>
                 <span style={{ flex: 1 }}>{labelText}</span>
                 {opts.disabled && <span style={{ fontSize: 10, color: "var(--muted)" }}>{opts.disabled}</span>}

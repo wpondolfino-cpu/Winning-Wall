@@ -105,7 +105,7 @@ export default function QuizQuestionEditor({ mode, question, roster, onSaveDraft
       ) : (
         (question?.options ?? []).map(o => (
           <div key={o.id} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-            <span style={{ width: 18, textAlign: "center", color: o.id === question?.correct_option_id ? "#5de098" : "var(--muted)" }}>
+            <span style={{ width: 18, textAlign: "center", color: o.id === question?.correct_option_id ? "var(--success-text)" : "var(--muted)" }}>
               {o.id === question?.correct_option_id ? "✓" : "•"}
             </span>
             <input value={labels[o.id] ?? ""} onChange={e => setLabels(l => ({ ...l, [o.id]: e.target.value }))}

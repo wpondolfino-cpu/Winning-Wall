@@ -27,7 +27,7 @@ export default function DownloadProgramDataButton({ programId, style }: { progra
         padding: "10px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: busy ? "default" : "pointer",
         ...style,
       }}>{busy ? "Preparing…" : "⬇️ Download program data"}</button>
-      {msg && <span role="status" style={{ fontSize: 12, color: msg.ok ? "#5de098" : "#ff8a8a" }}>{msg.text}</span>}
+      {msg && <span role="status" style={{ fontSize: 12, color: msg.ok ? "var(--success-text)" : "var(--danger-text-2)" }}>{msg.text}</span>}
     </div>
   );
 }

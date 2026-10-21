@@ -99,7 +99,7 @@ export default function ChangePassword({
         {error && (
           <div style={{
             background: "rgba(220,50,50,0.15)", border: "1px solid rgba(220,50,50,0.3)",
-            color: "#ff7b7b", padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 16,
+            color: "var(--danger-text)", padding: "10px 14px", borderRadius: 8, fontSize: 13, marginBottom: 16,
           }}>
             {error}
           </div>

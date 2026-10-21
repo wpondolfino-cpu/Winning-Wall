@@ -39,7 +39,7 @@ export default function LiftingChart({ exerciseName, logs }: Props) {
           <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>Est. 1RM · {points.length} sessions</div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: gained >= 0 ? "#5de098" : "#ff7b7b", lineHeight: 1 }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: gained >= 0 ? "var(--success-text)" : "var(--danger-text)", lineHeight: 1 }}>
             {gained > 0 ? "+" : ""}{gained} lbs
           </div>
           <div style={{ fontSize: 10, color: "var(--muted)" }}>total gain</div>

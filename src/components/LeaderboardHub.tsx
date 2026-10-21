@@ -63,7 +63,7 @@ export default function LeaderboardHub({ currentUserId, canManage = false, profi
 
       {canManage && topTab !== "history" && (
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-          {err && <span style={{ fontSize: 12, color: "#ff8a8a", marginRight: "auto" }}>{err}</span>}
+          {err && <span style={{ fontSize: 12, color: "var(--danger-text-2)", marginRight: "auto" }}>{err}</span>}
           <button type="button" onClick={() => run("print")} disabled={busy !== null} style={toolBtn}>
             {busy === "print" ? "Loading…" : "🖨️ Print"}
           </button>

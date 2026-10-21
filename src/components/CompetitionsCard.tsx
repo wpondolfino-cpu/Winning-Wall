@@ -154,7 +154,7 @@ export default function CompetitionsCard() {
   const label: React.CSSProperties = { fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 };
   const input: React.CSSProperties = { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", width: "100%" };
   const small = (active = false): React.CSSProperties => ({
-    background: active ? "rgba(26,63,168,0.25)" : "var(--surface2)", color: active ? "#93b4ff" : "var(--text)",
+    background: active ? "rgba(26,63,168,0.25)" : "var(--surface2)", color: active ? "var(--info-text)" : "var(--text)",
     border: `1px solid ${active ? "var(--royal-light)" : "var(--border)"}`, borderRadius: 8, padding: "6px 12px",
     fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap",
   });
@@ -174,7 +174,7 @@ export default function CompetitionsCard() {
       {current ? (
         <div style={{ background: "rgba(26,63,168,0.15)", border: "1px solid rgba(26,63,168,0.35)", borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)", cursor: "pointer" }} onClick={() => rename(current)} title="Rename">{current.name}</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--title)", cursor: "pointer" }} onClick={() => rename(current)} title="Rename">{current.name}</div>
             <div style={{ fontSize: 12, color: "var(--muted)" }}>
               {competitionRange(current)} · {daysLeft(current) === 1 ? "last day" : `${daysLeft(current)} days left`}
             </div>
@@ -191,7 +191,7 @@ export default function CompetitionsCard() {
           </label>
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
             Crowned on: <b style={{ color: "var(--text)" }}>{SCORING_LABEL[current.scored_by ?? "points"]}</b>
-            {" · "}<span onClick={() => toggleScoring(current)} style={{ color: "#93b4ff", cursor: "pointer" }}>change</span>
+            {" · "}<span onClick={() => toggleScoring(current)} style={{ color: "var(--info-text)", cursor: "pointer" }}>change</span>
           </div>
           {editingEnd ? (
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -204,7 +204,7 @@ export default function CompetitionsCard() {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button onClick={() => { setNewLast(lastDay(current)); setEditingEnd(true); }} style={small()}>Change last day</button>
               <button onClick={() => rename(current)} style={small()}>Rename</button>
-              <button onClick={endEarly} disabled={busy} style={{ ...small(), color: "#ff7b7b" }}>End now</button>
+              <button onClick={endEarly} disabled={busy} style={{ ...small(), color: "var(--danger-text)" }}>End now</button>
             </div>
           )}
         </div>
@@ -226,7 +226,7 @@ export default function CompetitionsCard() {
                   <div style={{ fontSize: 11, color: "var(--muted)" }}>{competitionRange(c)}{c.repeats ? " · repeats" : ""} · <span onClick={() => toggleScoring(c)} style={{ cursor: "pointer", textDecoration: "underline dotted" }}>{SCORING_LABEL[c.scored_by ?? "points"]}</span></div>
                 </div>
                 <button onClick={() => rename(c)} style={small()}>Rename</button>
-                <button onClick={() => removeUpcoming(c)} disabled={busy} style={{ ...small(), color: "#ff7b7b" }}>Delete</button>
+                <button onClick={() => removeUpcoming(c)} disabled={busy} style={{ ...small(), color: "var(--danger-text)" }}>Delete</button>
               </div>
             ))}
           </div>
@@ -280,7 +280,7 @@ export default function CompetitionsCard() {
         </button>
       </div>
 
-      {err && <div style={{ fontSize: 12, color: "#ff7b7b", marginTop: 10 }}>{err}</div>}
+      {err && <div style={{ fontSize: 12, color: "var(--danger-text)", marginTop: 10 }}>{err}</div>}
     </div>
   );
 }

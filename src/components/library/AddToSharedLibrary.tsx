@@ -6,7 +6,7 @@ import { CSSProperties, MouseEvent, useEffect, useState } from "react";
 import { LibraryKind, addToLibrary, inLibrary, usePlatformAdmin } from "../../lib/library";
 
 const base: CSSProperties = {
-  background: "rgba(240,192,64,0.10)", border: "1px solid rgba(240,192,64,0.35)", color: "var(--gold)",
+  background: "rgba(240,192,64,0.10)", border: "1px solid rgba(240,192,64,0.35)", color: "var(--gold-text)",
   borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
 };
 

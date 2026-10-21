@@ -205,7 +205,7 @@ export default function RosterManager({ onChanged }: Props = {}) {
     <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: "16px 20px", marginBottom: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <div>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1 }}>Rosters</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)", letterSpacing: 1 }}>Rosters</div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Manage teams — Varsity, JV, Freshman, and any custom rosters</div>
         </div>
         <button onClick={() => setShowForm(s => !s)} style={primaryBtn}>
@@ -300,6 +300,6 @@ const smallBtn: React.CSSProperties = {
   padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer",
 };
 const dangerSmallBtn: React.CSSProperties = {
-  background: "rgba(226,75,74,0.08)", border: "1px solid rgba(226,75,74,0.2)", color: "#ff7b7b", borderRadius: 6,
+  background: "rgba(226,75,74,0.08)", border: "1px solid rgba(226,75,74,0.2)", color: "var(--danger-text)", borderRadius: 6,
   padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer",
 };

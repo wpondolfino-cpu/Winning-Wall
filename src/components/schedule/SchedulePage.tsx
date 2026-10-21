@@ -586,7 +586,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
                           have to be somewhere for, and missing it means
                           missing the game. */}
                       {item.busTime && (
-                        <span style={{ color: "var(--gold)", fontWeight: 700 }}>Bus {fmtTime(item.busTime)}</span>
+                        <span style={{ color: "var(--gold-text)", fontWeight: 700 }}>Bus {fmtTime(item.busTime)}</span>
                       )}
                       <span style={{ color: item.busTime ? "var(--muted)" : "var(--text)", fontWeight: item.busTime ? 400 : 600 }}>
                         {item.busTime ? `Tip ${fmtTime(item.time)}` : fmtTime(item.time)}

@@ -55,7 +55,7 @@ export default function AddPlayersToRosterModal({ roster, onClose, onAdded }: Pr
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={onClose}>
       <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(420px, 96vw)", maxHeight: "85vh", display: "flex", flexDirection: "column", padding: 20 }} onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)" }}>Add players — {roster.name}</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)" }}>Add players — {roster.name}</div>
           <button onClick={onClose} style={smallBtn}>Close</button>
         </div>
         <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10 }}>
@@ -86,7 +86,7 @@ export default function AddPlayersToRosterModal({ roster, onClose, onAdded }: Pr
                   {alreadyHere ? (
                     <span style={{ fontSize: 10, color: "var(--muted)", marginLeft: "auto" }}>already here</span>
                   ) : p.home_roster_id ? (
-                    <span style={{ fontSize: 10, color: "var(--gold)", marginLeft: "auto" }}>moves from another roster</span>
+                    <span style={{ fontSize: 10, color: "var(--gold-text)", marginLeft: "auto" }}>moves from another roster</span>
                   ) : null}
                 </label>
               );

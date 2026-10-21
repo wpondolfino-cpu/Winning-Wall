@@ -66,12 +66,12 @@ export default function LiftingDayCard({ day, exercises, logs, playerId, playerN
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text)" }}>Day {day.day_number} — {day.name}</div>
               {isToday && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "var(--royal)", color: "#fff" }}>TODAY</span>}
-              {loggedToday && !isToday && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "rgba(40,180,80,0.15)", color: "#5de098" }}>✓ LOGGED</span>}
+              {loggedToday && !isToday && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "rgba(40,180,80,0.15)", color: "var(--success-text)" }}>✓ LOGGED</span>}
             </div>
             <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3, display: "flex", gap: 10 }}>
               <span>{exercises.length} exercise{exercises.length !== 1 ? "s" : ""}</span>
               <span>~{estMins} min</span>
-              {totalVolume > 0 && <span style={{ color: "#93b4ff" }}>{Math.round(totalVolume).toLocaleString()} lbs total vol</span>}
+              {totalVolume > 0 && <span style={{ color: "var(--info-text)" }}>{Math.round(totalVolume).toLocaleString()} lbs total vol</span>}
             </div>
           </div>
           <span style={{ color: "var(--muted)", fontSize: 16 }}>{expanded ? "▲" : "▼"}</span>
@@ -113,9 +113,9 @@ export default function LiftingDayCard({ day, exercises, logs, playerId, playerN
                           <div>
                             <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text)" }}>{dex.exercise?.name ?? "Unknown"}</div>
                             <div style={{ display: "flex", gap: 8, marginTop: 3, alignItems: "center", flexWrap: "wrap" }}>
-                              {vid && <a href={`https://youtube.com/watch?v=${vid}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize: 10, color: "var(--gold)", textDecoration: "none", fontWeight: 600 }}>📹 Demo</a>}
+                              {vid && <a href={`https://youtube.com/watch?v=${vid}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize: 10, color: "var(--gold-text)", textDecoration: "none", fontWeight: 600 }}>📹 Demo</a>}
                               <span style={{ fontSize: 10, color: "var(--muted)" }}>{dex.rest_secs}s rest</span>
-                              {(dex as any).notes && <span style={{ fontSize: 10, color: "#93b4ff", fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "rgba(26,63,168,0.15)" }}>{(dex as any).notes}</span>}
+                              {(dex as any).notes && <span style={{ fontSize: 10, color: "var(--info-text)", fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: "rgba(26,63,168,0.15)" }}>{(dex as any).notes}</span>}
                             </div>
                           </div>
                           <div style={{ textAlign: "center", fontSize: 12, color: "var(--silver-light)", fontWeight: 600 }}>{dex.target_sets ?? "—"}</div>
@@ -124,14 +124,14 @@ export default function LiftingDayCard({ day, exercises, logs, playerId, playerN
                           <div style={{ textAlign: "center" }}>
                             {lastBest ? (
                               <div>
-                                <div style={{ fontSize: 12, fontWeight: 700, color: "#5de098" }}>{lastBest.weight} lbs</div>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--success-text)" }}>{lastBest.weight} lbs</div>
                                 <div style={{ fontSize: 10, color: "var(--muted)" }}>×{lastBest.reps} reps</div>
                               </div>
                             ) : <div style={{ fontSize: 11, color: "var(--muted)" }}>—</div>}
                           </div>
                           <div style={{ textAlign: "center" }}>
                             {growth !== null ? (
-                              <div style={{ fontSize: 12, fontWeight: 700, color: growth > 0 ? "#5de098" : growth < 0 ? "#ff7b7b" : "var(--muted)" }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: growth > 0 ? "var(--success-text)" : growth < 0 ? "var(--danger-text)" : "var(--muted)" }}>
                                 {growth > 0 ? `+${growth}` : growth === 0 ? "—" : growth} lbs
                               </div>
                             ) : <div style={{ fontSize: 11, color: "var(--muted)" }}>—</div>}

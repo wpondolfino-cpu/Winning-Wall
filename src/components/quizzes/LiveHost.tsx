@@ -86,11 +86,11 @@ export default function LiveHost({ sessionId, onClose }: Props) {
   const header = (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
       <div>
-        <div style={{ fontSize: 12, letterSpacing: 2, color: "#9aa3b8" }}>LIVE QUIZ</div>
+        <div style={{ fontSize: 12, letterSpacing: 2, color: "var(--muted-4)" }}>LIVE QUIZ</div>
         <div style={{ fontSize: 20, fontWeight: 700 }}>{st.quiz_title}</div>
       </div>
       {st.status !== "lobby" && st.status !== "ended" && (
-        <div style={{ fontSize: 14, color: "#9aa3b8" }}>Question {st.index + 1} of {st.total}</div>
+        <div style={{ fontSize: 14, color: "var(--muted-4)" }}>Question {st.index + 1} of {st.total}</div>
       )}
       <button onClick={exit} style={bigBtn(false)}>{st.status === "ended" ? "Close" : "End live quiz"}</button>
     </div>
@@ -105,8 +105,8 @@ export default function LiveHost({ sessionId, onClose }: Props) {
       {st.status === "lobby" && (
         <div style={{ textAlign: "center", paddingTop: 30 }}>
           <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 6 }}>Open Winning Wall to join</div>
-          <div style={{ color: "#9aa3b8", marginBottom: 22 }}>Your team got a notification. Anyone already in the app sees a "Live now" banner.</div>
-          <div style={{ fontSize: 15, color: "#9aa3b8", marginBottom: 10 }}>In the room: {st.participants.length}</div>
+          <div style={{ color: "var(--muted-4)", marginBottom: 22 }}>Your team got a notification. Anyone already in the app sees a "Live now" banner.</div>
+          <div style={{ fontSize: 15, color: "var(--muted-4)", marginBottom: 10 }}>In the room: {st.participants.length}</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", maxWidth: 900, margin: "0 auto 26px" }}>
             {st.participants.map((n, i) => (
               <span key={i} style={{ background: "#1a2340", borderRadius: 16, padding: "6px 14px", fontSize: 15 }}>{n}</span>
@@ -115,7 +115,7 @@ export default function LiveHost({ sessionId, onClose }: Props) {
           <button onClick={() => act("start")} disabled={busy || st.participants.length === 0} style={{ ...bigBtn(), fontSize: 20, padding: "14px 34px" }}>
             Start ▶
           </button>
-          {st.participants.length === 0 && <div style={{ color: "#9aa3b8", marginTop: 10, fontSize: 13 }}>Waiting for someone to join…</div>}
+          {st.participants.length === 0 && <div style={{ color: "var(--muted-4)", marginTop: 10, fontSize: 13 }}>Waiting for someone to join…</div>}
         </div>
       )}
 
@@ -123,7 +123,7 @@ export default function LiveHost({ sessionId, onClose }: Props) {
       {st.status === "question" && q && (
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <span style={{ fontSize: 36, fontWeight: 800, color: (clock ?? 0) <= 5 ? "#ff7b7b" : "#F0C040" }}>
+            <span style={{ fontSize: 36, fontWeight: 800, color: (clock ?? 0) <= 5 ? "var(--danger-text)" : "#F0C040" }}>
               0:{String(Math.max(0, clock ?? 0)).padStart(2, "0")}
             </span>
             <span style={{ fontSize: 18 }}>{st.answered} of {st.participants.length} answered</span>
@@ -137,7 +137,7 @@ export default function LiveHost({ sessionId, onClose }: Props) {
             <div style={{ flex: "1 1 380px" }}>
               <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.3, marginBottom: 18 }}>{q.prompt}</div>
               {isTap ? (
-                <div style={{ fontSize: 18, color: "#9aa3b8" }}>Tap the spot on your phone.</div>
+                <div style={{ fontSize: 18, color: "var(--muted-4)" }}>Tap the spot on your phone.</div>
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   {q.options.map((o, i) => (
@@ -172,9 +172,9 @@ export default function LiveHost({ sessionId, onClose }: Props) {
             <div style={{ flex: "1 1 380px" }}>
               {isTap ? (
                 <div>
-                  <div style={{ fontSize: 44, fontWeight: 800, color: "#5de098" }}>{st.correct_count ?? 0} of {st.answered}</div>
+                  <div style={{ fontSize: 44, fontWeight: 800, color: "var(--success-text)" }}>{st.correct_count ?? 0} of {st.answered}</div>
                   <div style={{ fontSize: 18, marginBottom: 6 }}>tapped inside the circle</div>
-                  <div style={{ color: "#9aa3b8", fontSize: 14 }}>Each dot is one player's tap: green inside, red outside.</div>
+                  <div style={{ color: "var(--muted-4)", fontSize: 14 }}>Each dot is one player's tap: green inside, red outside.</div>
                 </div>
               ) : (
                 q.options.map((o, i) => {
@@ -183,7 +183,7 @@ export default function LiveHost({ sessionId, onClose }: Props) {
                   const pct = st.answered ? (n / st.answered) * 100 : 0;
                   return (
                     <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 12, margin: "10px 0" }}>
-                      <span style={{ width: 190, fontSize: 18, fontWeight: right ? 700 : 400, color: right ? "#5de098" : "#f2f4f8" }}>
+                      <span style={{ width: 190, fontSize: 18, fontWeight: right ? 700 : 400, color: right ? "var(--success-text)" : "#f2f4f8" }}>
                         {right ? "✓ " : ""}{o.label}
                       </span>
                       <div style={{ flex: 1, background: "#1a2340", borderRadius: 6, height: 26 }}>
@@ -199,7 +199,7 @@ export default function LiveHost({ sessionId, onClose }: Props) {
                   {st.key.explanation}
                 </div>
               )}
-              <div style={{ color: "#9aa3b8", fontSize: 12, marginTop: 8 }}>Names stay off this screen — just how many picked each answer.</div>
+              <div style={{ color: "var(--muted-4)", fontSize: 12, marginTop: 8 }}>Names stay off this screen — just how many picked each answer.</div>
               <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
                 {(st.index + 1) % BOARD_EVERY === 0 || st.index + 1 === st.total
                   ? <button onClick={() => act("scoreboard")} disabled={busy} style={bigBtn()}>Scoreboard ▶</button>
@@ -221,13 +221,13 @@ export default function LiveHost({ sessionId, onClose }: Props) {
           </div>
           {(st.board ?? []).map((r, i) => (
             <div key={r.player_id} style={{ display: "flex", alignItems: "center", gap: 14, background: "#1a2340", borderRadius: 12, padding: "12px 16px", marginBottom: 8 }}>
-              <span style={{ width: 30, fontSize: 24, fontWeight: 800, color: i === 0 ? "#F0C040" : "#9aa3b8" }}>{r.rank}</span>
+              <span style={{ width: 30, fontSize: 24, fontWeight: 800, color: i === 0 ? "#F0C040" : "var(--muted-4)" }}>{r.rank}</span>
               <span style={{ flex: 1, fontSize: 20 }}>{r.name}</span>
-              <span style={{ fontSize: 16, color: "#5de098" }}>{r.correct} right</span>
+              <span style={{ fontSize: 16, color: "var(--success-text)" }}>{r.correct} right</span>
             </div>
           ))}
-          {(st.board ?? []).length === 0 && <div style={{ textAlign: "center", color: "#9aa3b8" }}>No answers yet.</div>}
-          <div style={{ textAlign: "center", color: "#9aa3b8", fontSize: 12, margin: "10px 0 20px" }}>
+          {(st.board ?? []).length === 0 && <div style={{ textAlign: "center", color: "var(--muted-4)" }}>No answers yet.</div>}
+          <div style={{ textAlign: "center", color: "var(--muted-4)", fontSize: 12, margin: "10px 0 20px" }}>
             Top 5 only. Most right first; quicker right answers break ties.
           </div>
           <div style={{ textAlign: "center" }}>

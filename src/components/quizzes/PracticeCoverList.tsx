@@ -39,7 +39,7 @@ export default function PracticeCoverList({ practiceId }: Props) {
   const open = items.filter(i => !i.done).length;
   return (
     <div style={{ background: "rgba(220,50,50,0.08)", border: "1px solid rgba(220,50,50,0.3)", borderRadius: 10, padding: "10px 12px", marginBottom: 14 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "#ff7b7b", marginBottom: 6 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--danger-text)", marginBottom: 6 }}>
         📌 To cover{open ? ` · ${open} open` : " · all done"}
       </div>
       {error && <div className="error-msg">{error}</div>}

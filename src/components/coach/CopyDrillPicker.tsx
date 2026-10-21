@@ -82,7 +82,7 @@ export default function CopyDrillPicker({ practiceId, targetSegmentId, orderInde
         style={{ background: "var(--surface)", borderRadius: 16, width: "min(620px, 96vw)", maxHeight: "88vh", overflowY: "auto", padding: 20 }}>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)" }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)" }}>
             {openPractice ? dateLabel(openPractice.practice_date) : "Copy a drill"}
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 18, cursor: "pointer", padding: 4, lineHeight: 1 }}>✕</button>

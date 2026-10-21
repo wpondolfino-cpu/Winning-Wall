@@ -222,8 +222,8 @@ export default function GameDaySheetEditor({ sheetId, onClose }: Props) {
     if (confirmDeleteId === c.id) {
       return (
         <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0", fontSize: 11 }}>
-          <span style={{ color: "#ff7b7b", flex: 1 }}>Delete "{c.call_name}"?</span>
-          <button type="button" onClick={() => confirmDelete(c)} style={{ background: "rgba(255,107,107,0.15)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 5, padding: "2px 6px", fontSize: 10, cursor: "pointer" }}>Delete</button>
+          <span style={{ color: "var(--danger-text)", flex: 1 }}>Delete "{c.call_name}"?</span>
+          <button type="button" onClick={() => confirmDelete(c)} style={{ background: "rgba(255,107,107,0.15)", border: "1px solid rgba(255,107,107,0.3)", color: "var(--danger-text)", borderRadius: 5, padding: "2px 6px", fontSize: 10, cursor: "pointer" }}>Delete</button>
           <button type="button" onClick={() => setConfirmDeleteId(null)} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 5, padding: "2px 6px", fontSize: 10, cursor: "pointer" }}>Cancel</button>
         </div>
       );
@@ -298,7 +298,7 @@ export default function GameDaySheetEditor({ sheetId, onClose }: Props) {
             {!sec.is_builtin && (
               <button type="button" title="Delete this section"
                 onClick={() => void removeSection(sec, sectionCalls.length)}
-                style={{ background: "none", border: "none", color: "#ff7b7b", fontSize: 11, cursor: "pointer", padding: 2 }}>🗑</button>
+                style={{ background: "none", border: "none", color: "var(--danger-text)", fontSize: 11, cursor: "pointer", padding: 2 }}>🗑</button>
             )}
           </div>
         )}
@@ -395,7 +395,7 @@ export default function GameDaySheetEditor({ sheetId, onClose }: Props) {
 
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20 }}>
         <div>
-          <div style={{ background: "rgba(26,63,168,0.1)", color: "#93b4ff", fontWeight: 700, padding: "5px 10px", borderRadius: 6, marginBottom: 4 }}>OFFENSE</div>
+          <div style={{ background: "rgba(26,63,168,0.1)", color: "var(--info-text)", fontWeight: 700, padding: "5px 10px", borderRadius: 6, marginBottom: 4 }}>OFFENSE</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 14px" }}>
             {sections.filter(x => x.group === "offense").map(renderSection)}
             {addSectionRow("offense")}
@@ -413,7 +413,7 @@ export default function GameDaySheetEditor({ sheetId, onClose }: Props) {
           {sections.filter(x => x.group === "defense").map(renderSection)}
             {addSectionRow("defense")}
 
-          <div style={{ background: "rgba(240,192,64,0.12)", color: "var(--gold)", fontWeight: 700, padding: "5px 10px", borderRadius: 6, margin: "14px 0 4px" }}>SPECIALS</div>
+          <div style={{ background: "rgba(240,192,64,0.12)", color: "var(--gold-text)", fontWeight: 700, padding: "5px 10px", borderRadius: 6, margin: "14px 0 4px" }}>SPECIALS</div>
           {sections.filter(x => x.group === "specials").map(renderSection)}
             {addSectionRow("specials")}
         </div>
@@ -430,7 +430,7 @@ export default function GameDaySheetEditor({ sheetId, onClose }: Props) {
                     <button key={sec.id} type="button" onClick={() => void showSection(sec)}
                       style={{ background: "none", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 10px", fontSize: 11.5, color: "var(--muted)", cursor: "pointer", fontFamily: "inherit" }}>
                       {sec.label}
-                      {n > 0 && <span style={{ color: "var(--gold)" }}> · {n}</span>}
+                      {n > 0 && <span style={{ color: "var(--gold-text)" }}> · {n}</span>}
                     </button>
                   );
                 })}

@@ -172,9 +172,9 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={onClose}>
       <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(720px, 96vw)", maxHeight: "90vh", overflowY: "auto", padding: 22 }} onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)" }}>Groups — {drill.label}</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)" }}>Groups — {drill.label}</div>
           <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 11, color: "#5de098", opacity: justSaved ? 1 : 0, transition: "opacity .25s" }}>✓ Saved</span>
+            <span style={{ fontSize: 11, color: "var(--success-text)", opacity: justSaved ? 1 : 0, transition: "opacity .25s" }}>✓ Saved</span>
             <button onClick={onClose} style={smallBtn}>Done</button>
           </span>
         </div>
@@ -301,7 +301,7 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
                       border: hasExcused ? "1px solid rgba(240,192,64,0.5)" : "1px solid var(--border)",
                       borderRadius: 10, padding: 10, minHeight: 90,
                     }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: hasExcused ? "var(--gold)" : "var(--text)", marginBottom: 6 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: hasExcused ? "var(--gold-text)" : "var(--text)", marginBottom: 6 }}>
                       {hasExcused && "⚠ "}{g.group_label}
                     </div>
                     {g.member_ids.map(pid => {

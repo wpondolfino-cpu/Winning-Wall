@@ -140,7 +140,7 @@ export default function ScheduleImport({ season, seasonId, userId, rosters, onCl
                             ? r.opponentMatch.trim().toLowerCase() !== r.opponent.trim().toLowerCase() && (
                                 <span style={{ display: "block", fontSize: 10.5, color: "var(--muted)" }}>→ {r.opponentMatch}</span>
                               )
-                            : <span style={{ display: "block", fontSize: 10.5, color: "#e8a33d" }}>→ new opponent</span>
+                            : <span style={{ display: "block", fontSize: 10.5, color: "var(--amber-text)" }}>→ new opponent</span>
                         )}
                       </td>
                       <td style={{ ...td, color: "var(--muted)" }}>{r.location ?? "—"}</td>

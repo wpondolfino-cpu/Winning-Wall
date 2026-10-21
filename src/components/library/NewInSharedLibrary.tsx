@@ -53,7 +53,7 @@ export default function NewInSharedLibrary({ kinds, onAdded }: { kinds: LibraryK
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>✨ New in Shared Library</span>
         {items.length > 0 && (
-          <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: "rgba(147,180,255,0.18)", color: "#93b4ff" }}>{items.length} new</span>
+          <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: "rgba(147,180,255,0.18)", color: "var(--info-text)" }}>{items.length} new</span>
         )}
       </div>
 
@@ -77,8 +77,8 @@ export default function NewInSharedLibrary({ kinds, onAdded }: { kinds: LibraryK
       ))}
 
       {items.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>You're all caught up.</div>}
-      {note && <div style={{ fontSize: 12, color: "#5de098" }}>{note}</div>}
-      {err && <div style={{ fontSize: 12, color: "#ff8a8a" }}>{err}</div>}
+      {note && <div style={{ fontSize: 12, color: "var(--success-text)" }}>{note}</div>}
+      {err && <div style={{ fontSize: 12, color: "var(--danger-text-2)" }}>{err}</div>}
     </div>
   );
 }

@@ -138,7 +138,7 @@ export default function ChampionsPanel() {
 
   return (
     <div style={{ background: "linear-gradient(135deg, rgba(26,63,168,0.3), rgba(240,192,64,0.1))", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 14, padding: "16px 20px", marginBottom: 24 }}>
-      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1 }}>👑 Champions</div>
+      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)", letterSpacing: 1 }}>👑 Champions</div>
       <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
         {current
           ? <>Running: {competitionLabel(current)} · {daysLeft(current) === 1 ? "last day" : `${daysLeft(current)} days left`}</>

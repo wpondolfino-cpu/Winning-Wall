@@ -85,7 +85,7 @@ export default function InSeasonLeaderboard() {
         <div>
           {ranked.map((s, i) => (
             <div key={s.player_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 4px", borderTop: i > 0 ? "1px solid var(--border)" : "none" }}>
-              <div style={{ width: 26, height: 26, borderRadius: "50%", background: i === 0 ? "rgba(240,192,64,0.2)" : "var(--surface2)", color: i === 0 ? "var(--gold)" : "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>
+              <div style={{ width: 26, height: 26, borderRadius: "50%", background: i === 0 ? "rgba(240,192,64,0.2)" : "var(--surface2)", color: i === 0 ? "var(--gold-text)" : "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>
                 {i + 1}
               </div>
               <span style={{ flex: 1, fontSize: 14 }}>{s.name}</span>

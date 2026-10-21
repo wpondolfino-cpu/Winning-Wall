@@ -301,7 +301,7 @@ export default function DrillTimer({ defaultSeconds = 30, compact = false, onCom
                 <button onClick={handleReset} style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "8px 0", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>↺ Reset</button>
               )}
             </div>
-            {done && <div style={{ fontSize: 12, color: "#5de098", marginTop: 6, fontWeight: 600 }}>🔔 Tap Reset to go again</div>}
+            {done && <div style={{ fontSize: 12, color: "var(--success-text)", marginTop: 6, fontWeight: 600 }}>🔔 Tap Reset to go again</div>}
           </div>
         </div>
       </div>
@@ -322,7 +322,7 @@ export default function DrillTimer({ defaultSeconds = 30, compact = false, onCom
         </svg>
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
           {done ? (
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, color: "#5de098", lineHeight: 1 }}>Done!</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, color: "var(--success-text)", lineHeight: 1 }}>Done!</div>
           ) : (
             <>
               <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 52, color, lineHeight: 1 }}>{formatTime(remaining)}</div>
@@ -372,7 +372,7 @@ export default function DrillTimer({ defaultSeconds = 30, compact = false, onCom
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
             {[15, 30, 45, 60, 90, 120].map(s => (
               <button key={s} onClick={() => { setDuration(s); setRemaining(s); setDone(false); }}
-                style={{ background: duration === s ? "rgba(147,180,255,0.2)" : "var(--surface2)", border: `1px solid ${duration === s ? "#93b4ff" : "var(--border)"}`, color: duration === s ? "#93b4ff" : "var(--muted)", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>
+                style={{ background: duration === s ? "rgba(147,180,255,0.2)" : "var(--surface2)", border: `1px solid ${duration === s ? "#93b4ff" : "var(--border)"}`, color: duration === s ? "var(--info-text)" : "var(--muted)", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>
                 {s < 60 ? `${s}s` : `${s/60}m`}
               </button>
             ))}
@@ -385,7 +385,7 @@ export default function DrillTimer({ defaultSeconds = 30, compact = false, onCom
       )}
 
       {done && (
-        <div style={{ marginTop: 12, fontSize: 14, color: "#5de098", fontWeight: 600, textAlign: "center" }}>
+        <div style={{ marginTop: 12, fontSize: 14, color: "var(--success-text)", fontWeight: 600, textAlign: "center" }}>
           🔔 Time's up! Great work!
         </div>
       )}
@@ -461,13 +461,13 @@ export function Stopwatch({ onUseTime }: StopwatchProps) {
   return (
     <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>⏱ Stopwatch</div>
-      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 52, color: stopped ? "var(--gold)" : running ? "#5de098" : "var(--text)", textAlign: "center", letterSpacing: 2, lineHeight: 1, marginBottom: 14 }}>
+      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 52, color: stopped ? "var(--title)" : running ? "var(--success-text)" : "var(--text)", textAlign: "center", letterSpacing: 2, lineHeight: 1, marginBottom: 14 }}>
         {display}
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: stopped ? 10 : 0 }}>
         {!running && !stopped && (
           <button onClick={start}
-            style={{ flex: 1, background: "#5de098", color: "#000", border: "none", borderRadius: 8, padding: "10px", fontSize: 14, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+            style={{ flex: 1, background: "var(--success-text)", color: "#000", border: "none", borderRadius: 8, padding: "10px", fontSize: 14, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
             ▶ Start
           </button>
         )}

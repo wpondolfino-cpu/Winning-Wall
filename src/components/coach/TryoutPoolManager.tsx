@@ -217,7 +217,7 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
           <button onClick={handleAdd} style={primary}>Add</button>
           <button onClick={() => setBulkOpen(v => !v)} style={btn}>Paste list</button>
           <button onClick={() => { setAcctOpen(v => !v); setAcctQuery(""); }}
-            style={{ ...btn, border: "1px solid var(--royal)", color: "#93b4ff", fontWeight: 600 }}>
+            style={{ ...btn, border: "1px solid var(--royal)", color: "var(--info-text)", fontWeight: 600 }}>
             🔎 Add account
           </button>
         </div>
@@ -277,7 +277,7 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
                       fontSize: 11, padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit",
                       border: `1px solid ${filterRosterId === r.id ? "var(--gold)" : "var(--border)"}`,
                       background: filterRosterId === r.id ? "rgba(240,192,64,0.12)" : "transparent",
-                      color: filterRosterId === r.id ? "var(--gold)" : "var(--muted)",
+                      color: filterRosterId === r.id ? "var(--gold-text)" : "var(--muted)",
                     }}>
                     {r.name}
                   </button>
@@ -294,7 +294,7 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
                     <div style={{ fontSize: 14, textDecoration: p.status === "cut" ? "line-through" : "none" }}>
                       {displayName(p)}
                       {p.linked_profile_id && (
-                        <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 5, marginLeft: 6, background: "rgba(147,180,255,0.15)", color: "#93b4ff" }}>Account</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 5, marginLeft: 6, background: "rgba(147,180,255,0.15)", color: "var(--info-text)" }}>Account</span>
                       )}
                     </div>
                     <div style={{ marginTop: 3 }}>
@@ -312,7 +312,7 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
                     </div>
                     {matchesFor(p).slice(0, 2).map(a => (
                       <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 3 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 5, background: "rgba(240,192,64,0.14)", color: "var(--gold)" }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 5, background: "rgba(240,192,64,0.14)", color: "var(--gold-text)" }}>
                           Possible match: {a.name}{a.home_roster_id ? ` (${rosterName(a.home_roster_id) ?? "roster"})` : ""}
                         </span>
                         <button onClick={() => swapForAccount(p, a)} style={{ ...btn, padding: "2px 8px", fontSize: 11 }}>Swap for account</button>
@@ -338,7 +338,7 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
                                 fontSize: 10, padding: "2px 7px", borderRadius: 5, cursor: "pointer", fontFamily: "inherit",
                                 border: `1px solid ${on ? "rgba(240,192,64,0.5)" : "var(--border)"}`,
                                 background: on ? "rgba(240,192,64,0.14)" : "transparent",
-                                color: on ? "var(--gold)" : "var(--muted)",
+                                color: on ? "var(--gold-text)" : "var(--muted)",
                               }}>
                               {r.name}
                             </button>

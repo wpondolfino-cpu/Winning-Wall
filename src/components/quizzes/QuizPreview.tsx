@@ -145,7 +145,7 @@ export default function QuizPreview({ bundle, roster, onClose }: Props) {
 
   const banner = (
     <div style={{ ...card, display: "flex", alignItems: "center", gap: 10, marginBottom: 12, borderColor: "rgba(240,192,64,0.4)", padding: "8px 12px" }}>
-      <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>PREVIEW</span>
+      <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold-text)" }}>PREVIEW</span>
       <span style={{ flex: 1, fontSize: 12, color: "var(--muted)" }}>Nothing is saved — no attempt, no results, no review deck.</span>
       <button type="button" onClick={onClose} style={{ ...secondaryBtn, padding: "5px 10px", fontSize: 12 }}>Exit preview</button>
     </div>
@@ -191,7 +191,7 @@ export default function QuizPreview({ bundle, roster, onClose }: Props) {
           const opts = (optionOrder[qq.id] ?? []).map(id => qq.options.find(o => o.id === id)!).filter(Boolean);
           return (
             <div key={qq.id} style={{ padding: "12px 0", borderTop: "1px solid var(--border)" }}>
-              <div style={{ fontSize: 12, color: a?.correct ? "#5de098" : "#ff7b7b", marginBottom: 4 }}>
+              <div style={{ fontSize: 12, color: a?.correct ? "var(--success-text)" : "var(--danger-text)", marginBottom: 4 }}>
                 {i + 1}. {a?.correct ? "Correct" : a?.timedOut ? "Time ran out" : "Missed"}
               </div>
               {qq.reveal && (
@@ -224,7 +224,7 @@ export default function QuizPreview({ bundle, roster, onClose }: Props) {
         {banner}
         <div style={{ textAlign: "center", padding: "12px 0" }}>
           <div style={{ fontSize: 13, color: "var(--muted)" }}>{quiz.title}</div>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, color: "var(--gold)", lineHeight: 1.1, margin: "10px 0" }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, color: "var(--title)", lineHeight: 1.1, margin: "10px 0" }}>
             {right} / {answers.length}
           </div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Not saved. A player would see their score and missed questions here.</div>
@@ -256,7 +256,7 @@ export default function QuizPreview({ bundle, roster, onClose }: Props) {
         <span style={{ fontSize: 13, color: "var(--muted)" }}>{quiz.title}</span>
         <span style={{ fontSize: 13, color: "var(--muted)" }}>
           {remaining != null && !feedback && ready && (
-            <span style={{ marginRight: 10, color: remaining <= 5 ? "#ff7b7b" : "var(--text)", fontWeight: 600 }}>⏱ {Math.max(0, remaining)}s</span>
+            <span style={{ marginRight: 10, color: remaining <= 5 ? "var(--danger-text)" : "var(--text)", fontWeight: 600 }}>⏱ {Math.max(0, remaining)}s</span>
           )}
           {idx + 1} of {order.length}
         </span>
@@ -288,14 +288,14 @@ export default function QuizPreview({ bundle, roster, onClose }: Props) {
           {o.label}
         </button>
       ))}
-      {inputError && <div style={{ fontSize: 13, color: "#ff7b7b", margin: "2px 0 8px" }}>{inputError}</div>}
+      {inputError && <div style={{ fontSize: 13, color: "var(--danger-text)", margin: "2px 0 8px" }}>{inputError}</div>}
 
       {feedback ? (
         <>
           <div style={{
             borderRadius: 10, padding: "10px 12px", margin: "6px 0 12px", fontSize: 13,
             background: feedback.correct ? "rgba(40,180,80,0.15)" : "rgba(220,50,50,0.15)",
-            color: feedback.correct ? "#5de098" : "#ff7b7b",
+            color: feedback.correct ? "var(--success-text)" : "var(--danger-text)",
           }}>
             <strong>{feedback.correct ? "Correct." : feedback.timedOut ? "Time's up." : "Not quite."}</strong>
             {q.explanation ? ` ${q.explanation}` : ""}

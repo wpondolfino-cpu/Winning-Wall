@@ -140,7 +140,7 @@ export default function ArchivedSeasons() {
           <div key={label} style={{ background: "var(--surface2)", borderRadius: 10, padding: "10px 12px", marginBottom: 6 }}>
             {confirmDelete === label ? (
               <div>
-                <div style={{ fontSize: 12, color: "#ff7b7b", marginBottom: 8 }}>
+                <div style={{ fontSize: 12, color: "var(--danger-text)", marginBottom: 8 }}>
                   Deleting "{label}" permanently removes this archive. It cannot be recovered.
                 </div>
                 <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 10, cursor: "pointer" }}>
@@ -149,7 +149,7 @@ export default function ArchivedSeasons() {
                 </label>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button type="button" disabled={!confirmChecked} onClick={() => confirmDeleteLabel(label)}
-                    style={{ background: "rgba(255,107,107,0.15)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 7, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: confirmChecked ? "pointer" : "default", opacity: confirmChecked ? 1 : 0.5 }}>
+                    style={{ background: "rgba(255,107,107,0.15)", border: "1px solid rgba(255,107,107,0.3)", color: "var(--danger-text)", borderRadius: 7, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: confirmChecked ? "pointer" : "default", opacity: confirmChecked ? 1 : 0.5 }}>
                     Delete permanently
                   </button>
                   <button type="button" onClick={() => { setConfirmDelete(null); setConfirmChecked(false); }}

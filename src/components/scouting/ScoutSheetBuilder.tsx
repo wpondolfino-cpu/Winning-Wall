@@ -399,7 +399,7 @@ function joinHeight(ft: string, inch: string): string {
             <span style={{
               fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
               background: sheet.status === "published" ? "rgba(40,180,80,0.15)" : "rgba(240,192,64,0.12)",
-              color: sheet.status === "published" ? "#5de098" : "var(--gold)",
+              color: sheet.status === "published" ? "var(--success-text)" : "var(--gold-text)",
             }}>
               {sheet.status === "published" ? "🌐 Published — players can see it" : "📝 Draft — players can't see it"}
             </span>
@@ -601,7 +601,7 @@ function joinHeight(ft: string, inch: string): string {
                           <input ref={el => { keyInputRefs.current[idx] = el; }} value={canManage ? k : cleanNote(k)} disabled={!canManage}
                             onChange={e => updateKey(idx, e.target.value)} placeholder="Key point…" style={{ ...inputStyle, flex: 1, fontSize: 13 }} />
                           {canManage && <button type="button" onMouseDown={e => e.preventDefault()} title="Bold the selected text, or the word by the cursor" onClick={() => wrapKeyBold(idx)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6, padding: "4px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>B</button>}
-                          {canManage && <button type="button" onClick={() => removeKey(idx)} style={{ background: "none", border: "none", color: "#ff7b7b", cursor: "pointer", fontSize: 14 }}>×</button>}
+                          {canManage && <button type="button" onClick={() => removeKey(idx)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", fontSize: 14 }}>×</button>}
                         </div>
                       );
                     })}
@@ -660,7 +660,7 @@ function joinHeight(ft: string, inch: string): string {
 
               {canManage && (
                 <button type="button" onClick={async () => { await deleteScoutPlayer(detailPlayer.id); setDetailPlayerId(null); load(); }}
-                  style={{ marginTop: 14, background: "none", border: "1px solid var(--border)", color: "#ff7b7b", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: "pointer" }}>
+                  style={{ marginTop: 14, background: "none", border: "1px solid var(--border)", color: "var(--danger-text)", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: "pointer" }}>
                   Remove player
                 </button>
               )}

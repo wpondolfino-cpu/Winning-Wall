@@ -79,7 +79,7 @@ export function LivePlayer({ sessionId, onClose }: { sessionId: string; onClose:
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, fontSize: 13, color: "var(--muted)" }}>
       <span>🔴 Live · {st?.quiz_title ?? ""}</span>
       <span>
-        {st?.status === "question" && !st.answered && clock != null && <strong style={{ color: clock <= 5 ? "#ff7b7b" : "var(--text)", marginRight: 8 }}>0:{String(Math.max(0, clock)).padStart(2, "0")}</strong>}
+        {st?.status === "question" && !st.answered && clock != null && <strong style={{ color: clock <= 5 ? "var(--danger-text)" : "var(--text)", marginRight: 8 }}>0:{String(Math.max(0, clock)).padStart(2, "0")}</strong>}
         {st && st.index >= 0 && st.status !== "ended" ? `Q${st.index + 1} of ${st.total}` : ""}
       </span>
     </div>
@@ -128,13 +128,13 @@ export function LivePlayer({ sessionId, onClose }: { sessionId: string; onClose:
       body = center(st.my_correct == null
         ? <><div style={{ fontSize: 20, fontWeight: 700 }}>No answer this time</div><div style={{ color: "var(--muted)", marginTop: 8 }}>Check the screen.</div></>
         : st.my_correct
-          ? <><div style={{ fontSize: 46 }}>✅</div><div style={{ fontSize: 22, fontWeight: 700, color: "#5de098" }}>Right!</div></>
-          : <><div style={{ fontSize: 46 }}>❌</div><div style={{ fontSize: 22, fontWeight: 700, color: "#ff7b7b" }}>Not this time</div><div style={{ color: "var(--muted)", marginTop: 8 }}>Check the screen for why.</div></>);
+          ? <><div style={{ fontSize: 46 }}>✅</div><div style={{ fontSize: 22, fontWeight: 700, color: "var(--success-text)" }}>Right!</div></>
+          : <><div style={{ fontSize: 46 }}>❌</div><div style={{ fontSize: 22, fontWeight: 700, color: "var(--danger-text)" }}>Not this time</div><div style={{ color: "var(--muted)", marginTop: 8 }}>Check the screen for why.</div></>);
     } else if (st.status === "scoreboard" || st.status === "ended") {
       const r = st.my_rank;
       body = center(<>
         <div style={{ fontSize: 14, color: "var(--muted)" }}>{st.status === "ended" ? "Final" : "So far"}</div>
-        {r ? <><div style={{ fontSize: 40, fontWeight: 800, color: "var(--gold)" }}>#{r.rank}</div>
+        {r ? <><div style={{ fontSize: 40, fontWeight: 800, color: "var(--gold-text)" }}>#{r.rank}</div>
           <div style={{ fontSize: 16 }}>{r.correct} right</div></> : <div>No answers yet</div>}
         {st.status === "ended" && <button onClick={onClose} style={{ marginTop: 24, padding: "10px 24px", borderRadius: 10, border: "none", background: "#2550D4", color: "#fff", fontSize: 15, fontWeight: 700 }}>Done</button>}
       </>);
@@ -184,7 +184,7 @@ export function LiveBanner() {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, background: "rgba(220,50,50,0.14)", border: "1px solid rgba(220,50,50,0.45)",
       borderRadius: 12, padding: "10px 14px", margin: "0 0 14px" }}>
-      <span style={{ fontSize: 13, fontWeight: 700, color: "#ff7b7b" }}>🔴 LIVE NOW</span>
+      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--danger-text)" }}>🔴 LIVE NOW</span>
       <span style={{ flex: 1, fontSize: 14 }}>{live.quiz_title}</span>
       <button onClick={() => setOpen(live.id)}
         style={{ background: "#2550D4", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>

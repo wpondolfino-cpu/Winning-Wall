@@ -93,7 +93,7 @@ function PlayerCalendar({ attempts }: { attempts: ScoreAttempt[] }) {
         <button onClick={prevMonth} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 18, cursor: "pointer" }}>‹</button>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--text)", letterSpacing: 1 }}>{monthName}</div>
-          <div style={{ fontSize: 11, color: loggedCount > 0 ? "#5de098" : "var(--muted)" }}>{loggedCount} day{loggedCount !== 1 ? "s" : ""} logged</div>
+          <div style={{ fontSize: 11, color: loggedCount > 0 ? "var(--success-text)" : "var(--muted)" }}>{loggedCount} day{loggedCount !== 1 ? "s" : ""} logged</div>
         </div>
         <button onClick={nextMonth} style={{ background: "none", border: "none", color: calYear === now.getFullYear() && calMonth === now.getMonth() ? "var(--border)" : "var(--muted)", fontSize: 18, cursor: "pointer" }}>›</button>
       </div>
@@ -109,7 +109,7 @@ function PlayerCalendar({ attempts }: { attempts: ScoreAttempt[] }) {
             aspectRatio: "1", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 11, fontWeight: isToday(day) ? 700 : 400,
             background: isLogged(day) ? "var(--royal)" : isToday(day) ? "rgba(26,63,168,0.2)" : "var(--surface)",
-            color: isLogged(day) ? "#fff" : isToday(day) ? "#93b4ff" : "var(--muted)",
+            color: isLogged(day) ? "#fff" : isToday(day) ? "var(--info-text)" : "var(--muted)",
             border: isToday(day) ? "1px solid var(--royal)" : "1px solid transparent",
           }}>{day}</div>
         ))}
@@ -202,7 +202,7 @@ function PlayerProgressModal({ playerId, playerName, workouts, allScores, onClos
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "20px 0" }} onClick={onClose}>
       <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(640px, 96vw)", position: "relative" }} onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid var(--border)", position: "sticky", top: 0, background: "var(--surface)", zIndex: 1, borderRadius: "16px 16px 0 0" }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1 }}>📈 {playerName}</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", letterSpacing: 1 }}>📈 {playerName}</div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 22, cursor: "pointer", padding: 0 }}>✕</button>
         </div>
         <div style={{ padding: 18 }}>
@@ -212,14 +212,14 @@ function PlayerProgressModal({ playerId, playerName, workouts, allScores, onClos
             <>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, padding: "12px 14px", background: "var(--surface2)", borderRadius: 12, border: "1px solid var(--border)" }}>
                 <div style={{ width: 44, height: 44, borderRadius: "50%", overflow: "hidden", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  {profile?.avatar_url ? <img src={profile.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--gold)" }}>{initials}</span>}
+                  {profile?.avatar_url ? <img src={profile.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--title)" }}>{initials}</span>}
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text)" }}>{profile?.name ?? playerName}</div>
                   <div style={{ fontSize: 11, color: "var(--muted)" }}>{profile?.grade_category ?? "—"} · {attempts.length} attempts</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "var(--gold)", lineHeight: 1 }}>{totalPoints}</div>
+                  <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "var(--title)", lineHeight: 1 }}>{totalPoints}</div>
                   <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase" }}>pts</div>
                 </div>
               </div>
@@ -244,9 +244,9 @@ function PlayerProgressModal({ playerId, playerName, workouts, allScores, onClos
                           <div style={{ fontSize: 12, color: "var(--text)" }}>{w?.emoji ?? "🏀"} {w?.title ?? "Unknown drill"}</div>
                           <div style={{ fontSize: 10, color: "var(--muted)" }}>{new Date(a.attempted_at).toLocaleDateString()}</div>
                         </div>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: "#93b4ff" }}>{raw}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--info-text)" }}>{raw}</span>
                         <button onClick={() => deleteAttempt(a, w?.title ?? "drill", raw)} disabled={deletingAttempt === a.id} title="Delete this entry"
-                          style={{ marginLeft: 10, background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff7b7b", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>
+                          style={{ marginLeft: 10, background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "var(--danger-text)", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontFamily: "inherit", cursor: "pointer" }}>
                           {deletingAttempt === a.id ? "…" : "🗑"}
                         </button>
                       </div>
@@ -732,7 +732,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Email</label><input type="email" value={addEmail} onChange={e => setAddEmail(e.target.value)} placeholder="player@school.edu" style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
                 <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Temp Password</label><input type="password" value={addPass} onChange={e => setAddPass(e.target.value)} placeholder="••••••••" style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
               </div>
-              {addError && <div style={{ color: "#ff7b7b", fontSize: 12, marginBottom: 10 }}>{addError}</div>}
+              {addError && <div style={{ color: "var(--danger-text)", fontSize: 12, marginBottom: 10 }}>{addError}</div>}
               <button onClick={addPlayer} disabled={addSaving} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{addSaving ? "Adding…" : "Add Player"}</button>
             </div>
           )}
@@ -744,7 +744,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 <input type="email" value={inviteEmail || ""} onChange={e => setInviteEmail(e.target.value)} placeholder="player@school.edu" style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} />
                 <button onClick={invitePlayer} disabled={inviteSending} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{inviteSending ? "Sending…" : "Send Invite"}</button>
               </div>
-              {inviteMsg && <div style={{ marginTop: 10, fontSize: 13, color: inviteMsg.startsWith("✓") ? "#5de098" : "#ff7b7b" }}>{inviteMsg}</div>}
+              {inviteMsg && <div style={{ marginTop: 10, fontSize: 13, color: inviteMsg.startsWith("✓") ? "var(--success-text)" : "var(--danger-text)" }}>{inviteMsg}</div>}
             </div>
           )}
 
@@ -763,7 +763,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{req.name}</div>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                      <span style={{ color: "#93b4ff" }}>{req.email}</span>
+                      <span style={{ color: "var(--info-text)" }}>{req.email}</span>
                       <span> · {new Date(req.created_at).toLocaleDateString()} {new Date(req.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                     </div>
                   </div>
@@ -795,18 +795,18 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
           )}
           {pendingPlayers.length > 0 && (
             <div style={{ background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 14, padding: "16px 20px", marginBottom: 20 }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 14 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)", letterSpacing: 1, marginBottom: 14 }}>
                 ⏳ Pending Approvals ({pendingPlayers.length})
               </div>
               {pendingPlayers.map(p => (
                 <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: "var(--surface2)", borderRadius: 10, marginBottom: 8, border: "1px solid var(--border)", flexWrap: "wrap", gap: 8 }}>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{p.name || "Unknown"}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.email && <span style={{ color: "#93b4ff" }}>{p.email}</span>}{p.grade_category && <span> · {p.grade_category}</span>}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.email && <span style={{ color: "var(--info-text)" }}>{p.email}</span>}{p.grade_category && <span> · {p.grade_category}</span>}</div>
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => handleApprove(p.id, "player")} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✅ Approve</button>
-                    <button onClick={() => handleReject(p.id, p.name)} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✕ Reject</button>
+                    <button onClick={() => handleApprove(p.id, "player")} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "var(--success-text)", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✅ Approve</button>
+                    <button onClick={() => handleReject(p.id, p.name)} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "var(--danger-text)", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✕ Reject</button>
                   </div>
                 </div>
               ))}
@@ -816,7 +816,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
           {/* Bulk Reset Bar */}
           {selectedIds.size > 0 && (
             <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-              <button onClick={bulkResetScores} disabled={bulkResetting} style={{ background: "rgba(255,107,107,0.15)", border: "1px solid rgba(255,107,107,0.4)", color: "#ff7b7b", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+              <button onClick={bulkResetScores} disabled={bulkResetting} style={{ background: "rgba(255,107,107,0.15)", border: "1px solid rgba(255,107,107,0.4)", color: "var(--danger-text)", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
                 {bulkResetting ? "Resetting…" : `🗑 Reset ${selectedIds.size} player${selectedIds.size > 1 ? "s" : ""}`}
               </button>
               <button onClick={() => setSelectedIds(new Set())} style={{ background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>Clear</button>
@@ -834,11 +834,11 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
               <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "var(--surface2)", borderRadius: 12, border: "1px solid var(--border)", flexWrap: "wrap" }}>
                 <input type="checkbox" checked={selectedIds.has(p.id)} onChange={e => { const next = new Set(selectedIds); e.target.checked ? next.add(p.id) : next.delete(p.id); setSelectedIds(next); }} style={{ width: 16, height: 16, cursor: "pointer", flexShrink: 0 }} />
                 <div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  {p.avatar_url ? <img src={p.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>{p.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}</span>}
+                  {p.avatar_url ? <img src={p.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold-text)" }}>{p.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}</span>}
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontWeight: 600, fontSize: 14, color: "#93b4ff", textDecoration: "underline dotted", cursor: "pointer" }} onClick={() => setViewingPlayer({ id: p.id, name: p.name })}>{p.name}</span>
+                    <span style={{ fontWeight: 600, fontSize: 14, color: "var(--info-text)", textDecoration: "underline dotted", cursor: "pointer" }} onClick={() => setViewingPlayer({ id: p.id, name: p.name })}>{p.name}</span>
                     <span title={p.pushSubscribed ? "Notifications on" : "Notifications not enabled"} style={{ fontSize: 12 }}>{p.pushSubscribed ? "🔔" : "🔕"}</span>
                   </div>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.grade_category}
@@ -846,17 +846,17 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                     {p.daysInactive ? ` · last workout ${p.daysInactive}d ago` : ""}</div>
                 </div>
                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                  <button onClick={() => openEditPlayer(p)} style={{ background: "rgba(26,63,168,0.15)", border: "1px solid rgba(26,63,168,0.3)", color: "#93b4ff", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
+                  <button onClick={() => openEditPlayer(p)} style={{ background: "rgba(26,63,168,0.15)", border: "1px solid rgba(26,63,168,0.3)", color: "var(--info-text)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
                   <button onClick={() => openEditScores(p.id)} style={{ background: "rgba(147,92,255,0.1)", border: "1px solid rgba(147,92,255,0.3)", color: "#b07aff", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>📊 Scores</button>
                   {/* Beside Scores rather than inside Edit: both are things
                       you look up, not things you change. */}
                   <button onClick={() => setAttendanceFor({ id: p.id, name: p.name })} style={{ background: "rgba(94,207,214,0.1)", border: "1px solid rgba(94,207,214,0.32)", color: "#5ecfd6", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗓 Attendance</button>
                   {inactiveTab ? (
-                    <button onClick={() => reactivatePlayer(p.id)} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>↩️ Restore</button>
+                    <button onClick={() => reactivatePlayer(p.id)} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "var(--success-text)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>↩️ Restore</button>
                   ) : (
                     <button onClick={() => removePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.16)", color: "var(--muted)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🚫 Remove</button>
                   )}
-                  <button onClick={() => resetPerks(p.id, p.name)} style={{ background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", color: "var(--gold)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🔄 Perks</button>
+                  <button onClick={() => resetPerks(p.id, p.name)} style={{ background: "rgba(240,192,64,0.1)", border: "1px solid rgba(240,192,64,0.3)", color: "var(--gold-text)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🔄 Perks</button>
                   <button onClick={() => deletePlayer(p.id, p.name)} disabled={removing === p.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗑 Delete</button>
                 </div>
               </div>
@@ -902,8 +902,8 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: "var(--surface2)", borderRadius: 10, marginBottom: 8, border: "1px solid var(--border)", flexWrap: "wrap", gap: 8 }}>
                   <div><div style={{ fontWeight: 600, fontSize: 14 }}>{c.name}</div><div style={{ fontSize: 11, color: "var(--muted)" }}>{c.email}</div></div>
                   <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => handleApproveCoach(c.id)} disabled={approvingCoach === c.id} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{approvingCoach === c.id ? "Approving…" : "✅ Approve"}</button>
-                    <button onClick={() => handleRejectCoach(c.id)} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✕ Reject</button>
+                    <button onClick={() => handleApproveCoach(c.id)} disabled={approvingCoach === c.id} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "var(--success-text)", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{approvingCoach === c.id ? "Approving…" : "✅ Approve"}</button>
+                    <button onClick={() => handleRejectCoach(c.id)} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "var(--danger-text)", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✕ Reject</button>
                   </div>
                 </div>
               ))}
@@ -914,14 +914,14 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
               <div key={c.id} style={{ marginBottom: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "var(--surface2)", borderRadius: 12, border: "1px solid var(--border)" }}>
                   <div style={{ width: 36, height: 36, borderRadius: "50%", overflow: "hidden", background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    {c.avatar_url ? <img src={c.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>{c.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}</span>}
+                    {c.avatar_url ? <img src={c.avatar_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold-text)" }}>{c.name.split(" ").map((n: string) => n[0]).join("").slice(0,2).toUpperCase()}</span>}
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{c.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{c.email} · <span style={{ color: c.role === "admin" ? "var(--gold)" : "#93b4ff" }}>{c.role}</span></div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{c.email} · <span style={{ color: c.role === "admin" ? "var(--gold-text)" : "var(--info-text)" }}>{c.role}</span></div>
                   </div>
                   <div style={{ display: "flex", gap: 5 }}>
-                    <button onClick={() => setEditCoach({ id: c.id, name: c.name, role: c.role })} style={{ background: "rgba(26,63,168,0.15)", border: "1px solid rgba(26,63,168,0.3)", color: "#93b4ff", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
+                    <button onClick={() => setEditCoach({ id: c.id, name: c.name, role: c.role })} style={{ background: "rgba(26,63,168,0.15)", border: "1px solid rgba(26,63,168,0.3)", color: "var(--info-text)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
                     <button onClick={() => removeCoach(c.id, c.name)} disabled={removingCoach === c.id} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.16)", color: "var(--muted)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🚫 Remove</button>
                     <button onClick={() => deleteCoach(c.id, c.name)} disabled={removingCoach === c.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "#ff3c3c", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗑 Delete</button>
                   </div>
@@ -957,7 +957,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setAttendanceFor(null)}>
           <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(520px, 96vw)", maxHeight: "90vh", overflowY: "auto", padding: 24 }} onClick={e => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)" }}>{attendanceFor.name}</div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)" }}>{attendanceFor.name}</div>
               <button onClick={() => setAttendanceFor(null)} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 18, cursor: "pointer", padding: 4, lineHeight: 1 }}>✕</button>
             </div>
             <PlayerAttendanceRecord playerId={attendanceFor.id} />
@@ -968,7 +968,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       {editPlayer && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setEditPlayer(null)}>
           <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(480px, 96vw)", maxHeight: "90vh", overflowY: "auto", padding: 24 }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", marginBottom: 16 }}>✏️ Edit Player</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", marginBottom: 16 }}>✏️ Edit Player</div>
             <div style={{ marginBottom: 12 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label><input value={editPlayer.name} onChange={e => setEditPlayer({ ...editPlayer, name: e.target.value })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" as const }} /></div>
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>School year</label>
@@ -1021,7 +1021,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 )}
               </div>
             )}
-            {editError && <div style={{ color: "#ff7b7b", fontSize: 12, marginBottom: 10 }}>{editError}</div>}
+            {editError && <div style={{ color: "var(--danger-text)", fontSize: 12, marginBottom: 10 }}>{editError}</div>}
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={savePlayerEdit} disabled={editSaving} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{editSaving ? "Saving…" : "Save"}</button>
               <button onClick={() => setEditPlayer(null)} style={{ background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>Cancel</button>
@@ -1034,10 +1034,10 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       {editScoresFor && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "20px 0" }} onClick={() => setEditScoresFor(null)}>
           <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(600px, 96vw)", padding: 24 }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", marginBottom: 4 }}>📊 Edit Scores</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", marginBottom: 4 }}>📊 Edit Scores</div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Edit any score and click Save. Competitive drills auto-rerank after saving.</div>
             {scoreToast && (
-              <div style={{ padding: "8px 14px", background: scoreToast.startsWith("Error") ? "rgba(255,107,107,0.15)" : "rgba(40,180,80,0.15)", border: `1px solid ${scoreToast.startsWith("Error") ? "rgba(255,107,107,0.3)" : "rgba(40,180,80,0.3)"}`, borderRadius: 8, fontSize: 13, color: scoreToast.startsWith("Error") ? "#ff7b7b" : "#5de098", fontWeight: 600, marginBottom: 14 }}>
+              <div style={{ padding: "8px 14px", background: scoreToast.startsWith("Error") ? "rgba(255,107,107,0.15)" : "rgba(40,180,80,0.15)", border: `1px solid ${scoreToast.startsWith("Error") ? "rgba(255,107,107,0.3)" : "rgba(40,180,80,0.3)"}`, borderRadius: 8, fontSize: 13, color: scoreToast.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)", fontWeight: 600, marginBottom: 14 }}>
                 {scoreToast}
               </div>
             )}
@@ -1047,7 +1047,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                 <div key={sc.id} style={{ padding: "12px 14px", background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{sc.workout_title}</div>
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: sc.scoring_type === "competitive" ? "rgba(240,192,64,0.15)" : sc.scoring_type === "flat" ? "rgba(40,180,80,0.15)" : "rgba(26,63,168,0.2)", color: sc.scoring_type === "competitive" ? "var(--gold)" : sc.scoring_type === "flat" ? "#5de098" : "#93b4ff" }}>{getScoringLabel(sc)}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: sc.scoring_type === "competitive" ? "rgba(240,192,64,0.15)" : sc.scoring_type === "flat" ? "rgba(40,180,80,0.15)" : "rgba(26,63,168,0.2)", color: sc.scoring_type === "competitive" ? "var(--gold-text)" : sc.scoring_type === "flat" ? "var(--success-text)" : "var(--info-text)" }}>{getScoringLabel(sc)}</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <div style={{ flex: 1 }}>

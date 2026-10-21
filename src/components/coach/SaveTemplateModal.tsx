@@ -31,7 +31,7 @@ export default function SaveTemplateModal({ onSave, onClose, busy }: {
         border: `1px solid ${withDrills === value ? "var(--gold)" : "var(--border)"}`,
         background: withDrills === value ? "rgba(240,192,64,0.09)" : "transparent",
       }}>
-      <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 3, color: withDrills === value ? "var(--gold)" : "var(--text)" }}>
+      <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 3, color: withDrills === value ? "var(--gold-text)" : "var(--text)" }}>
         {title}
       </div>
       <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.5 }}>{body}</div>
@@ -44,7 +44,7 @@ export default function SaveTemplateModal({ onSave, onClose, busy }: {
         style={{ background: "var(--surface)", borderRadius: 16, width: "min(520px, 96vw)", padding: 22 }}>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)" }}>Save as template</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)" }}>Save as template</div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 18, cursor: "pointer", padding: 4, lineHeight: 1 }}>✕</button>
         </div>
         <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 14, lineHeight: 1.5 }}>

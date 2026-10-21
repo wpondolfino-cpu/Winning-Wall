@@ -331,7 +331,7 @@ export default function PracticeWeeksList(props: Props) {
     fontFamily: "inherit", opacity: busyDelete ? 0.6 : 1,
     border: kind === "ghost" ? "1px solid var(--border)" : "1px solid transparent",
     background: kind === "primary" ? "var(--gold)" : kind === "danger" ? "rgba(255,107,107,0.14)" : "transparent",
-    color: kind === "primary" ? "#1a1a1a" : kind === "danger" ? "#ff7b7b" : "var(--muted)",
+    color: kind === "primary" ? "#1a1a1a" : kind === "danger" ? "var(--danger-text)" : "var(--muted)",
   });
 
   return (
@@ -380,7 +380,7 @@ export default function PracticeWeeksList(props: Props) {
 
             {deleteStage === "confirm" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ fontSize: 13, color: "#ff7b7b", lineHeight: 1.5 }}>
+                <div style={{ fontSize: 13, color: "var(--danger-text)", lineHeight: 1.5 }}>
                   This deletes the week and {weekToDelete.count === 1 ? "the practice" : `all ${weekToDelete.count} practices`} in it, including their plans and attendance. It can't be undone.
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
@@ -396,7 +396,7 @@ export default function PracticeWeeksList(props: Props) {
       )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1 }}>Practices</div>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", letterSpacing: 1 }}>Practices</div>
         <div style={{ display: "flex", gap: 8 }}>
           {selectedForPrint.size > 0 && (
             <button onClick={() => setPrintIds(Array.from(selectedForPrint))} style={secondaryBtn}>
@@ -486,7 +486,7 @@ export default function PracticeWeeksList(props: Props) {
                   await deletePracticeTemplate(t.id);
                   reloadTemplates();
                 }}
-                style={{ ...secondaryBtn, color: "#ff7b7b" }}>✕</button>
+                style={{ ...secondaryBtn, color: "var(--danger-text)" }}>✕</button>
             </div>
           ))}
         </div>
@@ -555,7 +555,7 @@ export default function PracticeWeeksList(props: Props) {
             Open pool
           </button>
           <button onClick={handleClearPool}
-            style={{ fontSize: 11, color: "#ff7b7b", border: "1px solid rgba(255,107,107,0.3)", borderRadius: 6, padding: "5px 11px", background: "transparent", cursor: "pointer", fontFamily: "inherit" }}>
+            style={{ fontSize: 11, color: "var(--danger-text)", border: "1px solid rgba(255,107,107,0.3)", borderRadius: 6, padding: "5px 11px", background: "transparent", cursor: "pointer", fontFamily: "inherit" }}>
             Clear pool
           </button>
         </div>
@@ -603,13 +603,13 @@ export default function PracticeWeeksList(props: Props) {
                       // thing from the group warning sitting beside it.
                       const waiting = practices.filter(needsAttendance).length;
                       return waiting > 0 ? (
-                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: "rgba(232,163,61,0.14)", color: "#e8a33d" }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: "rgba(232,163,61,0.14)", color: "var(--amber-text)" }}>
                           {waiting} need attendance
                         </span>
                       ) : null;
                     })()}
                     {totalFlags > 0 && (
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: "rgba(240,192,64,0.15)", color: "var(--gold)" }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: "rgba(240,192,64,0.15)", color: "var(--gold-text)" }}>
                         ⚠ {totalFlags} group{totalFlags === 1 ? "" : "s"} need attention
                       </span>
                     )}
@@ -647,7 +647,7 @@ export default function PracticeWeeksList(props: Props) {
                             <button onClick={e => { e.stopPropagation(); setPrintIds([p.id]); }} style={iconBtn} title="Print this practice">🖨️</button>
                             <button onClick={e => handleDeletePractice(p.id, formatDate(p.practice_date), e)} style={iconBtn} title="Delete this practice">🗑️</button>
                             {flags > 0 && (
-                              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 5, background: "rgba(240,192,64,0.15)", color: "var(--gold)" }}>⚠ {flags}</span>
+                              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 5, background: "rgba(240,192,64,0.15)", color: "var(--gold-text)" }}>⚠ {flags}</span>
                             )}
                             <button
                               onClick={e => { e.stopPropagation(); if (p.status === "published") setAttendanceForId(p.id); }}
@@ -658,7 +658,7 @@ export default function PracticeWeeksList(props: Props) {
                                 cursor: p.status === "published" ? "pointer" : "not-allowed",
                                 opacity: p.status === "published" ? 1 : 0.35,
                                 background: needsAttendance(p) ? "rgba(232,163,61,0.14)" : p.status === "published" ? "var(--royal)" : "var(--surface)",
-                                color: needsAttendance(p) ? "#e8a33d" : p.status === "published" ? "#fff" : "var(--muted)",
+                                color: needsAttendance(p) ? "var(--amber-text)" : p.status === "published" ? "#fff" : "var(--muted)",
                                 boxShadow: needsAttendance(p) ? "inset 0 0 0 1px rgba(232,163,61,0.45)" : undefined,
                               }}>
                               {p.attendance_taken_at
@@ -687,7 +687,7 @@ export default function PracticeWeeksList(props: Props) {
                             <span style={{
                               fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5,
                               background: p.status === "published" ? "rgba(40,180,80,0.15)" : "rgba(240,192,64,0.12)",
-                              color: p.status === "published" ? "#5de098" : "var(--gold)",
+                              color: p.status === "published" ? "var(--success-text)" : "var(--gold-text)",
                             }}>{p.status === "published" ? "Published" : "Draft"}</span>
                           </div>
                         </div>

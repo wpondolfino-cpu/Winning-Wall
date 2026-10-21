@@ -30,12 +30,12 @@ import { gradeFromGradYear, gradeColor, GRADE_LABELS } from "../../lib/teamDesig
 export type PlatformSection = "home" | "schools" | "trainers" | "announcements" | "messages" | "library" | "sandbox";
 
 const card: CSSProperties = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16 };
-const btn: CSSProperties = { height: 42, padding: "0 16px", borderRadius: 10, border: 0, background: "var(--royal)", color: "var(--white)", fontFamily: "inherit", fontSize: 14, fontWeight: 600, cursor: "pointer" };
-const ghost: CSSProperties = { ...btn, background: "transparent", border: "1px solid rgba(176,184,200,0.3)", color: "#c3d0ff" };
+const btn: CSSProperties = { height: 42, padding: "0 16px", borderRadius: 10, border: 0, background: "var(--royal)", color: "#fff", fontFamily: "inherit", fontSize: 14, fontWeight: 600, cursor: "pointer" };
+const ghost: CSSProperties = { ...btn, background: "transparent", border: "1px solid rgba(176,184,200,0.3)", color: "var(--info-text-2)" };
 const danger: CSSProperties = { ...btn, background: "transparent", border: "1px solid rgba(255,140,140,0.35)", color: "#ff9a9a" };
 const input: CSSProperties = { height: 44, boxSizing: "border-box", padding: "0 12px", borderRadius: 10, border: "1px solid rgba(176,184,200,0.25)", background: "var(--surface2)", color: "var(--text)", fontFamily: "inherit", fontSize: 14, width: "100%" };
-const label: CSSProperties = { display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#a3adc4" };
-const muted: CSSProperties = { fontSize: 12, color: "#8b95ae", lineHeight: 1.5 };
+const label: CSSProperties = { display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--muted-2)" };
+const muted: CSSProperties = { fontSize: 12, color: "var(--muted-3)", lineHeight: 1.5 };
 const h2: CSSProperties = { fontSize: 17, fontWeight: 700, color: "var(--white)" };
 
 function initials(name: string) {
@@ -62,7 +62,7 @@ function Title({ text, action }: { text: string; action?: ReactNode }) {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: 16 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 260px" }}>
-        <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, color: "var(--gold)", textTransform: "uppercase" }}>Platform</span>
+        <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, color: "var(--gold-text)", textTransform: "uppercase" }}>Platform</span>
         <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 36, letterSpacing: 1, color: "var(--white)", lineHeight: 1 }}>{text}</span>
       </div>
       {action}
@@ -86,7 +86,7 @@ export default function PlatformPage({ page, onGoTo, onMessagesRead }: { page: P
 
   return (
     <div className="panel active" style={{ maxWidth: 1180, margin: "0 auto" }}>
-      {error && <div style={{ color: "#ff8a8a", fontSize: 13, marginBottom: 12 }}>{error}</div>}
+      {error && <div style={{ color: "var(--danger-text-2)", fontSize: 13, marginBottom: 12 }}>{error}</div>}
       {managed ? (
         <ProgramManage org={managed.org} program={managed.program} onBack={() => setManaging(null)} onChanged={refresh} />
       ) : page === "home" ? (
@@ -116,7 +116,7 @@ function Home({ onManage, onGoTo }: { onManage: (id: string) => void; onGoTo: (p
     <button onClick={onClick} disabled={!onClick}
       style={{ ...card, padding: 16, display: "flex", flexDirection: "column", gap: 4, textAlign: "left", fontFamily: "inherit", color: "var(--text)", cursor: onClick ? "pointer" : "default" }}>
       <span style={{ fontSize: 26, fontWeight: 600 }}>{n}</span>
-      <span style={{ fontSize: 13, color: "#a3adc4" }}>{l}</span>
+      <span style={{ fontSize: 13, color: "var(--muted-2)" }}>{l}</span>
     </button>
   );
   const row = (key: string, main: string, sub: string, programId: string) => (
@@ -124,7 +124,7 @@ function Home({ onManage, onGoTo }: { onManage: (id: string) => void; onGoTo: (p
       style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--surface2)", borderRadius: 12, padding: "12px 14px", border: 0, color: "var(--text)", fontFamily: "inherit", textAlign: "left", cursor: "pointer", minHeight: 52 }}>
       <span style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
         <span style={{ fontSize: 14, fontWeight: 600 }}>{main}</span>
-        <span style={{ fontSize: 12, color: "#a3adc4" }}>{sub}</span>
+        <span style={{ fontSize: 12, color: "var(--muted-2)" }}>{sub}</span>
       </span>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a3adc4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
     </button>
@@ -136,7 +136,7 @@ function Home({ onManage, onGoTo }: { onManage: (id: string) => void; onGoTo: (p
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <Title text="Home" />
-      {err && <div style={{ color: "#ff8a8a", fontSize: 13 }}>{err}</div>}
+      {err && <div style={{ color: "var(--danger-text-2)", fontSize: 13 }}>{err}</div>}
       {!h && !err && <div style={muted}>Loading…</div>}
       {h && (
         <>
@@ -150,7 +150,7 @@ function Home({ onManage, onGoTo }: { onManage: (id: string) => void; onGoTo: (p
 
           <section style={{ ...card, padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
             <span style={h2}>Needs attention</span>
-            {attention === 0 && <span style={{ fontSize: 14, color: "#5de098" }}>Nothing right now.</span>}
+            {attention === 0 && <span style={{ fontSize: 14, color: "var(--success-text)" }}>Nothing right now.</span>}
             {unread > 0 && (
               <button onClick={() => onGoTo("messages")}
                 style={{ display: "flex", alignItems: "center", gap: 12, background: "rgba(229,57,53,0.12)", borderRadius: 12, padding: "12px 14px", border: "1px solid rgba(229,57,53,0.35)", color: "var(--text)", fontFamily: "inherit", textAlign: "left", cursor: "pointer", minHeight: 52 }}>
@@ -171,9 +171,9 @@ function Home({ onManage, onGoTo }: { onManage: (id: string) => void; onGoTo: (p
             {h.recent.length === 0 && <span style={muted}>Nothing yet. Changes you make on these pages are listed here.</span>}
             {h.recent.map((r, i) => (
               <div key={i} style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", fontSize: 13, padding: "6px 0", borderBottom: "1px solid rgba(176,184,200,0.08)" }}>
-                <span style={{ color: "#8b95ae", minWidth: 120 }}>{when(r.at)}</span>
+                <span style={{ color: "var(--muted-3)", minWidth: 120 }}>{when(r.at)}</span>
                 <span style={{ fontWeight: 600 }}>{r.action}</span>
-                <span style={{ color: "#a3adc4", flex: "1 1 200px" }}>{[r.detail, r.program && r.program !== r.detail ? r.program : null, r.org].filter(Boolean).join(" · ")}</span>
+                <span style={{ color: "var(--muted-2)", flex: "1 1 200px" }}>{[r.detail, r.program && r.program !== r.detail ? r.program : null, r.org].filter(Boolean).join(" · ")}</span>
               </div>
             ))}
           </section>
@@ -212,7 +212,7 @@ function OrgsPage({ kind, orgs, onManage, onChanged }: { kind: OrgKind; orgs: Pl
   const chip = (k: Filter, l: string) => (
     <button key={k} onClick={() => setFilter(k)} aria-pressed={filter === k}
       style={{ height: 38, padding: "0 14px", borderRadius: 99, fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer",
-        border: filter === k ? 0 : "1px solid rgba(176,184,200,0.3)", background: filter === k ? "var(--royal)" : "transparent", color: filter === k ? "var(--white)" : "#a3adc4" }}>{l}</button>
+        border: filter === k ? 0 : "1px solid rgba(176,184,200,0.3)", background: filter === k ? "var(--royal)" : "transparent", color: filter === k ? "#fff" : "var(--muted-2)" }}>{l}</button>
   );
 
   return (
@@ -264,7 +264,7 @@ function OrgBlock({ org, programs, open, onToggle, onManage, onChanged }: {
           <Logo url={org.logo_url} text={short} bg={org.primary_color ?? "#1a3fa8"} fg={org.accent_color ?? "#f0c040"} size={44} />
           <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             <span style={{ fontSize: 18, fontWeight: 700, color: "var(--white)" }}>{org.name}</span>
-            <span style={{ fontSize: 13, color: "#a3adc4" }}>
+            <span style={{ fontSize: 13, color: "var(--muted-2)" }}>
               {isTrainer ? "Trainer" : `${org.programs.length} program${org.programs.length === 1 ? "" : "s"}`}{org.plan ? ` · ${org.plan}` : ""}
             </span>
           </span>
@@ -281,10 +281,10 @@ function OrgBlock({ org, programs, open, onToggle, onManage, onChanged }: {
             <AddProgram org={org} onDone={() => { setAdding(false); onChanged(); }} onCancel={() => setAdding(false)} />
           ) : !isTrainer && (
             <button onClick={() => setAdding(true)}
-              style={{ minHeight: 160, borderRadius: 14, border: "2px dashed rgba(176,184,200,0.25)", background: "transparent", color: "#a3adc4", fontFamily: "inherit", fontSize: 14, fontWeight: 600, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer" }}>
+              style={{ minHeight: 160, borderRadius: 14, border: "2px dashed rgba(176,184,200,0.25)", background: "transparent", color: "var(--muted-2)", fontFamily: "inherit", fontSize: 14, fontWeight: 600, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer" }}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
               Add a program to {org.short_name || org.name}
-              <span style={{ fontSize: 12, fontWeight: 400, color: "#8b95ae" }}>e.g. JV, a summer team, another sport</span>
+              <span style={{ fontSize: 12, fontWeight: 400, color: "var(--muted-3)" }}>e.g. JV, a summer team, another sport</span>
             </button>
           )}
         </div>
@@ -300,7 +300,7 @@ function ProgramCard({ p, org, onManage }: { p: PlatformProgram; org: PlatformSc
   const off = p.features_off.length;
   const stat = (n: number, l: string) => (
     <div style={{ background: "var(--surface)", borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 2 }}>
-      <span style={{ fontSize: 20, fontWeight: 600 }}>{n}</span><span style={{ fontSize: 12, color: "#a3adc4" }}>{l}</span>
+      <span style={{ fontSize: 20, fontWeight: 600 }}>{n}</span><span style={{ fontSize: 12, color: "var(--muted-2)" }}>{l}</span>
     </div>
   );
   return (
@@ -308,12 +308,12 @@ function ProgramCard({ p, org, onManage }: { p: PlatformProgram; org: PlatformSc
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <span style={{ fontSize: 17, fontWeight: 700, color: "var(--white)", flex: 1 }}>{p.name}</span>
         {p.is_active && doneSteps < steps.length && (
-          <span style={{ fontSize: 12, fontWeight: 600, color: "#93b4ff", background: "rgba(147,180,255,0.12)", padding: "4px 10px", borderRadius: 99 }}>Setup {doneSteps}/{steps.length}</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--info-text)", background: "rgba(147,180,255,0.12)", padding: "4px 10px", borderRadius: 99 }}>Setup {doneSteps}/{steps.length}</span>
         )}
         {!p.is_active ? (
           <span style={{ fontSize: 12, fontWeight: 600, color: "#ff9a9a", background: "rgba(255,140,140,0.12)", padding: "4px 10px", borderRadius: 99 }}>Paused</span>
         ) : (
-          <span style={{ fontSize: 12, fontWeight: 600, color: off ? "#e8a33d" : "#5de098", background: off ? "rgba(232,163,61,0.12)" : "rgba(93,224,152,0.12)", padding: "4px 10px", borderRadius: 99 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: off ? "var(--amber-text)" : "var(--success-text)", background: off ? "rgba(232,163,61,0.12)" : "rgba(93,224,152,0.12)", padding: "4px 10px", borderRadius: 99 }}>
             {off ? `${off} feature group${off === 1 ? "" : "s"} off` : "All features on"}
           </span>
         )}
@@ -322,12 +322,12 @@ function ProgramCard({ p, org, onManage }: { p: PlatformProgram; org: PlatformSc
         {stat(p.players, "Players")}{stat(p.coaches, "Coaches")}{stat(p.pending, "Waiting approval")}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <span style={{ fontSize: 12, color: "#a3adc4" }}>Head coach{p.head_coaches.length === 1 ? "" : "es"}</span>
-        <span style={{ fontSize: 14, color: p.head_coaches.length ? "var(--text)" : "#e8a33d" }}>
+        <span style={{ fontSize: 12, color: "var(--muted-2)" }}>Head coach{p.head_coaches.length === 1 ? "" : "es"}</span>
+        <span style={{ fontSize: 14, color: p.head_coaches.length ? "var(--text)" : "var(--amber-text)" }}>
           {p.head_coaches.length ? p.head_coaches.map(h => h.name).join(" · ") : "None yet"}
         </span>
       </div>
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 16px", fontSize: 13, color: "#a3adc4" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 16px", fontSize: 13, color: "var(--muted-2)" }}>
         <span>Team code <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, letterSpacing: 2, color: "var(--white)" }}>{p.join_code ?? "—"}</span></span>
         <span>Last active {ago(p.last_active)}</span>
       </div>
@@ -382,7 +382,7 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <button onClick={onBack} style={{ alignSelf: "flex-start", background: "transparent", border: 0, color: "#a3adc4", fontFamily: "inherit", fontSize: 13, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", minHeight: 44, padding: 0 }}>
+      <button onClick={onBack} style={{ alignSelf: "flex-start", background: "transparent", border: 0, color: "var(--muted-2)", fontFamily: "inherit", fontSize: 13, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", minHeight: 44, padding: 0 }}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
         Back
       </button>
@@ -391,18 +391,18 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
         <Logo url={p.logo_url ?? org.logo_url} text={short} bg={colors.primary_color} fg={colors.accent_color} size={52} />
         <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: "1 1 240px" }}>
           <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 34, letterSpacing: 1, color: "var(--white)", lineHeight: 1 }}>{p.name}</span>
-          <span style={{ fontSize: 13, color: "#a3adc4" }}>{org.kind === "trainer" ? "Trainer" : org.name}{p.is_active ? "" : " · Paused"}</span>
+          <span style={{ fontSize: 13, color: "var(--muted-2)" }}>{org.kind === "trainer" ? "Trainer" : org.name}{p.is_active ? "" : " · Paused"}</span>
         </div>
         {p.is_active && <button style={ghost} onClick={() => switchProgram(p.id)}>Go to program</button>}
       </div>
 
-      {(msg || err) && <div role="status" style={{ fontSize: 13, color: err ? "#ff8a8a" : "#5de098" }}>{err ?? msg}</div>}
+      {(msg || err) && <div role="status" style={{ fontSize: 13, color: err ? "var(--danger-text-2)" : "var(--success-text)" }}>{err ?? msg}</div>}
 
       {p.is_active && !setupDone && (
         <section style={{ ...card, border: "1px solid rgba(147,180,255,0.35)", padding: 20, display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span style={{ ...h2, flex: 1 }}>Getting {p.name} set up</span>
-            <span style={{ fontSize: 13, color: "#93b4ff", fontWeight: 600 }}>{steps.filter(s => s.done).length} of {steps.length} done</span>
+            <span style={{ fontSize: 13, color: "var(--info-text)", fontWeight: 600 }}>{steps.filter(s => s.done).length} of {steps.length} done</span>
           </div>
           {steps.map(s => (
             <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -411,8 +411,8 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
                 {s.done && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>}
               </span>
               <span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: s.done ? "#a3adc4" : "var(--text)", textDecoration: s.done ? "line-through" : "none" }}>{s.label}</span>
-                {!s.done && <span style={{ fontSize: 12, color: "#8b95ae" }}>{s.hint}</span>}
+                <span style={{ fontSize: 14, fontWeight: 600, color: s.done ? "var(--muted-2)" : "var(--text)", textDecoration: s.done ? "line-through" : "none" }}>{s.label}</span>
+                {!s.done && <span style={{ fontSize: 12, color: "var(--muted-3)" }}>{s.hint}</span>}
               </span>
             </div>
           ))}
@@ -428,14 +428,14 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
               <span style={{ ...h2, flex: 1 }}>Head coaches</span>
               <span style={muted}>Only you can change these</span>
             </div>
-            {p.head_coaches.length === 0 && <span style={{ fontSize: 13, color: "#e8a33d" }}>No head coach yet.</span>}
+            {p.head_coaches.length === 0 && <span style={{ fontSize: 13, color: "var(--amber-text)" }}>No head coach yet.</span>}
             {p.head_coaches.map(h => (
               <div key={h.id} style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--surface2)", borderRadius: 12, padding: "12px 14px", flexWrap: "wrap" }}>
-                <span style={{ width: 36, height: 36, borderRadius: "50%", background: "#2a3550", color: "#c3d0ff", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{initials(h.name)}</span>
+                <span style={{ width: 36, height: 36, borderRadius: "50%", background: "#2a3550", color: "var(--info-text-2)", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{initials(h.name)}</span>
                 <span style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 160 }}>
                   <span style={{ fontSize: 14, fontWeight: 600 }}>{h.name}</span>
-                  <span style={{ fontSize: 12, color: "#a3adc4" }}>{h.email ?? ""}</span>
-                  {!h.last_seen && <span style={{ fontSize: 12, color: "#e8a33d" }}>Invited · hasn't signed in yet</span>}
+                  <span style={{ fontSize: 12, color: "var(--muted-2)" }}>{h.email ?? ""}</span>
+                  {!h.last_seen && <span style={{ fontSize: 12, color: "var(--amber-text)" }}>Invited · hasn't signed in yet</span>}
                 </span>
                 <button style={{ ...danger, height: 38 }} disabled={busy}
                   onClick={() => {
@@ -450,7 +450,7 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
                 <label style={label}>Their name<input value={invName} onChange={e => setInvName(e.target.value)} placeholder="e.g. Pat Smith" style={input} /></label>
                 <label style={label}>Email<input type="email" value={invEmail} onChange={e => setInvEmail(e.target.value)} placeholder="coach@school.org" style={input} /></label>
               </div>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#a3adc4", cursor: "pointer" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--muted-2)", cursor: "pointer" }}>
                 <input type="checkbox" checked={invLinkOnly} onChange={e => setInvLinkOnly(e.target.checked)} /> Just give me a link to send them myself (no email)
               </label>
               <button style={{ ...btn, alignSelf: "flex-start" }} disabled={busy || !invEmail.trim()}
@@ -461,8 +461,8 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
                 }, "Done.")}>{busy ? "Working…" : invLinkOnly ? "Make invite link" : "Send invite"}</button>
               {invResult && (
                 <div role="status" style={{ fontSize: 13, lineHeight: 1.5, color: "#c8cfde", display: "flex", flexDirection: "column", gap: 8 }}>
-                  {invResult.status === "promoted" && <span style={{ color: "#5de098" }}>{invResult.name} already had an account and is now a head coach of {p.name}.</span>}
-                  {invResult.status === "invited" && invResult.emailed && <span style={{ color: "#5de098" }}>Invite emailed to {invResult.name}. They'll set a password and land as head coach of {p.name}.</span>}
+                  {invResult.status === "promoted" && <span style={{ color: "var(--success-text)" }}>{invResult.name} already had an account and is now a head coach of {p.name}.</span>}
+                  {invResult.status === "invited" && invResult.emailed && <span style={{ color: "var(--success-text)" }}>Invite emailed to {invResult.name}. They'll set a password and land as head coach of {p.name}.</span>}
                   {invResult.status === "invited" && !invResult.emailed && invResult.link && (
                     <>
                       <span>{invLinkOnly ? "Here's the invite link." : "Supabase couldn't send the email, so here's the invite link instead."} Send it to {invResult.name} by text or email; it works once and they'll set their own password.</span>
@@ -489,7 +489,7 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
                     <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--surface2)", borderRadius: 10, padding: "10px 12px", flexWrap: "wrap" }}>
                       <span style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 180 }}>
                         <span style={{ fontSize: 14, fontWeight: 600 }}>{m.name}</span>
-                        <span style={{ fontSize: 12, color: "#a3adc4" }}>{[m.email, m.programs].filter(Boolean).join(" · ") || "Not in a program yet"}</span>
+                        <span style={{ fontSize: 12, color: "var(--muted-2)" }}>{[m.email, m.programs].filter(Boolean).join(" · ") || "Not in a program yet"}</span>
                       </span>
                       <button style={{ ...btn, height: 38 }} disabled={busy || already}
                         onClick={() => run(async () => { await setHeadCoach(p.id, m.id, true); setQ(""); }, `${m.name} is now a head coach of ${p.name}.`)}>
@@ -514,15 +514,15 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
                 <div key={g.key} style={{ display: "flex", alignItems: "center", gap: 14, background: "var(--surface2)", borderRadius: 12, padding: "14px 16px" }}>
                   <span style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 0 }}>
                     <span style={{ fontSize: 15, fontWeight: 600, color: "var(--white)" }}>{g.name}</span>
-                    <span style={{ fontSize: 12, color: "#a3adc4", lineHeight: 1.5 }}>{g.items}</span>
+                    <span style={{ fontSize: 12, color: "var(--muted-2)", lineHeight: 1.5 }}>{g.items}</span>
                   </span>
                   {g.locked ? (
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "#8b95ae", background: "var(--surface)", padding: "6px 10px", borderRadius: 99, whiteSpace: "nowrap" }}>Always on</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-3)", background: "var(--surface)", padding: "6px 10px", borderRadius: 99, whiteSpace: "nowrap" }}>Always on</span>
                   ) : (
                     <button role="switch" aria-checked={on} aria-label={`${g.name} ${on ? "on" : "off"}`} disabled={busy}
                       onClick={() => run(() => setFeature(p.id, g.key as FeatureKey, !on), `${g.name} turned ${on ? "off" : "on"} for ${p.name}.`)}
                       style={{ width: 52, height: 30, flexShrink: 0, borderRadius: 99, border: 0, padding: 3, display: "flex", justifyContent: on ? "flex-end" : "flex-start", background: on ? "var(--royal)" : "#3a4560", cursor: "pointer" }}>
-                      <span style={{ width: 24, height: 24, borderRadius: "50%", background: on ? "var(--gold)" : "#a3adc4" }} />
+                      <span style={{ width: 24, height: 24, borderRadius: "50%", background: on ? "var(--gold)" : "var(--muted-2)" }} />
                     </button>
                   )}
                 </div>
@@ -536,9 +536,9 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
             {log !== null && log.length === 0 && <span style={muted}>No platform changes to this program yet.</span>}
             {(log ?? []).map((r, i) => (
               <div key={i} style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px", fontSize: 13, padding: "6px 0", borderBottom: "1px solid rgba(176,184,200,0.08)" }}>
-                <span style={{ color: "#8b95ae", minWidth: 120 }}>{when(r.at)}</span>
+                <span style={{ color: "var(--muted-3)", minWidth: 120 }}>{when(r.at)}</span>
                 <span style={{ fontWeight: 600 }}>{r.action}</span>
-                <span style={{ color: "#a3adc4" }}>{r.detail ?? ""}</span>
+                <span style={{ color: "var(--muted-2)" }}>{r.detail ?? ""}</span>
               </div>
             ))}
           </section>
@@ -603,7 +603,7 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
 
           <section style={{ ...card, border: "1px solid rgba(255,140,140,0.25)", padding: 20, display: "flex", flexDirection: "column", gap: 10 }}>
             <span style={{ fontSize: 15, fontWeight: 700, color: "#ff9a9a" }}>{p.is_active ? "Pause program" : "Paused"}</span>
-            <span style={{ fontSize: 12, color: "#a3adc4", lineHeight: 1.5 }}>
+            <span style={{ fontSize: 12, color: "var(--muted-2)", lineHeight: 1.5 }}>
               {p.is_active ? "Members can't use it and the team code stops working. Nothing is deleted." : "Nobody but you can use this program until it's resumed."}
             </span>
             {p.is_active ? (
@@ -642,7 +642,7 @@ function AddOrg({ kind, onDone }: { kind: OrgKind; onDone: () => void }) {
         ))}
       </div>
       {isTrainer && <span style={muted}>Creates the trainer and their program in one step, with Offseason training and Lifting on, and In-season coaching, Playbook and Quizzes off. Change any of that on the program's page.</span>}
-      {err && <div style={{ color: "#ff8a8a", fontSize: 13 }}>{err}</div>}
+      {err && <div style={{ color: "var(--danger-text-2)", fontSize: 13 }}>{err}</div>}
       <button style={{ ...btn, alignSelf: "flex-start" }} disabled={busy || !f.name.trim()}
         onClick={async () => {
           setBusy(true); setErr(null);
@@ -689,13 +689,13 @@ function EditOrg({ org, onSaved }: { org: PlatformSchool; onSaved: () => void })
       <span style={muted}>Programs without their own logo or colors use the {noun}'s.</span>
 
       <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-        <span style={{ fontSize: 14, fontWeight: 700, color: "var(--white)" }}>Private notes <span style={{ fontWeight: 400, color: "#8b95ae" }}>· only you see these</span></span>
+        <span style={{ fontSize: 14, fontWeight: 700, color: "var(--white)" }}>Private notes <span style={{ fontWeight: 400, color: "var(--muted-3)" }}>· only you see these</span></span>
         <label style={label}>Plan<input value={plan} onChange={e => setPlan(e.target.value)} placeholder="e.g. Full · Offseason only · Trial until Dec" style={input} /></label>
         <label style={label}>Notes<textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="e.g. Met with the AD 10/20; renews in August"
           style={{ ...input, height: "auto", padding: "10px 12px", resize: "vertical" }} /></label>
         <button style={{ ...ghost, alignSelf: "flex-start" }} disabled={busy} onClick={() => save(() => saveOrgNotes(org.id, notes.trim(), plan.trim()), "Notes saved.")}>Save notes</button>
       </div>
-      {note && <span style={{ fontSize: 13, color: "#a3adc4" }}>{note}</span>}
+      {note && <span style={{ fontSize: 13, color: "var(--muted-2)" }}>{note}</span>}
     </div>
   );
 }
@@ -709,7 +709,7 @@ function AddProgram({ org, onDone, onCancel }: { org: PlatformSchool; onDone: ()
       <span style={{ fontSize: 16, fontWeight: 700, color: "var(--white)" }}>New program at {org.short_name || org.name}</span>
       <label style={label}>Program name<input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Girls Basketball" style={input} autoFocus /></label>
       <span style={muted}>It starts with a current season, a team code, the school's colors, and the same settings, XP settings and badges as AHS Boys. Then add a head coach.</span>
-      {err && <div style={{ color: "#ff8a8a", fontSize: 13 }}>{err}</div>}
+      {err && <div style={{ color: "var(--danger-text-2)", fontSize: 13 }}>{err}</div>}
       <div style={{ display: "flex", gap: 8 }}>
         <button style={{ ...btn, flex: 1 }} disabled={busy || !name.trim()}
           onClick={async () => {
@@ -756,12 +756,12 @@ function Announcements({ orgs }: { orgs: PlatformSchool[] | null }) {
             <div key={o.id} style={{ background: "var(--surface2)", borderRadius: 12, padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 15, fontWeight: 600, cursor: "pointer", minHeight: 36 }}>
                 <input type="checkbox" checked={all} ref={(el: HTMLInputElement | null) => { if (el) el.indeterminate = some; }} onChange={e => toggle(ids, e.target.checked)} />
-                {o.name}{o.kind === "school" ? <span style={{ fontWeight: 400, color: "#8b95ae", fontSize: 13 }}> · all {ids.length} program{ids.length === 1 ? "" : "s"}</span> : null}
+                {o.name}{o.kind === "school" ? <span style={{ fontWeight: 400, color: "var(--muted-3)", fontSize: 13 }}> · all {ids.length} program{ids.length === 1 ? "" : "s"}</span> : null}
               </label>
               {o.kind === "school" && o.programs.map(p => (
                 <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "#c8cfde", paddingLeft: 28, cursor: "pointer", minHeight: 32 }}>
                   <input type="checkbox" checked={picked.has(p.id)} onChange={e => toggle([p.id], e.target.checked)} />
-                  {p.name} <span style={{ color: "#8b95ae", fontSize: 12 }}>· {p.players} players</span>
+                  {p.name} <span style={{ color: "var(--muted-3)", fontSize: 12 }}>· {p.players} players</span>
                 </label>
               ))}
             </div>
@@ -791,11 +791,11 @@ function Announcements({ orgs }: { orgs: PlatformSchool[] | null }) {
           <span style={h2}>Message</span>
           <textarea value={text} onChange={e => setText(e.target.value)} rows={5} placeholder="Write the announcement…"
             style={{ ...input, height: "auto", padding: "10px 12px", resize: "vertical" }} />
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#a3adc4", cursor: "pointer" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--muted-2)", cursor: "pointer" }}>
             <input type="checkbox" checked={pinned} onChange={e => setPinned(e.target.checked)} /> Pin to the top
           </label>
           <span style={muted}>Each chosen program gets its own copy in Announcements (they can pin or remove theirs) and everyone in those programs gets a push. You can remove it from all of them at once from any program's Announcements.</span>
-          {status && <div role="status" style={{ fontSize: 13, color: status.ok ? "#5de098" : "#ff8c42" }}>{status.text}</div>}
+          {status && <div role="status" style={{ fontSize: 13, color: status.ok ? "var(--success-text)" : "#ff8c42" }}>{status.text}</div>}
           <button style={{ ...btn, alignSelf: "flex-start" }} disabled={busy || !text.trim() || picked.size === 0}
             onClick={async () => {
               setBusy(true); setStatus(null);
@@ -837,7 +837,7 @@ function chip(on: boolean, color: string): CSSProperties {
   return {
     height: 36, padding: "0 12px", borderRadius: 99, fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer",
     ...(on ? { border: `1px solid ${color}`, background: color, color: "#0a0c14" }
-           : { border: "1px solid rgba(176,184,200,0.3)", background: "transparent", color: "#a3adc4" }),
+           : { border: "1px solid rgba(176,184,200,0.3)", background: "transparent", color: "var(--muted-2)" }),
   };
 }
 
@@ -890,7 +890,7 @@ function SharedLibrary({ orgs }: { orgs: PlatformSchool[] | null }) {
   const tile = (n: number, l: string) => (
     <div style={{ ...card, padding: 16, display: "flex", flexDirection: "column", gap: 4 }}>
       <span style={{ fontSize: 26, fontWeight: 600 }}>{n}</span>
-      <span style={{ fontSize: 13, color: "#a3adc4" }}>{l}</span>
+      <span style={{ fontSize: 13, color: "var(--muted-2)" }}>{l}</span>
     </div>
   );
 
@@ -903,7 +903,7 @@ function SharedLibrary({ orgs }: { orgs: PlatformSchool[] | null }) {
             title="Switch into the Shared Library to edit items or make new ones">Open Shared Library</button>
         </div>
       } />
-      {err && <div style={{ color: "#ff8a8a", fontSize: 13 }}>{err}</div>}
+      {err && <div style={{ color: "var(--danger-text-2)", fontSize: 13 }}>{err}</div>}
 
       {adding && <AddFromProgram orgs={orgs} onAdded={refresh} />}
 
@@ -940,10 +940,10 @@ function SharedLibrary({ orgs }: { orgs: PlatformSchool[] | null }) {
             {items.map(i => (
               <div key={i.id} style={{ ...card, padding: "14px 16px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, opacity: busy === i.id ? 0.6 : 1 }}>
                 <div style={{ flex: "1 1 260px", minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "var(--gold)" }}>{KIND_LABEL[i.kind]}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "var(--gold-text)" }}>{KIND_LABEL[i.kind]}</span>
                   <span style={{ fontSize: 15, fontWeight: 600, color: "var(--white)" }}>{i.title}</span>
                   <span style={muted}>{[i.meta, i.source.startsWith("Made") ? i.source : `from ${i.source}`, `added ${new Date(i.created_at).toLocaleDateString([], { month: "short", day: "numeric" })}`].filter(Boolean).join(" · ")}</span>
-                  <span style={{ fontSize: 12, color: "#93b4ff" }}>{uptake(i)}</span>
+                  <span style={{ fontSize: 12, color: "var(--info-text)" }}>{uptake(i)}</span>
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   <button disabled={busy === i.id} onClick={() => flip(i, { starter: !i.starter })} style={chip(i.starter, "#f0c040")}
@@ -1025,7 +1025,7 @@ function AddFromProgram({ orgs, onAdded }: { orgs: PlatformSchool[] | null; onAd
           <button key={k} onClick={() => setKind(k)} style={{ ...chip(kind === k, "#1a3fa8"), ...(kind === k ? { color: "#f5f7fc" } : {}) }}>{KIND_LABEL[k]}s</button>
         ))}
       </div>
-      {msg && <div role="status" style={{ fontSize: 13, color: msg.ok ? "#5de098" : "#ff8a8a" }}>{msg.text}</div>}
+      {msg && <div role="status" style={{ fontSize: 13, color: msg.ok ? "var(--success-text)" : "var(--danger-text-2)" }}>{msg.text}</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 360, overflowY: "auto" }}>
         {rows === null && <span style={muted}>Loading…</span>}
         {rows !== null && shown.length === 0 && <span style={muted}>Nothing to add here.</span>}
@@ -1033,10 +1033,10 @@ function AddFromProgram({ orgs, onAdded }: { orgs: PlatformSchool[] | null; onAd
           <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--surface2)", borderRadius: 10, padding: "8px 12px", minHeight: 44 }}>
             <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
               <span style={{ fontSize: 14, color: "var(--text)" }}>{r.title}</span>
-              {r.meta && <span style={{ fontSize: 11, color: "#8b95ae" }}>{r.meta}</span>}
+              {r.meta && <span style={{ fontSize: 11, color: "var(--muted-3)" }}>{r.meta}</span>}
             </span>
             {r.in_library
-              ? <span style={{ fontSize: 12, color: "#5de098", fontWeight: 600 }}>✓ In library</span>
+              ? <span style={{ fontSize: 12, color: "var(--success-text)", fontWeight: 600 }}>✓ In library</span>
               : <button style={{ ...btn, height: 34, padding: "0 12px", fontSize: 13 }} disabled={busy === r.id} onClick={() => add(r)}>{busy === r.id ? "Adding…" : "Add"}</button>}
           </div>
         ))}
@@ -1118,8 +1118,8 @@ function SandboxPage() {
         Your private practice program. Nothing done here reaches a real program, and it's left out of your counts, exports,
         people search and announcements to every program. Use <b>Open sandbox</b> to work in it as yourself, or <b>View as</b> anyone below.
       </div>
-      {error && <div style={{ color: "#ff8a8a", fontSize: 13 }}>{error}</div>}
-      {note && <div style={{ color: "#5de098", fontSize: 13 }}>{note}</div>}
+      {error && <div style={{ color: "var(--danger-text-2)", fontSize: 13 }}>{error}</div>}
+      {note && <div style={{ color: "var(--success-text)", fontSize: 13 }}>{note}</div>}
       {!data && !error && <div style={muted}>Loading…</div>}
 
       {empty && (
@@ -1166,8 +1166,8 @@ function SandboxPage() {
               <span style={h2}>Coaches</span>
               {coaches.map(p => (
                 <div key={p.user_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "var(--surface2)", borderRadius: 10 }}>
-                  <span style={{ width: 32, height: 32, borderRadius: "50%", background: p.role === "head_coach" ? "#4a3a10" : "#1d2a52", color: p.role === "head_coach" ? "#f0c040" : "#93b4ff", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initials(p.name)}</span>
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 14 }}>{p.name}<div style={{ fontSize: 12, color: "#a3adc4" }}>{p.role === "head_coach" ? "Head coach" : "Assistant coach"}</div></span>
+                  <span style={{ width: 32, height: 32, borderRadius: "50%", background: p.role === "head_coach" ? "#4a3a10" : "#1d2a52", color: p.role === "head_coach" ? "#f0c040" : "var(--info-text)", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initials(p.name)}</span>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 14 }}>{p.name}<div style={{ fontSize: 12, color: "var(--muted-2)" }}>{p.role === "head_coach" ? "Head coach" : "Assistant coach"}</div></span>
                   {viewBtn(p)}
                 </div>
               ))}
@@ -1180,7 +1180,7 @@ function SandboxPage() {
                     style={{ height: 32, padding: "0 12px", borderRadius: 99, fontFamily: "inherit", fontSize: 13, cursor: "pointer",
                       border: `1px solid ${rosterFilter === f.id ? "var(--gold)" : "rgba(176,184,200,0.3)"}`,
                       background: rosterFilter === f.id ? "rgba(240,192,64,0.12)" : "transparent",
-                      color: rosterFilter === f.id ? "var(--gold)" : "#c3d0ff" }}>{f.name}</button>
+                      color: rosterFilter === f.id ? "var(--gold-text)" : "var(--info-text-2)" }}>{f.name}</button>
                 ))}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 520, overflowY: "auto" }}>
@@ -1190,7 +1190,7 @@ function SandboxPage() {
                     <div key={p.user_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", background: "var(--surface2)", borderRadius: 10 }}>
                       <span style={{ width: 10, height: 10, borderRadius: "50%", background: gradeColor(p.graduation_year), flexShrink: 0 }} />
                       <span style={{ flex: 1, minWidth: 0, fontSize: 14 }}>{p.name}
-                        <span style={{ fontSize: 12, color: "#a3adc4" }}> · {g != null ? GRADE_LABELS[g] ?? `Gr ${g}` : "—"}{p.roster ? ` · ${p.roster}` : ""}</span>
+                        <span style={{ fontSize: 12, color: "var(--muted-2)" }}> · {g != null ? GRADE_LABELS[g] ?? `Gr ${g}` : "—"}{p.roster ? ` · ${p.roster}` : ""}</span>
                       </span>
                       {viewBtn(p)}
                     </div>

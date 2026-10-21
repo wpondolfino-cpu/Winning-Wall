@@ -5,6 +5,7 @@ import { supabase, Profile, getXpPerks, getPlayerXp, getPlayerTier, XpPerk,
 import { getActiveBadges, checkBadge, Badge, PlayerStats } from "../lib/badges";
 import ProfileEditor from "./ProfileEditor";
 import NotificationToggle from "./NotificationToggle";
+import AppearancePicker from "./AppearancePicker";
 
 interface Props {
   profile: Profile;
@@ -159,7 +160,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
       <div className="section-title">My Profile</div>
 
       {toast && (
-        <div style={{ padding: "10px 16px", background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", borderRadius: 10, fontSize: 13, color: "#5de098", fontWeight: 600, marginBottom: 16 }}>
+        <div style={{ padding: "10px 16px", background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", borderRadius: 10, fontSize: 13, color: "var(--success-text)", fontWeight: 600, marginBottom: 16 }}>
           {toast}
         </div>
       )}
@@ -170,7 +171,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
           <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", border: `3px solid ${avatarOutline}`, background: "rgba(26,63,168,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             {profile.avatar_url
               ? <img src={profile.avatar_url} alt={profile.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              : <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "var(--gold)" }}>{initials}</span>
+              : <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "var(--title)" }}>{initials}</span>
             }
           </div>
           <div style={{ flex: 1 }}>
@@ -196,7 +197,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
           <button onClick={() => setEditing(e => !e)} style={{
             background: editing ? "var(--surface)" : "rgba(26,63,168,0.15)",
             border: `1px solid ${editing ? "var(--border)" : "rgba(26,63,168,0.4)"}`,
-            color: editing ? "var(--muted)" : "#93b4ff",
+            color: editing ? "var(--muted)" : "var(--info-text)",
             borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600,
             fontFamily: "inherit", cursor: "pointer", flexShrink: 0,
           }}>
@@ -216,6 +217,8 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
           first prompt isn't permanent. */}
       {!profile.is_test && <NotificationToggle playerId={profile.id} />}
 
+      <AppearancePicker initial={profile.appearance} />
+
       {/* ── Streak Bar ── */}
       {(() => {
         const daysIntoCurrentCycle = myStreak % 7;
@@ -230,9 +233,9 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
             borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
           }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: myStreak >= 7 ? "var(--gold)" : "var(--text)" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: myStreak >= 7 ? "var(--gold-text)" : "var(--text)" }}>
                 🔥 {myStreak > 0 ? `${myStreak}-Day Streak!` : "Start your streak!"}
-                {totalBonuses > 0 && <span style={{ marginLeft: 8, fontSize: 11, color: "var(--gold)" }}>+{totalBonuses * 3} bonus pts earned</span>}
+                {totalBonuses > 0 && <span style={{ marginLeft: 8, fontSize: 11, color: "var(--gold-text)" }}>+{totalBonuses * 3} bonus pts earned</span>}
               </div>
               <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
                 {myStreak === 0
@@ -254,7 +257,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
               )}
             </div>
             <div style={{ textAlign: "center", flexShrink: 0 }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: myStreak >= 7 ? "var(--gold)" : "#93b4ff", lineHeight: 1 }}>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: myStreak >= 7 ? "var(--title)" : "var(--info-text)", lineHeight: 1 }}>
                 {daysIntoCurrentCycle === 0 && myStreak > 0 ? 7 : daysIntoCurrentCycle}/{7}
               </div>
               <div style={{ fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>cycle</div>
@@ -283,7 +286,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
       {profileTab === "xp" && <>
       {/* ── XP Progress ── */}
       {!xpEnabled && (
-        <div style={{ background: "rgba(40,180,80,0.08)", border: "1px solid rgba(40,180,80,0.2)", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#5de098" }}>
+        <div style={{ background: "rgba(40,180,80,0.08)", border: "1px solid rgba(40,180,80,0.2)", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "var(--success-text)" }}>
           ⚡ XP system is off — all perks are unlocked for everyone.
         </div>
       )}
@@ -293,7 +296,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
           {nextPerk ? (
             <div style={{ fontSize: 12, color: "var(--muted)" }}>{xpToNext} XP to {nextPerk.perk_name}</div>
           ) : (
-            <div style={{ fontSize: 12, color: "var(--gold)" }}>Max tier reached! 👑</div>
+            <div style={{ fontSize: 12, color: "var(--gold-text)" }}>Max tier reached! 👑</div>
           )}
         </div>
         <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 6, height: 10, overflow: "hidden", marginBottom: 8 }}>
@@ -306,7 +309,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
 
       {/* ── Perks ── */}
       <div style={{ marginBottom: 20 }}>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 12 }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)", letterSpacing: 1, marginBottom: 12 }}>
           🎁 Perks
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -324,7 +327,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 700, fontSize: 13, color: unlocked ? "var(--text)" : "var(--muted)" }}>
                     {p.perk_name}
-                    {unlocked && <span style={{ marginLeft: 8, fontSize: 10, color: "#5de098", background: "rgba(40,180,80,0.15)", padding: "1px 6px", borderRadius: 10 }}>UNLOCKED</span>}
+                    {unlocked && <span style={{ marginLeft: 8, fontSize: 10, color: "var(--success-text)", background: "rgba(40,180,80,0.15)", padding: "1px 6px", borderRadius: 10 }}>UNLOCKED</span>}
                   </div>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.description}</div>
                   {!unlocked && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>{p.xp_required - xp} XP to unlock</div>}
@@ -338,7 +341,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
                 )}
                 {unlocked && isBoost && (
                   <button onClick={handleUseScoreBoost} disabled={scoreBoostUsed || usingBoost || noCompetition}
-                    style={{ background: scoreBoostUsed ? "var(--surface)" : "rgba(240,192,64,0.15)", color: scoreBoostUsed ? "var(--muted)" : "var(--gold)", border: "1px solid var(--gold)", borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: scoreBoostUsed ? "default" : "pointer", whiteSpace: "nowrap" }}>
+                    style={{ background: scoreBoostUsed ? "var(--surface)" : "rgba(240,192,64,0.15)", color: scoreBoostUsed ? "var(--muted)" : "var(--gold-text)", border: "1px solid var(--gold)", borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: scoreBoostUsed ? "default" : "pointer", whiteSpace: "nowrap" }}>
                     {noCompetition ? "Waiting" : scoreBoostUsed ? "Used" : usingBoost ? "…" : "Use"}
                   </button>
                 )}
@@ -352,7 +355,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
       {showBoostPicker && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setShowBoostPicker(false)}>
           <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(400px, 96vw)", padding: 24 }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1, marginBottom: 6 }}>⚡ Score Boost</div>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", letterSpacing: 1, marginBottom: 6 }}>⚡ Score Boost</div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Adds +5 to your raw score on the selected drill and reruns rankings.</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
               {workouts.filter((w: any) => w.is_active !== false && w.scoring_type === "competitive").map((w: any) => {
@@ -395,7 +398,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
       {profileTab === "badges" && <>
       {/* ── Badges ── */}
       <div style={{ marginBottom: 20 }}>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 12 }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)", letterSpacing: 1, marginBottom: 12 }}>
           🏅 Badges — {earned.length}/{allBadges.length}
         </div>
         {allBadges.length === 0 ? (
@@ -447,7 +450,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
                           }}>
                             <span style={{ fontSize: 24, flexShrink: 0, filter: isEarned ? "none" : "grayscale(1)" }}>{b.icon}</span>
                             <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: isEarned ? "var(--gold)" : "var(--muted)" }}>{b.name}</div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: isEarned ? "var(--gold-text)" : "var(--muted)" }}>{b.name}</div>
                               <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{b.description}</div>
                             </div>
                             {isEarned
@@ -473,19 +476,19 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
       {/* ── Season History ── */}
       {seasonHistory.length > 0 && (
         <div style={{ marginTop: 20 }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 12 }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)", letterSpacing: 1, marginBottom: 12 }}>
             🏆 Season History
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {seasonHistory.map((s, i) => (
               <div key={i} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px" }}>
-                <div style={{ fontWeight: 700, fontSize: 14, color: "var(--gold)", marginBottom: 10 }}>{s.season_label}</div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: "var(--gold-text)", marginBottom: 10 }}>{s.season_label}</div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                   {[
-                    { label: "Overall Rank", value: s.overall_rank ? `#${s.overall_rank}` : "—", color: "var(--gold)" },
-                    { label: "Group Rank",   value: s.group_rank   ? `#${s.group_rank}`   : "—", color: "#93b4ff" },
+                    { label: "Overall Rank", value: s.overall_rank ? `#${s.overall_rank}` : "—", color: "var(--gold-text)" },
+                    { label: "Group Rank",   value: s.group_rank   ? `#${s.group_rank}`   : "—", color: "var(--info-text)" },
                     { label: "Total Points", value: s.total_points ?? 0,                          color: "var(--text)" },
-                    { label: "Drill #1s",    value: s.drill_wins   ?? 0,                          color: "#5de098" },
+                    { label: "Drill #1s",    value: s.drill_wins   ?? 0,                          color: "var(--success-text)" },
                     { label: "H2H Wins",     value: s.h2h_wins     ?? 0,                          color: "#ff8c42" },
                     { label: "Team Wins",    value: s.team_wins    ?? 0,                          color: "#c0c0c0" },
                   ].map(({ label, value, color }) => (
@@ -502,21 +505,21 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
       )}
 
       <div style={{ marginTop: 24, padding: 16, background: "rgba(255,107,107,0.06)", border: "1px solid rgba(255,107,107,0.2)", borderRadius: 10 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#ff7b7b", marginBottom: 6 }}>Deactivate My Account</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--danger-text)", marginBottom: 6 }}>Deactivate My Account</div>
         {!showDeactivate ? (
           <>
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10, lineHeight: 1.5 }}>
               Not playing anymore? You can deactivate your own account — your stats and history stay saved, but you'll disappear from leaderboards and rosters. This is reversible; ask a coach to reactivate you if you come back.
             </div>
             <button type="button" onClick={() => { setShowDeactivate(true); setDeactivateConfirmed(false); setDeactivateError(null); }}
-              style={{ background: "none", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              style={{ background: "none", border: "1px solid rgba(255,107,107,0.3)", color: "var(--danger-text)", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
               Deactivate my account
             </button>
           </>
         ) : (
           <>
             {deactivateError && <div className="error-msg">{deactivateError}</div>}
-            <div style={{ fontSize: 12, color: "#ff7b7b", marginBottom: 8, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 12, color: "var(--danger-text)", marginBottom: 8, lineHeight: 1.5 }}>
               This will sign you out and hide your account from the app. Your data isn't deleted, and a coach can turn this back on later.
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 10, cursor: "pointer" }}>
@@ -537,7 +540,7 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
                     setDeactivating(false);
                   }
                 }}
-                style={{ background: "rgba(255,107,107,0.15)", border: "1px solid rgba(255,107,107,0.3)", color: "#ff7b7b", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: deactivateConfirmed ? "pointer" : "default", opacity: deactivateConfirmed ? 1 : 0.5 }}>
+                style={{ background: "rgba(255,107,107,0.15)", border: "1px solid rgba(255,107,107,0.3)", color: "var(--danger-text)", borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: deactivateConfirmed ? "pointer" : "default", opacity: deactivateConfirmed ? 1 : 0.5 }}>
                 {deactivating ? "Deactivating…" : "Confirm deactivation"}
               </button>
               <button type="button" disabled={deactivating} onClick={() => setShowDeactivate(false)}

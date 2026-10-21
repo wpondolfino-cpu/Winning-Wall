@@ -20,8 +20,8 @@ import {
 } from "../../lib/plays";
 
 const STATUS_COLOR: Record<string, { bg: string; color: string; label: string }> = {
-  draft:    { bg: "rgba(240,192,64,0.12)",  color: "var(--gold)",  label: "📝 Draft"    },
-  active:   { bg: "rgba(40,180,80,0.12)",   color: "#5de098",      label: "🌐 Live"     },
+  draft:    { bg: "rgba(240,192,64,0.12)",  color: "var(--gold-text)",  label: "📝 Draft"    },
+  active:   { bg: "rgba(40,180,80,0.12)",   color: "var(--success-text)",      label: "🌐 Live"     },
   archived: { bg: "rgba(255,255,255,0.06)", color: "var(--muted)", label: "📦 Archived" },
 };
 
@@ -133,7 +133,7 @@ export default function PlaybookManager({ onOpenPlay, initialExpandedId, onMakeQ
     <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: "16px 20px", marginBottom: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <div>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1 }}>📋 Playbooks</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)", letterSpacing: 1 }}>📋 Playbooks</div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Bundle plays into a playbook, then publish it to specific players</div>
         </div>
         <button onClick={() => setShowForm((s) => !s)}
@@ -150,7 +150,7 @@ export default function PlaybookManager({ onOpenPlay, initialExpandedId, onMakeQ
             <input value={newVideoUrl} onChange={(e) => setNewVideoUrl(e.target.value)} placeholder="🎬 Walkthrough video — YouTube link" style={inputStyle} />
             <VideoUrlNote url={newVideoUrl} />
             <div style={{ fontSize: 11, color: "var(--muted)", padding: "8px 10px", background: "rgba(240,192,64,0.06)", borderRadius: 8, border: "1px solid rgba(240,192,64,0.15)" }}>
-              📝 Playbooks start as <strong style={{ color: "var(--gold)" }}>Draft</strong> — add plays and assign players, then hit <strong style={{ color: "#5de098" }}>Publish</strong>.
+              📝 Playbooks start as <strong style={{ color: "var(--gold-text)" }}>Draft</strong> — add plays and assign players, then hit <strong style={{ color: "var(--success-text)" }}>Publish</strong>.
             </div>
             <button onClick={createNew} disabled={saving || !newName.trim()}
               style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: 10, fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
@@ -189,7 +189,7 @@ export default function PlaybookManager({ onOpenPlay, initialExpandedId, onMakeQ
                     )}
                     {pb.status === "draft" && (
                       <button onClick={() => publish(pb.id)}
-                        style={{ background: "rgba(40,180,80,0.12)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                        style={{ background: "rgba(40,180,80,0.12)", border: "1px solid rgba(40,180,80,0.3)", color: "var(--success-text)", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
                         🌐 Publish
                       </button>
                     )}
@@ -201,7 +201,7 @@ export default function PlaybookManager({ onOpenPlay, initialExpandedId, onMakeQ
                     )}
                     {pb.status === "active" && (
                       <button onClick={() => archive(pb.id)} title="Done with this one — hide it without deleting"
-                        style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.25)", color: "#ff7b7b", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                        style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.25)", color: "var(--danger-text)", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
                         📦 Archive
                       </button>
                     )}
@@ -459,14 +459,14 @@ function PlaybookDetail({ playbook, onChanged, onPrint, onWatch, onOpenPlay }: {
           Drag a play (or use ▲▼) to reorder. 👁 hides a play from players until you're ready. Pick a section to group plays under a heading.
         </div>
       )}
-      {layoutError && <div style={{ fontSize: 12, color: "#ff7b7b", marginBottom: 6 }}>{layoutError}</div>}
+      {layoutError && <div style={{ fontSize: 12, color: "var(--danger-text)", marginBottom: 6 }}>{layoutError}</div>}
       {(() => {
         let n = 0;
         return groupBySection(plays).map((g, gi) => (
           <div key={`${g.section ?? ""}-${gi}`} style={{ marginBottom: 4 }}>
             {g.section && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "10px 0 2px" }}>
-                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: "var(--gold)" }}>{g.section}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: "var(--gold-text)" }}>{g.section}</span>
                 <button onClick={() => renameSection(g.section!)} title="Rename this section" style={miniBtn}>✎</button>
                 <button onClick={() => clearSection(g.section!)} title="Remove this heading (the plays stay)" style={miniBtn}>✕</button>
               </div>
@@ -499,7 +499,7 @@ function PlaybookDetail({ playbook, onChanged, onPrint, onWatch, onOpenPlay }: {
                     ) : (
                       <span style={{ textDecoration: p.hidden ? "line-through" : "none" }}>{p.title}</span>
                     )}
-                    {p.hidden && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "var(--gold)", border: "1px solid var(--gold)", borderRadius: 5, padding: "0 5px" }}>HIDDEN</span>}
+                    {p.hidden && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "var(--gold-text)", border: "1px solid var(--gold)", borderRadius: 5, padding: "0 5px" }}>HIDDEN</span>}
                   </div>
                   <select value={p.section ?? ""} onChange={(e) => pickSection(p.id, e.target.value)} title="Section"
                     style={{ maxWidth: 110, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--muted)", fontSize: 11, padding: "3px 4px", fontFamily: "inherit" }}>
@@ -540,7 +540,7 @@ function PlaybookDetail({ playbook, onChanged, onPrint, onWatch, onOpenPlay }: {
       {playbook.status !== "active" && shares.length > 0 && (
         // Assigning while it's a draft looks like a finished action, and the
         // only hint otherwise was buried in the Publish confirmation.
-        <div style={{ fontSize: 11.5, color: "var(--gold)", marginBottom: 4 }}>
+        <div style={{ fontSize: 11.5, color: "var(--gold-text)", marginBottom: 4 }}>
           {playbook.status === "draft"
             ? "They can't see it yet — publish to make it visible."
             : "They can't see it — this playbook is archived."}

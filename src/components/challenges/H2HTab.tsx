@@ -319,23 +319,23 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>📋 {c.workout_title}</div>
             <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>{new Date(c.created_at).toLocaleDateString()}</div>
           </div>
-          <div style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: c.status === "completed" ? "rgba(40,180,80,0.15)" : c.status === "declined" ? "rgba(255,107,107,0.15)" : "rgba(240,192,64,0.15)", color: c.status === "completed" ? "#5de098" : c.status === "declined" ? "#ff7b7b" : "var(--gold)" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: c.status === "completed" ? "rgba(40,180,80,0.15)" : c.status === "declined" ? "rgba(255,107,107,0.15)" : "rgba(240,192,64,0.15)", color: c.status === "completed" ? "var(--success-text)" : c.status === "declined" ? "var(--danger-text)" : "var(--gold-text)" }}>
             {c.status === "completed" ? "Done" : c.status === "declined" ? "Declined" : "Pending"}
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 10, alignItems: "center", marginBottom: 10 }}>
           <div style={{ textAlign: "center", padding: "10px", background: "var(--surface)", borderRadius: 8 }}>
             <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>YOU</div>
-            {c.status === "completed" ? <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: iWon ? "var(--gold)" : "var(--text)" }}>{myScore ?? "—"}</div>
-              : (myScore !== null || isChallenger) ? <div style={{ fontSize: 13, color: "#5de098", fontWeight: 600 }}>🔒 Logged</div>
+            {c.status === "completed" ? <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: iWon ? "var(--title)" : "var(--text)" }}>{myScore ?? "—"}</div>
+              : (myScore !== null || isChallenger) ? <div style={{ fontSize: 13, color: "var(--success-text)", fontWeight: 600 }}>🔒 Logged</div>
               : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--muted)" }}>—</div>}
           </div>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--muted)" }}>VS</div>
           <div style={{ textAlign: "center", padding: "10px", background: "var(--surface)", borderRadius: 8 }}>
             <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>{theirName.split(" ")[0].toUpperCase()}</div>
-            {c.status === "completed" ? <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: theyWon ? "var(--gold)" : "var(--text)" }}>{theirScore ?? "—"}</div>
+            {c.status === "completed" ? <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: theyWon ? "var(--title)" : "var(--text)" }}>{theirScore ?? "—"}</div>
               : theirScore === -1 ? <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic" }}>Forfeited</div>
-              : (theirScore !== null || !isChallenger) ? <div style={{ fontSize: 13, color: "#5de098", fontWeight: 600 }}>🔒 Logged</div>
+              : (theirScore !== null || !isChallenger) ? <div style={{ fontSize: 13, color: "var(--success-text)", fontWeight: 600 }}>🔒 Logged</div>
               : <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--muted)" }}>—</div>}
           </div>
         </div>
@@ -344,11 +344,11 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
         )}
         {c.status === "completed" && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: iWon ? "var(--gold)" : theyWon ? "#ff7b7b" : "var(--muted)" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: iWon ? "var(--gold-text)" : theyWon ? "var(--danger-text)" : "var(--muted)" }}>
               {c.opponent_score === -1 ? "🏆 Won (opponent forfeited)" : iWon ? "🏆 You Won!" : theyWon ? "💪 Keep grinding!" : "🤝 Tied!"}
             </div>
             <button onClick={() => sendRematch(c)} disabled={rematching === c.id}
-              style={{ background: "rgba(147,180,255,0.12)", border: "1px solid rgba(147,180,255,0.3)", color: "#93b4ff", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+              style={{ background: "rgba(147,180,255,0.12)", border: "1px solid rgba(147,180,255,0.3)", color: "var(--info-text)", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
               {rematching === c.id ? "Sending…" : "🔄 Rematch"}
             </button>
           </div>
@@ -471,8 +471,8 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
           </div>
         </div>
       )}
-      {myPending.length > 0 && <div style={{ marginBottom: 20 }}><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1, marginBottom: 10 }}>⚔️ Waiting For You ({myPending.length})</div>{myPending.map(c => <ChallengeCard key={c.id} c={c} />)}</div>}
-      {theirPending.length > 0 && <div style={{ marginBottom: 20 }}><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#93b4ff", letterSpacing: 1, marginBottom: 10 }}>📤 Challenges You Sent ({theirPending.length})</div>{theirPending.map(c => <ChallengeCard key={c.id} c={c} />)}</div>}
+      {myPending.length > 0 && <div style={{ marginBottom: 20 }}><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)", letterSpacing: 1, marginBottom: 10 }}>⚔️ Waiting For You ({myPending.length})</div>{myPending.map(c => <ChallengeCard key={c.id} c={c} />)}</div>}
+      {theirPending.length > 0 && <div style={{ marginBottom: 20 }}><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--info-text)", letterSpacing: 1, marginBottom: 10 }}>📤 Challenges You Sent ({theirPending.length})</div>{theirPending.map(c => <ChallengeCard key={c.id} c={c} />)}</div>}
       {completed.length > 0 && <div><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--muted)", letterSpacing: 1, marginBottom: 10 }}>📋 Past Challenges</div>{completed.map(c => <ChallengeCard key={c.id} c={c} />)}</div>}
       {challenges.length === 0 && !loading && !showNew && <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 14, padding: "40px 0" }}>No challenges yet. Hit "New Challenge" to call someone out! ⚔️</div>}
       {toast && <div className="toast show">{toast}</div>}

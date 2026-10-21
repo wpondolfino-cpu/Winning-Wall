@@ -198,7 +198,7 @@ function ReviewQuizButton({ gameId }: { gameId: string }) {
   return (
     <>
       <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginBottom: 10 }}>
-        {error && <span style={{ fontSize: 12, color: "#ff7b7b" }}>{error}</span>}
+        {error && <span style={{ fontSize: 12, color: "var(--danger-text)" }}>{error}</span>}
         <button type="button" onClick={go} disabled={busy}
           style={{ background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8,
             padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
@@ -679,10 +679,10 @@ function PaintBallMovementBlock({ us, them, opponentName }: { us: PaintResult; t
   const anyThin = r.groups.some((g) => g.thin);
   const warn = (g: PaintGroup) => g.thin ? (
     <button onClick={() => setSampleOpen(sampleOpen === g.key ? null : g.key)} title="Why this is flagged"
-      style={{ background: "none", border: 0, padding: "0 0 0 4px", color: "#e8a33d", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>⚠</button>
+      style={{ background: "none", border: 0, padding: "0 0 0 4px", color: "var(--amber-text)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>⚠</button>
   ) : null;
   const sampleNote = (g: PaintGroup) => sampleOpen === g.key ? (
-    <div style={{ fontSize: 12, lineHeight: 1.5, color: "#e8a33d", padding: "4px 0" }}>
+    <div style={{ fontSize: 12, lineHeight: 1.5, color: "var(--amber-text)", padding: "4px 0" }}>
       From <b>{g.fga}</b> shot{g.fga === 1 ? "" : "s"}. Reads reliably from about <b>{PAINT_THIN_SHOTS}</b>{g.fga >= PAINT_THIN_SHOTS * 0.6 ? " — close; another game or two should do it." : " — run it over more games."}
     </div>
   ) : null;
@@ -722,7 +722,7 @@ function PaintBallMovementBlock({ us, them, opponentName }: { us: PaintResult; t
       ) : (
         <>
           {anyThin && (
-            <div style={{ fontSize: 11, color: "#e8a33d", marginBottom: 8, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 11, color: "var(--amber-text)", marginBottom: 8, lineHeight: 1.5 }}>
               ⚠ marks a group with too few shots to lean on. Tap it to see how many, and how close it is to reading reliably.
             </div>
           )}
@@ -924,7 +924,7 @@ function PairedStatRows({ usRows, oppRows, opponentName, variant }: { usRows: St
       {/* Said once at the top rather than repeated on every flagged row —
           the icon needs a meaning, not an explanation each time. */}
       {variant === "custom" && usRows.some(r => r.sampleMin != null && r.sampleN != null && r.sampleN < r.sampleMin) && (
-        <div style={{ fontSize: 11, color: "#e8a33d", marginBottom: 8, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 11, color: "var(--amber-text)", marginBottom: 8, lineHeight: 1.5 }}>
           ⚠ marks a number computed from too few to lean on. Tap it to see how many, and how close it is to reading reliably.
         </div>
       )}

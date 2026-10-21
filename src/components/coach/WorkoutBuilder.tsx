@@ -320,28 +320,28 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
           {groupId && (() => {
             const g = groups.find(g => g.id === groupId);
             if (!g) return null;
-            return <div style={{ fontSize: 11, marginTop: 4, color: g.status === "active" ? "#5de098" : "var(--gold)" }}>
+            return <div style={{ fontSize: 11, marginTop: 4, color: g.status === "active" ? "var(--success-text)" : "var(--gold-text)" }}>
               {g.status === "active" ? "🌐 Visible to players immediately" : "📝 Draft — hidden until group is published"}
             </div>;
           })()}
           {!editWorkout && (
             <LibraryDrillPicker onSelect={attachExistingDrill} />
           )}
-          {attaching && <div style={{ fontSize: 12, color: "var(--gold)", marginTop: 6 }}>Attaching…</div>}
+          {attaching && <div style={{ fontSize: 12, color: "var(--gold-text)", marginTop: 6 }}>Attaching…</div>}
         </div>
 
         <div style={{ marginBottom: 4 }}>
           <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Deadline (optional)</label>
           <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} min={new Date().toISOString().split("T")[0]}
             style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
-          {deadline && <div style={{ fontSize: 11, color: "var(--gold)", marginTop: 4 }}>⏰ Players will see a countdown to this date</div>}
+          {deadline && <div style={{ fontSize: 11, color: "var(--gold-text)", marginTop: 4 }}>⏰ Players will see a countdown to this date</div>}
         </div>
 
         <div style={{ marginBottom: 4 }}>
           <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Publish Date (optional)</label>
           <input type="date" value={publishDate} onChange={e => setPublishDate(e.target.value)}
             style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
-          {publishDate ? <div style={{ fontSize: 11, color: "#93b4ff", marginTop: 4 }}>📅 Hidden until {new Date(publishDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
+          {publishDate ? <div style={{ fontSize: 11, color: "var(--info-text)", marginTop: 4 }}>📅 Hidden until {new Date(publishDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
             : <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Leave blank to show immediately</div>}
         </div>
 
@@ -353,7 +353,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
           <div onClick={() => setIsActive(a => !a)} style={{ width: 46, height: 26, borderRadius: 13, cursor: "pointer", flexShrink: 0, background: isActive ? "var(--royal)" : "var(--surface3)", position: "relative", transition: "background .2s", border: "1px solid var(--border)" }}>
             <div style={{ position: "absolute", top: 3, left: isActive ? 22 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .2s" }} />
           </div>
-          <span style={{ fontSize: 12, fontWeight: 600, color: isActive ? "#5de098" : "var(--muted)" }}>{isActive ? "On" : "Off"}</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: isActive ? "var(--success-text)" : "var(--muted)" }}>{isActive ? "On" : "Off"}</span>
         </div>
 
         <div>
@@ -427,7 +427,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
             <label>Points Per Rank</label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 6 }}>
               {[
-                { label: "🥇 1st", val: firstPts, set: setFirstPts, color: "var(--gold)", border: "rgba(240,192,64,0.4)" },
+                { label: "🥇 1st", val: firstPts, set: setFirstPts, color: "var(--gold-text)", border: "rgba(240,192,64,0.4)" },
                 { label: "🥈 2nd", val: secondPts, set: setSecondPts, color: "var(--silver-light)", border: "rgba(176,184,200,0.3)" },
                 { label: "🥉 3rd", val: thirdPts, set: setThirdPts, color: "#cd7f32", border: "rgba(205,127,50,0.3)" },
               ].map(f => (
@@ -453,7 +453,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
                   <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600, minWidth: 24, textAlign: "center" }}>{i + 1}</div>
                   <input value={spot} onChange={e => updateSpot(i, e.target.value)} placeholder={`Spot ${i + 1} name`}
                     style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
-                  {spotNames.length > 1 && <button onClick={() => removeSpot(i)} style={{ background: "none", border: "none", color: "#ff7b7b", cursor: "pointer", fontSize: 18, padding: "4px 6px" }}>×</button>}
+                  {spotNames.length > 1 && <button onClick={() => removeSpot(i)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", fontSize: 18, padding: "4px 6px" }}>×</button>}
                 </div>
               ))}
               {spotNames.length < 10 && <button onClick={addSpot} style={{ background: "none", border: "1px dashed var(--border)", borderRadius: 8, padding: "9px 14px", fontSize: 13, color: "var(--muted)", cursor: "pointer", fontFamily: "inherit" }}>+ Add spot</button>}
@@ -470,14 +470,14 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
         <div>
           <label>YouTube video link</label>
           <input value={videoUrl} onChange={e => setVideoUrl(e.target.value)} placeholder="https://youtube.com/watch?v=…" />
-          {embedPreview && <div style={{ marginTop: 6, fontSize: 11, color: "#5de098" }}>✓ Valid YouTube URL</div>}
+          {embedPreview && <div style={{ marginTop: 6, fontSize: 11, color: "var(--success-text)" }}>✓ Valid YouTube URL</div>}
           <VideoUrlNote url={videoUrl} />
         </div>
 
         <div>
           <label>Program / Resource Link (optional)</label>
           <input value={resourceUrl} onChange={e => setResourceUrl(e.target.value)} placeholder="https://docs.google.com/… or any link" />
-          {resourceUrl.trim() && <div style={{ fontSize: 11, color: "#5de098", marginTop: 4 }}>📄 Players will see a "View Program" button</div>}
+          {resourceUrl.trim() && <div style={{ fontSize: 11, color: "var(--success-text)", marginTop: 4 }}>📄 Players will see a "View Program" button</div>}
         </div>
 
         <div>
@@ -487,7 +487,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
             <div onClick={() => setTimerDuration(timerDuration !== null ? null : 30)} style={{ width: 46, height: 26, borderRadius: 13, cursor: "pointer", flexShrink: 0, background: timerDuration !== null ? "var(--royal)" : "var(--surface2)", position: "relative", transition: "background .2s", border: "1px solid var(--border)" }}>
               <div style={{ position: "absolute", top: 3, left: timerDuration !== null ? 22 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .2s" }} />
             </div>
-            <span style={{ fontSize: 12, color: timerDuration !== null ? "#5de098" : "var(--muted)", fontWeight: 600 }}>{timerDuration !== null ? "Timer On" : "No Timer"}</span>
+            <span style={{ fontSize: 12, color: timerDuration !== null ? "var(--success-text)" : "var(--muted)", fontWeight: 600 }}>{timerDuration !== null ? "Timer On" : "No Timer"}</span>
           </div>
           {timerDuration !== null && (
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -520,7 +520,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
                 />
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>sec</span>
               </div>
-              <div style={{ fontSize: 12, color: "#93b4ff", marginLeft: 4 }}>
+              <div style={{ fontSize: 12, color: "var(--info-text)", marginLeft: 4 }}>
                 = {timerDuration}s total
               </div>
             </div>
@@ -533,7 +533,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Turn on for drills where a miss counts against the score (e.g. -2)</div>
             <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
               <input type="checkbox" checked={allowNegative} onChange={e => setAllowNegative(e.target.checked)} style={{ width: 18, height: 18 }} />
-              <span style={{ fontSize: 13, color: allowNegative ? "#5de098" : "var(--muted)", fontWeight: 600 }}>{allowNegative ? "Negative scores allowed" : "Negative scores off"}</span>
+              <span style={{ fontSize: 13, color: allowNegative ? "var(--success-text)" : "var(--muted)", fontWeight: 600 }}>{allowNegative ? "Negative scores allowed" : "Negative scores off"}</span>
             </label>
           </div>
         )}
@@ -558,7 +558,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
               ))}
             </div>
             {tiebreakMode === "fastest_time" && (
-              <div style={{ marginTop: 8, fontSize: 12, color: "#93b4ff" }}>The stopwatch appears at the TOP of the drill, before players start — a time nobody started can't be recovered afterwards.</div>
+              <div style={{ marginTop: 8, fontSize: 12, color: "var(--info-text)" }}>The stopwatch appears at the TOP of the drill, before players start — a time nobody started can't be recovered afterwards.</div>
             )}
             {tiebreakMode === "spot" && (
               <div style={{ marginTop: 10 }}>
@@ -571,7 +571,7 @@ export default function WorkoutBuilder({ editWorkout, onSaved, onCancel, default
                     </div>
                   ))}
                 </div>
-                <div style={{ marginTop: 8, fontSize: 12, color: "#93b4ff" }}>
+                <div style={{ marginTop: 8, fontSize: 12, color: "var(--info-text)" }}>
                   Costs players nothing extra — the score at that spot is already being entered. Follows this drill's ranking direction, so {lowerIsBetter ? "the LOWEST" : "the HIGHEST"} score at that spot wins the tie.
                 </div>
               </div>

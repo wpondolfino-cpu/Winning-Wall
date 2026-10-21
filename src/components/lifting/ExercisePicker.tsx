@@ -144,7 +144,7 @@ export default function ExercisePicker({ playerId, onSelect, placeholder = "Sear
             {!adding ? (
               <div
                 onClick={() => { setAdding(true); setNewName(query); }}
-                style={{ padding: "10px 14px", fontSize: 13, color: "#93b4ff", cursor: "pointer", fontWeight: 600 }}
+                style={{ padding: "10px 14px", fontSize: 13, color: "var(--info-text)", cursor: "pointer", fontWeight: 600 }}
               >
                 + Add new exercise to bank
               </div>

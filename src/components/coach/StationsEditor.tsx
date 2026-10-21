@@ -250,7 +250,7 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
                     style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11, cursor: "pointer", padding: "3px 0" }}>
                     {openSplits === d.id ? "▾" : "▸"} Who’s on which side
                     {Object.keys(overrides[d.id] ?? {}).length > 0 && (
-                      <span style={{ color: "var(--gold)" }}> · {Object.keys(overrides[d.id] ?? {}).length} set by hand</span>
+                      <span style={{ color: "var(--gold-text)" }}> · {Object.keys(overrides[d.id] ?? {}).length} set by hand</span>
                     )}
                   </button>
                   {openSplits === d.id && groupsHere.map((g, gi) => {
@@ -321,7 +321,7 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
         style={{ background: "var(--surface)", borderRadius: 16, width: "min(900px, 96vw)", maxHeight: "90vh", overflowY: "auto", padding: 22 }}>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)" }}>Stations</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)" }}>Stations</div>
           <button onClick={onClose} title="Close without saving"
             style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 18, cursor: "pointer", lineHeight: 1, padding: 4 }}>✕</button>
         </div>
@@ -334,7 +334,7 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
           {mode === "rotating"
             ? "Groups are made once for the block and move between stations. Each station splits whoever arrives by its own rule."
             : "People are assigned to a station and stay there — bigs at one, guards at another."}
-          <br /><span style={{ color: "var(--gold)" }}>Nothing is saved until you press Save stations.</span>
+          <br /><span style={{ color: "var(--gold-text)" }}>Nothing is saved until you press Save stations.</span>
         </div>
 
         {mode === "fixed" ? (
@@ -404,7 +404,7 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
 
             {schedule.length > 0 && (
               <div style={{ background: "rgba(44,76,155,0.12)", border: "1px solid rgba(44,76,155,0.4)", borderRadius: 8, padding: "10px 12px", marginBottom: 14 }}>
-                <div style={{ fontSize: 11, color: "#93b4ff", fontWeight: 600, marginBottom: 4 }}>Rotation order</div>
+                <div style={{ fontSize: 11, color: "var(--info-text)", fontWeight: 600, marginBottom: 4 }}>Rotation order</div>
                 <div style={{ fontSize: 11.5, color: "var(--text)", lineHeight: 1.6 }}>
                   {drills.map((d, i) => `${labelOf(d, i)} → ${String.fromCharCode(65 + schedule[0][i])}`).join("  ·  ")}
                   , then everyone moves one station along each round.

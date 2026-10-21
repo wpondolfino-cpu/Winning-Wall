@@ -188,7 +188,7 @@ export default function ScheduleExport({ items, rosters, defaultRosterId, onClos
       <div onClick={e => e.stopPropagation()}
         style={{ background: "var(--surface)", borderRadius: 16, width: "min(560px, 96vw)", maxHeight: "90vh", overflowY: "auto", padding: 22 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)" }}>Print or email the schedule</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)" }}>Print or email the schedule</div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 18, cursor: "pointer", padding: 4, lineHeight: 1 }}>✕</button>
         </div>
 
@@ -233,7 +233,7 @@ export default function ScheduleExport({ items, rosters, defaultRosterId, onClos
             Print / save as PDF
           </button>
         </div>
-        {status && <div style={{ fontSize: 12, color: "#5de098", marginTop: 10, textAlign: "center" }}>{status}</div>}
+        {status && <div style={{ fontSize: 12, color: "var(--success-text)", marginTop: 10, textAlign: "center" }}>{status}</div>}
       </div>
     </div>
   );

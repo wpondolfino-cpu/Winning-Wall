@@ -93,7 +93,7 @@ export default function FindDrillModal({ onClose, onAttached }: Props) {
               <span style={{ fontSize: 15 }}>{d.emoji ?? "🏀"}</span>
               <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", flex: 1 }}>{d.title}</span>
               <span style={{ fontSize: 10, color: "var(--muted)" }}>{d.category}</span>
-              {attaching === d.id && <span style={{ fontSize: 11, color: "var(--gold)" }}>Attaching…</span>}
+              {attaching === d.id && <span style={{ fontSize: 11, color: "var(--gold-text)" }}>Attaching…</span>}
             </div>
           ))}
         </div>

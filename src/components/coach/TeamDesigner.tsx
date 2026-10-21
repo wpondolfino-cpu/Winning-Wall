@@ -160,7 +160,7 @@ export default function TeamDesigner() {
           }} style={{ ...btn, color: "#b8342e" }}>Delete plan</button>
         )}
         <button onClick={async () => { setShowPool(true); getRosters().then(setPoolRosters).catch(() => {}); }}
-          style={{ ...btn, marginLeft: "auto", border: "1px solid var(--royal)", color: "#93b4ff", fontWeight: 600 }}>
+          style={{ ...btn, marginLeft: "auto", border: "1px solid var(--royal)", color: "var(--info-text)", fontWeight: 600 }}>
           👥 Tryout pool ({pool.length})
         </button>
       </div>

@@ -45,7 +45,7 @@ export default function RosterShareRows({ sharedWithIds, onAdd, onRemove, busy }
             <span style={{ width: 8, height: 8, borderRadius: 2, background: g.color, flexShrink: 0 }} />
             <span style={{ flex: 1, fontSize: 13, color: "var(--text)" }}>
               {g.name}
-              <span style={{ fontSize: 11, color: all ? "#5de098" : "var(--muted)", marginLeft: 7 }}>
+              <span style={{ fontSize: 11, color: all ? "var(--success-text)" : "var(--muted)", marginLeft: 7 }}>
                 {have === 0 ? `${total} player${total === 1 ? "" : "s"}` : all ? `all ${total} shared` : `${have} of ${total} shared`}
               </span>
             </span>

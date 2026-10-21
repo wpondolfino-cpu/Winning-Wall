@@ -161,7 +161,7 @@ export default function ProfileEditor({ profile, onUpdated }: Props) {
                 style={{ width: "100%", height: "100%", objectFit: "cover" }}
               />
             ) : (
-              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--gold)", letterSpacing: 1 }}>
+              <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--title)", letterSpacing: 1 }}>
                 {initials}
               </span>
             )}
@@ -313,7 +313,7 @@ export default function ProfileEditor({ profile, onUpdated }: Props) {
           border: `1px solid ${toast.startsWith("❌") || toast.startsWith("Error") ? "rgba(255,107,107,0.3)" : "rgba(40,180,80,0.3)"}`,
           borderRadius: 8,
           fontSize: 13,
-          color: toast.startsWith("❌") || toast.startsWith("Error") ? "#ff7b7b" : "#5de098",
+          color: toast.startsWith("❌") || toast.startsWith("Error") ? "var(--danger-text)" : "var(--success-text)",
           fontWeight: 600,
         }}>
           {toast}

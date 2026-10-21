@@ -8,8 +8,8 @@ interface Props {
 }
 
 const STATUS_COLOR: Record<string, { bg: string; color: string; label: string }> = {
-  draft:    { bg: "rgba(240,192,64,0.12)",  color: "var(--gold)",  label: "📝 Draft"    },
-  active:   { bg: "rgba(40,180,80,0.12)",   color: "#5de098",      label: "🌐 Live"     },
+  draft:    { bg: "rgba(240,192,64,0.12)",  color: "var(--gold-text)",  label: "📝 Draft"    },
+  active:   { bg: "rgba(40,180,80,0.12)",   color: "var(--success-text)",      label: "🌐 Live"     },
   archived: { bg: "rgba(255,255,255,0.06)", color: "var(--muted)", label: "📦 Archived" },
 };
 
@@ -122,7 +122,7 @@ export default function GroupManager({ workouts, onChanged }: Props) {
     <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: "16px 20px", marginBottom: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <div>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--gold)", letterSpacing: 1 }}>📁 Workout Groups</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)", letterSpacing: 1 }}>📁 Workout Groups</div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Create groups, build workouts in draft, publish when ready</div>
         </div>
         <button onClick={() => setShowForm(s => !s)}
@@ -139,7 +139,7 @@ export default function GroupManager({ workouts, onChanged }: Props) {
             <input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Description (optional)"
               style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
             <div style={{ fontSize: 11, color: "var(--muted)", padding: "8px 10px", background: "rgba(240,192,64,0.06)", borderRadius: 8, border: "1px solid rgba(240,192,64,0.15)" }}>
-              📝 Groups start as <strong style={{ color: "var(--gold)" }}>Draft</strong> — invisible to players. Add workouts, then hit <strong style={{ color: "#5de098" }}>Publish</strong> when ready.
+              📝 Groups start as <strong style={{ color: "var(--gold-text)" }}>Draft</strong> — invisible to players. Add workouts, then hit <strong style={{ color: "var(--success-text)" }}>Publish</strong> when ready.
             </div>
             <button onClick={createGroup} disabled={saving || !newName.trim()}
               style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
@@ -210,13 +210,13 @@ export default function GroupManager({ workouts, onChanged }: Props) {
                         Republishing is also where a new run starts. */}
                     {(g.status === "draft" || g.status === "archived") && (
                       <button onClick={() => publishGroup(g.id)}
-                        style={{ background: "rgba(40,180,80,0.12)", border: "1px solid rgba(40,180,80,0.3)", color: "#5de098", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                        style={{ background: "rgba(40,180,80,0.12)", border: "1px solid rgba(40,180,80,0.3)", color: "var(--success-text)", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
                         {g.status === "archived" ? "🔁 Run again" : "🌐 Publish"}
                       </button>
                     )}
                     {g.status === "active" && (
                       <button onClick={() => archiveGroup(g.id)}
-                        style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.25)", color: "#ff7b7b", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
+                        style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.25)", color: "var(--danger-text)", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
                         📦 Archive
                       </button>
                     )}

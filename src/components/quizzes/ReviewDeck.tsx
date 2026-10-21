@@ -109,14 +109,14 @@ export default function ReviewDeck({ onClose }: Props) {
           {o.label}
         </button>
       ))}
-      {inputError && <div style={{ fontSize: 13, color: "#ff7b7b", margin: "2px 0 8px" }}>{inputError}</div>}
+      {inputError && <div style={{ fontSize: 13, color: "var(--danger-text)", margin: "2px 0 8px" }}>{inputError}</div>}
 
       {result ? (
         <>
           <div style={{
             borderRadius: 10, padding: "10px 12px", margin: "6px 0 12px", fontSize: 13,
             background: result.correct ? "rgba(40,180,80,0.15)" : "rgba(220,50,50,0.15)",
-            color: result.correct ? "#5de098" : "#ff7b7b",
+            color: result.correct ? "var(--success-text)" : "var(--danger-text)",
           }}>
             <strong>{result.correct ? "Got it — cleared from your deck." : "Not yet — it stays in your deck."}</strong>
             {result.explanation ? ` ${result.explanation}` : ""}

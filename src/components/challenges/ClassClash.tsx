@@ -235,7 +235,7 @@ export default function ClassClash({ currentUserId, canManage }: Props) {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
         <div>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--gold)", letterSpacing: 1 }}>⚔️ Class Clash</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--title)", letterSpacing: 1 }}>⚔️ Class Clash</div>
           <div style={{ fontSize: 12, color: "var(--muted)" }}>Grade vs grade · Outwork everyone</div>
         </div>
         {canManage && !showCreate && (
@@ -269,7 +269,7 @@ export default function ClassClash({ currentUserId, canManage }: Props) {
               </div>
             </div>
             <div style={{ background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.2)", borderRadius: 8, padding: "10px 12px" }}>
-              <div style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, marginBottom: 8 }}>🏆 Prize — players will see this from day one</div>
+              <div style={{ fontSize: 11, color: "var(--gold-text)", fontWeight: 600, marginBottom: 8 }}>🏆 Prize — players will see this from day one</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>🥇 1st place pts (each player)</div>
@@ -302,7 +302,7 @@ export default function ClassClash({ currentUserId, canManage }: Props) {
       ) : !active ? (
         <div style={{ textAlign: "center", padding: "60px 20px" }}>
           <div style={{ fontSize: 48, marginBottom: 12 }}>⚔️</div>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1, marginBottom: 8 }}>No active Class Clash</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", letterSpacing: 1, marginBottom: 8 }}>No active Class Clash</div>
           <div style={{ fontSize: 13, color: "var(--muted)" }}>
             {canManage ? "Start one above to get the grades competing." : "Your coach will start the next Class Clash soon."}
           </div>
@@ -311,14 +311,14 @@ export default function ClassClash({ currentUserId, canManage }: Props) {
         <>
           {/* Active competition header */}
           <div style={{ background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.25)", borderRadius: 12, padding: "12px 16px", marginBottom: 16, marginTop: 12 }}>
-            <div style={{ fontWeight: 700, fontSize: 15, color: "var(--gold)", marginBottom: 4 }}>{active.title}</div>
+            <div style={{ fontWeight: 700, fontSize: 15, color: "var(--gold-text)", marginBottom: 4 }}>{active.title}</div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>
               {new Date(active.start_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })} – {new Date(active.end_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-              {isEnded ? <span style={{ color: "#ff7b7b", marginLeft: 8 }}>· Ended</span> : <span style={{ color: "#5de098", marginLeft: 8 }}>· Live</span>}
+              {isEnded ? <span style={{ color: "var(--danger-text)", marginLeft: 8 }}>· Ended</span> : <span style={{ color: "var(--success-text)", marginLeft: 8 }}>· Live</span>}
             </div>
             <div style={{ display: "flex", gap: 12, fontSize: 12 }}>
-              <span style={{ color: "var(--text)" }}>🥇 1st place: <strong style={{ color: "var(--gold)" }}>+{active.first_place_pts} pts</strong> each player</span>
-              <span style={{ color: "var(--text)" }}>🥈 2nd place: <strong style={{ color: "#93b4ff" }}>+{active.second_place_pts} pts</strong> each player</span>
+              <span style={{ color: "var(--text)" }}>🥇 1st place: <strong style={{ color: "var(--gold-text)" }}>+{active.first_place_pts} pts</strong> each player</span>
+              <span style={{ color: "var(--text)" }}>🥈 2nd place: <strong style={{ color: "var(--info-text)" }}>+{active.second_place_pts} pts</strong> each player</span>
             </div>
           </div>
 
@@ -353,7 +353,7 @@ export default function ClassClash({ currentUserId, canManage }: Props) {
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ fontSize: 20 }}>{MEDALS[idx] ?? `${idx + 1}`}</span>
                         <div>
-                          <div style={{ fontWeight: 700, fontSize: 14, color: idx === 0 ? "var(--gold)" : "var(--text)" }}>{label}</div>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: idx === 0 ? "var(--gold-text)" : "var(--text)" }}>{label}</div>
                           <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>{grade.players.length} players</div>
                         </div>
                       </div>
@@ -403,7 +403,7 @@ export default function ClassClash({ currentUserId, canManage }: Props) {
           {/* Coach award button */}
           {canManage && isEnded && !active.awarded && (
             <div style={{ background: "rgba(240,192,64,0.08)", border: "1px solid rgba(240,192,64,0.3)", borderRadius: 12, padding: 16 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, color: "var(--gold)", marginBottom: 8 }}>Competition ended — ready to award points?</div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: "var(--gold-text)", marginBottom: 8 }}>Competition ended — ready to award points?</div>
               <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
                 {totals[0] && <div>🥇 {GRADE_LABELS[totals[0].grade]} — +{active.first_place_pts} pts × {totals[0].players.length} players</div>}
                 {totals[1] && <div>🥈 {GRADE_LABELS[totals[1].grade]} — +{active.second_place_pts} pts × {totals[1].players.length} players</div>}
@@ -416,7 +416,7 @@ export default function ClassClash({ currentUserId, canManage }: Props) {
           )}
 
           {canManage && active.awarded && (
-            <div style={{ textAlign: "center", padding: "12px", fontSize: 13, color: "#5de098" }}>✓ Points awarded — competition complete</div>
+            <div style={{ textAlign: "center", padding: "12px", fontSize: 13, color: "var(--success-text)" }}>✓ Points awarded — competition complete</div>
           )}
         </>
       )}
@@ -435,7 +435,7 @@ export default function ClassClash({ currentUserId, canManage }: Props) {
                       {new Date(c.start_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })} – {new Date(c.end_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                     </div>
                   </div>
-                  <div style={{ fontSize: 11, color: "#5de098" }}>✓ Complete</div>
+                  <div style={{ fontSize: 11, color: "var(--success-text)" }}>✓ Complete</div>
                 </div>
               </div>
             ))}

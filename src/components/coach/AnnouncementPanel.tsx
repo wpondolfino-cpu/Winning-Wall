@@ -106,7 +106,7 @@ export default function AnnouncementPanel({ isAdmin, coachId, coachName }: Props
     <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: "16px 20px", marginBottom: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <div>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "#93b4ff", letterSpacing: 1 }}>📢 Announcements</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--info-text)", letterSpacing: 1 }}>📢 Announcements</div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Post messages players see when they open the app</div>
         </div>
         <button onClick={() => setShowForm(s => !s)}
@@ -115,7 +115,7 @@ export default function AnnouncementPanel({ isAdmin, coachId, coachName }: Props
         </button>
       </div>
       {pushStatus && (
-        <div style={{ fontSize: 12, marginBottom: 12, color: pushStatus.startsWith("Posted and") ? "#5de098" : "#ff8c42" }}>{pushStatus}</div>
+        <div style={{ fontSize: 12, marginBottom: 12, color: pushStatus.startsWith("Posted and") ? "var(--success-text)" : "#ff8c42" }}>{pushStatus}</div>
       )}
 
       {showForm && (
@@ -128,7 +128,7 @@ export default function AnnouncementPanel({ isAdmin, coachId, coachName }: Props
               📌 Pin to top
             </label>
             {isPlatformAdmin && (
-              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: everywhere ? "var(--gold)" : "var(--muted)", cursor: "pointer" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: everywhere ? "var(--gold-text)" : "var(--muted)", cursor: "pointer" }}>
                 <input type="checkbox" checked={everywhere} onChange={e => setEverywhere(e.target.checked)} />
                 🌐 Post to every program
               </label>
@@ -149,14 +149,14 @@ export default function AnnouncementPanel({ isAdmin, coachId, coachName }: Props
             <div key={ann.id} style={{ padding: "12px 14px", background: ann.is_pinned ? "rgba(240,192,64,0.08)" : "var(--surface)", borderRadius: 10, border: `1px solid ${ann.is_pinned ? "rgba(240,192,64,0.25)" : "var(--border)"}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                 <div style={{ flex: 1 }}>
-                  {ann.is_pinned && <span style={{ fontSize: 10, fontWeight: 700, color: "var(--gold)", marginRight: 6 }}>📌 PINNED</span>}
-                  {ann.broadcast_id && <span style={{ fontSize: 10, fontWeight: 700, color: "#93b4ff", marginRight: 6 }}>🌐 ALL PROGRAMS</span>}
+                  {ann.is_pinned && <span style={{ fontSize: 10, fontWeight: 700, color: "var(--gold-text)", marginRight: 6 }}>📌 PINNED</span>}
+                  {ann.broadcast_id && <span style={{ fontSize: 10, fontWeight: 700, color: "var(--info-text)", marginRight: 6 }}>🌐 ALL PROGRAMS</span>}
                   <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.5 }}>{ann.message}</div>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>{ann.coach_name} · {new Date(ann.created_at).toLocaleDateString()}</div>
                 </div>
                 <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                  {canEdit(ann) && <button onClick={() => togglePin(ann)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: ann.is_pinned ? "var(--gold)" : "var(--muted)" }}>📌</button>}
-                  {canEdit(ann) && <button onClick={() => del(ann)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#ff7b7b" }}>🗑</button>}
+                  {canEdit(ann) && <button onClick={() => togglePin(ann)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: ann.is_pinned ? "var(--gold-text)" : "var(--muted)" }}>📌</button>}
+                  {canEdit(ann) && <button onClick={() => del(ann)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "var(--danger-text)" }}>🗑</button>}
                 </div>
               </div>
             </div>

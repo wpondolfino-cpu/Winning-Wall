@@ -39,7 +39,7 @@ export default function H2HOversight() {
 
   const statusStyle = (status: Challenge["status"]) => ({
     background: status === "completed" ? "rgba(40,180,80,0.15)" : status === "declined" ? "rgba(255,107,107,0.15)" : "rgba(240,192,64,0.15)",
-    color:      status === "completed" ? "#5de098" : status === "declined" ? "#ff7b7b" : "var(--gold)",
+    color:      status === "completed" ? "var(--success-text)" : status === "declined" ? "var(--danger-text)" : "var(--gold-text)",
   });
 
   if (loading) return <div style={{ color: "var(--muted)", fontSize: 13, padding: "20px 0" }}>Loading…</div>;
@@ -48,15 +48,15 @@ export default function H2HOversight() {
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 18 }}>
         <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px", textAlign: "center" }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--gold)" }}>{pending}</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--title)" }}>{pending}</div>
           <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase" }}>Pending</div>
         </div>
         <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px", textAlign: "center" }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#5de098" }}>{completed}</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--success-text)" }}>{completed}</div>
           <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase" }}>Completed</div>
         </div>
         <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: "12px", textAlign: "center" }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "#ff7b7b" }}>{declined}</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--danger-text)" }}>{declined}</div>
           <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase" }}>Declined</div>
         </div>
       </div>
@@ -82,7 +82,7 @@ export default function H2HOversight() {
               {c.status === "completed" && (
                 <div style={{ fontSize: 12, color: "var(--text)" }}>
                   {c.challenger_name}: <strong>{c.challenger_score}</strong> · {c.opponent_name}: <strong>{c.opponent_score}</strong>
-                  {c.winner_id && <span style={{ marginLeft: 8, color: "var(--gold)" }}>🏆 {c.winner_id === c.challenger_id ? c.challenger_name : c.opponent_name} won</span>}
+                  {c.winner_id && <span style={{ marginLeft: 8, color: "var(--gold-text)" }}>🏆 {c.winner_id === c.challenger_id ? c.challenger_name : c.opponent_name} won</span>}
                 </div>
               )}
             </div>

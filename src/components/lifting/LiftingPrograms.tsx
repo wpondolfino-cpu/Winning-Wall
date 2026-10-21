@@ -61,7 +61,7 @@ function ProgramWeekGroup({ label, days, dayExercises, programLogs, playerId, pl
     <div style={{ border: `1px solid ${hasToday ? "rgba(26,63,168,0.5)" : "var(--border)"}`, borderRadius: 12, overflow: "hidden" }}>
       <div onClick={() => setOpen(o => !o)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", cursor: "pointer", background: hasToday ? "rgba(26,63,168,0.15)" : open ? "rgba(26,63,168,0.06)" : "var(--surface2)", userSelect: "none" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, color: hasToday ? "#93b4ff" : "var(--text)" }}>{label}</div>
+          <div style={{ fontWeight: 700, fontSize: 14, color: hasToday ? "var(--info-text)" : "var(--text)" }}>{label}</div>
           {hasToday && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: "var(--royal)", color: "#fff" }}>TODAY</span>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -163,22 +163,22 @@ export default function LiftingPrograms({
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               {prog.title}
-              {isPersonal && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 5, background: "rgba(147,180,255,0.15)", color: "#93b4ff" }}>PERSONAL</span>}
-              {prog.visibility === "draft" && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 5, background: "rgba(240,192,64,0.15)", color: "var(--gold)" }}>📝 DRAFT</span>}
+              {isPersonal && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 5, background: "rgba(147,180,255,0.15)", color: "var(--info-text)" }}>PERSONAL</span>}
+              {prog.visibility === "draft" && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 5, background: "rgba(240,192,64,0.15)", color: "var(--gold-text)" }}>📝 DRAFT</span>}
               {isArchived && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 5, background: "rgba(255,255,255,0.08)", color: "var(--muted)" }}>ARCHIVED</span>}
             </div>
             {prog.description && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>{prog.description}</div>}
             <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, display: "flex", gap: 10, flexWrap: "wrap" }}>
               <span>{progDays.length} days</span>
               <span>{activeDayCount} training day{activeDayCount !== 1 ? "s" : ""}</span>
-              {!isPersonal && <span style={{ color: prog.visibility === "public" ? "#5de098" : prog.visibility === "draft" ? "var(--gold)" : "#93b4ff" }}>{prog.visibility === "public" ? "🌐 Everyone" : prog.visibility === "draft" ? "📝 Draft" : "👤 Assigned"}</span>}
-              {prog.start_date && currentDayNum && <span style={{ color: "var(--gold)" }}>📅 Day {currentDayNum} today</span>}
+              {!isPersonal && <span style={{ color: prog.visibility === "public" ? "var(--success-text)" : prog.visibility === "draft" ? "var(--gold-text)" : "var(--info-text)" }}>{prog.visibility === "public" ? "🌐 Everyone" : prog.visibility === "draft" ? "📝 Draft" : "👤 Assigned"}</span>}
+              {prog.start_date && currentDayNum && <span style={{ color: "var(--gold-text)" }}>📅 Day {currentDayNum} today</span>}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
             {canManage && !isArchived && (
               <button onClick={e => { e.stopPropagation(); setResultsProgram(prog); }}
-                style={{ background: "rgba(26,63,168,0.2)", border: "1px solid rgba(26,63,168,0.4)", color: "#93b4ff", borderRadius: 7, padding: "5px 9px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                style={{ background: "rgba(26,63,168,0.2)", border: "1px solid rgba(26,63,168,0.4)", color: "var(--info-text)", borderRadius: 7, padding: "5px 9px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
                 📊 Results
               </button>
             )}
@@ -193,7 +193,7 @@ export default function LiftingPrograms({
             {canEditThis && (
               <button onClick={e => { e.stopPropagation(); isArchived ? handleRestore(prog) : handleArchive(prog); }}
                 disabled={archiving === prog.id}
-                style={{ background: isArchived ? "rgba(40,180,80,0.1)" : "rgba(255,107,107,0.1)", border: `1px solid ${isArchived ? "rgba(40,180,80,0.3)" : "rgba(255,107,107,0.3)"}`, color: isArchived ? "#5de098" : "#ff7b7b", borderRadius: 7, padding: "5px 9px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
+                style={{ background: isArchived ? "rgba(40,180,80,0.1)" : "rgba(255,107,107,0.1)", border: `1px solid ${isArchived ? "rgba(40,180,80,0.3)" : "rgba(255,107,107,0.3)"}`, color: isArchived ? "var(--success-text)" : "var(--danger-text)", borderRadius: 7, padding: "5px 9px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
                 {archiving === prog.id ? "…" : isArchived ? "↩️ Restore" : "📦 Archive"}
               </button>
             )}

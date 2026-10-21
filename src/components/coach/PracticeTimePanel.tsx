@@ -74,7 +74,7 @@ export default function PracticeTimePanel({ seasons, selectedSeasonId, rosters }
     <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 14, marginBottom: 14 }}>
       <button onClick={() => setOpen(o => !o)}
         style={{ display: "flex", width: "100%", justifyContent: "space-between", alignItems: "center", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit" }}>
-        <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--gold)", letterSpacing: 0.4 }}>
+        <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "var(--title)", letterSpacing: 0.4 }}>
           {open ? "▾" : "▸"} Where the time went
         </span>
         {report && open && (
@@ -109,7 +109,7 @@ export default function PracticeTimePanel({ seasons, selectedSeasonId, rosters }
                   fontSize: 11, padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit",
                   border: `1px solid ${rosterId === r.id ? "var(--gold)" : "var(--border)"}`,
                   background: rosterId === r.id ? "rgba(240,192,64,0.12)" : "transparent",
-                  color: rosterId === r.id ? "var(--gold)" : "var(--muted)",
+                  color: rosterId === r.id ? "var(--gold-text)" : "var(--muted)",
                 }}>
                 {r.name}
               </button>
@@ -177,7 +177,7 @@ export default function PracticeTimePanel({ seasons, selectedSeasonId, rosters }
           <div onClick={e => e.stopPropagation()}
             style={{ background: "var(--surface)", borderRadius: 16, width: "min(560px, 96vw)", maxHeight: "88vh", overflowY: "auto", padding: 20 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)" }}>Tag these drills</div>
+              <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)" }}>Tag these drills</div>
               <button onClick={() => setTagging(null)} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 18, cursor: "pointer", padding: 4, lineHeight: 1 }}>✕</button>
             </div>
             <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 12, lineHeight: 1.5 }}>
@@ -191,7 +191,7 @@ export default function PracticeTimePanel({ seasons, selectedSeasonId, rosters }
             )}
 
             {tagging.length === 0 && (
-              <div style={{ fontSize: 12, color: "#5de098" }}>All tagged. Nothing left here.</div>
+              <div style={{ fontSize: 12, color: "var(--success-text)" }}>All tagged. Nothing left here.</div>
             )}
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

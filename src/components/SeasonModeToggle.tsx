@@ -114,7 +114,7 @@ export default function SeasonModeToggle() {
                 </button>
                 {canOfferReset && (
                   <button type="button" disabled={busy} onClick={() => setWantsReset(true)}
-                    style={{ width: "100%", background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.25)", color: "#ff7b7b", borderRadius: 8, padding: "10px", fontWeight: 600, fontSize: 13, cursor: "pointer", marginBottom: 8 }}>
+                    style={{ width: "100%", background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.25)", color: "var(--danger-text)", borderRadius: 8, padding: "10px", fontWeight: 600, fontSize: 13, cursor: "pointer", marginBottom: 8 }}>
                     Switch with Reset &amp; Archive
                   </button>
                 )}
@@ -125,7 +125,7 @@ export default function SeasonModeToggle() {
               </>
             ) : (
               <>
-                <p style={{ fontSize: 13, color: "#ff7b7b" }}>
+                <p style={{ fontSize: 13, color: "var(--danger-text)" }}>
                   This archives and resets <strong>both</strong> leaderboards for every player — rostered and non-rostered together. Personal bests and perks are untouched. This can't be undone.
                 </p>
                 <label style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>

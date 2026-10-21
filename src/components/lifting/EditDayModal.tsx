@@ -125,7 +125,7 @@ export default function EditDayModal({ day, playerId, onSaved, onClose }: Props)
 
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--gold)", letterSpacing: 1 }}>✏️ Edit Day</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", letterSpacing: 1 }}>✏️ Edit Day</div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 22, cursor: "pointer" }}>✕</button>
         </div>
 
@@ -166,7 +166,7 @@ export default function EditDayModal({ day, playerId, onSaved, onClose }: Props)
                     )}
                     <div style={{ flex: 1, fontWeight: 600, fontSize: 13, color: "var(--text)" }}>{ex.exercise.name}</div>
                     <span style={{ fontSize: 10, color: "var(--muted)" }}>{ex.exercise.muscle_group}</span>
-                    <button onClick={() => removeEx(i)} style={{ background: "none", border: "none", color: "#ff7b7b", cursor: "pointer", fontSize: 16, padding: "2px 4px" }}>×</button>
+                    <button onClick={() => removeEx(i)} style={{ background: "none", border: "none", color: "var(--danger-text)", cursor: "pointer", fontSize: 16, padding: "2px 4px" }}>×</button>
                   </div>
                   {/* Row 2: sets/reps/weight/rest */}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, marginBottom: 6 }}>
