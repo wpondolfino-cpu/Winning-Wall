@@ -234,12 +234,12 @@ export default function LoginPage() {
                 placeholder="6 letters/numbers from your coach"
                 style={{ letterSpacing: 3, fontWeight: 600 }} />
               {team && (
-                <div style={{ marginTop: 6, fontSize: 13, color: "#5de098" }}>
+                <div style={{ marginTop: 6, fontSize: 13, color: "var(--success-text)" }}>
                   Joining: {team.school} · {team.program}
                 </div>
               )}
               {teamChecked && !team && (
-                <div style={{ marginTop: 6, fontSize: 13, color: "#ff8a8a" }}>
+                <div style={{ marginTop: 6, fontSize: 13, color: "var(--danger-text-2)" }}>
                   That code doesn't match a team. Check it with your coach.
                 </div>
               )}

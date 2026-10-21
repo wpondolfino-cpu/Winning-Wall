@@ -14,6 +14,48 @@
   --border: rgba(176, 184, 200, 0.15);
   --text: #e8eaf2;
   --muted: #7a85a0;
+
+  /* Named versions of colours that used to be typed straight into screens.
+     In dark mode they're exactly the old values, so nothing changes; light
+     mode (below) gives each a readable light-mode partner. */
+  --title: #f0c040;          /* big Bebas page titles */
+  --gold-text: #f0c040;      /* gold used as text (fills keep --gold) */
+  --danger-text: #ff7b7b;
+  --danger-text-2: #ff8a8a;
+  --success-text: #5de098;
+  --info-text: #93b4ff;
+  --info-text-2: #c3d0ff;
+  --muted-2: #a3adc4;
+  --muted-3: #8b95ae;
+  --muted-4: #9aa3b8;
+  --amber-text: #e8a33d;
+}
+
+/* ── LIGHT MODE (My Profile → Appearance; migration 199) ──
+   lib/theme.ts sets data-theme="light" on <html>. Same colour names,
+   light values; a few app-shell pieces get their own rules at the end. */
+html[data-theme="light"] {
+  --silver: #5b6478;
+  --silver-light: #3d4659;
+  --white: #141a2a;          /* "bright text" in dark mode = dark text here */
+  --black: #eef1f6;          /* page background */
+  --surface: #ffffff;
+  --surface2: #f2f4f8;
+  --border: rgba(20, 26, 42, 0.12);
+  --text: #141a2a;
+  --muted: #5b6478;
+
+  --title: #1a3fa8;
+  --gold-text: #8a6100;
+  --danger-text: #c0392b;
+  --danger-text-2: #c0392b;
+  --success-text: #17803f;
+  --info-text: #1a3fa8;
+  --info-text-2: #2550d4;
+  --muted-2: #5b6478;
+  --muted-3: #6b7488;
+  --muted-4: #6b7488;
+  --amber-text: #a3620a;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -76,7 +118,7 @@ body {
 }
 .btn-primary:hover { background: var(--royal-light); }
 .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
-.error-msg { background: rgba(220,50,50,0.15); border: 1px solid rgba(220,50,50,0.3); color: #ff7b7b; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; }
+.error-msg { background: rgba(220,50,50,0.15); border: 1px solid rgba(220,50,50,0.3); color: var(--danger-text); padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; }
 
 /* ── APP SHELL ── */
 .screen { display: none; min-height: 100vh; flex-direction: column; }
@@ -98,7 +140,7 @@ body {
 .sidebar { width: 200px; background: var(--surface); border-right: 1px solid var(--border); padding: 18px 10px; flex-shrink: 0; display: flex; flex-direction: column; gap: 3px; min-height: 0; }
 .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; cursor: pointer; font-size: 13px; color: var(--muted); transition: all .2s; font-weight: 500; }
 .nav-item:hover { background: var(--surface2); color: var(--text); }
-.nav-item.active { background: rgba(26,63,168,0.25); color: #93b4ff; }
+.nav-item.active { background: rgba(26,63,168,0.25); color: var(--info-text); }
 .main-content { flex: 1; overflow-y: auto; padding: 26px; }
 .panel { display: none; }
 .panel.active { display: block; }
@@ -114,14 +156,14 @@ body {
 .stat-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
 .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
 .stat-value { font-family: 'Bebas Neue', sans-serif; font-size: 30px; color: var(--white); }
-.stat-value.gold { color: var(--gold); }
-.stat-value.blue { color: #93b4ff; }
+.stat-value.gold { color: var(--gold-text); }
+.stat-value.blue { color: var(--info-text); }
 .flex-between { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
-.tag-blue { background: rgba(26,63,168,0.25); color: #93b4ff; }
-.tag-red { background: rgba(220,50,50,0.15); color: #ff7b7b; }
-.tag-green { background: rgba(40,180,80,0.15); color: #5de098; }
-.tag-gold { background: rgba(240,192,64,0.15); color: var(--gold); }
+.tag-blue { background: rgba(26,63,168,0.25); color: var(--info-text); }
+.tag-red { background: rgba(220,50,50,0.15); color: var(--danger-text); }
+.tag-green { background: rgba(40,180,80,0.15); color: var(--success-text); }
+.tag-gold { background: rgba(240,192,64,0.15); color: var(--gold-text); }
 
 /* ── LEADERBOARD ── */
 .live-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(220,50,50,0.15); color: #ff6b6b; border: 1px solid rgba(220,50,50,0.3); padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
@@ -132,13 +174,13 @@ body {
 .lb-row:hover { background: var(--surface2); }
 .lb-row.me { background: rgba(26,63,168,0.15); border: 1px solid rgba(26,63,168,0.3); }
 .lb-rank { font-family: 'Bebas Neue', sans-serif; font-size: 22px; color: var(--muted); text-align: center; }
-.lb-rank.gold { color: var(--gold); }
+.lb-rank.gold { color: var(--gold-text); }
 .lb-rank.silver { color: var(--silver); }
 .lb-rank.bronze { color: #cd7f32; }
 .lb-name { font-weight: 600; font-size: 14px; color: var(--text); }
 .lb-pos { font-size: 11px; color: var(--muted); }
 .lb-cell { font-size: 13px; font-weight: 600; color: var(--silver-light); text-align: center; }
-.lb-cell.highlight { color: var(--gold); }
+.lb-cell.highlight { color: var(--gold-text); }
 
 /* ── WORKOUTS ── */
 .workout-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -169,8 +211,8 @@ body {
 .workout-info { padding: 13px 15px; }
 .workout-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
 .workout-meta { font-size: 11px; color: var(--muted); }
-.video-strip { display: flex; align-items: center; gap: 7px; margin-top: 8px; padding: 6px 9px; background: rgba(26,63,168,0.12); border: 1px solid rgba(26,63,168,0.2); border-radius: 7px; font-size: 11px; color: #93b4ff; }
-.score-badge { margin-top: 7px; padding: 5px 9px; background: rgba(26,63,168,0.15); border-radius: 6px; font-size: 11px; color: #93b4ff; }
+.video-strip { display: flex; align-items: center; gap: 7px; margin-top: 8px; padding: 6px 9px; background: rgba(26,63,168,0.12); border: 1px solid rgba(26,63,168,0.2); border-radius: 7px; font-size: 11px; color: var(--info-text); }
+.score-badge { margin-top: 7px; padding: 5px 9px; background: rgba(26,63,168,0.15); border-radius: 6px; font-size: 11px; color: var(--info-text); }
 
 /* ── MODALS ── */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: flex-end; justify-content: center; z-index: 400; backdrop-filter: blur(5px); padding-bottom: env(safe-area-inset-bottom, 0px); }
@@ -215,7 +257,7 @@ body {
 .status-active { background: #5de098; }
 .status-warn { background: var(--gold); }
 .status-inactive { background: #ff6b6b; }
-.alert-badge { background: rgba(255,107,107,0.15); color: #ff7b7b; border: 1px solid rgba(255,107,107,0.25); padding: 2px 7px; border-radius: 5px; font-size: 11px; font-weight: 600; margin-left: 6px; }
+.alert-badge { background: rgba(255,107,107,0.15); color: var(--danger-text); border: 1px solid rgba(255,107,107,0.25); padding: 2px 7px; border-radius: 5px; font-size: 11px; font-weight: 600; margin-left: 6px; }
 
 /* ── HISTORY ── */
 .history-chart { height: 110px; display: flex; align-items: flex-end; gap: 5px; padding: 0 4px; }
@@ -225,7 +267,7 @@ body {
 .history-row { display: grid; grid-template-columns: 1fr 90px 70px 70px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; align-items: center; }
 .history-row:last-child { border-bottom: none; }
 .rank-badge { display: inline-block; padding: 2px 7px; border-radius: 5px; font-size: 11px; font-weight: 700; }
-.rank-1 { background: rgba(240,192,64,0.2); color: var(--gold); }
+.rank-1 { background: rgba(240,192,64,0.2); color: var(--gold-text); }
 .rank-2 { background: rgba(176,184,200,0.15); color: var(--silver); }
 .rank-3 { background: rgba(205,127,50,0.15); color: #cd7f32; }
 .rank-other { background: var(--surface2); color: var(--muted); }
@@ -367,7 +409,7 @@ body {
   }
 
   .bottom-tab.active {
-    color: #93b4ff;
+    color: var(--info-text);
   }
 
   .bottom-tab.active::before {
@@ -377,7 +419,7 @@ body {
     left: 20%;
     right: 20%;
     height: 2px;
-    background: #93b4ff;
+    background: var(--info-text);
     border-radius: 0 0 3px 3px;
   }
 
@@ -486,3 +528,18 @@ button:disabled {
     page-break-after: auto;
   }
 }
+
+/* ── Light mode: app shell ── */
+html[data-theme="light"] .app-header { background: var(--royal); border-bottom-color: var(--royal-dark); }
+html[data-theme="light"] .header-logo { color: #fff; }
+html[data-theme="light"] .header-role { background: rgba(255,255,255,0.16); color: #fff; }
+html[data-theme="light"] .header-user { color: #dfe6ff; }
+html[data-theme="light"] .nav-item.active { background: #e7ecf8; font-weight: 600; }
+html[data-theme="light"] .section-title { color: var(--title); }
+html[data-theme="light"] .login-screen { background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(26,63,168,0.18) 0%, transparent 70%), var(--black); }
+html[data-theme="light"] .card,
+html[data-theme="light"] .workout-card,
+html[data-theme="light"] .stat-card { box-shadow: 0 1px 2px rgba(20, 26, 42, 0.05); }
+html[data-theme="light"] .sidebar-overlay { background: rgba(20, 26, 42, 0.35); }
+html[data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator { filter: none; }
+

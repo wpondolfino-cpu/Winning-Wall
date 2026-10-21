@@ -86,6 +86,8 @@ export interface Profile {
   avatar_prompt_seen?: boolean;
   avatar_config?: any;
   home_roster_id?: string | null;
+  /** Light / dark mode (migration 199). Missing before it's run = dark. */
+  appearance?: "dark" | "light" | "system";
   /** Set client-side for the platform admin: "Head Coach" or "Platform Admin" in the header. */
   admin_label?: string;
   /** Set client-side: this account is the platform admin (sees the Platform page). */

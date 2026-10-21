@@ -39,6 +39,8 @@ import HelpButton from "./components/help/HelpButton";
 import ProgramSwitcher from "./components/ProgramSwitcher";
 import ViewAsBanner from "./components/ViewAsBanner";
 import { useInSandbox } from "./lib/sandbox";
+import { applyAppearance } from "./lib/theme";
+import AppearancePicker from "./components/AppearancePicker";
 import { currentViewAs } from "./lib/viewAs";
 import { LiveBanner } from "./components/quizzes/LivePlayer";
 import QuizzesPage, { QuizPrefill } from "./components/quizzes/QuizzesPage";
@@ -171,6 +173,12 @@ export default function App() {
   const { workouts, refresh: refreshWorkouts } = useWorkouts();
   // The platform admin's sandbox (migration 198): gold bar on every page.
   const inSandbox = useInSandbox(user?.id);
+  // Light / dark: the account's choice. While viewing as someone else, your
+  // own choice stays (it's already on this device from before you went in).
+  useEffect(() => {
+    if (!profile || currentViewAs(user?.id)) return;
+    applyAppearance((profile as any).appearance ?? "dark");
+  }, [profile, user?.id]);
   const [myScores, setMyScores]     = useState<Score[]>([]);
   const [allScores, setAllScores]   = useState<Score[]>([]);
   const [playerTab, setPlayerTab]   = useState<PlayerTab>(() => initialTabFromUrl<PlayerTab>(PLAYER_URL_TABS, "workouts"));
@@ -820,7 +828,7 @@ export default function App() {
           )}
           {inPlatform && (
             <>
-              <div style={{ padding: "10px 14px 6px", fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "var(--gold)" }}>PLATFORM</div>
+              <div style={{ padding: "10px 14px 6px", fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "var(--gold-text)" }}>PLATFORM</div>
               {([["platform", "🏠", "Home"], ["platform-schools", "🏫", "Schools"], ["platform-trainers", "🏋️", "Trainers"],
                  ["platform-announcements", "📢", "Announcements"], ["platform-messages", "💬", "Messages"],
                  ["platform-library", "📚", "Shared Library"], ["platform-sandbox", "🧪", "Sandbox"]] as [AdminTab, string, string][]).map(([key, icon, text]) => (
@@ -916,7 +924,7 @@ export default function App() {
               <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
               <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--muted)", letterSpacing: 1, marginBottom: 12 }}>Challenges Locked</div>
               <div style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.7 }}>
-                Earn <strong style={{ color: "var(--gold)" }}>{(xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) - playerXp} more XP</strong> to unlock head-to-head challenges.<br/>Log workouts to earn XP!
+                Earn <strong style={{ color: "var(--gold-text)" }}>{(xpPerks.find((p: any) => p.perk_key === "challenges_unlocked")?.xp_required ?? 150) - playerXp} more XP</strong> to unlock head-to-head challenges.<br/>Log workouts to earn XP!
               </div>
             </div>
           ) : isPlayer && playerTab === "h2h" && (
@@ -947,7 +955,7 @@ export default function App() {
                 ))}
                 <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
                 <div onClick={signOut} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "var(--surface2)", borderRadius: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>🚪</span><span style={{ fontSize: 14, color: "#ff7b7b", fontWeight: 500 }}>Sign Out</span></div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 20 }}>🚪</span><span style={{ fontSize: 14, color: "var(--danger-text)", fontWeight: 500 }}>Sign Out</span></div>
                   <span style={{ color: "var(--muted)" }}>›</span>
                 </div>
               </div>
@@ -989,6 +997,7 @@ export default function App() {
               <div className="section-title">My Profile</div>
               <div className="section-sub" style={{ marginBottom: 20 }}>Update your name and profile picture</div>
               <NotificationToggle playerId={user.id} />
+              <AppearancePicker initial={(displayProfile as any).appearance} />
               <ProfileEditor profile={displayProfile} onUpdated={handleProfileUpdated} />
             </div>
           )}
@@ -1034,6 +1043,7 @@ export default function App() {
               <div className="section-title">My Profile</div>
               <div className="section-sub" style={{ marginBottom: 20 }}>Update your name and profile picture</div>
               <NotificationToggle playerId={user.id} />
+              <AppearancePicker initial={(displayProfile as any).appearance} />
               <ProfileEditor profile={displayProfile} onUpdated={handleProfileUpdated} />
             </div>
           )}
@@ -1069,7 +1079,7 @@ export default function App() {
       {isPlayer && <NavModeChangePopup playerId={user.id} effectiveMode={effectiveMode} />}
 
       {isPlayer && perkToast && (
-        <div className="toast show" style={{ background: "rgba(26,63,168,0.95)", border: "1px solid rgba(147,180,255,0.4)", color: "#93b4ff", fontWeight: 600 }}>
+        <div className="toast show" style={{ background: "rgba(26,63,168,0.95)", border: "1px solid rgba(147,180,255,0.4)", color: "var(--info-text)", fontWeight: 600 }}>
           {perkToast}
         </div>
       )}
