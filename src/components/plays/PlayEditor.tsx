@@ -115,6 +115,9 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<Formation | null>(null);
   const [stampAction, setStampAction] = useState<SavedAction | null>(null);
+  // Mirrors the stamp left-to-right, so one saved action works on either
+  // side of the floor (a right-wing flare becomes a left-wing flare).
+  const [stampFlip, setStampFlip] = useState(false);
   const [stampPreviewPos, setStampPreviewPos] = useState<{ x: number; y: number } | null>(null);
   const [staff, setStaff] = useState<PlayShareTarget[]>([]);
   const [showShare, setShowShare] = useState(false);
@@ -594,6 +597,34 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     await deleteFormation(id);
     setFormations((s) => s.filter((x) => x.id !== id));
   }
+
+  /** The saved action mirrored left-to-right around its own anchor point. */
+  function mirrorAction(action: SavedAction): SavedAction {
+    const d = action.data;
+    const anchor = d.players[0] ?? d.ball ?? d.defenders[0] ?? (d.actions[0] ? { x: d.actions[0].x1, y: d.actions[0].y1 } : { x: 0, y: 0 });
+    const fx = (x: number) => 2 * anchor.x - x;
+    const pt = <T extends { x: number; y: number }>(p: T): T => ({ ...p, x: fx(p.x) });
+    return {
+      ...action,
+      data: {
+        ...d,
+        players: d.players.map(pt),
+        defenders: d.defenders.map(pt),
+        ball: d.ball ? pt(d.ball) : d.ball,
+        actions: d.actions.map((a) => ({
+          ...a, x1: fx(a.x1), x2: fx(a.x2),
+          curve: a.curve ? pt(a.curve) : undefined,
+          curve2: a.curve2 ? pt(a.curve2) : undefined,
+        })),
+        drawings: d.drawings?.map((dr) => ({ ...dr, points: dr.points.map(pt) })),
+        texts: d.texts?.map(pt),
+        zones: d.zones?.map((z) => ({ ...z, x: fx(z.x + z.w) })),
+        cones: d.cones?.map(pt),
+        coachMarkers: d.coachMarkers?.map(pt),
+      },
+    };
+  }
+  const activeStamp = stampAction ? (stampFlip ? mirrorAction(stampAction) : stampAction) : null;
 
   function computeStampGhost(action: SavedAction, x: number, y: number) {
     const d = action.data;
@@ -1104,7 +1135,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
         {stampAction && (
           <p style={{ fontSize: 12, color: "var(--gold)", marginBottom: 6 }}>
-            Tap the court to stamp in "{stampAction.name}" — <button onClick={() => setStampAction(null)} style={{ fontSize: 11 }}>cancel</button>
+            Tap the court to stamp in "{stampAction.name}" — <button onClick={() => setStampFlip((f) => !f)} title="Mirror it left-to-right"
+              style={{ fontSize: 11, fontWeight: 600, marginRight: 6, ...(stampFlip ? { background: "var(--gold)", color: "#1a1a1a", border: "1px solid var(--gold)" } : {}) }}>⇋ Flip{stampFlip ? "ped" : ""}</button><button onClick={() => { setStampAction(null); setStampFlip(false); }} style={{ fontSize: 11 }}>cancel</button>
           </p>
         )}
 
@@ -1115,7 +1147,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             const rect = svg.getBoundingClientRect();
             const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
             const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
-            stampActionAt(stampAction, x, y);
+            stampActionAt(activeStamp!, x, y);
             setStampPreviewPos(null);
           }}
           onMouseMove={(e) => {
@@ -1140,7 +1172,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onAddCone={addCone} onMoveCone={moveCone} onAddCoach={addCoach} onMoveCoach={moveCoach} onAddShot={addShot}
             selected={selected} onSelect={setSelected} onAddDrawing={addDrawing}
             playSignal={playSignal} onPlayDone={handlePreviewBeatDone}
-            stampPreview={stampAction && stampPreviewPos ? computeStampGhost(stampAction, stampPreviewPos.x, stampPreviewPos.y) : null}
+            stampPreview={activeStamp && stampPreviewPos ? computeStampGhost(activeStamp, stampPreviewPos.x, stampPreviewPos.y) : null}
           />
         </div>
 
@@ -1321,7 +1353,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
         {stampAction && (
           <p style={{ fontSize: 13, color: "var(--gold)", marginBottom: 6 }}>
-            Click the court to stamp in "{stampAction.name}" — <button onClick={() => setStampAction(null)} style={{ fontSize: 12 }}>cancel</button>
+            Click the court to stamp in "{stampAction.name}" — <button onClick={() => setStampFlip((f) => !f)} title="Mirror it left-to-right"
+              style={{ fontSize: 12, fontWeight: 600, marginRight: 6, ...(stampFlip ? { background: "var(--gold)", color: "#1a1a1a", border: "1px solid var(--gold)" } : {}) }}>⇋ Flip{stampFlip ? "ped" : ""}</button><button onClick={() => { setStampAction(null); setStampFlip(false); }} style={{ fontSize: 12 }}>cancel</button>
           </p>
         )}
 
@@ -1332,7 +1365,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             const rect = svg.getBoundingClientRect();
             const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
             const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
-            stampActionAt(stampAction, x, y);
+            stampActionAt(activeStamp!, x, y);
             setStampPreviewPos(null);
           }}
           onMouseMove={(e) => {
@@ -1384,7 +1417,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onAddDrawing={addDrawing}
             playSignal={playSignal}
             onPlayDone={handlePreviewBeatDone}
-            stampPreview={stampAction && stampPreviewPos ? computeStampGhost(stampAction, stampPreviewPos.x, stampPreviewPos.y) : null}
+            stampPreview={activeStamp && stampPreviewPos ? computeStampGhost(activeStamp, stampPreviewPos.x, stampPreviewPos.y) : null}
           />
         </div>
 

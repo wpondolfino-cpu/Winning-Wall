@@ -588,9 +588,13 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
                       {item.busTime && (
                         <span style={{ color: "var(--gold-text)", fontWeight: 700 }}>Bus {fmtTime(item.busTime)}</span>
                       )}
-                      <span style={{ color: item.busTime ? "var(--muted)" : "var(--text)", fontWeight: item.busTime ? 400 : 600 }}>
-                        {item.busTime ? `Tip ${fmtTime(item.time)}` : fmtTime(item.time)}
-                      </span>
+                      {item.time ? (
+                        <span style={{ color: item.busTime ? "var(--muted)" : "var(--text)", fontWeight: item.busTime ? 400 : 600 }}>
+                          {item.busTime ? `Tip ${fmtTime(item.time)}` : fmtTime(item.time)}
+                        </span>
+                      ) : (
+                        <span style={{ color: "var(--amber-text)", fontWeight: 700 }}>{item.busTime ? "Tip TBA" : "Time TBA"}</span>
+                      )}
                       {item.kind === "game" && item.homeAway && (
                         <span style={{ fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "1px 5px" }}>
                           {item.homeAway}
@@ -598,6 +602,11 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
                       )}
                       {item.subtitle && <span style={{ color: "var(--muted)" }}>{item.subtitle}</span>}
                     </div>
+                    {item.note && (
+                      <div style={{ fontSize: 12.5, marginTop: 7, padding: "6px 9px", borderLeft: "3px solid var(--gold)", background: "rgba(240,192,64,0.08)", borderRadius: 4, color: "var(--text)", whiteSpace: "pre-wrap" }}>
+                        📝 {item.note}
+                      </div>
+                    )}
                   </div>
                   {isCoach && (
                     <button
@@ -627,7 +636,16 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
                       <Field label="Date"><input type="date" value={draft.date ?? ""} onChange={e => setDraft({ ...draft, date: e.target.value })} style={input} /></Field>
-                      <Field label={item.kind === "practice" ? "Start" : "Time"}><input type="time" value={(draft.time ?? "").slice(0, 5)} onChange={e => setDraft({ ...draft, time: e.target.value || null })} style={input} /></Field>
+                      <Field label={item.kind === "practice" ? "Start" : "Time"}><>
+                        <input type="time" value={(draft.time ?? "").slice(0, 5)} disabled={draft.time === null && item.kind !== "practice"}
+                          onChange={e => setDraft({ ...draft, time: e.target.value || null })} style={input} />
+                        {item.kind !== "practice" && (
+                          <span style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, marginTop: 4, color: "var(--text)" }}>
+                            <input type="checkbox" checked={draft.time === null}
+                              onChange={e => setDraft({ ...draft, time: e.target.checked ? null : (item.time ?? "19:00:00") })} /> Time TBA
+                          </span>
+                        )}
+                      </></Field>
                       {/* The end parents are told, fixed without leaving the
                           schedule. Cleared, it falls back to the plan. */}
                       {item.kind === "practice" && (
@@ -700,6 +718,14 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
                       {item.kind === "event" && (
                         <Field label="Title"><input value={draft.title ?? item.title} onChange={e => setDraft({ ...draft, title: e.target.value })} style={input} /></Field>
                       )}
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      <Field label="Notes · players see these">
+                        <textarea rows={2} value={draft.schedule_note !== undefined ? (draft.schedule_note ?? "") : (item.note ?? "")}
+                          onChange={e => setDraft({ ...draft, schedule_note: e.target.value })}
+                          placeholder={item.kind === "game" ? "Wear grey jerseys." : item.kind === "practice" ? "Bring user fees." : "Anything players need to know."}
+                          style={{ ...input, resize: "vertical" }} />
+                      </Field>
                     </div>
                     <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
                       <button onClick={saveEdit} style={primary}>Save</button>

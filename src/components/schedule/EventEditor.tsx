@@ -26,6 +26,7 @@ export default function EventEditor({ seasonId, rosters, onClose, onSaved }: Pro
   const [time, setTime] = useState("");
   const [title, setTitle] = useState("");
   const [location, setLocation] = useState("");
+  const [note, setNote] = useState("");
   const [rosterIds, setRosterIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -43,6 +44,7 @@ export default function EventEditor({ seasonId, rosters, onClose, onSaved }: Pro
       // making the coach tick every roster to say "all" is friction for
       // the common case.
       roster_ids: rosterIds,
+      schedule_note: note,
     });
     setSaving(false);
     if (error) { setErr(error); return; }
@@ -69,6 +71,7 @@ export default function EventEditor({ seasonId, rosters, onClose, onSaved }: Pro
           <div>
             <label style={label}>Time</label>
             <input type="time" value={time} onChange={e => setTime(e.target.value)} style={input} />
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>Leave blank if it isn't set yet: shows as TBA.</div>
           </div>
         </div>
 
@@ -97,6 +100,10 @@ export default function EventEditor({ seasonId, rosters, onClose, onSaved }: Pro
             </div>
           </>
         )}
+
+        <label style={{ ...label, marginTop: 12 }}>Notes (optional) · players see these</label>
+        <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+          placeholder="Bring a pencil and your playbook." style={{ ...input, resize: "vertical" }} />
 
         {err && <div style={{ fontSize: 12, color: "#b8342e", marginTop: 10 }}>{err}</div>}
 

@@ -18,6 +18,7 @@
 
 import { useState, useEffect } from "react";
 import { createGame, defaultGameFeatures } from "../../lib/gameStats";
+import { supabase } from "../../lib/supabase";
 import { getOpponents, createOpponent, Opponent } from "../../lib/scoutSheets";
 
 interface RosterLite { id: string; name: string; }
@@ -32,6 +33,9 @@ export default function QuickGameEditor({ rosters, onClose, onSaved }: {
   const [newOpponent, setNewOpponent] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [tip, setTip] = useState("19:00");
+  // Not announced yet: saved with no time, shown as "Time TBA" until set.
+  const [tipTba, setTipTba] = useState(false);
+  const [note, setNote] = useState("");
   const [bus, setBus] = useState("");
   const [homeAway, setHomeAway] = useState<"home" | "away" | "neutral">("home");
   const [location, setLocation] = useState("");
@@ -73,14 +77,17 @@ export default function QuickGameEditor({ rosters, onClose, onSaved }: {
     if (!oppName) { setErr("Pick an opponent."); return; }
 
     setSaving(true);
-    const { error } = await createGame({
+    const { id: gameId, error } = await createGame({
       opponent: oppName, opponent_id: oppId, game_date: date,
-      tip_time: tip || null,
+      tip_time: tipTba ? null : (tip || null),
       // Only an away game has a bus worth recording.
       bus_time: homeAway === "away" ? (bus || null) : null,
       home_away: homeAway, location, roster_id: rosterId,
       ...features,
     });
+    if (!error && gameId && note.trim()) {
+      await supabase.from("games").update({ schedule_note: note.trim() }).eq("id", gameId);
+    }
     setSaving(false);
     if (error) { setErr(error); return; }
     onSaved();
@@ -113,7 +120,11 @@ export default function QuickGameEditor({ rosters, onClose, onSaved }: {
           <div><label style={label}>Date</label>
             <input type="date" value={date} onChange={e => setDate(e.target.value)} style={input} /></div>
           <div><label style={label}>Tip time</label>
-            <input type="time" value={tip} onChange={e => setTip(e.target.value)} style={input} /></div>
+            <input type="time" value={tipTba ? "" : tip} disabled={tipTba} onChange={e => setTip(e.target.value)}
+              style={{ ...input, opacity: tipTba ? 0.5 : 1 }} />
+            <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, marginTop: 6, cursor: "pointer", color: "var(--text)" }}>
+              <input type="checkbox" checked={tipTba} onChange={e => setTipTba(e.target.checked)} /> Time TBA
+            </label></div>
         </div>
 
         <label style={{ ...label, marginTop: 10 }}>Where</label>
@@ -162,6 +173,10 @@ export default function QuickGameEditor({ rosters, onClose, onSaved }: {
             </label>
           ))}
         </div>
+
+        <label style={{ ...label, marginTop: 12 }}>Notes (optional) · players see these</label>
+        <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+          placeholder="Wear grey jerseys. Bus leaves at 4:45 sharp." style={{ ...input, resize: "vertical" }} />
 
         {err && <div style={{ fontSize: 12, color: "var(--danger-text)", marginTop: 10 }}>{err}</div>}
 

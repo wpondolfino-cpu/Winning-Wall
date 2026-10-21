@@ -1,0 +1,1554 @@
+// src/components/plays/PlayEditor.tsx
+// Desktop-optimized play editor (coach/admin primary use, but also used by
+// players drawing up their own plays — same component, access is governed
+// by RLS on the plays table, not by role checks here).
+
+import { useState, useEffect, useCallback, useRef, lazy, Suspense, type ComponentType } from "react";
+import { useHelpTopic } from "../../lib/help";
+import PlayCanvas, { CANVAS_W, CANVAS_H } from "./PlayCanvas";
+import { hoopPositions } from "./courtGeometry";
+import VideoUrlNote from "../shared/VideoUrlNote";
+import {
+  Play, PlayData, PlayFrame, PlayPlayer, PlayAction, ActionType,
+  CourtTemplate, COURT_TEMPLATES, COURT_TEMPLATE_LABELS,
+  SavedAction, Formation, RosterPlayer, PlayShareTarget,
+  emptyPlayData, createPlay, updatePlay, deletePlay, genPlayerId, deriveNextFrame,
+  restepFrom, restepAffectedCount, carryForwardSignature,
+  stepButtonText, STEP_LABEL_MAX, STEP_NOTE_MAX,
+  getSavedActions, createSavedAction, deleteSavedAction,
+  getFormations, createFormation, deleteFormation,
+  getRoster, getStaff, sharePlay, getAllTags,
+} from "../../lib/plays";
+import { getPlayCategories, PlayCategory } from "../../lib/playCategories";
+import TemplatePickerModal from "./TemplatePickerModal";
+import TemplateEditorModal from "./TemplateEditorModal";
+
+// Lazy-loaded for the same reason as the viewer — three.js is a large
+// dependency most editing sessions never touch. Typed explicitly, same
+// workaround as PlayViewer.tsx, since lazy()'s own inference through the
+// dynamic import doesn't resolve Play3DViewer's actual props correctly.
+const Play3DViewer = lazy(() => import("./Play3DViewer")) as unknown as ComponentType<{
+  play: Play;
+  roster: Record<string, RosterPlayer>;
+  onBack: () => void;
+}>;
+
+interface Props {
+  /** Pass an existing play to edit it; omit to start a new blank play. */
+  existingPlay?: Play;
+  /** "player" sees a "share with coach" option; "coach"/"admin" don't need it here (they use Playbooks instead). */
+  currentUserRole: "player" | "coach" | "admin";
+  onSaved?: (play: Play) => void;
+  onClose?: () => void;
+}
+
+type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | null;
+
+const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
+  { tool: "select", label: "Move", icon: "✥" },
+  { tool: "player", label: "Player", icon: "⬤" },
+  { tool: "ball", label: "Ball", icon: "🏀" },
+  { tool: "move", label: "Cut", icon: "→" },
+  { tool: "pass", label: "Pass", icon: "┄" },
+  { tool: "dribble", label: "Dribble", icon: "〜" },
+  { tool: "screen", label: "Screen", icon: "⊥" },
+  { tool: "dho", label: "Handoff", icon: "⇄" },
+  { tool: "shot", label: "Shot", icon: "🥅" },
+  { tool: "lob", label: "Lob", icon: "🙌" },
+  { tool: "loop", label: "Loop", icon: "↻" },
+  { tool: "text", label: "Text", icon: "T" },
+  { tool: "cone", label: "Cone", icon: "▲" },
+  { tool: "coach", label: "Coach", icon: "C" },
+  { tool: "defender", label: "Defender", icon: "✕" },
+  { tool: "erase", label: "Erase", icon: "⌫" },
+];
+// Used less often — tucked behind "More tools" instead of permanently
+// taking up space in the main row.
+const MORE_TOOLS: { tool: Tool; label: string; icon: string }[] = [
+  { tool: "draw", label: "Draw", icon: "✎" },
+  { tool: "zone", label: "Zone shading", icon: "▦" },
+];
+
+function cloneFrames(frames: PlayFrame[]): PlayFrame[] { return JSON.parse(JSON.stringify(frames)); }
+
+export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onClose }: Props) {
+  // While this screen is open, the header ? opens its help.
+  useHelpTopic("playdesigner");
+  const [title, setTitle] = useState(existingPlay?.title ?? "");
+  const [tagsInput, setTagsInput] = useState((existingPlay?.tags ?? []).join(", "));
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [videoUrl, setVideoUrl] = useState(existingPlay?.video_url ?? "");
+  const [category, setCategory] = useState(existingPlay?.category ?? "");
+  const [playCategories, setPlayCategories] = useState<PlayCategory[]>([]);
+  const [courtTemplate, setCourtTemplate] = useState<CourtTemplate>(existingPlay?.court_template ?? "half");
+  const [frames, setFrames] = useState<PlayFrame[]>(() => {
+    const initial = existingPlay?.data?.frames ?? emptyPlayData().frames;
+    // Plays saved before player identity existed have no `id` on their
+    // players — assign one based on array position (the same assumption
+    // the app already made implicitly elsewhere) so the new carry-forward
+    // logic has something to work with going forward.
+    // Same for defenders: a Cut or Loop only moves a defender when it's
+    // linked to their id, so one without an id could never move. Keyed by
+    // position so the same defender gets the same id in every step.
+    return initial.map((f) => ({
+      ...f,
+      players: f.players.map((p, i) => (p.id ? p : { ...p, id: `legacy-${i}` })),
+      defenders: (f.defenders ?? []).map((d, i) => (d.id ? d : { ...d, id: `legacy-def-${i}` })),
+    }));
+  });
+  const [frameIdx, setFrameIdx] = useState(0);
+  const [tool, setTool] = useState<Tool>("player");
+  const [isMobile] = useState(() => window.innerWidth < 768);
+  const [showPreview3D, setShowPreview3D] = useState(false);
+  const [mobileStage, setMobileStage] = useState<"draw" | "confirm" | "naming">("draw");
+  const [showMoreTools, setShowMoreTools] = useState(false);
+  const [selected, setSelected] = useState<{ kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone" | "coach"; index: number } | null>(null);
+  const [history, setHistory] = useState<PlayFrame[][]>([]);
+  const [future, setFuture] = useState<PlayFrame[][]>([]);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState("");
+  const [playSignal, setPlaySignal] = useState(0);
+
+  const [roster, setRoster] = useState<RosterPlayer[]>([]);
+  const [savedActions, setSavedActions] = useState<SavedAction[]>([]);
+  const [formations, setFormations] = useState<Formation[]>([]);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<Formation | null>(null);
+  const [stampAction, setStampAction] = useState<SavedAction | null>(null);
+  // Mirrors the stamp left-to-right, so one saved action works on either
+  // side of the floor (a right-wing flare becomes a left-wing flare).
+  const [stampFlip, setStampFlip] = useState(false);
+  const [stampPreviewPos, setStampPreviewPos] = useState<{ x: number; y: number } | null>(null);
+  const [staff, setStaff] = useState<PlayShareTarget[]>([]);
+  const [showShare, setShowShare] = useState(false);
+
+  useEffect(() => {
+    getRoster().then(setRoster).catch(console.error);
+    getSavedActions().then(setSavedActions).catch(console.error);
+    getAllTags().then(setAllTags).catch(console.error);
+    if (currentUserRole === "player") getStaff().then(setStaff).catch(console.error);
+    else {
+      getPlayCategories().then(setPlayCategories).catch(console.error);
+      if (!existingPlay) getFormations().then(setFormations).catch(console.error);
+    }
+  }, [currentUserRole]);
+
+  // Keyboard shortcuts. Skipped while typing in a text field so native
+  // undo/redo in the title/tags inputs still works normally.
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      const typing = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
+      if (typing) return;
+      const cmdOrCtrl = e.metaKey || e.ctrlKey;
+      if (cmdOrCtrl && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo(); else undo();
+      } else if (cmdOrCtrl && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        redo();
+      } else if ((e.key === "Delete" || e.key === "Backspace") && selected) {
+        e.preventDefault();
+        deleteSelected();
+      } else if (e.key === "Escape") {
+        setTool(null);
+        setStampAction(null);
+        setSelected(null);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [history, future, frames, selected]);
+
+  function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(""), 3000); }
+
+  const frame = frames[frameIdx];
+
+  // Set when an edit to this step changed what the NEXT step is built
+  // from. Holds the index of the edited step, or null when there's
+  // nothing to offer. Cleared on step change so it never follows you
+  // around the play.
+  const [restepIdx, setRestepIdx] = useState<number | null>(null);
+
+  useEffect(() => { setSelected(null); setRestepIdx(null); }, [frameIdx]);
+
+  function pushHistory() {
+    setHistory((h) => [...h.slice(-49), cloneFrames(frames)]);
+    setFuture([]);
+  }
+
+  function updateFrame(mutator: (f: PlayFrame) => PlayFrame) {
+    const before = frames[frameIdx];
+    const after = mutator(before);
+    // Only offer to re-step when this edit changed something a later step
+    // is actually built from — a text label or a zone never should.
+    if (frameIdx < frames.length - 1 && carryForwardSignature(before) !== carryForwardSignature(after)) {
+      setRestepIdx(frameIdx);
+    }
+    setFrames((fr) => fr.map((f, i) => (i === frameIdx ? after : f)));
+  }
+
+  function applyRestep() {
+    if (restepIdx === null) return;
+    pushHistory();
+    setFrames((fr) => restepFrom(fr, restepIdx));
+    setRestepIdx(null);
+  }
+
+  function undo() {
+    if (!history.length) return;
+    setFuture((f) => [...f, cloneFrames(frames)]);
+    const prev = history[history.length - 1];
+    setHistory((h) => h.slice(0, -1));
+    setFrames(prev);
+  }
+  function redo() {
+    if (!future.length) return;
+    setHistory((h) => [...h, cloneFrames(frames)]);
+    const next = future[future.length - 1];
+    setFuture((f) => f.slice(0, -1));
+    setFrames(next);
+  }
+
+  const addPlayer = useCallback((p: PlayPlayer) => { pushHistory(); updateFrame((f) => ({ ...f, players: [...f.players, p] })); }, [frames, frameIdx]);
+  const addDefender = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, defenders: [...f.defenders, { x, y, id: genPlayerId() }] })); }, [frames, frameIdx]);
+  const setBall = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, ball: { x, y }, ballHolderId: null })); }, [frames, frameIdx]);
+  const addAction = useCallback((a: PlayAction) => {
+    pushHistory();
+    if (a.type === "lob") {
+      // The ball's actual destination is the hoop, not wherever the lob
+      // was dragged to — the drag endpoint was only used to detect who's
+      // catching it (already resolved into targetPlayerId by this point).
+      const hoops = hoopPositions(courtTemplate);
+      let target = hoops[0];
+      let bestDist = Infinity;
+      for (const h of hoops) {
+        const d = Math.hypot(h.x - a.x2, h.y - a.y2);
+        if (d < bestDist) { bestDist = d; target = h; }
+      }
+      // A gentle bow, same approach as Shot — this also drives the 3D
+      // arc, so it shouldn't depend on the user manually bending the line.
+      const mx = (a.x1 + target.x) / 2, my = (a.y1 + target.y) / 2;
+      const dx = target.x - a.x1, dy = target.y - a.y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const bow = Math.min(40, len * 0.25);
+      const curve = { x: mx + nx * bow, y: my + ny * bow };
+      a = { ...a, x2: target.x, y2: target.y, curve };
+    }
+    updateFrame((f) => ({ ...f, actions: [...f.actions, a] }));
+  }, [frames, frameIdx, courtTemplate]);
+  const addDrawing = useCallback((points: { x: number; y: number }[]) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, drawings: [...(f.drawings ?? []), { points }] }));
+  }, [frames, frameIdx]);
+  const toggleHandoff = useCallback((idx: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, players: f.players.map((p, i) => i === idx ? { ...p, handoff: !p.handoff } : p) }));
+  }, [frames, frameIdx]);
+
+  const movePlayer = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => {
+      const players = f.players.map((p, i) => i === idx ? { ...p, x, y } : p);
+      // If this player is the current ball-holder, keep the ball's stored
+      // position in sync too — this matters for the beat-to-beat animation,
+      // which reads ball.x/y directly rather than re-deriving from the holder.
+      const movedId = f.players[idx]?.id;
+      const ball = (movedId && f.ballHolderId === movedId) ? { x, y } : f.ball;
+      return { ...f, players, ball };
+    });
+  }, [frames, frameIdx]);
+  const moveDefender = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    // Keep the defender's id. Dropping it (as this used to) unlinked any Cut
+    // or Loop drawn afterwards, so a defender nudged into place never moved.
+    updateFrame((f) => ({ ...f, defenders: f.defenders.map((d, i) => i === idx ? { ...d, x, y } : d) }));
+  }, [frames, frameIdx]);
+  const moveBall = useCallback((x: number, y: number) => {
+    pushHistory();
+    // Manually dragging the ball is an explicit override — it's no longer
+    // "held" by whoever it was tracking, it's just sitting at this spot.
+    updateFrame((f) => ({ ...f, ball: { x, y }, ballHolderId: null }));
+  }, [frames, frameIdx]);
+  const moveActionPoint = useCallback((idx: number, which: "start" | "end", x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({
+      ...f,
+      actions: f.actions.map((a, i) => i === idx ? (which === "start" ? { ...a, x1: x, y1: y } : { ...a, x2: x, y2: y }) : a),
+    }));
+  }, [frames, frameIdx]);
+  const moveActionWhole = useCallback((idx: number, x1: number, y1: number, x2: number, y2: number, curve?: { x: number; y: number }) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, actions: f.actions.map((a, i) => i === idx ? { ...a, x1, y1, x2, y2, curve } : a) }));
+  }, [frames, frameIdx]);
+  const setActionCurve = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, actions: f.actions.map((a, i) => i === idx ? { ...a, curve: { x, y } } : a) }));
+  }, [frames, frameIdx]);
+
+  const setActionCurve2 = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, actions: f.actions.map((a, i) => i === idx ? { ...a, curve2: { x, y } } : a) }));
+  }, [frames, frameIdx]);
+
+  function addText(x: number, y: number) {
+    const text = window.prompt("Text for this label (e.g. \"wait for screen\")");
+    if (!text || !text.trim()) return;
+    pushHistory();
+    updateFrame((f) => ({ ...f, texts: [...(f.texts ?? []), { x, y, text: text.trim() }] }));
+  }
+  const moveText = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, texts: (f.texts ?? []).map((t, i) => i === idx ? { ...t, x, y } : t) }));
+  }, [frames, frameIdx]);
+  function editText(idx: number) {
+    const current = frame.texts?.[idx]?.text ?? "";
+    const next = window.prompt("Edit label text (leave blank to keep unchanged):", current);
+    if (next === null || !next.trim()) return;
+    pushHistory();
+    updateFrame((f) => ({ ...f, texts: (f.texts ?? []).map((t, i) => i === idx ? { ...t, text: next.trim() } : t) }));
+  }
+
+  function addZone(x: number, y: number, w: number, h: number) {
+    pushHistory();
+    updateFrame((f) => ({ ...f, zones: [...(f.zones ?? []), { x, y, w, h }] }));
+  }
+  const moveZone = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, zones: (f.zones ?? []).map((z, i) => i === idx ? { ...z, x, y } : z) }));
+  }, [frames, frameIdx]);
+
+  function addCone(x: number, y: number) {
+    pushHistory();
+    updateFrame((f) => ({ ...f, cones: [...(f.cones ?? []), { x, y }] }));
+  }
+  const moveCone = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, cones: (f.cones ?? []).map((c, i) => i === idx ? { x, y } : c) }));
+  }, [frames, frameIdx]);
+
+  function addCoach(x: number, y: number) {
+    pushHistory();
+    updateFrame((f) => ({ ...f, coachMarkers: [...(f.coachMarkers ?? []), { x, y }] }));
+  }
+  const moveCoach = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, coachMarkers: (f.coachMarkers ?? []).map((c, i) => i === idx ? { x, y } : c) }));
+  }, [frames, frameIdx]);
+
+  function addShot(playerIdx: number) {
+    const player = frame.players[playerIdx];
+    if (!player) return;
+    const hoops = hoopPositions(courtTemplate);
+    let target = hoops[0];
+    let bestDist = Infinity;
+    for (const h of hoops) {
+      const d = Math.hypot(h.x - player.x, h.y - player.y);
+      if (d < bestDist) { bestDist = d; target = h; }
+    }
+    // A gentle bow away from the straight line, for a shot-arc look rather
+    // than a flat line to the rim.
+    const mx = (player.x + target.x) / 2, my = (player.y + target.y) / 2;
+    const dx = target.x - player.x, dy = target.y - player.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    const bow = Math.min(40, len * 0.25);
+    const curve = { x: mx + nx * bow, y: my + ny * bow };
+    pushHistory();
+    updateFrame((f) => ({
+      ...f,
+      actions: [...f.actions, { type: "shot" as const, x1: player.x, y1: player.y, x2: target.x, y2: target.y, curve, sourcePlayerId: player.id }],
+    }));
+  }
+
+  function deleteSelected() {
+    if (!selected) return;
+    pushHistory();
+    if (selected.kind === "player") updateFrame((f) => ({ ...f, players: f.players.filter((_, i) => i !== selected.index) }));
+    else if (selected.kind === "defender") updateFrame((f) => ({ ...f, defenders: f.defenders.filter((_, i) => i !== selected.index) }));
+    else if (selected.kind === "ball") updateFrame((f) => ({ ...f, ball: null }));
+    else if (selected.kind === "action") updateFrame((f) => ({ ...f, actions: f.actions.filter((_, i) => i !== selected.index) }));
+    else if (selected.kind === "text") updateFrame((f) => ({ ...f, texts: (f.texts ?? []).filter((_, i) => i !== selected.index) }));
+    else if (selected.kind === "zone") updateFrame((f) => ({ ...f, zones: (f.zones ?? []).filter((_, i) => i !== selected.index) }));
+    else if (selected.kind === "cone") updateFrame((f) => ({ ...f, cones: (f.cones ?? []).filter((_, i) => i !== selected.index) }));
+    else if (selected.kind === "coach") updateFrame((f) => ({ ...f, coachMarkers: (f.coachMarkers ?? []).filter((_, i) => i !== selected.index) }));
+    setSelected(null);
+  }
+
+  function previewAllBeats() {
+    setFrameIdx(0);
+    setTimeout(() => setPlaySignal((s) => s + 1), 50);
+  }
+  function handlePreviewBeatDone() {
+    if (frameIdx < frames.length - 1) {
+      setFrameIdx((i) => i + 1);
+      setTimeout(() => setPlaySignal((s) => s + 1), 150);
+    } else if (isMobile) {
+      setMobileStage("confirm");
+    }
+  }
+
+  function eraseNear(x: number, y: number) {
+    pushHistory();
+    const near = (a: { x: number; y: number }, r: number) => Math.hypot(a.x - x, a.y - y) < r;
+    // Distance from the click to the closest point ANYWHERE along the
+    // action's line — using only the midpoint meant you had to click one
+    // exact tiny spot in the middle of a pass/screen line to erase it.
+    const distToSegment = (x1: number, y1: number, x2: number, y2: number) => {
+      const dx = x2 - x1, dy = y2 - y1;
+      const lenSq = dx * dx + dy * dy;
+      const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / lenSq));
+      const cx = x1 + t * dx, cy = y1 + t * dy;
+      return Math.hypot(x - cx, y - cy);
+    };
+    updateFrame((f) => ({
+      players: f.players.filter((p) => !near(p, 16)),
+      defenders: f.defenders.filter((d) => !near(d, 16)),
+      ball: f.ball && near(f.ball, 12) ? null : f.ball,
+      actions: f.actions.filter((a) => {
+        if (!a.curve) return distToSegment(a.x1, a.y1, a.x2, a.y2) >= 14;
+        // Curved line — sample points along the quadratic curve and check
+        // each segment, so clicking anywhere on the visible curve erases it.
+        const steps = 12;
+        for (let i = 0; i < steps; i++) {
+          const t1 = i / steps, t2 = (i + 1) / steps;
+          const mt1 = 1 - t1, mt2 = 1 - t2;
+          const p1x = mt1 * mt1 * a.x1 + 2 * mt1 * t1 * a.curve.x + t1 * t1 * a.x2;
+          const p1y = mt1 * mt1 * a.y1 + 2 * mt1 * t1 * a.curve.y + t1 * t1 * a.y2;
+          const p2x = mt2 * mt2 * a.x1 + 2 * mt2 * t2 * a.curve.x + t2 * t2 * a.x2;
+          const p2y = mt2 * mt2 * a.y1 + 2 * mt2 * t2 * a.curve.y + t2 * t2 * a.y2;
+          if (distToSegment(p1x, p1y, p2x, p2y) < 14) return false;
+        }
+        return true;
+      }),
+      drawings: (f.drawings ?? []).filter((d) => {
+        for (let i = 0; i < d.points.length - 1; i++) {
+          const a = d.points[i], b = d.points[i + 1];
+          if (distToSegment(a.x, a.y, b.x, b.y) < 14) return false;
+        }
+        return true;
+      }),
+      texts: (f.texts ?? []).filter((t) => !near(t, 20)),
+      zones: (f.zones ?? []).filter((z) => !(x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h)),
+      cones: (f.cones ?? []).filter((c) => !near(c, 16)),
+    }));
+  }
+
+  // Step name and notes. Typing doesn't push an undo entry per keystroke:
+  // one entry is taken when a field gets focus, so Undo reverts the whole
+  // edit. Neither changes positions, so they never prompt a re-step.
+  function setStepText(field: "label" | "note", value: string) {
+    const max = field === "label" ? STEP_LABEL_MAX : STEP_NOTE_MAX;
+    const v = value.slice(0, max);
+    setFrames((fr) => fr.map((f, i) => (i === frameIdx ? { ...f, [field]: v.trim() ? v : undefined } : f)));
+  }
+
+  function renderStepDetails() {
+    const f = frames[frameIdx];
+    return (
+      <div style={{ marginBottom: 12 }}>
+        <input
+          value={f?.label ?? ""}
+          onFocus={pushHistory}
+          onChange={(e) => setStepText("label", e.target.value)}
+          placeholder={`Name step ${frameIdx + 1} (optional), e.g. "Screen sets"`}
+          maxLength={STEP_LABEL_MAX}
+          style={{ width: "100%", boxSizing: "border-box", padding: "7px 10px", fontSize: 13, marginBottom: 6,
+            background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", fontFamily: "inherit" }}
+        />
+        <textarea
+          value={f?.note ?? ""}
+          onFocus={pushHistory}
+          onChange={(e) => setStepText("note", e.target.value)}
+          placeholder={`Coaching notes for step ${frameIdx + 1} — the reads and the why. Players see these under the court. Put [brackets] around a key word to quiz it.`}
+          maxLength={STEP_NOTE_MAX}
+          rows={3}
+          style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", fontSize: 13, lineHeight: 1.45, resize: "vertical",
+            background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", fontFamily: "inherit" }}
+        />
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, minHeight: 14 }}>
+          {autoBadge}
+          {(f?.note?.length ?? 0) > STEP_NOTE_MAX - 80 && (
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>{f?.note?.length ?? 0}/{STEP_NOTE_MAX}</span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function addFrame() {
+    pushHistory();
+    // Carry-forward rules live in lib/plays.ts so the re-step path can't
+    // drift from this one.
+    const copy = deriveNextFrame(frames[frames.length - 1]);
+    setFrames((fr) => [...fr, copy]);
+    setFrameIdx(frames.length);
+  }
+  function deleteFrame(i: number) {
+    if (frames.length <= 1) return;
+    pushHistory();
+    setFrames((fr) => fr.filter((_, idx) => idx !== i));
+    setFrameIdx((idx) => Math.max(0, idx >= i ? idx - 1 : idx));
+  }
+
+  function duplicateFrame() {
+    pushHistory();
+    const copy: PlayFrame = JSON.parse(JSON.stringify(frames[frameIdx]));
+    setFrames((fr) => [...fr.slice(0, frameIdx + 1), copy, ...fr.slice(frameIdx + 1)]);
+    setFrameIdx(frameIdx + 1);
+    setSelected(null);
+  }
+
+  function flipFrameData(f: PlayFrame): PlayFrame {
+    return {
+      ...f,
+      players: f.players.map((p) => ({ ...p, x: CANVAS_W - p.x })),
+      defenders: f.defenders.map((d) => ({ ...d, x: CANVAS_W - d.x })),
+      ball: f.ball ? { ...f.ball, x: CANVAS_W - f.ball.x } : null,
+      actions: f.actions.map((a) => ({
+        ...a, x1: CANVAS_W - a.x1, x2: CANVAS_W - a.x2,
+        curve: a.curve ? { ...a.curve, x: CANVAS_W - a.curve.x } : undefined,
+      })),
+      drawings: (f.drawings ?? []).map((d) => ({ points: d.points.map((pt) => ({ ...pt, x: CANVAS_W - pt.x })) })),
+      texts: (f.texts ?? []).map((t) => ({ ...t, x: CANVAS_W - t.x })),
+      zones: (f.zones ?? []).map((z) => ({ ...z, x: CANVAS_W - z.x - z.w })),
+    };
+  }
+  function flipCurrentStep() {
+    pushHistory();
+    setFrames((fr) => fr.map((f, i) => (i === frameIdx ? flipFrameData(f) : f)));
+    setSelected(null);
+  }
+  function flipEntirePlay() {
+    if (!window.confirm("Flip every step in this play left-to-right?")) return;
+    pushHistory();
+    setFrames((fr) => fr.map((f) => flipFrameData(f)));
+    setSelected(null);
+  }
+
+  function duplicateSelectedPlayer() {
+    if (!selected || selected.kind !== "player") return;
+    pushHistory();
+    updateFrame((f) => {
+      const orig = f.players[selected.index];
+      if (!orig) return f;
+      const nextNumVal = (f.players.length % 5) + 1;
+      return { ...f, players: [...f.players, { ...orig, id: genPlayerId(), x: orig.x + 20, y: orig.y + 20, num: nextNumVal, handoff: false }] };
+    });
+  }
+
+  function assignRoster(playerIdx: number, profileId: string) {
+    const playerId = frame.players[playerIdx]?.id;
+    pushHistory();
+    if (!playerId) {
+      // No stable id (shouldn't normally happen) — fall back to updating just this step.
+      updateFrame((f) => ({ ...f, players: f.players.map((p, i) => i === playerIdx ? { ...p, profile_id: profileId || null } : p) }));
+      return;
+    }
+    setFrames((fr) => fr.map((f) => ({
+      ...f,
+      players: f.players.map((p) => p.id === playerId ? { ...p, profile_id: profileId || null } : p),
+    })));
+  }
+
+  async function saveCurrentFrameAsAction() {
+    const name = window.prompt("Name this action (e.g. \"Flare screen\")");
+    if (!name) return;
+    try {
+      const saved = await createSavedAction(name, frame);
+      setSavedActions((a) => [...a, saved].sort((x, y) => x.name.localeCompare(y.name)));
+      showToast(`Saved "${name}"`);
+    } catch (e: any) { showToast("Error: " + e.message); }
+  }
+
+  // Formations are positions-only starting points (offense OR defense,
+  // never both) — applying one replaces just that side of the current
+  // frame, leaving the ball/other side/everything else untouched. That
+  // lets a coach apply an offense formation and a defense formation
+  // independently to build the full starting picture.
+  function applyFormation(f: Formation) {
+    pushHistory();
+    if (f.side === "defense") {
+      // Fresh ids, like players get: template defenders may have none, and
+      // Cut/Loop needs one to move them.
+      updateFrame((fr) => ({ ...fr, defenders: (f.data.defenders ?? []).map((d) => ({ ...d, id: genPlayerId() })) }));
+    } else {
+      // offense, blob, and slob templates all store player positions the same way.
+      updateFrame((fr) => ({ ...fr, players: (f.data.players ?? []).map((p) => ({ ...p, id: genPlayerId() })) }));
+    }
+    setShowTemplatePicker(false);
+  }
+
+  async function saveCurrentFrameAsFormation(side: Formation["side"]) {
+    const examples: Record<Formation["side"], string> = { offense: "Horns", defense: "2-3 zone", blob: "Box", slob: "Stack" };
+    const name = window.prompt(`Name this ${side} template (e.g. "${examples[side]}")`);
+    if (!name) return;
+    const data = side === "defense" ? { defenders: frame.defenders } : { players: frame.players };
+    try {
+      const saved = await createFormation(name, side, data);
+      setFormations((f) => [saved, ...f]);
+      showToast(`Saved "${name}"`);
+    } catch (e: any) { showToast("Error: " + e.message); }
+  }
+
+  async function handleDeleteFormation(id: string) {
+    await deleteFormation(id);
+    setFormations((s) => s.filter((x) => x.id !== id));
+  }
+
+  /** The saved action mirrored left-to-right around its own anchor point. */
+  function mirrorAction(action: SavedAction): SavedAction {
+    const d = action.data;
+    const anchor = d.players[0] ?? d.ball ?? d.defenders[0] ?? (d.actions[0] ? { x: d.actions[0].x1, y: d.actions[0].y1 } : { x: 0, y: 0 });
+    const fx = (x: number) => 2 * anchor.x - x;
+    const pt = <T extends { x: number; y: number }>(p: T): T => ({ ...p, x: fx(p.x) });
+    return {
+      ...action,
+      data: {
+        ...d,
+        players: d.players.map(pt),
+        defenders: d.defenders.map(pt),
+        ball: d.ball ? pt(d.ball) : d.ball,
+        actions: d.actions.map((a) => ({
+          ...a, x1: fx(a.x1), x2: fx(a.x2),
+          curve: a.curve ? pt(a.curve) : undefined,
+          curve2: a.curve2 ? pt(a.curve2) : undefined,
+        })),
+        drawings: d.drawings?.map((dr) => ({ ...dr, points: dr.points.map(pt) })),
+        texts: d.texts?.map(pt),
+        zones: d.zones?.map((z) => ({ ...z, x: fx(z.x + z.w) })),
+        cones: d.cones?.map(pt),
+        coachMarkers: d.coachMarkers?.map(pt),
+      },
+    };
+  }
+  const activeStamp = stampAction ? (stampFlip ? mirrorAction(stampAction) : stampAction) : null;
+
+  function computeStampGhost(action: SavedAction, x: number, y: number) {
+    const d = action.data;
+    const anchor = d.players[0] ?? d.ball ?? d.defenders[0] ?? (d.actions[0] ? { x: d.actions[0].x1, y: d.actions[0].y1 } : { x: 0, y: 0 });
+    const dx = x - anchor.x, dy = y - anchor.y;
+    return {
+      players: d.players.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy })),
+      ball: d.ball ? { x: d.ball.x + dx, y: d.ball.y + dy } : null,
+      actions: d.actions.map((a) => ({
+        ...a, x1: a.x1 + dx, y1: a.y1 + dy, x2: a.x2 + dx, y2: a.y2 + dy,
+        curve: a.curve ? { x: a.curve.x + dx, y: a.curve.y + dy } : undefined,
+      })),
+    };
+  }
+
+  function stampActionAt(action: SavedAction, x: number, y: number) {
+    pushHistory();
+    const d = action.data;
+    // Anchor to the first available point in the saved action so the stamp
+    // lands with that point under the click — this is the fallback used
+    // for anything that isn't tied to an identified real player below.
+    const anchor = d.players[0] ?? d.ball ?? d.defenders[0] ?? (d.actions[0] ? { x: d.actions[0].x1, y: d.actions[0].y1 } : { x: 0, y: 0 });
+    const dx = x - anchor.x, dy = y - anchor.y;
+
+    // A player circle's own radius is ~13; the court itself is 600
+    // units wide. 100 gives generous forgiveness for an imprecise
+    // stamp — it always links to whichever real player is CLOSEST, so
+    // this doesn't risk picking the wrong one over the right one when
+    // both are nearby. The real tradeoff is a sloppy stamp reaching
+    // past its intended player and catching an unrelated one standing
+    // elsewhere, in a spot that would've correctly come up empty at a
+    // tighter radius. Widened from 40 on request; dial back down if
+    // that ever actually happens.
+    function withinLinkRadius(px: number, py: number, players: PlayPlayer[]): string | undefined {
+      let best: string | undefined; let bestDist = 100;
+      players.forEach((p) => {
+        if (!p.id) return;
+        const dd = Math.hypot(p.x - px, p.y - py);
+        if (dd < bestDist) { bestDist = dd; best = p.id; }
+      });
+      return best;
+    }
+
+    const baseCount = frame.players.length;
+    // Stamped players are new, distinct players — give each a fresh id
+    // rather than reusing whatever the saved template's players had (which
+    // could collide with existing players, or with another copy of this
+    // same stamp used elsewhere). Assign the new ids now (positions come
+    // later, once the transform below is finalized) so the id-remapping
+    // table is already complete by the time anything needs to check it.
+    const idMap = new Map<string, string>();
+    d.players.forEach((p) => { if (p.id) idMap.set(p.id, genPlayerId()); });
+
+    // One representative saved point per original source-player NOT already
+    // covered by idMap (i.e. a saved action with no players of its own,
+    // arrows only) — its first action in sequence order.
+    const groups = new Map<string, PlayAction[]>();
+    d.actions.forEach((a) => {
+      if (!a.sourcePlayerId || idMap.has(a.sourcePlayerId)) return;
+      const g = groups.get(a.sourcePlayerId) ?? [];
+      g.push(a);
+      groups.set(a.sourcePlayerId, g);
+    });
+
+    function detectMatches(tf: (p: { x: number; y: number }) => { x: number; y: number }) {
+      const out: { originalId: string; saved: { x: number; y: number }; realId: string }[] = [];
+      groups.forEach((actionsInGroup, originalId) => {
+        const first = [...actionsInGroup].sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0))[0];
+        const saved = { x: first.x1, y: first.y1 };
+        const guess = tf(saved);
+        const realId = withinLinkRadius(guess.x, guess.y, frame.players);
+        if (realId) out.push({ originalId, saved, realId });
+      });
+      return out;
+    }
+
+    // Start with a flat translate, see what it finds nearby, and if two
+    // different roles land on two different real players, upgrade to a
+    // proper rotate + scale + translate using those two as a frame of
+    // reference — then re-check with that better placement, since a more
+    // accurate guess can reveal additional real players a flat offset
+    // would have missed entirely.
+    let transform = (p: { x: number; y: number }) => ({ x: p.x + dx, y: p.y + dy });
+    let matches = detectMatches(transform);
+    if (matches.length >= 2 && matches[0].realId !== matches[1].realId) {
+      const [m0, m1] = matches;
+      const real0 = frame.players.find((p) => p.id === m0.realId)!;
+      const real1 = frame.players.find((p) => p.id === m1.realId)!;
+      const savedVec = { x: m1.saved.x - m0.saved.x, y: m1.saved.y - m0.saved.y };
+      const realVec = { x: real1.x - real0.x, y: real1.y - real0.y };
+      const savedLen = Math.hypot(savedVec.x, savedVec.y) || 1;
+      const realLen = Math.hypot(realVec.x, realVec.y) || 1;
+      const scale = realLen / savedLen;
+      const angle = Math.atan2(realVec.y, realVec.x) - Math.atan2(savedVec.y, savedVec.x);
+      const cos = Math.cos(angle), sin = Math.sin(angle);
+      transform = (p) => {
+        const relX = p.x - m0.saved.x, relY = p.y - m0.saved.y;
+        return { x: real0.x + (relX * cos - relY * sin) * scale, y: real0.y + (relX * sin + relY * cos) * scale };
+      };
+      matches = detectMatches(transform);
+    }
+
+    // The key fix: every role that matched a real player gets its OWN
+    // exact correction — not just the two used to build the transform
+    // above. That transform gets everything roughly in the right place
+    // (and is all that's used for anything with no real player nearby,
+    // like a decorative curve), but for a role we've actually identified,
+    // "roughly right" isn't good enough — nudge that role's whole chain
+    // (start, end, and any later chained action) by whatever's needed to
+    // land it exactly on the real player, same amount for every point in
+    // that role's own actions so the shape/length of their motion is
+    // preserved, just correctly positioned.
+    const roleOffset = new Map<string, { dx: number; dy: number }>();
+    matches.forEach((m) => {
+      const real = frame.players.find((p) => p.id === m.realId)!;
+      const guess = transform(m.saved);
+      roleOffset.set(m.originalId, { dx: real.x - guess.x, dy: real.y - guess.y });
+    });
+    function placePoint(pt: { x: number; y: number }, roleId?: string) {
+      const g = transform(pt);
+      const off = roleId ? roleOffset.get(roleId) : undefined;
+      return off ? { x: g.x + off.dx, y: g.y + off.dy } : g;
+    }
+
+    const newPlayers = d.players.map((p, i) => {
+      const newId = (p.id && idMap.get(p.id)) ?? genPlayerId();
+      const t = transform({ x: p.x, y: p.y });
+      return { ...p, id: newId, x: t.x, y: t.y, num: ((baseCount + i) % 5) + 1 };
+    });
+
+    const allPlayersAfterStamp = [...frame.players, ...newPlayers];
+    function nearestRealPlayer(px: number, py: number): string | undefined {
+      return withinLinkRadius(px, py, allPlayersAfterStamp);
+    }
+    const groupResolved = new Map<string, string | undefined>();
+    groups.forEach((actionsInGroup, originalId) => {
+      const already = matches.find((m) => m.originalId === originalId)?.realId;
+      if (already) { groupResolved.set(originalId, already); return; }
+      const first = [...actionsInGroup].sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0))[0];
+      const t = placePoint({ x: first.x1, y: first.y1 });
+      groupResolved.set(originalId, nearestRealPlayer(t.x, t.y));
+    });
+
+    const newActions = d.actions.map((a) => {
+      const roleId = a.sourcePlayerId && !idMap.has(a.sourcePlayerId) ? a.sourcePlayerId : undefined;
+      const p1 = placePoint({ x: a.x1, y: a.y1 }, roleId);
+      const p2 = placePoint({ x: a.x2, y: a.y2 }, roleId);
+      const curve = a.curve ? placePoint(a.curve, roleId) : undefined;
+      const sourcePlayerId = (a.sourcePlayerId && idMap.get(a.sourcePlayerId))
+        ?? (roleId ? groupResolved.get(roleId) : undefined);
+      const targetPlayerId = (a.targetPlayerId && idMap.get(a.targetPlayerId))
+        ?? ((a.type === "pass" || a.type === "lob" || a.type === "dho") ? nearestRealPlayer(p2.x, p2.y) : undefined);
+      return { ...a, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, curve, sourcePlayerId, targetPlayerId };
+    });
+    updateFrame((f) => {
+      const transformedDefenders = d.defenders.map((def) => ({ ...transform({ x: def.x, y: def.y }), id: genPlayerId() }));
+      const transformedBall = d.ball ? transform({ x: d.ball.x, y: d.ball.y }) : null;
+      return {
+        players: [...f.players, ...newPlayers],
+        defenders: [...f.defenders, ...transformedDefenders],
+        ball: f.ball ?? transformedBall,
+        actions: [...f.actions, ...newActions],
+      };
+    });
+    setStampAction(null);
+  }
+
+  async function handleSave() {
+    if (!title.trim()) { showToast("Give the play a title first"); return; }
+    setSaving(true);
+    const data: PlayData = { frames };
+    const tags = tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
+    const video_url = videoUrl.trim() || null;
+    const categoryValue = currentUserRole === "player" ? (existingPlay?.category ?? null) : (category || null);
+    try {
+      // Wait out a background save so the two can't race.
+      if (inFlightRef.current) await inFlightRef.current;
+      const base = existingPlay ?? createdPlayRef.current;
+      if (base) {
+        await updatePlay(base.id, { title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
+        showToast("Saved");
+        onSaved?.({ ...base, title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
+      } else {
+        const created = await createPlay({ title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
+        createdPlayRef.current = created;
+        showToast("Play saved");
+        onSaved?.(created);
+      }
+      lastSavedSigRef.current = signatureOf(latestRef.current);
+      setAutoStatus("saved");
+    } catch (e: any) { showToast("Error: " + e.message); }
+    finally { setSaving(false); }
+  }
+
+  // The latest values, readable from saves that run after a render or
+  // as the editor unmounts.
+  const latestRef = useRef({ frames, title, tagsInput, courtTemplate, videoUrl, category, existingPlay, currentUserRole });
+  useEffect(() => {
+    latestRef.current = { frames, title, tagsInput, courtTemplate, videoUrl, category, existingPlay, currentUserRole };
+  }); // no dependency array -- refreshes after every render, so whichever values were on screen right before the component unmounts are what the cleanup below actually sees.
+
+  // ── Save as you go ──────────────────────────────────────────
+  // A few seconds after any change -- a step name, a note, a moved player
+  // -- the play saves in the background, and again the moment the page is
+  // hidden (switching apps, locking the phone, closing the tab) and when
+  // the editor closes. A brand-new play is created on its first save
+  // ("Untitled draft" until it's named) and every later save updates that
+  // same play, so there are never duplicates. Saves the same fields the
+  // Save button does.
+  const createdPlayRef = useRef<Play | null>(null);
+  const untitledRef = useRef(`Untitled draft ${new Date().toLocaleDateString()}`);
+  const lastSavedSigRef = useRef<string | null>(null);
+  const inFlightRef = useRef<Promise<void> | null>(null);
+  const pendingRef = useRef(false);
+  const [autoStatus, setAutoStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  function signatureOf(vals: typeof latestRef.current): string {
+    return JSON.stringify([vals.frames, vals.title.trim(), vals.tagsInput, vals.courtTemplate, vals.videoUrl.trim(), vals.category]);
+  }
+
+  async function saveNow(): Promise<void> {
+    if (inFlightRef.current) { pendingRef.current = true; return inFlightRef.current; }
+    const run = async () => {
+      const vals = latestRef.current;
+      const sig = signatureOf(vals);
+      if (sig === lastSavedSigRef.current) return;
+      const base = vals.existingPlay ?? createdPlayRef.current;
+      const hasContent = vals.frames.length > 1 || vals.frames.some((f) => f.players.length > 0 || f.actions.length > 0);
+      if (!base && !hasContent) return;          // nothing worth creating yet
+      const tags = vals.tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
+      const video_url = vals.videoUrl.trim() || null;
+      const categoryValue = vals.currentUserRole === "player" ? (base?.category ?? null) : (vals.category || null);
+      setAutoStatus("saving");
+      try {
+        if (base) {
+          await updatePlay(base.id, { title: vals.title.trim() || base.title, tags, court_template: vals.courtTemplate, data: { frames: vals.frames }, video_url, category: categoryValue });
+        } else {
+          createdPlayRef.current = await createPlay({
+            title: vals.title.trim() || untitledRef.current, tags, court_template: vals.courtTemplate,
+            data: { frames: vals.frames }, video_url, category: categoryValue,
+          });
+        }
+        lastSavedSigRef.current = sig;
+        setAutoStatus("saved");
+      } catch {
+        setAutoStatus("error");                   // tries again on the next change
+      }
+    };
+    inFlightRef.current = run().finally(() => {
+      inFlightRef.current = null;
+      if (pendingRef.current) { pendingRef.current = false; void saveNow(); }
+    });
+    return inFlightRef.current;
+  }
+
+  // Opening a play isn't a change: remember how it started.
+  const firstSigRef = useRef(true);
+  useEffect(() => {
+    if (firstSigRef.current) {
+      firstSigRef.current = false;
+      lastSavedSigRef.current = signatureOf({ frames, title, tagsInput, courtTemplate, videoUrl, category, existingPlay, currentUserRole });
+      return;
+    }
+    const t = window.setTimeout(() => { void saveNow(); }, 2500);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frames, title, tagsInput, courtTemplate, videoUrl, category]);
+
+  // The page being hidden is the last reliable moment on a phone.
+  useEffect(() => {
+    const onHide = () => { if (document.visibilityState === "hidden") void saveNow(); };
+    const onPageHide = () => { void saveNow(); };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", onPageHide);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function maybeAutosaveDraft() {
+    try { await saveNow(); } catch { /* leaving shouldn't be blocked by a failed save */ }
+  }
+
+  useEffect(() => {
+    return () => { void maybeAutosaveDraft(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Set up once at mount -- this is what makes it fire on ANY unmount reason, not just an explicit Close click.
+
+  const autoBadge = autoStatus === "idle" ? null : (
+    <span aria-live="polite" style={{ fontSize: 11, whiteSpace: "nowrap",
+      color: autoStatus === "error" ? "#ff7b7b" : autoStatus === "saving" ? "var(--muted)" : "#5de098" }}>
+      {autoStatus === "saving" ? "Saving…" : autoStatus === "saved" ? "Saved ✓" : "Not saved — will retry"}
+    </span>
+  );
+
+  async function handleClose() {
+    await maybeAutosaveDraft();
+    onClose?.();
+  }
+
+  async function handleShare(staffId: string) {
+    if (!existingPlay) { showToast("Save the play first, then share it"); return; }
+    try {
+      await sharePlay(existingPlay.id, staffId);
+      showToast("Shared");
+      setShowShare(false);
+    } catch (e: any) { showToast("Error: " + e.message); }
+  }
+
+  async function handleDelete() {
+    if (!existingPlay) return;
+    if (!window.confirm(`Delete "${existingPlay.title}"? This can't be undone.`)) return;
+    try {
+      await deletePlay(existingPlay.id);
+      onClose?.();
+    } catch (e: any) { showToast("Error: " + e.message); }
+  }
+
+  const rosterMap: Record<string, RosterPlayer> = Object.fromEntries(roster.map((r) => [r.id, r]));
+
+  if (showPreview3D) {
+    // A draft Play built straight from the editor's current in-memory
+    // state — no save needed to preview in 3D while still constructing it.
+    const draftPlay: Play = {
+      id: existingPlay?.id ?? "draft",
+      created_by: existingPlay?.created_by ?? "",
+      title: title || "Untitled play",
+      tags: [],
+      court_template: courtTemplate,
+      data: { frames },
+      forked_from: existingPlay?.forked_from ?? null,
+      video_url: videoUrl.trim() || null,
+      category: existingPlay?.category ?? null,
+      created_at: existingPlay?.created_at ?? "",
+      updated_at: existingPlay?.updated_at ?? "",
+    };
+    return (
+      <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Loading 3D view…</div>}>
+        <Play3DViewer play={draftPlay} roster={rosterMap} onBack={() => setShowPreview3D(false)} />
+      </Suspense>
+    );
+  }
+
+  // Tag autocomplete: suggests from every tag already used across plays
+  // this person can see, matching whatever's typed after the last comma
+  // (the tag currently being typed) — e.g. typing "end" surfaces "End of
+  // game" if that's already been used before. Clicking a suggestion fills
+  // in that segment and leaves a trailing ", " so the next tag can be
+  // typed right away, without disturbing tags already finished earlier
+  // in the same input.
+  const typedSegments = tagsInput.split(",");
+  const inProgressTag = (typedSegments[typedSegments.length - 1] ?? "").trim().toLowerCase();
+  const alreadyTyped = new Set(typedSegments.slice(0, -1).map((t) => t.trim().toLowerCase()));
+  const tagSuggestions = inProgressTag
+    ? allTags.filter((t) => t.toLowerCase().includes(inProgressTag) && !alreadyTyped.has(t.toLowerCase()) && t.toLowerCase() !== inProgressTag).slice(0, 6)
+    : [];
+  function applyTagSuggestion(tag: string) {
+    const finished = typedSegments.slice(0, -1).map((t) => t.trim()).filter(Boolean);
+    setTagsInput([...finished, tag].join(", ") + ", ");
+  }
+
+  // --- Mobile layout: reorganized toolbar, court moved up front, and a
+  // combined preview -> confirm -> name/tags -> save flow instead of an
+  // always-visible title field. Desktop below is untouched. ---
+  if (isMobile) {
+    if (mobileStage === "confirm") {
+      return (
+        <div>
+          <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 12, marginBottom: 12 }}>
+            <PlayCanvas frame={frames[frames.length - 1]} courtTemplate={courtTemplate} roster={rosterMap} edit={false} />
+          </div>
+          <p style={{ textAlign: "center", fontSize: 14, color: "var(--text)", marginBottom: 10 }}>Look good?</p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setMobileStage("draw")} style={{ flex: 1, padding: 10 }}>← Go back</button>
+            <button onClick={() => setMobileStage("naming")} className="coach-add-btn" style={{ flex: 1, justifyContent: "center" }}>Confirm</button>
+          </div>
+        </div>
+      );
+    }
+
+    if (mobileStage === "naming") {
+      return (
+        <div>
+          <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 16 }}>
+            <h3 style={{ fontSize: 15, margin: "0 0 12px", color: "var(--text)" }}>Name this play</h3>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Play title (required)"
+              style={{ width: "100%", marginBottom: 8, background: "var(--surface)", border: title.trim() ? "1px solid var(--border)" : "2px solid var(--gold)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder="Tags (optional)"
+              style={{ width: "100%", marginBottom: tagSuggestions.length ? 4 : 8, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            {tagSuggestions.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+                {tagSuggestions.map((t) => (
+                  <button key={t} onClick={() => applyTagSuggestion(t)} style={{ padding: "4px 9px", fontSize: 11, borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", cursor: "pointer" }}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+            )}
+            <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film — YouTube link"
+              style={{ width: "100%", marginBottom: currentUserRole !== "player" ? 8 : 14, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            <VideoUrlNote url={videoUrl} />
+            {currentUserRole !== "player" && (
+              <select value={category} onChange={(e) => setCategory(e.target.value)}
+                style={{ width: "100%", marginBottom: 14, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+                <option value="">No category</option>
+                {playCategories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+              </select>
+            )}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setMobileStage("draw")} style={{ flex: 1, padding: 10 }}>Cancel</button>
+              <button onClick={handleSave} disabled={saving} className="coach-add-btn" style={{ flex: 1, justifyContent: "center" }}>
+                {saving ? "Saving…" : "Confirm save"}
+              </button>
+            </div>
+            {toast && <p style={{ fontSize: 13, color: "var(--gold)", marginTop: 10, textAlign: "center" }}>{toast}</p>}
+            {showTemplatePicker && (
+              <TemplatePickerModal
+                formations={formations}
+                canDelete={currentUserRole === "admin"}
+                onPick={applyFormation}
+                onDelete={handleDeleteFormation}
+                onEdit={(f) => { setEditingTemplate(f); setShowTemplatePicker(false); }}
+                onClose={() => setShowTemplatePicker(false)}
+              />
+            )}
+            {editingTemplate && (
+              <TemplateEditorModal
+                formation={editingTemplate}
+                onClose={() => setEditingTemplate(null)}
+                onSaved={(updated) => {
+                  setFormations((list) => list.map((f) => (f.id === updated.id ? updated : f)));
+                  setEditingTemplate(null);
+                }}
+              />
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // mobileStage === "draw"
+    return (
+      <div>
+        <select value={courtTemplate} onChange={(e) => setCourtTemplate(e.target.value as CourtTemplate)}
+          style={{ width: "100%", marginBottom: 8, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+          {COURT_TEMPLATES.map((c) => <option key={c} value={c}>{COURT_TEMPLATE_LABELS[c]}</option>)}
+        </select>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 4, marginBottom: 6 }}>
+          {[
+            { tool: "select" as Tool, label: "Move", icon: "✥" },
+            { tool: "player" as Tool, label: "Player", icon: "⬤" },
+            { tool: "ball" as Tool, label: "Ball", icon: "🏀" },
+            { tool: "move" as Tool, label: "Cut", icon: "→" },
+            { tool: "pass" as Tool, label: "Pass", icon: "┄" },
+            { tool: "dribble" as Tool, label: "Dribble", icon: "〜" },
+            { tool: "screen" as Tool, label: "Screen", icon: "⊥" },
+          ].map(({ tool: t, label, icon }) => (
+            <button key={label} onClick={() => { setTool(t); setStampAction(null); }}
+              style={{ padding: "6px 2px", fontSize: 10, border: tool === t ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: tool === t ? "rgba(240,192,64,0.12)" : "var(--surface2)", color: "var(--text)" }}>
+              {icon} {label}
+            </button>
+          ))}
+          <button onClick={undo} disabled={!history.length}
+            style={{ padding: "6px 2px", fontSize: 10, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface2)", color: "var(--text)" }}>
+            ↩ Undo
+          </button>
+          <button onClick={() => { setTool("erase"); setStampAction(null); }}
+            style={{ padding: "6px 2px", fontSize: 10, border: tool === "erase" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: tool === "erase" ? "rgba(240,192,64,0.12)" : "var(--surface2)", color: "var(--text)" }}>
+            ⌫ Erase
+          </button>
+        </div>
+
+        <button onClick={() => setShowMoreTools((v) => !v)}
+          style={{ width: "100%", padding: "6px", fontSize: 11, border: "1px solid var(--border)", borderRadius: 8, background: showMoreTools ? "var(--surface2)" : "transparent", color: "var(--muted)", marginBottom: 8 }}>
+          {showMoreTools ? "▴" : "▾"} More tools
+        </button>
+        {showMoreTools && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8, padding: 8, background: "var(--surface2)", borderRadius: 8 }}>
+            <button onClick={() => { setTool("cone"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "cone" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>▲ Cone</button>
+            <button onClick={() => { setTool("coach"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "coach" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>Ⓒ Coach</button>
+            <button onClick={() => { setTool("loop"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "loop" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↻ Loop</button>
+            <button onClick={() => { setTool("defender"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "defender" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>✕ Defender</button>
+            <button onClick={() => { setTool("draw"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "draw" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>✎ Draw</button>
+            <button onClick={() => { flipEntirePlay(); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↔ Flip entire play</button>
+            <button onClick={() => { flipCurrentStep(); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↔ Flip step</button>
+            <button onClick={() => { setTool("dho"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "dho" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>⇄ Handoff</button>
+            <button onClick={() => { redo(); setShowMoreTools(false); }} disabled={!future.length}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↪ Redo</button>
+            <button onClick={() => { setTool("shot"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "shot" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}><img src="/shot-icon.png" alt="" style={{ width: 13, height: 13, verticalAlign: -2, marginRight: 4 }} /> Shot</button>
+            <button onClick={() => { setTool("lob"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "lob" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>🙌 Lob</button>
+            <button onClick={() => { setTool("zone"); setStampAction(null); setShowMoreTools(false); }}
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "zone" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>▦ Zone shading</button>
+          </div>
+        )}
+
+        {stampAction && (
+          <p style={{ fontSize: 12, color: "var(--gold)", marginBottom: 6 }}>
+            Tap the court to stamp in "{stampAction.name}" — <button onClick={() => setStampFlip((f) => !f)} title="Mirror it left-to-right"
+              style={{ fontSize: 11, fontWeight: 600, marginRight: 6, ...(stampFlip ? { background: "var(--gold)", color: "#1a1a1a", border: "1px solid var(--gold)" } : {}) }}>⇋ Flip{stampFlip ? "ped" : ""}</button><button onClick={() => { setStampAction(null); setStampFlip(false); }} style={{ fontSize: 11 }}>cancel</button>
+          </p>
+        )}
+
+        <div
+          onClickCapture={(e) => {
+            if (!stampAction) return;
+            const svg = (e.currentTarget as HTMLDivElement).querySelector("svg")!;
+            const rect = svg.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
+            const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
+            stampActionAt(activeStamp!, x, y);
+            setStampPreviewPos(null);
+          }}
+          onMouseMove={(e) => {
+            if (!stampAction) return;
+            const svg = (e.currentTarget as HTMLDivElement).querySelector("svg")!;
+            const rect = svg.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
+            const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
+            setStampPreviewPos({ x, y });
+          }}
+          onMouseLeave={() => setStampPreviewPos(null)}
+          style={{ background: "var(--surface2)", borderRadius: 12, padding: 10, marginBottom: 8 }}
+        >
+          <PlayCanvas
+            frame={frame} courtTemplate={courtTemplate} roster={rosterMap}
+            edit={!stampAction} tool={tool}
+            onAddPlayer={addPlayer} onAddDefender={addDefender} onSetBall={setBall} onAddAction={addAction}
+            onErase={eraseNear} onToggleHandoff={toggleHandoff}
+            onMovePlayer={movePlayer} onMoveDefender={moveDefender} onMoveBall={moveBall}
+            onMoveActionPoint={moveActionPoint} onMoveActionWhole={moveActionWhole} onSetActionCurve={setActionCurve} onSetActionCurve2={setActionCurve2}
+            onAddText={addText} onMoveText={moveText} onEditText={editText} onAddZone={addZone} onMoveZone={moveZone}
+            onAddCone={addCone} onMoveCone={moveCone} onAddCoach={addCoach} onMoveCoach={moveCoach} onAddShot={addShot}
+            selected={selected} onSelect={setSelected} onAddDrawing={addDrawing}
+            playSignal={playSignal} onPlayDone={handlePreviewBeatDone}
+            stampPreview={activeStamp && stampPreviewPos ? computeStampGhost(activeStamp, stampPreviewPos.x, stampPreviewPos.y) : null}
+          />
+        </div>
+
+        {restepIdx !== null && restepAffectedCount(frames, restepIdx) > 0 && (() => {
+          const n = restepAffectedCount(frames, restepIdx);
+          const which = n === 1 ? `Step ${restepIdx + 2}` : `Steps ${restepIdx + 2}–${restepIdx + 1 + n}`;
+          return (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
+              background: "rgba(240,192,64,0.09)", border: "1px solid rgba(240,192,64,0.35)", borderRadius: 8,
+              padding: "8px 10px", marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.4 }}>
+                {which} {n === 1 ? "was" : "were"} built from this step. Update {n === 1 ? "it" : "them"}?
+              </span>
+              <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                <button onClick={applyRestep}
+                  style={{ padding: "5px 11px", fontSize: 12, fontWeight: 600, border: "none", borderRadius: 6, background: "var(--gold)", color: "#12141a", cursor: "pointer", fontFamily: "inherit" }}>
+                  Update
+                </button>
+                <button onClick={() => setRestepIdx(null)}
+                  style={{ padding: "5px 11px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "transparent", color: "var(--muted)", cursor: "pointer", fontFamily: "inherit" }}>
+                  Dismiss
+                </button>
+              </span>
+            </div>
+          );
+        })()}
+        <div style={{ display: "flex", gap: 4, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {frames.map((f, i) => (
+            <button key={i} onClick={() => setFrameIdx(i)} title={stepButtonText(f, i)}
+              style={{ padding: "6px 9px", fontSize: 11, border: i === frameIdx ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 8, background: "var(--surface2)", color: "var(--text)",
+                maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {stepButtonText(f, i)}
+            </button>
+          ))}
+          <button onClick={addFrame} style={{ padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface2)", color: "var(--muted)" }}>+</button>
+        </div>
+        {renderStepDetails()}
+
+        <button onClick={() => setShowPreview3D(true)} style={{ width: "100%", padding: "8px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface2)", color: "var(--text)", marginBottom: 8 }}>
+          🧊 Watch live
+        </button>
+        <button onClick={previewAllBeats} className="coach-add-btn" style={{ width: "100%", justifyContent: "center", marginBottom: 16 }}>
+          ▶ Preview & save
+        </button>
+
+        {!existingPlay && currentUserRole !== "player" && (
+          <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginBottom: 12 }}>
+            <h3 style={{ fontSize: 13, margin: "0 0 8px", color: "var(--text)" }}>Templates</h3>
+            <button onClick={() => setShowTemplatePicker(true)} className="coach-add-btn" style={{ width: "100%", justifyContent: "center", marginBottom: 6 }}>
+              🖼️ Pick a template
+            </button>
+            <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+              <button onClick={() => saveCurrentFrameAsFormation("offense")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save offense</button>
+              <button onClick={() => saveCurrentFrameAsFormation("defense")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save defense</button>
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              <button onClick={() => saveCurrentFrameAsFormation("blob")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save blob</button>
+              <button onClick={() => saveCurrentFrameAsFormation("slob")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save slob</button>
+            </div>
+          </div>
+        )}
+
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+          <h3 style={{ fontSize: 13, margin: "0 0 8px", color: "var(--text)" }}>Saved actions</h3>
+          {savedActions.map((a) => (
+            <div key={a.id} style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+              <button onClick={() => setStampAction(a)} style={{ flex: 1, textAlign: "left", padding: "6px 8px", fontSize: 12 }}>🔖 {a.name}</button>
+              {(currentUserRole === "player" || currentUserRole === "admin") && (
+                <button onClick={async () => { await deleteSavedAction(a.id); setSavedActions((s) => s.filter((x) => x.id !== a.id)); }} style={{ padding: "6px 8px", fontSize: 11 }}>✕</button>
+              )}
+            </div>
+          ))}
+          {savedActions.length === 0 && <p style={{ fontSize: 12, color: "var(--muted)" }}>None yet.</p>}
+          <button onClick={saveCurrentFrameAsAction} style={{ width: "100%", padding: "6px 8px", fontSize: 12, marginTop: 4 }}>+ Save current step as action</button>
+
+          <h3 style={{ fontSize: 13, margin: "16px 0 8px", color: "var(--text)" }}>Link players to roster</h3>
+          {frame.players.map((p, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+              <span style={{ fontSize: 11, width: 20, color: "var(--text)" }}>#{p.num}</span>
+              <select value={p.profile_id ?? ""} onChange={(e) => assignRoster(i, e.target.value)}
+                style={{ flex: 1, fontSize: 11, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", color: "var(--text)", fontFamily: "inherit", outline: "none" }}>
+                <option value="">— unassigned —</option>
+                {roster.map((r) => <option key={r.id} value={r.id}>{r.name}{r.jersey != null ? ` (#${r.jersey})` : ""}</option>)}
+              </select>
+            </div>
+          ))}
+          {frame.players.length === 0 && <p style={{ fontSize: 12, color: "var(--muted)" }}>Place players on the court to link them.</p>}
+
+          <div style={{ display: "flex", gap: 12, marginTop: 16, fontSize: 12, flexWrap: "wrap" }}>
+            {currentUserRole === "player" && <button onClick={() => setShowShare((v) => !v)} style={{ padding: "6px 10px" }}>Share with coach</button>}
+            {onClose && <button onClick={handleClose} style={{ padding: "6px 10px" }}>Close</button>}
+            {existingPlay && <button onClick={handleDelete} style={{ padding: "6px 10px", color: "#ff7b7b" }}>🗑 Delete play</button>}
+          </div>
+          {showShare && (
+            <div style={{ marginTop: 8, padding: 10, background: "var(--surface2)", borderRadius: 8 }}>
+              {staff.map((s) => (
+                <button key={s.id} onClick={() => handleShare(s.id)} style={{ display: "block", padding: "6px 10px", marginBottom: 4, fontSize: 12 }}>{s.name}</button>
+              ))}
+              {staff.length === 0 && <p style={{ fontSize: 12, color: "var(--muted)" }}>No coaches found.</p>}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 260px", gap: 16 }}>
+      <div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Play title"
+            style={{ flex: "1 1 200px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+          {autoBadge}
+          <select value={courtTemplate} onChange={(e) => setCourtTemplate(e.target.value as CourtTemplate)}
+            style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+            {COURT_TEMPLATES.map((c) => <option key={c} value={c}>{COURT_TEMPLATE_LABELS[c]}</option>)}
+          </select>
+        </div>
+        <input value={tagsInput} onChange={(e) => setTagsInput(e.target.value)} placeholder="Tags (comma separated: inbounds, press break, BLOB...)"
+          style={{ width: "100%", marginBottom: tagSuggestions.length ? 4 : 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+        {tagSuggestions.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
+            {tagSuggestions.map((t) => (
+              <button key={t} onClick={() => applyTagSuggestion(t)} style={{ padding: "4px 9px", fontSize: 11, borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", cursor: "pointer" }}>
+                {t}
+              </button>
+            ))}
+          </div>
+        )}
+        <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film — YouTube link, e.g. your team running this play"
+          style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+        <VideoUrlNote url={videoUrl} />
+        {currentUserRole !== "player" && (
+          <select value={category} onChange={(e) => setCategory(e.target.value)}
+            style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+            <option value="">No category</option>
+            {playCategories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+          </select>
+        )}
+
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: showMoreTools ? 6 : 8 }}>
+          {PRIMARY_TOOLS.map(({ tool: t, label, icon }) => (
+            <button key={label} onClick={() => { setTool(t); setStampAction(null); }}
+              style={{ padding: "6px 10px", fontSize: 13, border: tool === t ? "2px solid var(--gold)" : "1px solid var(--border)", borderRadius: "8px", background: tool === t ? "rgba(240,192,64,0.12)" : "transparent" }}>
+              {t === "shot" ? <img src="/shot-icon.png" alt="" style={{ width: 14, height: 14, verticalAlign: -2, marginRight: 4 }} /> : icon + " "}
+              {label}
+            </button>
+          ))}
+          <span style={{ width: 1, alignSelf: "stretch", background: "var(--border)", margin: "0 2px" }} />
+          <button onClick={() => setShowMoreTools((v) => !v)}
+            style={{ padding: "6px 10px", fontSize: 13, border: "1px solid var(--border)", borderRadius: "8px", background: showMoreTools ? "var(--surface2)" : "transparent" }}>
+            {showMoreTools ? "▴" : "▾"} More tools
+          </button>
+        </div>
+
+        {showMoreTools && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, padding: "8px 8px", background: "var(--surface2)", borderRadius: 8 }}>
+            {MORE_TOOLS.map(({ tool: t, label, icon }) => (
+              <button key={label} onClick={() => { setTool(t); setStampAction(null); setShowMoreTools(false); }}
+                style={{ padding: "6px 10px", fontSize: 13, border: tool === t ? "2px solid var(--gold)" : "1px solid var(--border)", borderRadius: "8px", background: tool === t ? "rgba(240,192,64,0.12)" : "var(--surface)" }}>
+                {icon} {label}
+              </button>
+            ))}
+            <button onClick={() => { flipCurrentStep(); setShowMoreTools(false); }} style={{ padding: "6px 10px", fontSize: 13, border: "1px solid var(--border)", borderRadius: "8px", background: "var(--surface)" }}>↔ Flip step</button>
+            <button onClick={() => { flipEntirePlay(); setShowMoreTools(false); }} style={{ padding: "6px 10px", fontSize: 13, border: "1px solid var(--border)", borderRadius: "8px", background: "var(--surface)" }}>↔ Flip entire play</button>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+          <button onClick={undo} disabled={!history.length} style={{ padding: "6px 10px" }}>↩ Undo</button>
+          <button onClick={redo} disabled={!future.length} style={{ padding: "6px 10px" }}>↪ Redo</button>
+          {selected && <button onClick={deleteSelected} style={{ padding: "6px 10px" }}>🗑 Delete selected</button>}
+          {selected && selected.kind === "player" && <button onClick={duplicateSelectedPlayer} style={{ padding: "6px 10px" }}>⧉ Duplicate player</button>}
+          <button onClick={() => setPlaySignal((s) => s + 1)} className="coach-add-btn">▶ Play frame</button>
+          {frames.length > 1 && <button onClick={previewAllBeats} style={{ padding: "6px 10px" }}>▶▶ Preview full play</button>}
+          <button onClick={() => setShowPreview3D(true)} style={{ padding: "6px 10px" }}>🧊 Watch live</button>
+        </div>
+
+        {stampAction && (
+          <p style={{ fontSize: 13, color: "var(--gold)", marginBottom: 6 }}>
+            Click the court to stamp in "{stampAction.name}" — <button onClick={() => setStampFlip((f) => !f)} title="Mirror it left-to-right"
+              style={{ fontSize: 12, fontWeight: 600, marginRight: 6, ...(stampFlip ? { background: "var(--gold)", color: "#1a1a1a", border: "1px solid var(--gold)" } : {}) }}>⇋ Flip{stampFlip ? "ped" : ""}</button><button onClick={() => { setStampAction(null); setStampFlip(false); }} style={{ fontSize: 12 }}>cancel</button>
+          </p>
+        )}
+
+        <div
+          onClickCapture={(e) => {
+            if (!stampAction) return;
+            const svg = (e.currentTarget as HTMLDivElement).querySelector("svg")!;
+            const rect = svg.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
+            const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
+            stampActionAt(activeStamp!, x, y);
+            setStampPreviewPos(null);
+          }}
+          onMouseMove={(e) => {
+            if (!stampAction) return;
+            const svg = (e.currentTarget as HTMLDivElement).querySelector("svg")!;
+            const rect = svg.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
+            const y = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
+            setStampPreviewPos({ x, y });
+          }}
+          onMouseLeave={() => setStampPreviewPos(null)}
+          // Fit the court to the window's height on a laptop: the court is
+          // 10 wide for every 7 tall, so its width is capped at what keeps
+          // it (plus the tools and step buttons) on screen without scrolling.
+          style={{ background: "var(--surface2)", borderRadius: 12, padding: 12,
+            maxWidth: "min(100%, max(420px, calc((100vh - 230px) * 600 / 420 + 24px)))", marginLeft: "auto", marginRight: "auto" }}
+        >
+          <PlayCanvas
+            frame={frame}
+            courtTemplate={courtTemplate}
+            roster={rosterMap}
+            edit={!stampAction}
+            tool={tool}
+            onAddPlayer={addPlayer}
+            onAddDefender={addDefender}
+            onSetBall={setBall}
+            onAddAction={addAction}
+            onErase={eraseNear}
+            onToggleHandoff={toggleHandoff}
+            onMovePlayer={movePlayer}
+            onMoveDefender={moveDefender}
+            onMoveBall={moveBall}
+            onMoveActionPoint={moveActionPoint}
+            onMoveActionWhole={moveActionWhole}
+            onSetActionCurve={setActionCurve}
+            onSetActionCurve2={setActionCurve2}
+            onAddText={addText}
+            onMoveText={moveText}
+            onEditText={editText}
+            onAddZone={addZone}
+            onMoveZone={moveZone}
+            onAddCone={addCone}
+            onMoveCone={moveCone}
+            onAddCoach={addCoach}
+            onMoveCoach={moveCoach}
+            onAddShot={addShot}
+            selected={selected}
+            onSelect={setSelected}
+            onAddDrawing={addDrawing}
+            playSignal={playSignal}
+            onPlayDone={handlePreviewBeatDone}
+            stampPreview={activeStamp && stampPreviewPos ? computeStampGhost(activeStamp, stampPreviewPos.x, stampPreviewPos.y) : null}
+          />
+        </div>
+
+        {restepIdx !== null && restepAffectedCount(frames, restepIdx) > 0 && (() => {
+          const n = restepAffectedCount(frames, restepIdx);
+          const which = n === 1 ? `Step ${restepIdx + 2}` : `Steps ${restepIdx + 2}–${restepIdx + 1 + n}`;
+          return (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
+              background: "rgba(240,192,64,0.09)", border: "1px solid rgba(240,192,64,0.35)", borderRadius: 8,
+              padding: "8px 10px", marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.4 }}>
+                {which} {n === 1 ? "was" : "were"} built from this step. Update {n === 1 ? "it" : "them"}?
+              </span>
+              <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                <button onClick={applyRestep}
+                  style={{ padding: "5px 11px", fontSize: 12, fontWeight: 600, border: "none", borderRadius: 6, background: "var(--gold)", color: "#12141a", cursor: "pointer", fontFamily: "inherit" }}>
+                  Update
+                </button>
+                <button onClick={() => setRestepIdx(null)}
+                  style={{ padding: "5px 11px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "transparent", color: "var(--muted)", cursor: "pointer", fontFamily: "inherit" }}>
+                  Dismiss
+                </button>
+              </span>
+            </div>
+          );
+        })()}
+        <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+          {frames.map((f, i) => (
+            <button key={i} onClick={() => setFrameIdx(i)} title={stepButtonText(f, i)}
+              style={{ padding: "6px 10px", border: i === frameIdx ? "2px solid var(--gold)" : "1px solid var(--border)", borderRadius: "8px",
+                maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {stepButtonText(f, i)}
+            </button>
+          ))}
+          <button onClick={addFrame} style={{ padding: "6px 10px" }}>+ Add step</button>
+          <button onClick={duplicateFrame} style={{ padding: "6px 10px" }}>⧉ Duplicate step</button>
+          {frames.length > 1 && <button onClick={() => deleteFrame(frameIdx)} style={{ padding: "6px 10px" }}>Delete step</button>}
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>A play can be several sequential steps — e.g. "screen sets" then "cut".</span>
+        </div>
+        <div style={{ marginTop: 10 }}>{renderStepDetails()}</div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+          <button onClick={handleSave} disabled={saving} className="coach-add-btn">
+            {saving ? "Saving…" : "Save play"}
+          </button>
+          {currentUserRole === "player" && (
+            <button onClick={() => setShowShare((v) => !v)} style={{ padding: "8px 14px" }}>Share with coach</button>
+          )}
+          {onClose && <button onClick={handleClose} style={{ padding: "8px 14px" }}>Close</button>}
+          {existingPlay && <button onClick={handleDelete} style={{ padding: "8px 14px", color: "#ff7b7b" }}>🗑 Delete play</button>}
+        </div>
+
+        {showShare && (
+          <div style={{ marginTop: 8, padding: 10, background: "var(--surface2)", borderRadius: "8px" }}>
+            {staff.map((s) => (
+              <button key={s.id} onClick={() => handleShare(s.id)} style={{ display: "block", padding: "6px 10px", marginBottom: 4 }}>{s.name}</button>
+            ))}
+            {staff.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>No coaches found.</p>}
+          </div>
+        )}
+
+        {toast && <p style={{ fontSize: 13, color: "var(--gold)", marginTop: 8 }}>{toast}</p>}
+        {showTemplatePicker && (
+          <TemplatePickerModal
+            formations={formations}
+            canDelete={currentUserRole === "admin"}
+            onPick={applyFormation}
+            onDelete={handleDeleteFormation}
+            onEdit={(f) => { setEditingTemplate(f); setShowTemplatePicker(false); }}
+            onClose={() => setShowTemplatePicker(false)}
+          />
+        )}
+        {editingTemplate && (
+          <TemplateEditorModal
+            formation={editingTemplate}
+            onClose={() => setEditingTemplate(null)}
+            onSaved={(updated) => {
+              setFormations((list) => list.map((f) => (f.id === updated.id ? updated : f)));
+              setEditingTemplate(null);
+            }}
+          />
+        )}
+      </div>
+
+      <div>
+        {!existingPlay && currentUserRole !== "player" && (
+          <div style={{ marginBottom: 16 }}>
+            <h3 style={{ fontSize: 14, marginBottom: 8 }}>Templates</h3>
+            <button onClick={() => setShowTemplatePicker(true)} className="coach-add-btn" style={{ width: "100%", justifyContent: "center", marginBottom: 6 }}>
+              🖼️ Pick a template
+            </button>
+            <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+              <button onClick={() => saveCurrentFrameAsFormation("offense")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save offense</button>
+              <button onClick={() => saveCurrentFrameAsFormation("defense")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save defense</button>
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              <button onClick={() => saveCurrentFrameAsFormation("blob")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save blob</button>
+              <button onClick={() => saveCurrentFrameAsFormation("slob")} style={{ flex: 1, padding: "6px 8px", fontSize: 12 }}>+ Save slob</button>
+            </div>
+          </div>
+        )}
+
+        <h3 style={{ fontSize: 14, marginBottom: 8 }}>Saved actions</h3>
+        {savedActions.map((a) => (
+          <div key={a.id} style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+            <button onClick={() => setStampAction(a)} style={{ flex: 1, textAlign: "left", padding: "6px 8px", fontSize: 13 }}>
+              🔖 {a.name}
+            </button>
+            {(currentUserRole === "player" || currentUserRole === "admin") && (
+              <button onClick={async () => { await deleteSavedAction(a.id); setSavedActions((s) => s.filter((x) => x.id !== a.id)); }} style={{ padding: "6px 8px", fontSize: 12 }}>✕</button>
+            )}
+          </div>
+        ))}
+        {savedActions.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>None yet.</p>}
+        <button onClick={saveCurrentFrameAsAction} style={{ width: "100%", padding: "6px 8px", fontSize: 13, marginTop: 6 }}>
+          + Save current step as action
+        </button>
+
+        <h3 style={{ fontSize: 14, margin: "16px 0 8px" }}>Link players to roster</h3>
+        {frame.players.map((p, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+            <span style={{ fontSize: 12, width: 20 }}>#{p.num}</span>
+            <select value={p.profile_id ?? ""} onChange={(e) => assignRoster(i, e.target.value)}
+              style={{ flex: 1, fontSize: 12, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 8px", color: "var(--text)", fontFamily: "inherit", outline: "none" }}>
+              <option value="">— unassigned —</option>
+              {roster.map((r) => <option key={r.id} value={r.id}>{r.name}{r.jersey != null ? ` (#${r.jersey})` : ""}</option>)}
+            </select>
+          </div>
+        ))}
+        {frame.players.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>Place players on the court to link them.</p>}
+      </div>
+    </div>
+  );
+}

@@ -118,7 +118,9 @@ export default function ScheduleExport({ items, rosters, defaultRosterId, onClos
         rows += `<tr><td style="${cell}width:${showTeams ? 22 : 28}%;">${esc(dayLabel(i.date))}</td>`
           + `<td style="${cell}width:${showTeams ? 20 : 24}%;">${esc(when(i, ends))}</td>`
           + (showTeams ? `<td style="${cell}width:20%;white-space:nowrap;">${swatches(i)}${esc(teamCol(i))}</td>` : "")
-          + `<td style="${cell}">${w.bold ? `<b>${esc(w.text)}</b>` : esc(w.text)}${w.extra ? ` · ${esc(w.extra)}` : ""}</td></tr>`;
+          + `<td style="${cell}">${w.bold ? `<b>${esc(w.text)}</b>` : esc(w.text)}${w.extra ? ` · ${esc(w.extra)}` : ""}`
+          + (i.note ? `<div style="font-size:12px;color:#555;margin-top:2px;">Note: ${esc(i.note)}</div>` : "")
+          + `</td></tr>`;
       }
     }
     const hasPracticeEnds = chosen.some(i => i.kind === "practice" && ends[i.id]);
@@ -140,6 +142,7 @@ export default function ScheduleExport({ items, rosters, defaultRosterId, onClos
         const w = what(i);
         const t = teamCol(i);
         lines.push(`  ${dayLabel(i.date)}  ${when(i, ends)}  ${t ? `[${t}] ` : ""}${w.text}${w.extra ? ` · ${w.extra}` : ""}`);
+        if (i.note) lines.push(`      Note: ${i.note}`);
       }
     }
     if (chosen.some(i => i.kind === "practice" && ends[i.id])) lines.push("", "Practice end times are expected.");

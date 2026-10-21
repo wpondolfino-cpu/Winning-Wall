@@ -80,14 +80,18 @@ const COACH_NAV_CONFIG: NavItemConfig[] = [
   { key: "practicelibrary", icon: "📒", label: "Team Drills",     section: "inseason" },
   { key: "gamestats",     icon: "📊", label: "Analytics",         section: "inseason" },
   { key: "scoutsheets",   icon: "🔎", label: "Scout Sheets",      section: "inseason" },
-  { key: "quizzes",       icon: "📝", label: "Quizzes",           section: "always" },
+  { key: "quizzes",       icon: "📝", label: "Quizzes",           section: "inseason" },
   { key: "gameday",       icon: "📋", label: "Game Day",          section: "inseason" },
   { key: "players",       icon: "👥", label: "Players & Coaches", section: "always" },
   { key: "announcements", icon: "📢", label: "Announcements",     section: "always" },
   { key: "settings",      icon: "⚙️", label: "Settings",          section: "always" },
   { key: "profile",       icon: "👤", label: "My Profile",        section: "always" },
 ];
-const COACH_NAV_DEFAULT_ORDER = COACH_NAV_CONFIG.map(i => i.key);
+// The default order is A–Z within each group (In-season, Offseason and the
+// always-shown items). Anyone who has rearranged their sidebar keeps their
+// own order; this only decides where things start.
+const byLabel = (a: NavItemConfig, b: NavItemConfig) => a.label.localeCompare(b.label);
+const COACH_NAV_DEFAULT_ORDER = [...COACH_NAV_CONFIG].sort(byLabel).map(i => i.key);
 
 const ADMIN_NAV_CONFIG: NavItemConfig[] = [
   { key: "workouts",      icon: "➕", label: "Manage Workouts",   section: "offseason" },
@@ -103,14 +107,14 @@ const ADMIN_NAV_CONFIG: NavItemConfig[] = [
   { key: "practicelibrary", icon: "📒", label: "Team Drills",     section: "inseason" },
   { key: "gamestats",     icon: "📊", label: "Analytics",         section: "inseason" },
   { key: "scoutsheets",   icon: "🔎", label: "Scout Sheets",      section: "inseason" },
-  { key: "quizzes",       icon: "📝", label: "Quizzes",           section: "always" },
+  { key: "quizzes",       icon: "📝", label: "Quizzes",           section: "inseason" },
   { key: "gameday",       icon: "📋", label: "Game Day",          section: "inseason" },
   { key: "players",       icon: "👥", label: "Players & Coaches", section: "always" },
   { key: "announcements", icon: "📢", label: "Announcements",     section: "always" },
   { key: "settings",      icon: "⚙️", label: "Settings",          section: "always" },
   { key: "profile",       icon: "👤", label: "My Profile",        section: "always" },
 ];
-const ADMIN_NAV_DEFAULT_ORDER = ADMIN_NAV_CONFIG.map(i => i.key);
+const ADMIN_NAV_DEFAULT_ORDER = [...ADMIN_NAV_CONFIG].sort(byLabel).map(i => i.key);
 
 // ── Tab ↔ address bar ─────────────────────────────────────────
 // The app has no router: the open tab is just a value in state, so the
@@ -755,10 +759,12 @@ export default function App() {
 
   // Order the sidebar and More both follow. Anything not in the bar for
   // the current mode lands in More, in this order.
-  const PLAYER_TAB_ORDER: PlayerTab[] = [
+  // A–Z by the name shown, with My Profile kept last.
+  const PLAYER_TAB_ORDER: PlayerTab[] = ([
     "schedule", "workouts", "library", "leaderboard", "h2h", "plays",
-    "gamestats", "scoutsheets", "quizzes", "lifting", "progress", "hof", "profile",
-  ];
+    "gamestats", "scoutsheets", "quizzes", "lifting", "progress", "hof",
+  ] as PlayerTab[]).sort((a, b) => PLAYER_TAB_META[a].label.localeCompare(PLAYER_TAB_META[b].label))
+    .concat(["profile"] as PlayerTab[]);
 
   const barKeys = PLAYER_NAV[effectiveMode === "inseason" ? "inseason" : "offseason"].bar.filter(k => !offTabs.has(k));
   const bottomTabs: BottomTabConfig[] = barKeys.map(k => ({

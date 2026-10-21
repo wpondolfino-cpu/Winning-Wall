@@ -42,6 +42,8 @@ export interface ScheduleItem {
   /** Games only: the final score, typed or worked out by the tracker. */
   scoreUs?: number | null;
   scoreThem?: number | null;
+  /** The coach's free-text note ("Wear grey jerseys"). Players see it. Migration 201. */
+  note?: string | null;
 }
 
 export interface ScheduleWeek {
@@ -75,8 +77,8 @@ export interface ScheduleEvent {
 export async function getSchedule(seasonId: string | null, opts: { playerVisibleOnly?: boolean } = {}): Promise<ScheduleWeek[]> {
   const [weeksRes, practicesRes, gamesRes, eventsRes, sheetsRes] = await Promise.all([
     supabase.from("practice_weeks").select("*").order("start_date", { ascending: true, nullsFirst: false }),
-    supabase.from("practices").select("id, practice_date, start_time, expected_end_time, week_id, status, roster_ids, is_tryout").eq("is_template", false),
-    supabase.from("games").select("id, game_date, tip_time, location, opponent, home_away, week_id, final_score_us, final_score_them, status, gameday_sheet_id, bus_time, roster_id, track_stats, uses_scout_sheet, uses_play_sheet"),
+    supabase.from("practices").select("id, practice_date, start_time, expected_end_time, week_id, status, roster_ids, is_tryout, schedule_note").eq("is_template", false),
+    supabase.from("games").select("id, game_date, tip_time, location, opponent, home_away, week_id, final_score_us, final_score_them, status, gameday_sheet_id, bus_time, roster_id, track_stats, uses_scout_sheet, uses_play_sheet, schedule_note"),
     supabase.from("schedule_events").select("*"),
     supabase.from("scout_sheets").select("game_id, status"),
   ]);
@@ -102,6 +104,7 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
       subtitle: "", week_id: p.week_id, published: p.status === "published",
       rosterIds: p.roster_ids ?? [],
       expectedEndTime: p.expected_end_time ?? null,
+      note: p.schedule_note ?? null,
     });
   }
 
@@ -128,6 +131,7 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
       usesPlaySheet: g.uses_play_sheet ?? true,
       scoreUs: g.final_score_us ?? null,
       scoreThem: g.final_score_them ?? null,
+      note: g.schedule_note ?? null,
     });
   }
 
@@ -136,6 +140,7 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
       id: e.id, kind: "event", date: e.event_date, time: e.start_time ?? null,
       title: e.title, subtitle: e.location ?? "", week_id: e.week_id,
       published: true, rosterIds: e.roster_ids ?? [],
+      note: e.schedule_note ?? null,
     });
   }
 
@@ -265,7 +270,10 @@ export async function updateScheduleFields(item: ScheduleItem, patch: {
   track_stats?: boolean;
   uses_scout_sheet?: boolean;
   uses_play_sheet?: boolean;
+  /** Any kind: the free-text note. Empty clears it. */
+  schedule_note?: string | null;
 }): Promise<{ error: string | null }> {
+  const noteFor = patch.schedule_note !== undefined ? { schedule_note: patch.schedule_note?.trim() || null } : {};
   const stamp = new Date().toISOString();
   // Moving a date has to move the week too. The schedule places rows by
   // date, so it looked right here — but Practice Builder lists practices
@@ -279,6 +287,7 @@ export async function updateScheduleFields(item: ScheduleItem, patch: {
       ...weekFor,
       ...(patch.time !== undefined ? { start_time: patch.time } : {}),
       ...(patch.expected_end_time !== undefined ? { expected_end_time: patch.expected_end_time } : {}),
+      ...noteFor,
       updated_at: stamp,
     }).eq("id", item.id);
     return { error: error?.message ?? null };
@@ -298,6 +307,7 @@ export async function updateScheduleFields(item: ScheduleItem, patch: {
       ...(patch.track_stats !== undefined ? { track_stats: patch.track_stats } : {}),
       ...(patch.uses_scout_sheet !== undefined ? { uses_scout_sheet: patch.uses_scout_sheet } : {}),
       ...(patch.uses_play_sheet !== undefined ? { uses_play_sheet: patch.uses_play_sheet } : {}),
+      ...noteFor,
       updated_at: stamp,
     }).eq("id", item.id);
     return { error: error?.message ?? null };
@@ -308,6 +318,7 @@ export async function updateScheduleFields(item: ScheduleItem, patch: {
     ...(patch.time !== undefined ? { start_time: patch.time } : {}),
     ...(patch.location !== undefined ? { location: patch.location } : {}),
     ...(patch.title ? { title: patch.title } : {}),
+    ...noteFor,
     updated_at: stamp,
   }).eq("id", item.id);
   return { error: error?.message ?? null };
@@ -324,6 +335,7 @@ export async function deleteScheduleItem(item: ScheduleItem): Promise<{ error: s
 export async function createEvent(input: {
   season_id: string | null; event_date: string; start_time?: string | null;
   title: string; location?: string | null; roster_ids?: string[];
+  schedule_note?: string | null;
 }): Promise<{ id: string | null; error: string | null }> {
   const { data: { user } } = await supabase.auth.getUser();
   const weekId = await resolveWeek(input.event_date, input.season_id);
@@ -336,6 +348,7 @@ export async function createEvent(input: {
     roster_ids: input.roster_ids ?? [],
     week_id: weekId,
     created_by: user?.id,
+    ...(input.schedule_note?.trim() ? { schedule_note: input.schedule_note.trim() } : {}),
   }).select("id").single();
   return { id: data?.id ?? null, error: error?.message ?? null };
 }

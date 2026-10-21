@@ -15,6 +15,7 @@
 
 import { useState, useMemo } from "react";
 import { createPractice } from "../../lib/practicePlanner";
+import { supabase } from "../../lib/supabase";
 import { ScheduleItem } from "../../lib/schedule";
 
 interface RosterLite { id: string; name: string; }
@@ -48,6 +49,7 @@ export default function QuickPracticeEditor({ rosters, defaultDate, existing = [
   const [date, setDate] = useState(start);
   const [time, setTime] = useState("15:00");
   const [endTime, setEndTime] = useState("");
+  const [note, setNote] = useState("");
   const [rosterIds, setRosterIds] = useState<string[]>(rosters.length === 1 ? [rosters[0].id] : []);
   // The chosen date's own day starts ticked — it's the day you were thinking of.
   const [days, setDays] = useState<Set<number>>(new Set([new Date(start + "T12:00:00").getDay()]));
@@ -106,7 +108,7 @@ export default function QuickPracticeEditor({ rosters, defaultDate, existing = [
     setSaving(true);
     for (const i of chosen) {
       const t = timesFor(i);
-      const { error } = await createPractice({
+      const { id: practiceId, error } = await createPractice({
         practice_date: week[i].iso,
         start_time: t.start,
         // Practices booked here have no plan yet, so this is the only end
@@ -114,6 +116,9 @@ export default function QuickPracticeEditor({ rosters, defaultDate, existing = [
         expected_end_time: t.end || null,
         roster_ids: rosterIds,
       });
+      if (!error && practiceId && note.trim()) {
+        await supabase.from("practices").update({ schedule_note: note.trim() }).eq("id", practiceId);
+      }
       if (error) {
         setErr(`Stopped at ${week[i].label}: ${error}. Anything before it was booked.`);
         setSaving(false);
@@ -231,6 +236,10 @@ export default function QuickPracticeEditor({ rosters, defaultDate, existing = [
             </div>
           </>
         )}
+
+        <label style={{ ...label, marginTop: 12 }}>Notes (optional) · players see these{chosen.length > 1 ? " · goes on every practice booked here" : ""}</label>
+        <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+          placeholder="Bring user fees." style={{ ...input, resize: "vertical" }} />
 
         {err && <div style={{ fontSize: 12, color: "var(--danger-text)", marginTop: 10 }}>{err}</div>}
 
