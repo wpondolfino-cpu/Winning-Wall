@@ -13,8 +13,9 @@
 // promised something it couldn't do, so it's gone. Pasted feed contents
 // still work.
 
-import { useState } from "react";
-import { ImportRow, parsePastedTable, parseICal, reconcile, commitImport } from "../../lib/scheduleImport";
+import { useEffect, useState } from "react";
+import { ImportRow, GameFeatures, parsePastedTable, parseICal, reconcile, commitImport, time12 } from "../../lib/scheduleImport";
+import { defaultGameFeatures } from "../../lib/gameStats";
 
 interface Props {
   season: string;
@@ -33,6 +34,15 @@ export default function ScheduleImport({ season, seasonId, userId, rosters, onCl
   const [rows, setRows] = useState<ImportRow[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Same three switches as Add game. They start from the team's last
+  // settings (so a JV import starts the way JV games usually are) and can
+  // be ticked off before importing.
+  const [features, setFeatures] = useState<GameFeatures>({ track_stats: true, uses_scout_sheet: true, uses_play_sheet: true });
+  const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    if (!rosterId || touched) return;
+    defaultGameFeatures(rosterId).then(setFeatures).catch(console.error);
+  }, [rosterId, touched]);
 
   // A season string like "2026-27" gives the starting calendar year, which
   // is what the pasted-table parser needs: those rows carry a month and day
@@ -56,7 +66,7 @@ export default function ScheduleImport({ season, seasonId, userId, rosters, onCl
   async function commit() {
     if (!rows) return;
     setBusy(true);
-    const { created, updated } = await commitImport(rows, season, seasonId, userId, rosterId || null);
+    const { created, updated } = await commitImport(rows, season, seasonId, userId, rosterId || null, features);
     setBusy(false);
     onImported();
     onClose();
@@ -126,7 +136,7 @@ export default function ScheduleImport({ season, seasonId, userId, rosters, onCl
                   {rows.map((r, i) => (
                     <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
                       <td style={td}>{r.date ?? "—"}</td>
-                      <td style={td}>{r.time ?? "—"}</td>
+                      <td style={{ ...td, whiteSpace: "nowrap" }}>{r.date ? time12(r.time) : "—"}</td>
                       <td style={td}>{r.home_away}</td>
                       <td style={td}>
                         {r.opponent || "—"}
@@ -156,6 +166,22 @@ export default function ScheduleImport({ season, seasonId, userId, rosters, onCl
               {counts && Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(" · ")}
               {counts?.problem ? " — problem rows are skipped, fix them at the source and re-import" : ""}
               {counts?.unchanged ? " — unchanged rows are left alone" : ""}
+            </div>
+            {/* What the new games come with — the same choices as Add game. */}
+            <div style={{ marginTop: 12, padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>New games come with</div>
+              {([
+                ["track_stats", "Track stats", "In the game tracker and in reports. Off, you type the final score on the schedule."],
+                ["uses_scout_sheet", "Scout sheet", "Offer a scout sheet on the schedule."],
+                ["uses_play_sheet", "Play sheet", "Offer a game day play sheet on the schedule."],
+              ] as [keyof GameFeatures, string, string][]).map(([k, label, hint]) => (
+                <label key={k} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, marginBottom: 6, cursor: "pointer" }}>
+                  <input type="checkbox" checked={features[k]} style={{ marginTop: 2 }}
+                    onChange={e => { setTouched(true); setFeatures(f => ({ ...f, [k]: e.target.checked })); }} />
+                  <span>{label}<span style={{ display: "block", fontSize: 11, color: "var(--muted)" }}>{hint}</span></span>
+                </label>
+              ))}
+              {counts?.moved ? <div style={{ fontSize: 11, color: "var(--muted)" }}>Games already on the schedule keep their own settings.</div> : null}
             </div>
             <button onClick={commit} disabled={busy || willWrite === 0} style={{ ...primary, marginTop: 10 }}>
               {willWrite === 0 ? "Nothing to import" : `Import ${willWrite} game${willWrite === 1 ? "" : "s"}`}

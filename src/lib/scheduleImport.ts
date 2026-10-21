@@ -228,15 +228,28 @@ export async function reconcile(rows: ImportRow[], season: string): Promise<Impo
     if (sameDate && sameTime) return { ...r, status: "unchanged", existingId: byName.id };
     return {
       ...r, status: "moved", existingId: byName.id,
-      note: sameDate ? `time was ${(byName.tip_time ?? "—").slice(0, 5)}` : `was ${byName.game_date}`,
+      note: sameDate ? `time was ${time12(byName.tip_time)}` : `was ${byName.game_date}`,
     };
   });
 }
 
-/** Writes only rows the coach can see and has approved. Weeks are created from dates as needed. */
-export async function commitImport(rows: ImportRow[], season: string, seasonId: string | null, userId: string, rosterId?: string | null) {
+/** "17:00" -> "5:00 PM"; no time -> "TBA". */
+export function time12(t: string | null | undefined): string {
+  if (!t) return "TBA";
+  const [h, m] = t.split(":");
+  const hr = parseInt(h, 10);
+  if (isNaN(hr)) return t;
+  return `${hr % 12 || 12}:${(m ?? "00").slice(0, 2).padStart(2, "0")} ${hr < 12 ? "AM" : "PM"}`;
+}
+
+export type GameFeatures = { track_stats: boolean; uses_scout_sheet: boolean; uses_play_sheet: boolean };
+
+/** Writes only rows the coach can see and has approved. Weeks are created from dates as needed.
+ *  New games get the features the coach ticked on the import screen; games
+ *  that already exist (moved) keep their own settings. */
+export async function commitImport(rows: ImportRow[], season: string, seasonId: string | null, userId: string, rosterId?: string | null, chosen?: GameFeatures) {
   let created = 0, updated = 0;
-  const features = await defaultGameFeatures(rosterId ?? null);
+  const features = chosen ?? await defaultGameFeatures(rosterId ?? null);
   // One opponent per team: a team on the schedule twice (home and away)
   // used to get a new opponent for each game, splitting its games and
   // scout sheets across two Franklins. Existing opponents are matched by
