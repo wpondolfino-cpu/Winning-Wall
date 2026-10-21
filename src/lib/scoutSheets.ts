@@ -304,6 +304,31 @@ export async function getPreviousSheetForOpponent(opponentId: string, excludeShe
   return null;
 }
 
+/**
+ * Changes which team a game is against, from the schedule.
+ *
+ * The game (and its scout sheet, if it has one) is linked to the opponent
+ * with that name, or a new one if there isn't one -- the old opponent is
+ * never renamed, since a placeholder like "TBA" may sit on two games and
+ * only one of them has been decided. A placeholder left with no games, no
+ * sheets and no logo is tidied away.
+ */
+export async function setGameOpponent(gameId: string, name: string): Promise<void> {
+  const clean = name.trim().replace(/\s+/g, " ");
+  if (!clean) throw new Error("Type the opponent's name.");
+  const { data: game } = await supabase.from("games").select("opponent_id").eq("id", gameId).maybeSingle();
+  const oldId: string | null = (game as any)?.opponent_id ?? null;
+  const match = (await getOpponents()).find(o => opponentKey(o.name) === opponentKey(clean));
+  const opp = match ?? await createOpponent(clean);
+  const { error } = await supabase.from("games").update({ opponent: opp.name, opponent_id: opp.id }).eq("id", gameId);
+  if (error) throw error;
+  await supabase.from("scout_sheets").update({ opponent_id: opp.id }).eq("game_id", gameId);
+  if (oldId && oldId !== opp.id) {
+    const { data: old } = await supabase.from("opponents").select("logo_url").eq("id", oldId).maybeSingle();
+    if (old && !(old as any).logo_url) await deleteOpponent(oldId);   // refuses if still in use
+  }
+}
+
 /** Names compared ignoring capitals, spaces and punctuation. */
 function opponentKey(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]/g, "");

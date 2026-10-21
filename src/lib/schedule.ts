@@ -32,6 +32,8 @@ export interface ScheduleItem {
   /** Games only. Away games have two times that matter; this is the one you have to be somewhere for. */
   busTime?: string | null;
   homeAway?: string | null;
+  /** Games only: the opponent's name as typed (title has "vs"/"@" in front). */
+  opponent?: string | null;
   rosterIds?: string[];
   /** Practices only: the coach's expected end, if they've set one. */
   expectedEndTime?: string | null;
@@ -124,6 +126,7 @@ export async function getSchedule(seasonId: string | null, opts: { playerVisible
       gamedaySheetId: g.gameday_sheet_id ?? null,
       busTime: g.bus_time ?? null,
       homeAway: g.home_away ?? null,
+      opponent: g.opponent ?? null,
       played,
       rosterIds: g.roster_id ? [g.roster_id] : [],
       trackStats: g.track_stats ?? true,
@@ -260,6 +263,8 @@ export async function getPracticeEndTimes(items: ScheduleItem[]): Promise<Record
 export async function updateScheduleFields(item: ScheduleItem, patch: {
   date?: string; time?: string | null; location?: string | null;
   opponent?: string; home_away?: string; title?: string;
+  /** Games only: which of our teams plays it. null = no team (shows for everyone). */
+  roster_id?: string | null;
   gameday_sheet_id?: string | null;
   bus_time?: string | null;
   /** Practices only. Empty clears it, handing the end back to the plan. */
@@ -297,7 +302,6 @@ export async function updateScheduleFields(item: ScheduleItem, patch: {
       ...(patch.date ? { game_date: patch.date } : {}),
       ...(patch.time !== undefined ? { tip_time: patch.time } : {}),
       ...(patch.location !== undefined ? { location: patch.location } : {}),
-      ...(patch.opponent ? { opponent: patch.opponent } : {}),
       ...(patch.home_away ? { home_away: patch.home_away } : {}),
       ...(patch.gameday_sheet_id !== undefined ? { gameday_sheet_id: patch.gameday_sheet_id } : {}),
       ...(patch.bus_time !== undefined ? { bus_time: patch.bus_time } : {}),
@@ -307,12 +311,19 @@ export async function updateScheduleFields(item: ScheduleItem, patch: {
       ...(patch.track_stats !== undefined ? { track_stats: patch.track_stats } : {}),
       ...(patch.uses_scout_sheet !== undefined ? { uses_scout_sheet: patch.uses_scout_sheet } : {}),
       ...(patch.uses_play_sheet !== undefined ? { uses_play_sheet: patch.uses_play_sheet } : {}),
+      ...(patch.roster_id !== undefined ? { roster_id: patch.roster_id } : {}),
       ...noteFor,
       updated_at: stamp,
     }).eq("id", item.id);
     // Unticking Scout sheet used to leave the game's (blank) sheet behind on
     // the opponent page. A blank one goes with it; one with scouting on it
     // stays until it's deleted on purpose.
+    // A new opponent name (a tournament's "TBA" once the bracket is out)
+    // relinks the game -- and its scout sheet -- to that team.
+    if (!error && patch.opponent && patch.opponent.trim() && patch.opponent.trim() !== (item.opponent ?? "").trim()) {
+      try { await (await import("./scoutSheets")).setGameOpponent(item.id, patch.opponent); }
+      catch (e: any) { return { error: e?.message ?? "Couldn't change the opponent." }; }
+    }
     if (!error && patch.uses_scout_sheet === false) {
       try { await (await import("./scoutSheets")).removeEmptyScoutSheetForGame(item.id); } catch (e) { console.error(e); }
     }

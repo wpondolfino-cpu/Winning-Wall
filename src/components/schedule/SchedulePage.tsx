@@ -22,6 +22,7 @@ import EventEditor from "./EventEditor";
 import PracticeSchedulePlayerView from "../PracticeSchedulePlayerView";
 import { getGameDaySheets, GameDaySheet } from "../../lib/gameDaySheets";
 import ScheduleImport from "./ScheduleImport";
+import { getOpponents } from "../../lib/scoutSheets";
 import QuickPracticeEditor from "./QuickPracticeEditor";
 
 interface Props {
@@ -127,6 +128,8 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [editing, setEditing] = useState<ScheduleItem | null>(null);
   const [draft, setDraft] = useState<any>({});
+  // Existing opponents, suggested in a game's Opponent box.
+  const [opponentNames, setOpponentNames] = useState<string[]>([]);
   const [seasonId, setSeasonId] = useState<string | null>(null);
   const [seasonLabel, setSeasonLabel] = useState<string>("");
   const [rosters, setRosters] = useState<{ id: string; name: string; color: string }[]>([]);
@@ -610,7 +613,7 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
                   </div>
                   {isCoach && (
                     <button
-                      onClick={e => { e.stopPropagation(); setEditing(editing?.id === item.id ? null : item); setDraft({ date: item.date, time: item.time }); }}
+                      onClick={e => { e.stopPropagation(); setEditing(editing?.id === item.id ? null : item); setDraft({ date: item.date, time: item.time }); if (item.kind === "game" && !opponentNames.length) getOpponents().then(o => setOpponentNames(o.map(x => x.name))).catch(() => {}); }}
                       style={{ ...chip, padding: "5px 11px" }}
                     >
                       {editing?.id === item.id ? "Close" : "Edit"}
@@ -654,6 +657,25 @@ export default function SchedulePage({ role, homeRosterId, onOpenTab }: Props) {
                             value={(draft.expected_end_time !== undefined ? (draft.expected_end_time ?? "") : (item.expectedEndTime ?? "")).slice(0, 5)}
                             onChange={e => setDraft({ ...draft, expected_end_time: e.target.value || null })}
                             style={input} />
+                        </Field>
+                      )}
+                      {/* Who it's against -- for a tournament entered before
+                          the bracket is out. Picks an existing team or makes
+                          one; the game's scout sheet follows. */}
+                      {item.kind === "game" && (
+                        <Field label="Opponent"><>
+                          <input list={`opp-${item.id}`} value={draft.opponent ?? item.opponent ?? ""}
+                            onChange={e => setDraft({ ...draft, opponent: e.target.value })} placeholder="Opponent" style={input} />
+                          <datalist id={`opp-${item.id}`}>{opponentNames.map(n => <option key={n} value={n} />)}</datalist>
+                        </></Field>
+                      )}
+                      {item.kind === "game" && rosters.length > 1 && (
+                        <Field label="Our team">
+                          <select value={draft.roster_id !== undefined ? (draft.roster_id ?? "") : (item.rosterIds?.[0] ?? "")}
+                            onChange={e => setDraft({ ...draft, roster_id: e.target.value || null })} style={input}>
+                            <option value="">No team (everyone)</option>
+                            {rosters.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                          </select>
                         </Field>
                       )}
                       {item.kind !== "practice" && (
