@@ -93,8 +93,18 @@ export async function switchProgram(programId: string): Promise<void> {
   if (error) throw error;
   rememberProgram(programId);
   // A full reload is the simplest way to guarantee no page keeps showing
-  // the previous program's data from its own state.
-  window.location.reload();
+  // the previous program's data from its own state. The open page is kept
+  // (switching from Practices lands on that program's Practices) -- except
+  // the Platform pages, which aren't inside any program: going into a
+  // program from there lands on its home page instead of reloading the
+  // Platform page you came from.
+  const url = new URL(window.location.href);
+  if ((url.searchParams.get("tab") ?? "").startsWith("platform")) {
+    url.searchParams.delete("tab");
+    window.location.href = url.toString();
+  } else {
+    window.location.reload();
+  }
 }
 
 export function roleLabel(role: ProgramRole | null): string {
