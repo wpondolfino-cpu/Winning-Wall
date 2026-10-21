@@ -237,6 +237,14 @@ export async function reconcile(rows: ImportRow[], season: string): Promise<Impo
 export async function commitImport(rows: ImportRow[], season: string, seasonId: string | null, userId: string, rosterId?: string | null) {
   let created = 0, updated = 0;
   const features = await defaultGameFeatures(rosterId ?? null);
+  // One opponent per team: a team on the schedule twice (home and away)
+  // used to get a new opponent for each game, splitting its games and
+  // scout sheets across two Franklins. Existing opponents are matched by
+  // name too, ignoring capitals and spacing.
+  const norm = (n: string) => n.trim().replace(/\s+/g, " ").toLowerCase();
+  const oppByName = new Map<string, string>();
+  const { data: existingOpps } = await supabase.from("opponents").select("id, name").order("created_at");
+  for (const o of (existingOpps ?? []) as any[]) if (!oppByName.has(norm(o.name))) oppByName.set(norm(o.name), o.id);
   for (const r of rows) {
     if (r.status === "problem" || r.status === "unchanged" || !r.date) continue;
     if (r.existingId) {
@@ -256,11 +264,12 @@ export async function commitImport(rows: ImportRow[], season: string, seasonId: 
       // linked from the start — an imported game used to carry the name as
       // text only, which meant a scout sheet for that opponent could never
       // find it.
-      let oppId = r.opponentId ?? null;
+      let oppId = r.opponentId ?? oppByName.get(norm(r.opponent)) ?? null;
       if (!oppId) {
         const { data: made } = await supabase.from("opponents")
           .insert({ name: r.opponent.trim(), created_by: userId }).select("id").single();
         oppId = (made as any)?.id ?? null;
+        if (oppId) oppByName.set(norm(r.opponent), oppId);
       }
       await createGame({
         opponent: r.opponent, opponent_id: oppId, game_date: r.date, tip_time: r.time,
