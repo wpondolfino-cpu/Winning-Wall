@@ -1,12 +1,13 @@
 // src/components/messages/CoachAnnouncements.tsx
-// A head coach's Announcements page: their program's announcements, plus
-// their inbox with Winning Wall (migration 192) as a second tab.
+// A coach's Announcements page: the program's announcements, the staff
+// inbox (migration 203: head coaches and assistants), and -- head coaches
+// only -- the inbox with Winning Wall (migration 192).
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import AnnouncementPanel from "../coach/AnnouncementPanel";
 import SendNotificationPanel from "../coach/SendNotificationPanel";
-import MessageInbox from "./MessageInbox";
+import StaffInbox from "./StaffInbox";
 
 interface Props {
   coachId: string;
@@ -14,11 +15,19 @@ interface Props {
   programId: string | null;
   unread: number;
   onMessagesRead: () => void;
+  /** Assistants get announcements and the staff inbox, not Winning Wall messages. */
+  isHeadCoach?: boolean;
+  staffUnread?: number;
+  onStaffRead?: () => void;
 }
 
-export default function CoachAnnouncements({ coachId, coachName, programId, unread, onMessagesRead }: Props) {
-  // Opens on Messages when something unread is waiting (e.g. from a push).
-  const [tab, setTab] = useState<"announcements" | "messages">(unread > 0 ? "messages" : "announcements");
+type Tab = "announcements" | "messages";
+
+export default function CoachAnnouncements({ coachId, coachName, programId, unread, onMessagesRead, isHeadCoach = true, staffUnread = 0, onStaffRead }: Props) {
+  // One Messages tab: staff conversations, plus Winning Wall ones for head
+  // coaches. Opens there when something unread is waiting (e.g. from a push).
+  const waiting = staffUnread + (isHeadCoach ? unread : 0);
+  const [tab, setTab] = useState<Tab>(waiting > 0 ? "messages" : "announcements");
   const [programName, setProgramName] = useState<string | null>(null);
   useEffect(() => {
     if (!programId) return;
@@ -26,7 +35,7 @@ export default function CoachAnnouncements({ coachId, coachName, programId, unre
       .then(({ data }: any) => setProgramName(data?.name ?? null));
   }, [programId]);
 
-  const tabBtn = (k: "announcements" | "messages", label: string, badge?: number) => (
+  const tabBtn = (k: Tab, label: string, badge?: number) => (
     <button onClick={() => setTab(k)} aria-pressed={tab === k}
       style={{ padding: "10px 16px", borderRadius: 9, border: 0, background: tab === k ? "var(--royal)" : "transparent", color: tab === k ? "#fff" : "var(--muted-2)",
         fontFamily: "inherit", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
@@ -39,16 +48,20 @@ export default function CoachAnnouncements({ coachId, coachName, programId, unre
     <>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, background: "var(--surface)", borderRadius: 12, padding: 4, marginBottom: 16, alignSelf: "flex-start", width: "fit-content" }}>
         {tabBtn("announcements", "Announcements")}
-        {tabBtn("messages", "Messages with Winning Wall", unread)}
+        {tabBtn("messages", "Messages", waiting)}
       </div>
       {tab === "announcements" ? (
-        <><AnnouncementPanel isAdmin={true} coachId={coachId} coachName={coachName} /><SendNotificationPanel /></>
+        <><AnnouncementPanel isAdmin={isHeadCoach} coachId={coachId} coachName={coachName} /><SendNotificationPanel /></>
       ) : (
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
-            Questions, problems or ideas. Only {programName ?? "your program"}'s head coaches and Winning Wall see these.
+            {isHeadCoach
+              ? `Your staff and Admin. Staff messages are between ${programName ?? "your program"}'s coaches; Admin messages (in gold) only head coaches see. Players never see any of it.`
+              : `Between ${programName ?? "your program"}'s coaches only. Players never see these.`}
           </div>
-          <MessageInbox asPlatform={false} myProgram={programId && programName ? { id: programId, name: programName } : null} onActivity={onMessagesRead} />
+          <StaffInbox myName={coachName}
+            platform={isHeadCoach && programId && programName ? { programId, programName } : null}
+            onActivity={() => { onStaffRead?.(); if (isHeadCoach) onMessagesRead(); }} />
         </div>
       )}
     </>

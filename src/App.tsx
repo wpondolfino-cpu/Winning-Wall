@@ -52,6 +52,7 @@ import { confirmNavAway } from "./lib/navGuard";
 import PlatformPage, { PlatformSection } from "./components/platform/PlatformPage";
 import { loadFeaturesOff, tabsOff } from "./lib/features";
 import { unreadMessages } from "./lib/messages";
+import { staffUnread } from "./lib/staffMessages";
 import CoachAnnouncements from "./components/messages/CoachAnnouncements";
 
 type PlayerTab = "workouts" | "leaderboard" | "lifting" | "h2h" | "hof" | "profile" | "progress" | "library" | "plays" | "gamestats" | "scoutsheets" | "quizzes" | "schedule" | "practiceschedule" | "more";
@@ -235,6 +236,16 @@ export default function App() {
   // program's head coaches; for a head coach, replies in their program.
   const [msgUnread, setMsgUnread] = useState(0);
   const refreshMsgUnread = () => { unreadMessages().then(setMsgUnread).catch(() => {}); };
+  // Unread staff messages (migration 203): head coaches and assistants.
+  const [staffUnreadCount, setStaffUnreadCount] = useState(0);
+  const refreshStaffUnread = () => { staffUnread().then(setStaffUnreadCount).catch(() => {}); };
+  useEffect(() => {
+    const role = (profile as any)?.role;
+    if (role !== "admin" && role !== "coach") return;
+    refreshStaffUnread();
+    const t = setInterval(refreshStaffUnread, 120000);
+    return () => clearInterval(t);
+  }, [(profile as any)?.role, (profile as any)?.active_program_id]);
   useEffect(() => {
     if ((profile as any)?.role !== "admin") return;
     refreshMsgUnread();
@@ -361,7 +372,7 @@ export default function App() {
           if (window.innerWidth < 768) setSidebarOpen(false);
         }}>
         <span className="nav-icon">{item.icon}</span> {item.label}
-        {item.key === "announcements" && msgUnread > 0 && <span aria-label={`${msgUnread} unread from Winning Wall`} style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{msgUnread}</span>}
+        {item.key === "announcements" && msgUnread + staffUnreadCount > 0 && <span aria-label={`${msgUnread + staffUnreadCount} unread messages`} style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{msgUnread + staffUnreadCount}</span>}
         {item.key === "players" && pendingApprovals > 0 && <span style={{ marginLeft: 6, background: "#ff3c3c", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>{pendingApprovals}</span>}
       </div>
     );
@@ -981,7 +992,10 @@ export default function App() {
           {isCoach && coachTab === "quizzes" && <QuizzesPage prefill={quizPrefill} onPrefillUsed={() => setQuizPrefill(null)} />}
           {isCoach && coachTab === "gameday" && <GameDaySheetsList initialSheetId={scheduleTarget?.sheetId ?? null} key={scheduleTarget?.sheetId ?? "list"} />}
           {isCoach && coachTab === "leaderboard" && <LeaderboardHub canManage={true} profile={displayProfile} />}
-          {isCoach && coachTab === "announcements" && (<><AnnouncementPanel isAdmin={false} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)}
+          {isCoach && coachTab === "announcements" && (
+            <CoachAnnouncements coachId={user.id} coachName={displayProfile.name} programId={(displayProfile as any).active_program_id ?? null}
+              unread={0} onMessagesRead={() => {}} isHeadCoach={false} staffUnread={staffUnreadCount} onStaffRead={refreshStaffUnread} />
+          )}
           {isCoach && coachTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isCoach={true} />}
           {isCoach && coachTab === "hof" && <HallOfFame canDelete={true} onViewWorkout={(id) => { setCoachTab("workouts"); setDeepLinkWorkoutId(id); }} />}
           {isCoach && coachTab === "challenges" && (
@@ -1025,7 +1039,8 @@ export default function App() {
               platform admin uses Platform › Messages instead. */}
           {isAdmin && adminTab === "announcements" && (displayProfile.is_platform_admin
             ? (<><AnnouncementPanel isAdmin={true} coachId={user.id} coachName={displayProfile.name} /><SendNotificationPanel /></>)
-            : <CoachAnnouncements coachId={user.id} coachName={displayProfile.name} programId={(displayProfile as any).active_program_id ?? null} unread={msgUnread} onMessagesRead={refreshMsgUnread} />)}
+            : <CoachAnnouncements coachId={user.id} coachName={displayProfile.name} programId={(displayProfile as any).active_program_id ?? null} unread={msgUnread} onMessagesRead={refreshMsgUnread}
+                staffUnread={staffUnreadCount} onStaffRead={refreshStaffUnread} />)}
           {isAdmin && adminTab === "lifting" && <LiftingPanel playerId={user.id} playerName={displayProfile.name} avatarUrl={displayProfile.avatar_url} isAdmin={true} />}
           {isAdmin && adminTab === "hof" && <HallOfFame canDelete={true} onViewWorkout={(id) => { setAdminTab("workouts"); setDeepLinkWorkoutId(id); }} />}
           {isAdmin && adminTab === "challenges" && (

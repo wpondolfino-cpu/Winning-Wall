@@ -77,7 +77,7 @@ export default function MessageInbox({ asPlatform, programs, myProgram, onActivi
       {convs !== null && convs.length === 0 && !composing && (
         <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 18, fontSize: 14, color: "var(--muted)", lineHeight: 1.5 }}>
           {asPlatform ? "No messages yet. Head coaches can message you from their Announcements page, or start one with “+ New message”."
-            : "Questions, problems or ideas? Start a message and Winning Wall will reply here."}
+            : "Questions, problems or ideas? Start a message and Admin will reply here."}
         </div>
       )}
 
@@ -112,7 +112,7 @@ function Compose({ asPlatform, programs, myProgram, onSent }: {
           </select>
         </label>
       ) : (
-        <span style={{ fontSize: 13, color: "var(--muted-2)" }}>To: Winning Wall</span>
+        <span style={{ fontSize: 13, color: "var(--muted-2)" }}>To: Admin</span>
       )}
       <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--muted-2)" }}>
         Subject
@@ -132,7 +132,7 @@ function Compose({ asPlatform, programs, myProgram, onSent }: {
   );
 }
 
-function ConversationRow({ conv: c, asPlatform, open, first, onToggle, onChanged }: {
+export function ConversationRow({ conv: c, asPlatform, open, first, onToggle, onChanged }: {
   conv: Conversation; asPlatform: boolean; open: boolean; first: boolean; onToggle: () => void; onChanged: () => void;
 }) {
   const [msgs, setMsgs] = useState<ConvMessage[] | null>(null);
@@ -147,19 +147,22 @@ function ConversationRow({ conv: c, asPlatform, open, first, onToggle, onChanged
   useEffect(() => { if (open) load(); }, [open, c.messages, c.last_at]);
 
   const unread = c.unread > 0;
-  const who = asPlatform ? `${c.program} · ${c.org}` : "Winning Wall";
+  // Coaches see these as "Admin", tinted gold so they stand apart from
+  // staff conversations in the same inbox.
+  const who = asPlatform ? `${c.program} · ${c.org}` : "Admin";
+  const adminTint = !asPlatform;
 
   return (
-    <div style={{ borderTop: first ? "none" : "1px solid rgba(176,184,200,0.12)" }}>
+    <div style={{ borderTop: first ? "none" : "1px solid rgba(176,184,200,0.12)", borderLeft: adminTint ? "4px solid var(--gold)" : undefined }}>
       <button onClick={onToggle} aria-expanded={open}
-        style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", background: open ? "var(--surface2)" : "transparent", border: 0, color: "var(--text)", fontFamily: "inherit", textAlign: "left", cursor: "pointer", minHeight: 64 }}>
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", background: open ? "var(--surface2)" : adminTint ? "rgba(240,192,64,0.07)" : "transparent", border: 0, borderRadius: 0, color: "var(--text)", fontFamily: "inherit", textAlign: "left", cursor: "pointer", minHeight: 64 }}>
         <span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: "50%", background: unread ? "#4c8dff" : "transparent", flexShrink: 0 }} />
         <span style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, minWidth: 0 }}>
           <span style={{ display: "flex", gap: 8, alignItems: "baseline", minWidth: 0 }}>
             <span style={{ fontSize: 15, fontWeight: unread ? 700 : 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.subject}</span>
             {c.messages > 1 && <span style={{ fontSize: 12, color: "var(--muted-3)", flexShrink: 0 }}>{c.messages}</span>}
           </span>
-          <span style={{ fontSize: 12, color: "var(--muted-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{who}</span>
+          <span style={{ fontSize: 12, color: adminTint ? "var(--gold-text)" : "var(--muted-2)", fontWeight: adminTint ? 700 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{who}</span>
           {!open && c.last_body && (
             <span style={{ fontSize: 13, color: unread ? "var(--text)" : "var(--muted-3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {c.last_from_platform === asPlatform ? "You: " : ""}{c.last_body}
@@ -181,7 +184,7 @@ function ConversationRow({ conv: c, asPlatform, open, first, onToggle, onChanged
             return (
               <div key={m.id} style={{ alignSelf: ours ? "flex-end" : "flex-start", maxWidth: "min(85%, 560px)", display: "flex", flexDirection: "column", gap: 3, alignItems: ours ? "flex-end" : "flex-start" }}>
                 <span style={{ fontSize: 11, color: "var(--muted-3)", display: "flex", gap: 8, alignItems: "center" }}>
-                  {m.mine ? "You" : m.sender_name} · {stamp(m.created_at)}
+                  {m.mine ? "You" : (!asPlatform && m.from_platform ? "Admin" : m.sender_name)} · {stamp(m.created_at)}
                   {m.mine && (
                     <button aria-label="Delete this message" title="Delete this message (for both sides)"
                       onClick={async () => {
@@ -194,7 +197,8 @@ function ConversationRow({ conv: c, asPlatform, open, first, onToggle, onChanged
                   )}
                 </span>
                 <div style={{ padding: "10px 14px", borderRadius: 14, fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap", overflowWrap: "anywhere",
-                  background: ours ? "var(--royal)" : "var(--surface)", color: ours ? "#fff" : "var(--text)", border: ours ? "none" : "1px solid var(--border)" }}>{m.body}</div>
+                  background: ours ? "var(--royal)" : adminTint ? "rgba(240,192,64,0.12)" : "var(--surface)", color: ours ? "#fff" : "var(--text)",
+                  border: ours ? "none" : adminTint ? "1px solid rgba(240,192,64,0.45)" : "1px solid var(--border)" }}>{m.body}</div>
               </div>
             );
           })}
@@ -214,7 +218,7 @@ function ConversationRow({ conv: c, asPlatform, open, first, onToggle, onChanged
             <button style={{ ...ghost, height: 36, fontSize: 13 }} onClick={onToggle}>Minimize</button>
             <button style={{ ...ghost, height: 36, fontSize: 13, color: "var(--tx-ff9a9a)", borderColor: "rgba(255,140,140,0.35)" }}
               onClick={async () => {
-                if (!window.confirm(`Delete “${c.subject}” from your inbox? ${asPlatform ? "The head coaches" : "Winning Wall"} still keep it, and it comes back if someone replies.`)) return;
+                if (!window.confirm(`Delete “${c.subject}” from your inbox? ${asPlatform ? "The head coaches" : "Admin"} still keeps it, and it comes back if someone replies.`)) return;
                 try { await deleteConversation(c.id); onChanged(); } catch (e: any) { setErr(e?.message ?? "Couldn't delete."); }
               }}>Delete conversation</button>
           </div>

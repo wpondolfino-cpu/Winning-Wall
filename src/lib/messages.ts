@@ -48,14 +48,14 @@ export async function startConversation(programId: string, subject: string, body
   const { data, error } = await supabase.rpc("conv_start", { p_program: programId, p_subject: subject, p_body: body });
   if (error) throw error;
   const id = data as number;
-  await push(id, opts.fromPlatform, opts.fromPlatform ? `💬 Winning Wall: ${subject}` : `💬 ${opts.programName}: ${subject}`, body);
+  await push(id, opts.fromPlatform, opts.fromPlatform ? `💬 Admin: ${subject}` : `💬 ${opts.programName}: ${subject}`, body);
   return id;
 }
 
 export async function reply(conv: Conversation, body: string, fromPlatform: boolean): Promise<void> {
   const { error } = await supabase.rpc("conv_reply", { p_conv: conv.id, p_body: body });
   if (error) throw error;
-  await push(conv.id, fromPlatform, fromPlatform ? `💬 Winning Wall: ${conv.subject}` : `💬 ${conv.program}: ${conv.subject}`, body);
+  await push(conv.id, fromPlatform, fromPlatform ? `💬 Admin: ${conv.subject}` : `💬 ${conv.program}: ${conv.subject}`, body);
 }
 
 export async function deleteConversation(id: number): Promise<void> {
