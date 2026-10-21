@@ -4,9 +4,18 @@
 // PlayCanvas as the editing surface, restricted to just the Player (or
 // Defender, for a defense template) tool plus Move and Erase, since a
 // template is positions-only — no actions, no ball, nothing else.
+//
+// The court picker (migration 202) sets which court the template opens on
+// in a play: BLOB templates start on baseline out-of-bounds, SLOB on
+// sideline, the rest on a half court; choose Full court for a press.
+// Switching between the half-court drawings keeps players on the same
+// spot of the floor; to or from full court they stay put for you to move.
 
 import { useState } from "react";
-import { Formation, PlayPlayer, PlayDefender, PlayFrame, genPlayerId, updateFormation } from "../../lib/plays";
+import {
+  Formation, PlayPlayer, PlayDefender, PlayFrame, genPlayerId, updateFormation,
+  CourtTemplate, COURT_TEMPLATES, COURT_TEMPLATE_LABELS, templateCourt, convertFormationData,
+} from "../../lib/plays";
 import PlayCanvas from "./PlayCanvas";
 
 interface Props {
@@ -20,8 +29,19 @@ type Tool = "player" | "defender" | "move" | "erase" | null;
 export default function TemplateEditorModal({ formation, onClose, onSaved }: Props) {
   const isPlayerBased = formation.side !== "defense";
   const [name, setName] = useState(formation.name);
-  const [players, setPlayers] = useState<PlayPlayer[]>(formation.data.players ?? []);
-  const [defenders, setDefenders] = useState<PlayDefender[]>(formation.data.defenders ?? []);
+  // Older templates have no court saved: their positions are half-court
+  // ones, shown here on the court they'll open on.
+  const [court, setCourt] = useState<CourtTemplate>(templateCourt(formation));
+  const start = convertFormationData(formation.data, formation.court_template ?? "half", templateCourt(formation));
+  const [players, setPlayers] = useState<PlayPlayer[]>(start.players ?? []);
+  const [defenders, setDefenders] = useState<PlayDefender[]>(start.defenders ?? []);
+
+  function changeCourt(next: CourtTemplate) {
+    const moved = convertFormationData({ players, defenders }, court, next);
+    setPlayers(moved.players ?? []);
+    setDefenders(moved.defenders ?? []);
+    setCourt(next);
+  }
   const [tool, setTool] = useState<Tool>(isPlayerBased ? "player" : "defender");
   const [saving, setSaving] = useState(false);
 
@@ -51,8 +71,8 @@ export default function TemplateEditorModal({ formation, onClose, onSaved }: Pro
     setSaving(true);
     const data = isPlayerBased ? { players } : { defenders };
     try {
-      await updateFormation(formation.id, { name: name.trim(), data });
-      onSaved({ ...formation, name: name.trim(), data });
+      await updateFormation(formation.id, { name: name.trim(), data, court_template: court });
+      onSaved({ ...formation, name: name.trim(), data, court_template: court });
     } catch (e: any) {
       alert("Error: " + e.message);
     } finally {
@@ -71,6 +91,17 @@ export default function TemplateEditorModal({ formation, onClose, onSaved }: Pro
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Template name"
           style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
 
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
+          Court
+          <select value={court} onChange={(e) => changeCourt(e.target.value as CourtTemplate)}
+            style={{ flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 10px", color: "var(--text)", fontSize: 13, fontFamily: "inherit" }}>
+            {COURT_TEMPLATES.map((c) => <option key={c} value={c}>{COURT_TEMPLATE_LABELS[c]}</option>)}
+          </select>
+        </label>
+        <div style={{ fontSize: 11, color: "var(--muted)", margin: "-4px 0 10px" }}>
+          Picking this template in a play switches the play to this court. For a press, choose Full court.
+        </div>
+
         <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
           {isPlayerBased ? (
             <button onClick={() => setTool("player")} style={{ flex: 1, padding: "7px 6px", fontSize: 12, border: tool === "player" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6 }}>+ Player</button>
@@ -84,7 +115,7 @@ export default function TemplateEditorModal({ formation, onClose, onSaved }: Pro
         <div style={{ background: "var(--surface2)", borderRadius: 10, padding: 8, marginBottom: 14 }}>
           <PlayCanvas
             frame={frame}
-            courtTemplate="half"
+            courtTemplate={court}
             edit
             tool={tool}
             onAddPlayer={(p) => setPlayers((list) => [...list, { ...p, id: p.id ?? genPlayerId() }])}

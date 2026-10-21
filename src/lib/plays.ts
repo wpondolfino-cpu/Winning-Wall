@@ -1166,7 +1166,48 @@ export interface Formation {
   side: "offense" | "defense" | "blob" | "slob";
   /** Positions only, same shape regardless of side -- offense/blob/slob store players, defense stores defenders. */
   data: { players?: PlayPlayer[]; defenders?: PlayDefender[] };
+  /**
+   * The court the positions are laid out on (migration 202). Blank on
+   * templates made before it: those were laid out on a half court.
+   */
+  court_template?: CourtTemplate | null;
   created_at: string;
+}
+
+/** The court a template opens on: its own, or for older ones the natural court for its side. */
+export function templateCourt(f: Pick<Formation, "side" | "court_template">): CourtTemplate {
+  if (f.court_template) return f.court_template;
+  return f.side === "blob" ? "baseline_oob" : f.side === "slob" ? "sideline_oob" : "half";
+}
+
+/**
+ * Moves a point between court drawings of the same half court.
+ *
+ * "half", "baseline_oob" and "sideline_oob" are one physical half court,
+ * drawn slightly squeezed and shifted to leave out-of-bounds room (see
+ * PlayCanvas). Converting keeps a player on the same spot of the floor --
+ * the block stays the block. Full court is a different picture, so points
+ * going to or from it are left where they are.
+ */
+export function convertCourtPoint<T extends { x: number; y: number }>(p: T, from: CourtTemplate, to: CourtTemplate): T {
+  if (from === to || from === "full" || to === "full") return p;
+  // to half-court space
+  let x = p.x, y = p.y;
+  if (from === "baseline_oob") y = (y - 35.34) / 0.91505;
+  if (from === "sideline_oob") x = (x - 35.24) / 0.94088;
+  // into the target drawing
+  if (to === "baseline_oob") y = 35.34 + 0.91505 * y;
+  if (to === "sideline_oob") x = 35.24 + 0.94088 * x;
+  return { ...p, x, y };
+}
+
+/** A template's positions as they sit on another court drawing. */
+export function convertFormationData(data: Formation["data"], from: CourtTemplate, to: CourtTemplate): Formation["data"] {
+  return {
+    ...data,
+    players: data.players?.map((p) => convertCourtPoint(p, from, to)),
+    defenders: data.defenders?.map((d) => convertCourtPoint(d, from, to)),
+  };
 }
 
 export async function getFormations(): Promise<Formation[]> {
@@ -1175,12 +1216,12 @@ export async function getFormations(): Promise<Formation[]> {
   return data ?? [];
 }
 
-export async function createFormation(name: string, side: Formation["side"], data: Formation["data"]): Promise<Formation> {
+export async function createFormation(name: string, side: Formation["side"], data: Formation["data"], court?: CourtTemplate): Promise<Formation> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
   const { data: row, error } = await supabase
     .from("formations")
-    .insert({ created_by: user.id, name, side, data })
+    .insert({ created_by: user.id, name, side, data, ...(court ? { court_template: court } : {}) })
     .select()
     .single();
   if (error) throw error;
@@ -1188,7 +1229,7 @@ export async function createFormation(name: string, side: Formation["side"], dat
 }
 
 /** Rename and/or reposition an existing template in place -- keeps the same id, so anything already referencing it is untouched. */
-export async function updateFormation(id: string, patch: Partial<Pick<Formation, "name" | "data">>) {
+export async function updateFormation(id: string, patch: Partial<Pick<Formation, "name" | "data" | "court_template">>) {
   const { error } = await supabase.from("formations").update(patch).eq("id", id);
   if (error) throw error;
 }

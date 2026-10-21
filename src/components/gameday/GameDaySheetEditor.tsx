@@ -9,6 +9,7 @@ import {
 import { getMyPlays, Play } from "../../lib/plays";
 import { inputStyle } from "../../lib/inputStyle";
 import GameDaySheetPrintView from "./GameDaySheetPrintView";
+import { RotationLink } from "./SheetRotation";
 
 interface Props {
   sheetId: string;
@@ -392,6 +393,9 @@ export default function GameDaySheetEditor({ sheetId, onClose }: Props) {
           <strong style={{ fontSize: 16 }}>{sheet.name}</strong>
         </div>
       </div>
+
+      <RotationLink sheetId={sheet.id} planId={sheet.rotation_plan_id}
+        onChanged={(id) => setSheet(s => (s ? { ...s, rotation_plan_id: id } : s))} />
 
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20 }}>
         <div>

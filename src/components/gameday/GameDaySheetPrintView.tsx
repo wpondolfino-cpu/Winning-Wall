@@ -1,6 +1,7 @@
 // src/components/gameday/GameDaySheetPrintView.tsx
 import { useState, useLayoutEffect, useEffect, useRef } from "react";
 import { GameDaySheet, GameDayCall, GameDaySection, GameDaySectionRow, getSections } from "../../lib/gameDaySheets";
+import { RotationPrint } from "./SheetRotation";
 
 interface Props {
   sheet: GameDaySheet;
@@ -159,6 +160,14 @@ export default function GameDaySheetPrintView({ sheet, calls }: Props) {
                 <DefenseBlock calls={calls} sections={sections} />
                 <SpecialsBlock calls={calls} sections={sections} />
               </div>
+            </PageShell>
+          )}
+
+          {/* The linked rotation plan gets its own page, so the call sheet
+              keeps its one-page fit. */}
+          {sheet.rotation_plan_id && (
+            <PageShell name={`${sheet.name} — rotation`}>
+              <RotationPrint planId={sheet.rotation_plan_id} />
             </PageShell>
           )}
         </>

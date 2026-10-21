@@ -359,3 +359,54 @@ export function actualBlocksFromSlice(slice: GameSlice, blocksPerPeriod = DEFAUL
   });
   return out;
 }
+
+
+// ── On a Game Day play sheet (migration 202) ─────────────────────
+
+export interface RotationChoice { id: string; game_id: string; label: string; date: string | null; }
+
+/** Every saved rotation plan, newest game first, labelled by its game. */
+export async function listRotationPlans(): Promise<RotationChoice[]> {
+  const { data: plans } = await supabase.from("rotation_plans").select("id, game_id, blocks");
+  const rows = ((plans ?? []) as any[]).filter(p => (p.blocks ?? []).some((b: string[]) => (b ?? []).length));
+  if (!rows.length) return [];
+  const { data: games } = await supabase.from("games").select("id, opponent, home_away, game_date").in("id", rows.map(p => p.game_id));
+  const byId = new Map(((games ?? []) as any[]).map(g => [g.id, g]));
+  return rows.map(p => {
+    const g = byId.get(p.game_id);
+    const pre = g?.home_away === "away" ? "@ " : g?.home_away === "home" ? "vs " : "";
+    return { id: p.id, game_id: p.game_id, label: g ? `${pre}${g.opponent}` : "A game", date: g?.game_date ?? null };
+  }).sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+}
+
+export interface SheetRotation {
+  label: string;
+  date: string | null;
+  /** One entry per block: "Q1 · 1" and the five names. */
+  rows: { label: string; names: string[] }[];
+  notes: string | null;
+}
+
+/** A linked plan, ready to show: block labels and names instead of ids. */
+export async function loadSheetRotation(planId: string): Promise<SheetRotation | null> {
+  const { data: plan } = await supabase.from("rotation_plans").select("*").eq("id", planId).maybeSingle();
+  if (!plan) return null;
+  const { data: game } = await supabase.from("games").select("opponent, home_away, game_date, regulation_periods").eq("id", (plan as any).game_id).maybeSingle();
+  const blocks: string[][] = (plan as any).blocks ?? [];
+  const ids = [...new Set(blocks.flat())];
+  const { data: people } = ids.length ? await supabase.from("profiles").select("id, name").in("id", ids) : { data: [] as any[] };
+  const nameOf = new Map(((people ?? []) as any[]).map(p => [p.id, p.name as string]));
+  const periods = Math.max(1, (game as any)?.regulation_periods ?? 4);
+  const per = Math.max(1, Math.round(blocks.length / periods));
+  const tag = periods === 2 ? "H" : "Q";
+  const pre = (game as any)?.home_away === "away" ? "@ " : (game as any)?.home_away === "home" ? "vs " : "";
+  return {
+    label: game ? `${pre}${(game as any).opponent}` : "Rotation plan",
+    date: (game as any)?.game_date ?? null,
+    rows: blocks.map((b, i) => ({
+      label: `${tag}${Math.floor(i / per) + 1}${per > 1 ? ` · ${(i % per) + 1}` : ""}`,
+      names: (b ?? []).map(id => nameOf.get(id) ?? "—"),
+    })),
+    notes: (plan as any).notes ?? null,
+  };
+}

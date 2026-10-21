@@ -11,7 +11,7 @@ import VideoUrlNote from "../shared/VideoUrlNote";
 import {
   Play, PlayData, PlayFrame, PlayPlayer, PlayAction, ActionType,
   CourtTemplate, COURT_TEMPLATES, COURT_TEMPLATE_LABELS,
-  SavedAction, Formation, RosterPlayer, PlayShareTarget,
+  SavedAction, Formation, RosterPlayer, PlayShareTarget, templateCourt, convertFormationData,
   emptyPlayData, createPlay, updatePlay, deletePlay, genPlayerId, deriveNextFrame,
   restepFrom, restepAffectedCount, carryForwardSignature,
   stepButtonText, STEP_LABEL_MAX, STEP_NOTE_MAX,
@@ -568,15 +568,31 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   // frame, leaving the ball/other side/everything else untouched. That
   // lets a coach apply an offense formation and a defense formation
   // independently to build the full starting picture.
+  //
+  // A template also brings its court: a BLOB template switches the play to
+  // the baseline out-of-bounds court, a SLOB to the sideline one, a press
+  // template set to full court to full court. Done quietly on a play that's
+  // only just started; once there's drawing to disrupt, it asks first.
   function applyFormation(f: Formation) {
+    const from: CourtTemplate = f.court_template ?? "half";
+    let target: CourtTemplate = courtTemplate;
+    const wanted = templateCourt(f);
+    if (wanted !== courtTemplate) {
+      const fresh = frames.length === 1 && frame.actions.length === 0;
+      if (fresh || window.confirm(`"${f.name}" is a ${COURT_TEMPLATE_LABELS[wanted].toLowerCase()} template. Switch this play to that court?\n\nOK switches the court for every step. Cancel keeps this court and places the template on it.`)) {
+        target = wanted;
+        setCourtTemplate(wanted);
+      }
+    }
+    const data = convertFormationData(f.data, from, target);
     pushHistory();
     if (f.side === "defense") {
       // Fresh ids, like players get: template defenders may have none, and
       // Cut/Loop needs one to move them.
-      updateFrame((fr) => ({ ...fr, defenders: (f.data.defenders ?? []).map((d) => ({ ...d, id: genPlayerId() })) }));
+      updateFrame((fr) => ({ ...fr, defenders: (data.defenders ?? []).map((d) => ({ ...d, id: genPlayerId() })) }));
     } else {
       // offense, blob, and slob templates all store player positions the same way.
-      updateFrame((fr) => ({ ...fr, players: (f.data.players ?? []).map((p) => ({ ...p, id: genPlayerId() })) }));
+      updateFrame((fr) => ({ ...fr, players: (data.players ?? []).map((p) => ({ ...p, id: genPlayerId() })) }));
     }
     setShowTemplatePicker(false);
   }
@@ -587,7 +603,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     if (!name) return;
     const data = side === "defense" ? { defenders: frame.defenders } : { players: frame.players };
     try {
-      const saved = await createFormation(name, side, data);
+      // Saved with the play's court, so it opens on the same one.
+      const saved = await createFormation(name, side, data, courtTemplate);
       setFormations((f) => [saved, ...f]);
       showToast(`Saved "${name}"`);
     } catch (e: any) { showToast("Error: " + e.message); }

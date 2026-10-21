@@ -7,7 +7,7 @@
 // surface instead.
 
 import { useState } from "react";
-import { Formation } from "../../lib/plays";
+import { Formation, templateCourt, COURT_TEMPLATE_LABELS } from "../../lib/plays";
 import TemplatePreview from "./TemplatePreview";
 
 const SIDES: { value: Formation["side"]; label: string; emoji: string }[] = [
@@ -53,7 +53,12 @@ export default function TemplatePickerModal({ formations, canDelete, onPick, onD
             <div key={f.id} style={{ position: "relative" }}>
               <button onClick={() => onPick(f)} style={{ width: "100%", padding: 0, border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden", background: "var(--surface2)", cursor: "pointer", textAlign: "left" }}>
                 <TemplatePreview data={f.data} side={f.side} />
-                <div style={{ padding: "6px 8px", fontSize: 12, fontWeight: 600, color: "var(--text)", textAlign: "center" }}>{f.name}</div>
+                <div style={{ padding: "6px 8px", fontSize: 12, fontWeight: 600, color: "var(--text)", textAlign: "center" }}>
+                  {f.name}
+                  {templateCourt(f) !== "half" && (
+                    <span style={{ display: "block", fontSize: 10, fontWeight: 400, color: "var(--muted)" }}>{COURT_TEMPLATE_LABELS[templateCourt(f)]}</span>
+                  )}
+                </div>
               </button>
               <div style={{ position: "absolute", top: 6, right: 6, display: "flex", gap: 4 }}>
                 <button onClick={(e) => { e.stopPropagation(); onEdit(f); }} title="Rename or reposition"

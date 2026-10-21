@@ -124,6 +124,14 @@ export interface GameDaySheet {
   section_labels?: Record<string, string>;
   /** @deprecated Superseded by the gameday_sections table. */
   hidden_sections?: string[];
+  /** The rotation plan shown on this sheet, if one is linked (migration 202). */
+  rotation_plan_id?: string | null;
+}
+
+/** Link a rotation plan to a sheet, or unlink it with null. */
+export async function setSheetRotation(sheetId: string, planId: string | null) {
+  const { error } = await supabase.from("gameday_sheets").update({ rotation_plan_id: planId }).eq("id", sheetId);
+  if (error) throw error;
 }
 
 export interface GameDayCall {
