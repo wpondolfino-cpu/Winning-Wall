@@ -24,7 +24,9 @@ interface Props {
   onSaved: (updated: Formation) => void;
 }
 
-type Tool = "player" | "defender" | "move" | "erase" | null;
+// "select" is the canvas's drag-to-move tool. This used to pass "move",
+// which on the canvas means drawing a cut -- so Move did nothing here.
+type Tool = "player" | "defender" | "select" | "erase" | null;
 
 export default function TemplateEditorModal({ formation, onClose, onSaved }: Props) {
   const isPlayerBased = formation.side !== "defense";
@@ -108,7 +110,7 @@ export default function TemplateEditorModal({ formation, onClose, onSaved }: Pro
           ) : (
             <button onClick={() => setTool("defender")} style={{ flex: 1, padding: "7px 6px", fontSize: 12, border: tool === "defender" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6 }}>+ Defender</button>
           )}
-          <button onClick={() => setTool("move")} style={{ flex: 1, padding: "7px 6px", fontSize: 12, border: tool === "move" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6 }}>Move</button>
+          <button onClick={() => setTool("select")} style={{ flex: 1, padding: "7px 6px", fontSize: 12, border: tool === "select" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6 }}>Move</button>
           <button onClick={() => setTool("erase")} style={{ flex: 1, padding: "7px 6px", fontSize: 12, border: tool === "erase" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6 }}>⌫ Erase</button>
         </div>
 

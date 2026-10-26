@@ -270,6 +270,19 @@ function nearestPlayerOrArrival(frame: PlayFrame, x: number, y: number, excludeI
   return best;
 }
 
+/**
+ * Colour for cuts, screens and dribbles: it follows the court, not the app
+ * theme. The court is dark wood in both light and dark mode, so the lines
+ * stay near-white; the light printed court gets dark lines.
+ */
+function courtInk(bg: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(bg.trim());
+  if (!m) return "#e8eaf2";
+  const n = parseInt(m[1], 16);
+  const lum = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return lum > 0.55 ? "#141a2a" : "#e8eaf2";
+}
+
 function ActionShape({ a }: { a: PlayAction }) {
   if (a.type === "dho") {
     // Dribble handoff: a short line from the giver to the receiver with the
@@ -291,8 +304,8 @@ function ActionShape({ a }: { a: PlayAction }) {
     const nx = (-dy / len) * 9, ny = (dx / len) * 9;
     return (
       <g>
-        <path d={linePath(a)} fill="none" stroke="var(--text)" strokeWidth={4} />
-        <line x1={a.x2 - nx} y1={a.y2 - ny} x2={a.x2 + nx} y2={a.y2 + ny} stroke="var(--text)" strokeWidth={4} />
+        <path d={linePath(a)} fill="none" stroke="var(--court-ink)" strokeWidth={4} />
+        <line x1={a.x2 - nx} y1={a.y2 - ny} x2={a.x2 + nx} y2={a.y2 + ny} stroke="var(--court-ink)" strokeWidth={4} />
       </g>
     );
   }
@@ -324,13 +337,13 @@ function ActionShape({ a }: { a: PlayAction }) {
   }
   if (a.type === "dribble") {
     return (
-      <path d={dribblePath(a)} fill="none" stroke="var(--text)" strokeWidth={2.5}
+      <path d={dribblePath(a)} fill="none" stroke="var(--court-ink)" strokeWidth={2.5}
         markerEnd="url(#pc-arrow-solid)" />
     );
   }
   // "move" / cut — the type that can curl off a screen
   return (
-    <path d={linePath(a)} fill="none" stroke="var(--text)" strokeWidth={2.5}
+    <path d={linePath(a)} fill="none" stroke="var(--court-ink)" strokeWidth={2.5}
       markerEnd="url(#pc-arrow-solid)" />
   );
 }
@@ -759,7 +772,7 @@ export default function PlayCanvas({
     <svg
       ref={svgRef}
       viewBox={!edit && viewBox ? viewBox.join(" ") : `0 0 ${CANVAS_W} ${CANVAS_H}`}
-      style={{ width: "100%", height: "auto", display: "block", background: courtBg, borderRadius: 8, cursor: !edit || !tool ? "default" : tool === "select" ? (moveDrag ? "grabbing" : "grab") : "crosshair" }}
+      style={{ ["--court-ink" as any]: courtInk(courtBg), width: "100%", height: "auto", display: "block", background: courtBg, borderRadius: 8, cursor: !edit || !tool ? "default" : tool === "select" ? (moveDrag ? "grabbing" : "grab") : "crosshair" }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -767,7 +780,7 @@ export default function PlayCanvas({
     >
       <defs>
         <marker id="pc-arrow-solid" markerWidth={8} markerHeight={8} refX={6} refY={4} orient="auto">
-          <path d="M0,0 L8,4 L0,8 Z" fill="var(--text)" />
+          <path d="M0,0 L8,4 L0,8 Z" fill="var(--court-ink)" />
         </marker>
         <marker id="pc-arrow-pass" markerWidth={8} markerHeight={8} refX={6} refY={4} orient="auto">
           <path d="M0,0 L8,4 L0,8 Z" fill="#185FA5" />
