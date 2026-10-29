@@ -56,6 +56,14 @@ export interface PlayAction {
    * that moment instead of waiting for them to clear the spot.
    */
   ghost?: boolean;
+  /**
+   * Cuts only: a seal -- the post player gets to the spot and sinks into a
+   * low, wide stance, holding the defender on that side, and keeps it until
+   * they next move. Drawn with a cupped arc at the spot.
+   */
+  seal?: boolean;
+  /** A seal made where the player stands (no run): the side they seal toward, for the arc. */
+  sealToward?: PlayPoint;
 }
 
 /** All of a given entity's actions in a frame, in sequence order (lowest sequenceIndex first). Works for a player OR a defender's id — sourcePlayerId just holds whichever one is actually moving, this doesn't care which. */
@@ -384,6 +392,9 @@ export function localActionProgress(globalT: number, action: PlayAction, frame: 
 export function pathProgress(localT: number, action: PlayAction, frame: PlayFrame): number {
   const u = Math.max(0, Math.min(1, localT));
   if (action.type === "screen" && action.ghost) return 1 - Math.pow(1 - u, 2.2);
+  // A seal gets there by three-quarters of the way through and sits, so
+  // they're sealed before an entry pass lands.
+  if (action.type === "move" && action.seal) { const v = Math.min(1, u / 0.75); return 1 - (1 - v) * (1 - v); }
   if (action.sourcePlayerId && (action.type === "move" || action.type === "dribble")) {
     const seq = playerActionSequence(frame, action.sourcePlayerId);
     const i = seq.indexOf(action);

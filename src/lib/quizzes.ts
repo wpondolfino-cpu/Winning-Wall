@@ -977,6 +977,7 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
           const first = mine[0];
           if (!first || !ACTION_WORD[first.type]) continue;
           if (first.type === "screen" && first.ghost) continue;   // "Screen" would be the wrong answer to teach
+          if (first.type === "move" && first.seal) continue;       // nor would "Cut" for a seal
           if (givesBall(first.type)) {
             const to = f.players.find(q => q.id === first.targetPlayerId);
             const others = f.players.filter(q => q.id !== p.id && q.id !== to?.id).map(q => q.num);

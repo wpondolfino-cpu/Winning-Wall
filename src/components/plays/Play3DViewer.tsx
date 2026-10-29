@@ -50,7 +50,12 @@ const STANCE_DROP = 0.1;          // -10% height at full stance
 const STANCE_ARRIVE_FROM = 0.8;   // plant over the last 20% of the screen's travel
 const STANCE_RELEASE_BY = 0.25;   // back to normal within the first 25% of the next move
 const GHOST_DIP = 0.35;           // a ghost screen only sinks about a third of the way into a real plant
-const GHOST_DIP_FROM = 0.75;      // ...over the last quarter of its run, and is back up as it arrives
+const GHOST_DIP_FROM = 0.75;
+const SEAL_LEVEL = 1.35;          // a seal sits lower and wider than a screen
+const SEAL_ARRIVE_FROM = 0.6;     // sinks in as they reach the spot (at ~75%, see pathProgress)
+const SEAL_ARRIVE_TO = 0.8;
+/** How deep a planted player stays after this move: screen 1, seal deeper, anything else 0. */
+const holdLevel = (a: PlayAction) => (a.type === "screen" && !a.ghost ? 1 : a.type === "move" && a.seal ? SEAL_LEVEL : 0);      // ...over the last quarter of its run, and is back up as it arrives
 
 interface StanceParts {
   body?: THREE.Mesh;
@@ -66,33 +71,36 @@ const settleEase = (a: number) => { const c = 1.7; return 1 + (c + 1) * Math.pow
 const isMovement = (a: PlayAction) => a.type === "move" || a.type === "dribble" || a.type === "screen";
 
 /** Whether this player is still standing in a screen when a step begins: their most recent movement in any earlier step was a screen. */
-function plantedAtStepStart(frames: PlayFrame[], idx: number, playerId: string | undefined): boolean {
-  if (!playerId) return false;
+function plantedAtStepStart(frames: PlayFrame[], idx: number, playerId: string | undefined): number {
+  if (!playerId) return 0;
   for (let f = idx - 1; f >= 0; f--) {
     const seq = playerActionSequence(frames[f], playerId);
     for (let k = seq.length - 1; k >= 0; k--) {
-      if (seq[k].type === "screen" && !seq[k].ghost) return true;
-      if (isMovement(seq[k])) return false;
+      if (isMovement(seq[k])) return holdLevel(seq[k]);   // still screening or sealing from before
     }
   }
-  return false;
+  return 0;
 }
 
 /** How far into the set stance (0 = normal, 1 = planted, briefly a bit over 1 while settling) a player is at beat progress t. */
-function stanceAt(t: number, seq: PlayAction[], frame: PlayFrame, startsPlanted: boolean): number {
+function stanceAt(t: number, seq: PlayAction[], frame: PlayFrame, startsPlanted: number): number {
   const activeIdx = seq.length > 0 ? activeSequenceIndex(t, seq, frame) : -1;
   let mIdx = -1;
   for (let k = activeIdx; k >= 0; k--) if (isMovement(seq[k])) { mIdx = k; break; }
-  if (mIdx < 0) return startsPlanted ? 1 : 0;           // hasn't moved yet this step
+  if (mIdx < 0) return startsPlanted;                   // hasn't moved yet this step
   const m = seq[mIdx];
-  if (mIdx !== activeIdx) return m.type === "screen" && !m.ghost ? 1 : 0; // standing after their last move (e.g. passing)
+  if (mIdx !== activeIdx) return holdLevel(m); // standing after their last move (e.g. passing)
   const localT = localActionProgress(t, m, frame);
   // Ghost: a quick half-dip as they arrive, never held.
   if (m.type === "screen" && m.ghost) return GHOST_DIP * Math.sin(Math.PI * clamp01((localT - GHOST_DIP_FROM) / (1 - GHOST_DIP_FROM)));
   let prevIdx = -1;
   for (let k = mIdx - 1; k >= 0; k--) if (isMovement(seq[k])) { prevIdx = k; break; }
-  const wasPlanted = prevIdx >= 0 ? seq[prevIdx].type === "screen" && !seq[prevIdx].ghost : startsPlanted;
-  const release = wasPlanted ? Math.max(0, 1 - localT / STANCE_RELEASE_BY) : 0;
+  const wasPlanted = prevIdx >= 0 ? holdLevel(seq[prevIdx]) : startsPlanted;
+  const release = wasPlanted * Math.max(0, 1 - localT / STANCE_RELEASE_BY);
+  // Seal: sink in low and wide as they reach the spot, then hold.
+  if (m.type === "move" && m.seal) {
+    return Math.max(release, SEAL_LEVEL * settleEase(clamp01((localT - SEAL_ARRIVE_FROM) / (SEAL_ARRIVE_TO - SEAL_ARRIVE_FROM))));
+  }
   const arrive = m.type === "screen" ? settleEase(clamp01((localT - STANCE_ARRIVE_FROM) / (1 - STANCE_ARRIVE_FROM))) : 0;
   return Math.max(release, arrive);
 }
@@ -440,7 +448,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
         // Still screening from an earlier step? Show them planted while idle
         // on this step too, so the stance doesn't pop off between steps.
         const allFrames = stateRef.current.play.data.frames;
-        applyStance(g, plantedAtStepStart(allFrames, allFrames.indexOf(frame), p.id) ? 1 : 0);
+        applyStance(g, plantedAtStepStart(allFrames, allFrames.indexOf(frame), p.id));
         scene.add(g);
         playerGroups[i] = g;
       });
@@ -684,7 +692,7 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
             stance = stanceAt(t, fullSeq, animFromFrame!, startsPlanted);
           } else if (startsPlanted) {
             const moved = fp.x !== tp.x || fp.y !== tp.y;
-            stance = moved ? Math.max(0, 1 - t / STANCE_RELEASE_BY) : 1;
+            stance = moved ? startsPlanted * Math.max(0, 1 - t / STANCE_RELEASE_BY) : startsPlanted;
           } else {
             stance = 0;
           }

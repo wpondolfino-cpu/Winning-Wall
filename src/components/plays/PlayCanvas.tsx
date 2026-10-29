@@ -22,7 +22,7 @@ interface Props {
   roster?: Record<string, RosterPlayer>;
   /** When true, clicks/drags on the court edit the frame via the callbacks below. */
   edit?: boolean;
-  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | "ghost" | null;
+  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | "ghost" | "seal" | null;
   onAddPlayer?: (p: PlayPlayer) => void;
   onAddDefender?: (x: number, y: number) => void;
   onSetBall?: (x: number, y: number) => void;
@@ -229,7 +229,10 @@ function endDirection(a: PlayAction) {
 }
 
 /** Tools that draw a line from a player. */
-const DRAW_TOOLS: string[] = ["move", "pass", "dribble", "screen", "ghost", "lob", "loop", "dho"];
+const DRAW_TOOLS: string[] = ["move", "pass", "dribble", "screen", "ghost", "seal", "lob", "loop", "dho"];
+
+/** Below this length a Seal drag means "seal right here": no run, just the side. */
+const SEAL_IN_PLACE = 30;
 
 /**
  * A player whose LAST action this step is a move (cut, dribble, screen)
@@ -351,6 +354,28 @@ function ActionShape({ a }: { a: PlayAction }) {
     return (
       <path d={dribblePath(a)} fill="none" stroke="var(--court-ink)" strokeWidth={2.5}
         markerEnd="url(#pc-arrow-solid)" />
+    );
+  }
+  if (a.type === "move" && a.seal) {
+    // Seal: the run (if any) with no arrowhead, and a cupped arc at the
+    // spot on the side they're sealing -- the back pinning the defender.
+    let dx: number, dy: number;
+    if (a.sealToward) { dx = a.sealToward.x - a.x2; dy = a.sealToward.y - a.y2; }
+    else ({ dx, dy } = endDirection(a));
+    const len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+    const R = 17, cx = a.x2 - ux * 3, cy = a.y2 - uy * 3;
+    const pts: string[] = [];
+    for (let k = -4; k <= 4; k++) {
+      const ang = (k / 4) * (Math.PI * 0.4);
+      const rx = ux * Math.cos(ang) - uy * Math.sin(ang), ry = ux * Math.sin(ang) + uy * Math.cos(ang);
+      pts.push(`${(cx + rx * R).toFixed(1)} ${(cy + ry * R).toFixed(1)}`);
+    }
+    const moved = Math.hypot(a.x2 - a.x1, a.y2 - a.y1) > 2;
+    return (
+      <g>
+        {moved && <path d={linePath(a)} fill="none" stroke="var(--court-ink)" strokeWidth={2.5} />}
+        <path d={"M " + pts.join(" L ")} fill="none" stroke="var(--court-ink)" strokeWidth={4} strokeLinecap="round" />
+      </g>
     );
   }
   // "move" / cut — the type that can curl off a screen
@@ -696,10 +721,16 @@ export default function PlayCanvas({
           curve = { x: startX + dx * 0.33 + nx * offset, y: startY + dy * 0.33 + ny * offset };
           curve2 = { x: startX + dx * 0.66 + nx * offset, y: startY + dy * 0.66 + ny * offset };
         }
+        // A short Seal drag seals where they stand, facing the way it was dragged.
+        const sealEnd = tool === "seal" && Math.hypot(p.x - startX, p.y - startY) < SEAL_IN_PLACE
+          ? { x2: startX, y2: startY, sealToward: { x: p.x, y: p.y } }
+          : { x2: p.x, y2: p.y };
         onAddAction?.({
-          type: (tool === "loop" ? "move" : tool === "ghost" ? "screen" : tool) as ActionType, x1: startX, y1: startY, x2: p.x, y2: p.y,
+          type: (tool === "loop" || tool === "seal" ? "move" : tool === "ghost" ? "screen" : tool) as ActionType,
+          x1: startX, y1: startY, ...sealEnd,
           sourcePlayerId: source?.id, targetPlayerId: target?.id, sequenceIndex, curve, curve2,
           ...(tool === "ghost" ? { ghost: true } : {}),
+          ...(tool === "seal" ? { seal: true } : {}),
         });
         const linked = [source?.id, target?.id].filter(Boolean) as string[];
         if (linked.length) {
@@ -949,6 +980,7 @@ export default function PlayCanvas({
 
       {animT !== null && frame.actions.map((a, i) => {
         if (a.type === "screen" && !a.ghost) return null;
+        if (a.seal && Math.hypot(a.x2 - a.x1, a.y2 - a.y1) <= 2) return null;   // sealing in place: nothing travels
         const endpoint = a.type === "pass" ? resolvePassEndpoint(frame, a) : { x: a.x2, y: a.y2 };
         // A ghost's run eases in and the slip after it bursts out.
         const localT = pathProgress(localActionProgress(animT, a, frame), a, frame);

@@ -43,7 +43,7 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | "ghost" | null;
+type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | "ghost" | "seal" | null;
 
 const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "select", label: "Move", icon: "✥" },
@@ -55,6 +55,8 @@ const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "screen", label: "Screen", icon: "⊥" },
   // Runs in as if to screen, then slips out -- draw a Cut from its end.
   { tool: "ghost", label: "Ghost", icon: "👻" },
+  // Post seal: drag to the spot (or a short drag to seal in place) toward the defender.
+  { tool: "seal", label: "Seal", icon: "◖" },
   { tool: "dho", label: "Handoff", icon: "⇄" },
   { tool: "shot", label: "Shot", icon: "🥅" },
   { tool: "lob", label: "Lob", icon: "🙌" },
@@ -1174,6 +1176,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             { tool: "dribble" as Tool, label: "Dribble", icon: "〜" },
             { tool: "screen" as Tool, label: "Screen", icon: "⊥" },
             { tool: "ghost" as Tool, label: "Ghost", icon: "👻" },
+            { tool: "seal" as Tool, label: "Seal", icon: "◖" },
           ].map(({ tool: t, label, icon }) => (
             <button key={label} onClick={() => { setTool(t); setStampAction(null); }}
               style={{ padding: "6px 2px", fontSize: 10, border: tool === t ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: tool === t ? "rgba(240,192,64,0.12)" : "var(--surface2)", color: "var(--text)" }}>
