@@ -27,6 +27,8 @@ interface Props {
   onAddDefender?: (x: number, y: number) => void;
   onSetBall?: (x: number, y: number) => void;
   onAddAction?: (a: PlayAction) => void;
+  /** Ghost tool clicked on a Cut (add a ghost mark there) or on a ghost mark (take it off). */
+  onGhostMark?: (index: number, x: number, y: number) => void;
   onErase?: (x: number, y: number) => void;
   /** "handoff" tool — click a player to stamp/unstamp the handoff marker on them. */
   onToggleHandoff?: (index: number) => void;
@@ -330,7 +332,7 @@ function ActionLine({ a }: { a: PlayAction }) {
       const gx = nx / 3, gy = ny / 3;
       return (
         <g>
-          <path d={linePath(a)} fill="none" stroke="var(--court-ink)" strokeWidth={4} />
+          <path d={linePath(a)} fill="none" stroke="var(--court-ink)" strokeWidth={2.5} />
           <line x1={a.x2 - nx * 1.2} y1={a.y2 - ny * 1.2} x2={a.x2 - gx} y2={a.y2 - gy} stroke="var(--court-ink)" strokeWidth={4} />
           <line x1={a.x2 + gx} y1={a.y2 + gy} x2={a.x2 + nx * 1.2} y2={a.y2 + ny * 1.2} stroke="var(--court-ink)" strokeWidth={4} />
         </g>
@@ -471,7 +473,7 @@ function PlayerIcon({ p, avatarUrl }: { p: PlayPlayer; avatarUrl?: string | null
 
 export default function PlayCanvas({
   frame, courtTemplate, roster = {}, edit = false, tool = null,
-  onAddPlayer, onAddDefender, onSetBall, onAddAction, onErase,
+  onAddPlayer, onAddDefender, onSetBall, onAddAction, onErase, onGhostMark,
   onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff, onSetActionCurve, onSetActionCurve2,
   onAddText, onMoveText, onEditText, onAddZone, onMoveZone, onAddCone, onMoveCone, onAddCoach, onMoveCoach, onAddShot, stampPreview,
   playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect, selfOverride = null, speed = 1, viewBox = null,
@@ -517,6 +519,20 @@ export default function PlayCanvas({
     if (tool === "defender") { onAddDefender?.(p.x, p.y); return; }
     if (tool === "ball") { onSetBall?.(p.x, p.y); return; }
     if (tool === "erase") { onErase?.(p.x, p.y); return; }
+    if (tool === "ghost" && onGhostMark) {
+      // On an existing ghost mark: take it off. On a Cut: mark it there.
+      // Anywhere else, drag out a ghost line as before.
+      const markIdx = frame.actions.findIndex((a) => a.type === "screen" && a.ghost && Math.hypot(a.x2 - p.x, a.y2 - p.y) <= 14);
+      if (markIdx >= 0) { onGhostMark(markIdx, p.x, p.y); return; }
+      let cut = -1, bestD = 12;
+      frame.actions.forEach((a, i) => {
+        if (a.type !== "move" || a.seal) return;
+        if (Math.hypot(a.x1 - p.x, a.y1 - p.y) < 20 || Math.hypot(a.x2 - p.x, a.y2 - p.y) < 14) return;   // not on the player or the tip
+        const d = distToAction(p.x, p.y, a);
+        if (d < bestD) { bestD = d; cut = i; }
+      });
+      if (cut >= 0) { onGhostMark(cut, p.x, p.y); return; }
+    }
     if (tool === "draw") { setDrawPoints([p]); return; }
     if (tool === "text") { onAddText?.(p.x, p.y); return; }
     if (tool === "handoff") {

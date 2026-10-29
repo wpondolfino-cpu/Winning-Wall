@@ -18,6 +18,7 @@ import {
   getSavedActions, createSavedAction, deleteSavedAction,
   getFormations, createFormation, deleteFormation,
   getRoster, getStaff, sharePlay, getAllTags,
+  toggleGhostMark,
   getPlaybooks, Playbook, getPlaybookIdsForPlay, appendPlayToPlaybook, removePlayFromPlaybook,
 } from "../../lib/plays";
 import { getPlayCategories, PlayCategory } from "../../lib/playCategories";
@@ -53,7 +54,7 @@ const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "pass", label: "Pass", icon: "┄" },
   { tool: "dribble", label: "Dribble", icon: "〜" },
   { tool: "screen", label: "Screen", icon: "⊥" },
-  // Runs in as if to screen, then slips out -- draw a Cut from its end.
+  // Click a Cut where they fake the screen (click the mark again to remove it).
   { tool: "ghost", label: "Ghost", icon: "👻" },
   // Post seal: drag to the spot (or a short drag to seal in place) toward the defender.
   { tool: "seal", label: "Seal", icon: "◖" },
@@ -1285,6 +1286,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             frame={frame} courtTemplate={courtTemplate} roster={rosterMap}
             edit={!stampAction} tool={tool}
             onAddPlayer={addPlayer} onAddDefender={addDefender} onSetBall={setBall} onAddAction={addAction}
+            onGhostMark={(i, x, y) => updateFrame((f) => toggleGhostMark(f, i, x, y))}
             onErase={eraseNear} onToggleHandoff={toggleHandoff}
             onMovePlayer={movePlayer} onMoveDefender={moveDefender} onMoveBall={moveBall}
             onMoveActionPoint={moveActionPoint} onMoveActionWhole={moveActionWhole} onSetActionCurve={setActionCurve} onSetActionCurve2={setActionCurve2}
@@ -1524,6 +1526,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onAddDefender={addDefender}
             onSetBall={setBall}
             onAddAction={addAction}
+            onGhostMark={(i, x, y) => updateFrame((f) => toggleGhostMark(f, i, x, y))}
             onErase={eraseNear}
             onToggleHandoff={toggleHandoff}
             onMovePlayer={movePlayer}

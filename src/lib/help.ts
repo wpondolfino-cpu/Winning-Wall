@@ -80,7 +80,7 @@ const COACH: Record<string, Starter> = {
     "Place Players, Defenders and the Ball, then draw lines by dragging from the player who does the action.",
     "Start a new line at the tip of the last one to continue that player's path — a gold ring shows it'll attach.",
     "⇄ Handoff: drag from the end of the dribble to the receiver.",
-    "👻 Ghost: drag to the screen spot like a Screen, then draw a Cut from its tip for the slip. They slow in, fake it and sprint out.",
+    "👻 Ghost: draw the whole Cut first, then pick Ghost and click the cut where they fake the screen. They run in fast, slow at the mark, then burst away. Click the mark again to remove it.",
     "◖ Seal: drag from the post player toward the defender they're sealing (to a spot, or a short drag to seal in place). They sink low and hold it.",
     "⏸ Timing off? Pick Move, click a line and choose Wait before going (¼, ½ or ¾ of the step). Passes to them and anyone using their screen wait too.",
     "📚 Pick the playbooks this play belongs in, under the category.",

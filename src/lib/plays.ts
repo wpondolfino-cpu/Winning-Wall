@@ -323,11 +323,13 @@ function actionSliceBounds(seq: PlayAction[]): { moveStart: number; moveEnd: num
   const distances = seq.map(actionTravelDistance); // never truly 0, so a no-op action still gets a sliver of time rather than breaking the split
   const total = distances.reduce((s, d) => s + d, 0);
   let cursor = 0;
-  return distances.map((d) => {
+  return distances.map((d, i) => {
     const sliceSize = d / total;
     const sliceStart = cursor;
     cursor += sliceSize;
-    return { moveStart: sliceStart, moveEnd: sliceStart + sliceSize * MOVE_FRACTION };
+    // A ghost runs straight on into its slip: no pause between them.
+    const flowsOn = seq[i].type === "screen" && seq[i].ghost && i < seq.length - 1;
+    return { moveStart: sliceStart, moveEnd: sliceStart + sliceSize * (flowsOn ? 1 : MOVE_FRACTION) };
   });
 }
 
@@ -462,9 +464,14 @@ function computeHoldPlan(frame: PlayFrame): HoldPlan | null {
  *   - the move straight after a ghost bursts out: accelerates, then
  *     covers the rest quicker than a normal cut, finishing early.
  */
+const GHOST_SLOW = 0.35;
+
 export function pathProgress(localT: number, action: PlayAction, frame: PlayFrame): number {
   const u = Math.max(0, Math.min(1, localT));
-  if (action.type === "screen" && action.ghost) return 1 - Math.pow(1 - u, 2.2);
+  // Ghost: fast, slow, fast. The run in eases off to about a third of its
+  // speed at the mark (never stopping), and the slip picks up from that
+  // speed and accelerates away, finishing early.
+  if (action.type === "screen" && action.ghost) return (2 - GHOST_SLOW) * u + (GHOST_SLOW - 1) * u * u;
   // A seal gets there by three-quarters of the way through and sits, so
   // they're sealed before an entry pass lands.
   if (action.type === "move" && action.seal) { const v = Math.min(1, u / 0.75); return 1 - (1 - v) * (1 - v); }
@@ -473,9 +480,8 @@ export function pathProgress(localT: number, action: PlayAction, frame: PlayFram
     const i = seq.indexOf(action);
     const prev = i > 0 ? seq[i - 1] : null;
     if (prev && prev.type === "screen" && prev.ghost) {
-      const v = Math.min(1, u / 0.7);            // done in 70% of its time: a sprint
-      const a = 0.3, top = 1 / (1 - a / 2);       // accelerate over the first 30%, then cruise
-      return v < a ? (top * v * v) / (2 * a) : top * (v - a / 2);
+      const v = Math.min(1, u / 0.8);            // done in 80% of its time: a burst
+      return GHOST_SLOW * v + (1 - GHOST_SLOW) * v * v;
     }
   }
   return u;
@@ -843,6 +849,79 @@ export function stepTimingUnits(frame: PlayFrame): number {
   const stretch = holdPlan(frame)?.stretch ?? 1;   // room for any waits
   if (!timing) return Math.max(maxChainLen, longestRun) * stretch;
   return Math.max(maxChainLen, timing.units) * stretch;
+}
+
+/** Splits a curve/line at u into two pieces (de Casteljau), keeping its shape. */
+function splitPath(a: PlayAction, u: number): [Partial<PlayAction>, Partial<PlayAction>] {
+  const L = (p: PlayPoint, q: PlayPoint, t: number) => ({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t });
+  const P0 = { x: a.x1, y: a.y1 }, P3 = { x: a.x2, y: a.y2 };
+  if (a.curve && a.curve2) {
+    const P1 = a.curve, P2 = a.curve2;
+    const A = L(P0, P1, u), B = L(P1, P2, u), C = L(P2, P3, u), D = L(A, B, u), E = L(B, C, u), R = L(D, E, u);
+    return [{ x1: P0.x, y1: P0.y, curve: A, curve2: D, x2: R.x, y2: R.y }, { x1: R.x, y1: R.y, curve: E, curve2: C, x2: P3.x, y2: P3.y }];
+  }
+  if (a.curve) {
+    const Q0 = L(P0, a.curve, u), Q1 = L(a.curve, P3, u), R = L(Q0, Q1, u);
+    return [{ x1: P0.x, y1: P0.y, curve: Q0, x2: R.x, y2: R.y }, { x1: R.x, y1: R.y, curve: Q1, x2: P3.x, y2: P3.y }];
+  }
+  const R = L(P0, P3, u);
+  return [{ x1: P0.x, y1: P0.y, x2: R.x, y2: R.y }, { x1: R.x, y1: R.y, x2: P3.x, y2: P3.y }];
+}
+
+/**
+ * Ghost tool on an existing line. Clicking a Cut puts a ghost mark there:
+ * the cut becomes a ghost run to the mark plus the slip on from it (same
+ * path, same shape). Clicking an existing ghost mark takes it back off,
+ * joining the two into one cut again. Returns the frame unchanged if the
+ * click wasn't something it can mark.
+ */
+export function toggleGhostMark(frame: PlayFrame, index: number, x: number, y: number): PlayFrame {
+  const a = frame.actions[index];
+  if (!a) return frame;
+  const si = a.sequenceIndex ?? 0;
+  const shiftLater = (acts: PlayAction[], by: number) => acts.map((o) =>
+    o.sourcePlayerId && o.sourcePlayerId === a.sourcePlayerId && (o.sequenceIndex ?? 0) > si ? { ...o, sequenceIndex: (o.sequenceIndex ?? 0) + by } : o);
+
+  if (a.type === "screen" && a.ghost) {
+    // Join back up with the slip, if it carries straight on from the mark.
+    const seq = a.sourcePlayerId ? playerActionSequence(frame, a.sourcePlayerId) : [a];
+    const next = seq[seq.indexOf(a) + 1];
+    const joins = next && next.type === "move" && !next.seal && Math.hypot(next.x1 - a.x2, next.y1 - a.y2) < 3;
+    if (!joins) {
+      const { ghost: _g, ...rest } = a;
+      return { ...frame, actions: frame.actions.map((o, i) => (i === index ? { ...rest, type: "move" } : o)) };
+    }
+    const straight = !a.curve && !next.curve &&
+      Math.abs((a.x2 - a.x1) * (next.y2 - a.y1) - (a.y2 - a.y1) * (next.x2 - a.x1)) < 1e-6 * (1 + Math.hypot(next.x2 - a.x1, next.y2 - a.y1) ** 2);
+    const merged: PlayAction = {
+      type: "move", x1: a.x1, y1: a.y1, x2: next.x2, y2: next.y2,
+      sourcePlayerId: a.sourcePlayerId, sequenceIndex: a.sequenceIndex,
+      ...(a.hold ? { hold: a.hold } : {}),
+      // One bend through the old mark keeps roughly the same route.
+      ...(straight ? {} : { curve: { x: 2 * a.x2 - (a.x1 + next.x2) / 2, y: 2 * a.y2 - (a.y1 + next.y2) / 2 } }),
+    };
+    const kept = frame.actions.filter((o) => o !== next).map((o) => (o === a ? merged : o));
+    return { ...frame, actions: shiftLater(kept, -1) };
+  }
+
+  if (a.type !== "move" || a.seal) return frame;
+  // Where on the line the click was.
+  let best = { d: Infinity, u: 0.5 };
+  for (let k = 1; k < 64; k++) {
+    const u = k / 64, pt = pointOnAction(a, u);
+    const d = Math.hypot(pt.x - x, pt.y - y);
+    if (d < best.d) best = { d, u };
+  }
+  const u = Math.min(0.9, Math.max(0.1, best.u));
+  const [p1, p2] = splitPath(a, u);
+  const ghostPart: PlayAction = {
+    type: "screen", ghost: true, sourcePlayerId: a.sourcePlayerId, sequenceIndex: si,
+    ...(a.hold ? { hold: a.hold } : {}), ...(p1 as any),
+  };
+  const slip: PlayAction = { type: "move", sourcePlayerId: a.sourcePlayerId, sequenceIndex: si + 1, ...(p2 as any) };
+  const out: PlayAction[] = [];
+  shiftLater(frame.actions, 1).forEach((o, i) => { if (i === index) out.push(ghostPart, slip); else out.push(o); });
+  return { ...frame, actions: out };
 }
 
 /** Generates a stable id for a newly-placed player. Not cryptographically meaningful — just needs to be unique within a play. */
