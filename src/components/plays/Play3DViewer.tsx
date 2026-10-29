@@ -53,14 +53,14 @@ const GHOST_DIP = 0.35;           // a ghost screen only sinks about a third of 
 const GHOST_DIP_FROM = 0.75;      // ...over the last quarter of its run, and is back up as it arrives
 
 // ── Post seal ────────────────────────────────────────────────────
-// Not a screen stance: the post player sits low on a wide base, leans
-// back into the defender they're sealing, and puts a target hand up on
-// the other side, where they want the ball.
+// Not a screen stance: the post player stays upright on a shorter, wider
+// base than a screener, with a target hand out and up on the side away
+// from the defender they're sealing -- where they want the ball.
 const SEAL_ARRIVE_FROM = 0.6;     // sinks in as they reach the spot (at ~75%, see pathProgress)
 const SEAL_ARRIVE_TO = 0.8;
-const SEAL_WIDEN = 0.45;
-const SEAL_DROP = 0.2;            // lower than a screen
-const SEAL_LEAN = 0.24;           // radians (~14 degrees) back into the defender
+const SEAL_WIDEN = 0.6;           // wider than a screen (0.38)
+const SEAL_DROP = 0.25;           // shorter than a screen (0.1)
+const SEAL_ARM_UP = 0.61;         // the arm angles ~35 degrees above level
 const isSeal = (a: PlayAction) => a.type === "move" && !!a.seal;
 const plantLevel = (a: PlayAction) => (a.type === "screen" && !a.ghost ? 1 : 0);
 
@@ -70,7 +70,8 @@ interface StanceParts {
   headBaseY?: number;
   numberFront?: THREE.Mesh;
   numberBack?: THREE.Mesh;
-  /** The raised target hand, shown only while sealing. */
+  /** The target hand, shown only while sealing: armYaw aims it, arm (inside) angles it up and grows it in. */
+  armYaw?: THREE.Group;
   arm?: THREE.Group;
 }
 
@@ -156,16 +157,16 @@ function applyStance(g: THREE.Group, k: number, seal?: { amt: number; wx: number
   const sa = seal ? Math.max(0, seal.amt) : 0;
   const sx = Math.max(1 + STANCE_WIDEN * k, 1 + SEAL_WIDEN * sa);
   const sy = Math.min(1 - STANCE_DROP * k, 1 - SEAL_DROP * sa);
-  // Lean back into the defender, pivoting at the feet.
-  const len = seal ? Math.hypot(seal.wx, seal.wz) || 1 : 1;
-  const lx = seal ? seal.wx / len : 0, lz = seal ? seal.wz / len : 0;
-  g.rotation.x = lz * SEAL_LEAN * sa;
-  g.rotation.z = -lx * SEAL_LEAN * sa;
-  // Target hand up on the far side from the defender.
-  if (u.arm) {
-    u.arm.visible = sa > 0.05;
-    u.arm.position.set(-lx * 0.34 * sx, 0, -lz * 0.34 * sx);
-    u.arm.scale.set(1, Math.max(0.01, Math.min(1, sa)), 1);
+  // Target hand: out from the shoulder on the far side from the defender,
+  // angled up. The body itself stays upright.
+  if (u.armYaw && u.arm) {
+    const len = seal ? Math.hypot(seal.wx, seal.wz) || 1 : 1;
+    const ax = seal ? -seal.wx / len : 1, az = seal ? -seal.wz / len : 0;
+    u.armYaw.visible = sa > 0.05;
+    u.armYaw.position.set(ax * 0.26 * sx, BODY_BOTTOM + 0.8 * sy, az * 0.26 * sx);
+    u.armYaw.rotation.y = Math.atan2(-az, ax);
+    u.arm.rotation.z = SEAL_ARM_UP;
+    u.arm.scale.setScalar(Math.max(0.01, Math.min(1, sa)));
   }
   u.body.scale.set(sx, sy, sx);
   u.body.position.y = BODY_BOTTOM + 0.45 * sy;
@@ -443,18 +444,22 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
         const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.9, 12), new THREE.MeshStandardMaterial({ color }));
         body.position.y = 0.55;
         g.add(body);
-        // Seal target hand: an arm straight up from the shoulder with a hand
-        // on top. Hidden until they seal (applyStance shows and places it).
+        // Seal target hand: an arm along the local x axis from the shoulder,
+        // hand at the end. Hidden until they seal (applyStance aims it).
+        const armYaw = new THREE.Group();
         const arm = new THREE.Group();
         const armMat = new THREE.MeshStandardMaterial({ color });
-        const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.6, 8), armMat);
-        upper.position.y = 1.15;
+        const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.5, 8), armMat);
+        upper.rotation.z = -Math.PI / 2;      // lie along +x
+        upper.position.x = 0.25;
         arm.add(upper);
         const hand = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), armMat);
-        hand.position.y = 1.48;
+        hand.position.x = 0.56;
         arm.add(hand);
-        arm.visible = false;
-        g.add(arm);
+        armYaw.add(arm);
+        armYaw.visible = false;
+        g.add(armYaw);
+        (g.userData as StanceParts).armYaw = armYaw;
         (g.userData as StanceParts).arm = arm;
 
         const isSelf = !!(selfOv && p.id === selfOv.playerId);
