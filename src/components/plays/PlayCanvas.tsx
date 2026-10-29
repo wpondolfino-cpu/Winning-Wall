@@ -286,7 +286,26 @@ function courtInk(bg: string): string {
   return lum > 0.55 ? "#141a2a" : "#e8eaf2";
 }
 
+/** An action's drawing, plus a gold "⏸ ½" tag at its start when it has a Hold. */
 function ActionShape({ a }: { a: PlayAction }) {
+  const shape = <ActionLine a={a} />;
+  if (!a.hold) return shape;
+  const label = a.hold <= 0.25 ? "¼" : a.hold <= 0.5 ? "½" : "¾";
+  // Beside the start of the line, off to one side so it doesn't sit on the player.
+  const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1;
+  const tx = a.x1 + (dx / len) * 22 + (-dy / len) * 16, ty = a.y1 + (dy / len) * 22 + (dx / len) * 16;
+  return (
+    <g>
+      {shape}
+      <g pointerEvents="none">
+        <rect x={tx - 18} y={ty - 10} width={36} height={20} rx={10} fill="#3a2a17" stroke="#f0c040" strokeWidth={1.5} />
+        <text x={tx} y={ty + 4.5} textAnchor="middle" fontSize={12} fontWeight={700} fill="#f0c040">⏸ {label}</text>
+      </g>
+    </g>
+  );
+}
+
+function ActionLine({ a }: { a: PlayAction }) {
   if (a.type === "dho") {
     // Dribble handoff: a short line from the giver to the receiver with the
     // usual double bar across its middle.

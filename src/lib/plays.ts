@@ -64,6 +64,14 @@ export interface PlayAction {
   seal?: boolean;
   /** A seal made where the player stands (no run): the side they seal toward, for the arc. */
   sealToward?: PlayPoint;
+  /**
+   * Hold: how much of the step this player waits before starting this line
+   * (0.25, 0.5 or 0.75). Set from "Wait before going" with the Move tool.
+   * The step is lengthened to make room, so the run itself keeps its speed;
+   * the player's later lines, a pass to them, and anyone using their screen
+   * wait with them.
+   */
+  hold?: number;
 }
 
 /** All of a given entity's actions in a frame, in sequence order (lowest sequenceIndex first). Works for a player OR a defender's id — sourcePlayerId just holds whichever one is actually moving, this doesn't care which. */
@@ -332,7 +340,9 @@ export function activeSequenceIndex(t: number, seq: PlayAction[], frame?: PlayFr
   if (seq.length === 0) return -1;
   // Pass the frame so screen-wait timing (see stepTiming) is honoured;
   // without it this falls back to the plain whole-step split.
-  const bounds = frame ? boundsForSequence(frame, seq) : actionSliceBounds(seq);
+  const bounds = frame
+    ? (holdPlan(frame) ? seq.map((a) => actionBounds(a, frame)) : boundsForSequence(frame, seq))
+    : actionSliceBounds(seq);
   for (let i = seq.length - 1; i >= 0; i--) {
     if (t >= bounds[i].moveStart) return i;
   }
@@ -361,25 +371,88 @@ export function activeSequenceIndex(t: number, seq: PlayAction[], frame?: PlayFr
  * player owns which hop.
  */
 export function localActionProgress(globalT: number, action: PlayAction, frame: PlayFrame): number {
+  const b = actionBounds(action, frame);
+  return progressIn(globalT, b.moveStart, b.moveEnd);
+}
+
+/** When an action moves within the step (0-1), before any Hold. */
+function baseActionBounds(action: PlayAction, frame: PlayFrame): SliceBounds {
   if (action.type === "pass" || action.type === "lob") {
     const chain = ballChainSequence(frame, action);
-    if (chain.length > 1) {
-      const idx = chain.indexOf(action);
-      const { moveStart, moveEnd } = boundsForSequence(frame, chain)[idx];
-      return progressIn(globalT, moveStart, moveEnd);
-    }
+    if (chain.length > 1) return boundsForSequence(frame, chain)[chain.indexOf(action)];
   }
   const timed = stepTiming(frame)?.bounds.get(action);
-  if (timed) return progressIn(globalT, timed.moveStart, timed.moveEnd);
-  if (!action.sourcePlayerId) return globalT;
+  if (timed) return timed;
+  if (!action.sourcePlayerId) return { moveStart: 0, moveEnd: 1 };
   const seq = playerActionSequence(frame, action.sourcePlayerId);
-  const total = seq.length;
-  if (total <= 1) return globalT;
-  const idx = seq.indexOf(action);
-  const { moveStart, moveEnd } = actionSliceBounds(seq)[idx];
-  if (globalT < moveStart) return 0;
-  if (globalT > moveEnd) return 1;
-  return (globalT - moveStart) / (moveEnd - moveStart);
+  if (seq.length <= 1) return { moveStart: 0, moveEnd: 1 };
+  return actionSliceBounds(seq)[seq.indexOf(action)];
+}
+
+/** When an action moves within the step (0-1), Holds included. */
+function actionBounds(action: PlayAction, frame: PlayFrame): SliceBounds {
+  return holdPlan(frame)?.bounds.get(action) ?? baseActionBounds(action, frame);
+}
+
+// ── Hold ("wait before going") ───────────────────────────────────
+// A held line starts later by its hold (a fraction of the step as it was).
+// The wait carries to the rest of that player's lines, to a pass thrown to
+// them, and to anyone running off their screen. The step is stretched by
+// whatever it takes for the last of those to finish, so nothing has to
+// move faster to fit.
+interface HoldPlan { bounds: Map<PlayAction, SliceBounds>; stretch: number }
+const holdCache = new WeakMap<PlayFrame, HoldPlan | null>();
+
+function holdPlan(frame: PlayFrame): HoldPlan | null {
+  if (holdCache.has(frame)) return holdCache.get(frame)!;
+  const result = computeHoldPlan(frame);
+  holdCache.set(frame, result);
+  return result;
+}
+
+function computeHoldPlan(frame: PlayFrame): HoldPlan | null {
+  if (!frame.actions.some((a) => (a.hold ?? 0) > 0)) return null;
+  const base = new Map<PlayAction, SliceBounds>(frame.actions.map((a) => [a, baseActionBounds(a, frame)]));
+  const delay = new Map<PlayAction, number>(frame.actions.map((a) => [a, 0]));
+  const bump = (a: PlayAction, d: number) => delay.set(a, Math.max(delay.get(a) ?? 0, d));
+  const bumpChainFrom = (a: PlayAction, d: number) => {
+    if (!a.sourcePlayerId) { bump(a, d); return; }
+    const seq = playerActionSequence(frame, a.sourcePlayerId);
+    seq.slice(Math.max(0, seq.indexOf(a))).forEach((x) => bump(x, d));
+  };
+  // Each player's own lines: holds add up along the chain.
+  const sources = Array.from(new Set(frame.actions.map((a) => a.sourcePlayerId).filter((id): id is string => !!id)));
+  const heldAt = new Map<PlayAction, number>();
+  for (const id of sources) {
+    let run = 0;
+    for (const a of playerActionSequence(frame, id)) {
+      run += a.hold ?? 0;
+      bump(a, run);
+      if (a.hold) heldAt.set(a, run);
+    }
+  }
+  for (const a of frame.actions) if (!a.sourcePlayerId && a.hold) { bump(a, a.hold); heldAt.set(a, a.hold); }
+  // Who waits with them.
+  for (const [h, d] of heldAt) {
+    const hb = base.get(h)!;
+    for (const o of frame.actions) {
+      if (o === h || (o.sourcePlayerId && o.sourcePlayerId === h.sourcePlayerId)) continue;
+      const ob = base.get(o)!;
+      if (ob.moveStart < hb.moveStart - 0.01) continue;           // already going before the held line
+      const passToThem = (o.type === "pass" || o.type === "lob") && !!h.sourcePlayerId && o.targetPlayerId === h.sourcePlayerId;
+      const offTheirScreen = h.type === "screen" && !h.ghost && (o.type === "move" || o.type === "dribble")
+        && closestApproach(o, { x: h.x2, y: h.y2 }).dist <= SCREEN_USE_RADIUS;
+      if (passToThem || offTheirScreen) bumpChainFrom(o, d);
+    }
+  }
+  let stretch = 1;
+  for (const a of frame.actions) stretch = Math.max(stretch, base.get(a)!.moveEnd + (delay.get(a) ?? 0));
+  const bounds = new Map<PlayAction, SliceBounds>();
+  for (const a of frame.actions) {
+    const b = base.get(a)!, d = delay.get(a) ?? 0;
+    bounds.set(a, { moveStart: (b.moveStart + d) / stretch, moveEnd: (b.moveEnd + d) / stretch });
+  }
+  return { bounds, stretch };
 }
 
 /**
@@ -767,8 +840,9 @@ export function stepTimingUnits(frame: PlayFrame): number {
     ...frame.defenders.map((d) => (d.id ? runUnits(playerActionSequence(frame, d.id)) : 0)),
   );
   const timing = stepTiming(frame);
-  if (!timing) return Math.max(maxChainLen, longestRun);
-  return Math.max(maxChainLen, timing.units);
+  const stretch = holdPlan(frame)?.stretch ?? 1;   // room for any waits
+  if (!timing) return Math.max(maxChainLen, longestRun) * stretch;
+  return Math.max(maxChainLen, timing.units) * stretch;
 }
 
 /** Generates a stable id for a newly-placed player. Not cryptographically meaningful — just needs to be unique within a play. */

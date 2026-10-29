@@ -954,6 +954,32 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Set up once at mount -- this is what makes it fire on ANY unmount reason, not just an explicit Close click.
 
+  // "Wait before going": a Hold on the selected line.
+  const selectedAction = selected?.kind === "action" ? frames[frameIdx]?.actions[selected.index] : undefined;
+  function setHold(h: number) {
+    if (!selected || selected.kind !== "action") return;
+    const i = selected.index;
+    updateFrame((f) => ({ ...f, actions: f.actions.map((a, k) => {
+      if (k !== i) return a;
+      const { hold: _old, ...rest } = a;
+      return h > 0 ? { ...rest, hold: h } : rest;
+    }) }));
+  }
+  const holdControl = !selectedAction || selectedAction.type === "shot" ? null : (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 8, padding: "6px 10px", borderRadius: 8, background: "var(--surface2)", border: "1px solid var(--border)" }}>
+      <span style={{ fontSize: 12, color: "var(--muted)", marginRight: 2 }}>⏸ Wait before going</span>
+      {([[0, "No wait"], [0.25, "A beat ¼"], [0.5, "Half ½"], [0.75, "Most ¾"]] as [number, string][]).map(([h, label]) => {
+        const on = (selectedAction.hold ?? 0) === h;
+        return (
+          <button key={h} onClick={() => setHold(h)}
+            style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit",
+              background: on ? "rgba(240,192,64,0.18)" : "var(--surface)", color: on ? "var(--gold-text)" : "var(--text)",
+              border: on ? "1.5px solid var(--gold)" : "1px solid var(--border)", fontWeight: on ? 600 : 400 }}>{label}</button>
+        );
+      })}
+    </div>
+  );
+
   /** A new play's playbook picks, written once it has an id. */
   async function applyPickedPlaybooks(playId: string) {
     for (const id of inBooksRef.current) {
@@ -1165,6 +1191,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           style={{ width: "100%", marginBottom: 8, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
           {COURT_TEMPLATES.map((c) => <option key={c} value={c}>{COURT_TEMPLATE_LABELS[c]}</option>)}
         </select>
+        {holdControl}
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 4, marginBottom: 6 }}>
           {[
@@ -1435,6 +1462,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           </div>
         )}
 
+        {holdControl}
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
           <button onClick={undo} disabled={!history.length} style={{ padding: "6px 10px" }}>↩ Undo</button>
           <button onClick={redo} disabled={!future.length} style={{ padding: "6px 10px" }}>↪ Redo</button>
