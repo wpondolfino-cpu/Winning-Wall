@@ -447,7 +447,21 @@ interface StepTiming {
   wave: Map<PlayAction, number>;
   waves: number;
   maxPerWave: number;
+  /** Where each wave starts in the step (0-1), length waves + 1. Waves with longer runs get more of the step. */
+  waveStarts: number[];
+  /** How long the step needs, in single-action units. */
+  units: number;
 }
+
+/**
+ * How far a player covers in one unit of playback time (canvas units; the
+ * court is 600 wide). Anything longer gets proportionally more time, so a
+ * wing-to-wing cut no longer has to cover the floor in the time a screener
+ * takes to step up.
+ */
+const RUN_PER_UNIT = 260;
+const isRun = (a: PlayAction) => a.type === "move" || a.type === "dribble" || a.type === "screen";
+const runUnits = (actions: PlayAction[]) => actions.filter(isRun).reduce((s, a) => s + actionTravelDistance(a), 0) / RUN_PER_UNIT;
 
 const timingCache = new WeakMap<PlayFrame, StepTiming | null>();
 
@@ -562,7 +576,7 @@ function computeHandoffTiming(frame: PlayFrame): StepTiming | null {
   const units = (giverPre.length ? Math.max(1, giverPre.length) : 0)
     + (recvPre.length ? Math.max(1, recvPre.length) * 0.75 : 0.25)
     + Math.max(0.75, giverPost.length, recvPost.length);
-  return { bounds, wave, waves: 1, maxPerWave: Math.max(1, units) };
+  return { bounds, wave, waves: 1, maxPerWave: Math.max(1, units), waveStarts: [0, 1], units: Math.max(1, units) };
 }
 
 function computeStepTiming(frame: PlayFrame): StepTiming | null {
@@ -572,6 +586,24 @@ function computeStepTiming(frame: PlayFrame): StepTiming | null {
   // Who uses which screen.
   const usesScreens = new Map<PlayAction, PlayAction[]>();
   const usersOf = new Map<PlayAction, { user: PlayAction; at: number }[]>();
+  // First, which cutters/dribblers come off each screen. Two screens set
+  // for the same player (a double ball screen, a stagger) go together:
+  // a screener running past the other screener's spot isn't "using" it.
+  const runnersOf = new Map<PlayAction, Set<string>>();
+  for (const screen of screens) {
+    const set = new Set<string>();
+    for (const m of frame.actions) {
+      if ((m.type !== "move" && m.type !== "dribble") || !m.sourcePlayerId || m.sourcePlayerId === screen.sourcePlayerId) continue;
+      if (closestApproach(m, { x: screen.x2, y: screen.y2 }).dist <= SCREEN_USE_RADIUS) set.add(m.sourcePlayerId);
+    }
+    runnersOf.set(screen, set);
+  }
+  const shareARunner = (s1: PlayAction, s2: PlayAction) => {
+    const a = runnersOf.get(s1), b = runnersOf.get(s2);
+    if (!a || !b) return false;
+    for (const id of a) if (b.has(id)) return true;
+    return false;
+  };
   for (const screen of screens) {
     const spot = { x: screen.x2, y: screen.y2 };
     for (const m of frame.actions) {
@@ -580,6 +612,9 @@ function computeStepTiming(frame: PlayFrame): StepTiming | null {
       const near = closestApproach(m, spot);
       if (near.dist > SCREEN_USE_RADIUS) continue;
       if (m.type === "screen" && Math.hypot(m.x2 - spot.x, m.y2 - spot.y) <= SCREEN_USE_RADIUS) continue;
+      // A ghost is part of the action, never waiting on it; and two
+      // screens for the same player are set together.
+      if (m.type === "screen" && (m.ghost || shareARunner(m, screen))) continue;
       usesScreens.set(m, [...(usesScreens.get(m) ?? []), screen]);
       usersOf.set(screen, [...(usersOf.get(screen) ?? []), { user: m, at: near.at }]);
     }
@@ -641,14 +676,27 @@ function computeStepTiming(frame: PlayFrame): StepTiming | null {
   const involved = (seq: PlayAction[]) =>
     seq.some((a) => (wave.get(a) ?? 0) > 0 || (a.type === "screen" && usersOf.has(a)));
 
+  // Each wave gets time for its longest run: a long cut gets a long wave.
+  const weights = new Array(waves).fill(1);
+  for (const seq of chains.values()) {
+    if (!involved(seq)) continue;
+    for (const g of groupByWave(seq, wave)) {
+      if (g.w < waves) weights[g.w] = Math.max(weights[g.w], g.actions.length, runUnits(g.actions));
+    }
+  }
+  const units = weights.reduce((a, b) => a + b, 0);
+  const waveStarts = [0];
+  for (const wgt of weights) waveStarts.push(waveStarts[waveStarts.length - 1] + wgt / units);
+  waveStarts[waves] = 1;
+
   const bounds = new Map<PlayAction, SliceBounds>();
   let maxPerWave = 1;
   const layout = (release: Map<PlayAction, number>) => {
     for (const seq of chains.values()) {
       if (!involved(seq)) continue;
       for (const g of groupByWave(seq, wave)) {
-        let start = g.w / waves;
-        const end = (g.w + 1) / waves;
+        let start = waveStarts[g.w];
+        const end = waveStarts[g.w + 1];
         const releaseAt = release.get(g.actions[0]);
         if (releaseAt !== undefined) start = Math.min(Math.max(start, releaseAt), end - 0.02);
         sliceWindow(g.actions, start, end, bounds);
@@ -675,7 +723,7 @@ function computeStepTiming(frame: PlayFrame): StepTiming | null {
   }
   if (release.size > 0) layout(release);
 
-  return { bounds, wave, waves, maxPerWave };
+  return { bounds, wave, waves, maxPerWave, waveStarts, units };
 }
 
 /**
@@ -692,7 +740,7 @@ function boundsForSequence(frame: PlayFrame, seq: PlayAction[]): SliceBounds[] {
     // keeps the plain split rather than landing outside the step.
     if (seq.some((a) => (timing.wave.get(a) ?? 0) >= timing.waves)) return actionSliceBounds(seq);
     const out = new Map<PlayAction, SliceBounds>();
-    for (const g of groupByWave(seq, timing.wave)) sliceWindow(g.actions, g.w / timing.waves, (g.w + 1) / timing.waves, out);
+    for (const g of groupByWave(seq, timing.wave)) sliceWindow(g.actions, timing.waveStarts[g.w], timing.waveStarts[g.w + 1], out);
     return seq.map((a) => out.get(a)!);
   }
   if (seq.every((a) => timing.bounds.has(a))) return seq.map((a) => timing.bounds.get(a)!);
@@ -712,9 +760,15 @@ export function stepTimingUnits(frame: PlayFrame): number {
     ...frame.defenders.map((d) => (d.id ? playerActionSequence(frame, d.id).length : 1)),
     ...frame.actions.filter((a) => a.type === "pass" || a.type === "lob").map((a) => ballChainSequence(frame, a).length)
   );
+  // A step with a long run plays long enough for it to look like a run.
+  const longestRun = Math.max(
+    0,
+    ...frame.players.map((p) => (p.id ? runUnits(playerActionSequence(frame, p.id)) : 0)),
+    ...frame.defenders.map((d) => (d.id ? runUnits(playerActionSequence(frame, d.id)) : 0)),
+  );
   const timing = stepTiming(frame);
-  if (!timing) return maxChainLen;
-  return Math.max(maxChainLen, timing.waves * timing.maxPerWave);
+  if (!timing) return Math.max(maxChainLen, longestRun);
+  return Math.max(maxChainLen, timing.units);
 }
 
 /** Generates a stable id for a newly-placed player. Not cryptographically meaningful — just needs to be unique within a play. */
