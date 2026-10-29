@@ -48,6 +48,14 @@ export interface PlayAction {
    * a given player as their true final destination for the step.
    */
   sequenceIndex?: number;
+  /**
+   * Screens only: a ghost screen -- the player runs in as if to screen,
+   * slows and half-dips, then slips out (the Cut drawn after it) without
+   * ever setting it. Drawn with a broken bar. Anyone using it still waits
+   * for it to "arrive", the same as a real screen, but the slip goes at
+   * that moment instead of waiting for them to clear the spot.
+   */
+  ghost?: boolean;
 }
 
 /** All of a given entity's actions in a frame, in sequence order (lowest sequenceIndex first). Works for a player OR a defender's id — sourcePlayerId just holds whichever one is actually moving, this doesn't care which. */
@@ -366,6 +374,29 @@ export function localActionProgress(globalT: number, action: PlayAction, frame: 
   return (globalT - moveStart) / (moveEnd - moveStart);
 }
 
+/**
+ * How far along its path a moving player is, given the action's time
+ * progress (localActionProgress). Every move is steady-speed except:
+ *   - a ghost screen eases off as it arrives (selling the screen);
+ *   - the move straight after a ghost bursts out: accelerates, then
+ *     covers the rest quicker than a normal cut, finishing early.
+ */
+export function pathProgress(localT: number, action: PlayAction, frame: PlayFrame): number {
+  const u = Math.max(0, Math.min(1, localT));
+  if (action.type === "screen" && action.ghost) return 1 - Math.pow(1 - u, 2.2);
+  if (action.sourcePlayerId && (action.type === "move" || action.type === "dribble")) {
+    const seq = playerActionSequence(frame, action.sourcePlayerId);
+    const i = seq.indexOf(action);
+    const prev = i > 0 ? seq[i - 1] : null;
+    if (prev && prev.type === "screen" && prev.ghost) {
+      const v = Math.min(1, u / 0.7);            // done in 70% of its time: a sprint
+      const a = 0.3, top = 1 / (1 - a / 2);       // accelerate over the first 30%, then cruise
+      return v < a ? (top * v * v) / (2 * a) : top * (v - a / 2);
+    }
+  }
+  return u;
+}
+
 function progressIn(t: number, start: number, end: number): number {
   if (t <= start) return 0;
   if (t >= end || end <= start) return 1;
@@ -626,6 +657,9 @@ function computeStepTiming(frame: PlayFrame): StepTiming | null {
       const b = bounds.get(user);
       if (b) first = Math.min(first, b.moveStart + at * (b.moveEnd - b.moveStart));
     }
+    // A ghost never sets, so the slip goes as the screen's user goes
+    // rather than once they're past it.
+    if (screen.ghost) continue;
     if (first !== Infinity) release.set(a, first + 0.03);
   }
   if (release.size > 0) layout(release);
@@ -1378,6 +1412,21 @@ export async function adoptSharedPlaybook(
 export async function addPlayToPlaybook(playbookId: string, playId: string, sortOrder = 0) {
   const { error } = await supabase.from("playbook_plays").upsert({ playbook_id: playbookId, play_id: playId, sort_order: sortOrder });
   if (error) throw error;
+}
+
+/** The playbooks a play is in (staff see every row; players never call this). */
+export async function getPlaybookIdsForPlay(playId: string): Promise<string[]> {
+  const { data, error } = await supabase.from("playbook_plays").select("playbook_id").eq("play_id", playId);
+  if (error) throw error;
+  return (data ?? []).map((r: any) => r.playbook_id as string);
+}
+
+/** Adds a play to the END of a playbook (after whatever's already in it), from the play designer. */
+export async function appendPlayToPlaybook(playbookId: string, playId: string) {
+  const { data } = await supabase.from("playbook_plays").select("sort_order")
+    .eq("playbook_id", playbookId).order("sort_order", { ascending: false }).limit(1);
+  const next = ((data?.[0] as any)?.sort_order ?? -1) + 1;
+  await addPlayToPlaybook(playbookId, playId, next);
 }
 
 export async function removePlayFromPlaybook(playbookId: string, playId: string) {

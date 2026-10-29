@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { Play, RosterPlayer, PlayFrame, PlayAction, resolvePassEndpoint, playerActionSequence, localActionProgress, ballChainSequence, activeSequenceIndex, stepTimingUnits, stepButtonText } from "../../lib/plays";
+import { Play, RosterPlayer, PlayFrame, PlayAction, resolvePassEndpoint, playerActionSequence, localActionProgress, pathProgress, ballChainSequence, activeSequenceIndex, stepTimingUnits, stepButtonText } from "../../lib/plays";
 import StepNote from "./StepNote";
 import { courtLines, hoopPositions } from "./courtGeometry";
 
@@ -49,6 +49,8 @@ const STANCE_WIDEN = 0.38;        // +38% width at full stance
 const STANCE_DROP = 0.1;          // -10% height at full stance
 const STANCE_ARRIVE_FROM = 0.8;   // plant over the last 20% of the screen's travel
 const STANCE_RELEASE_BY = 0.25;   // back to normal within the first 25% of the next move
+const GHOST_DIP = 0.35;           // a ghost screen only sinks about a third of the way into a real plant
+const GHOST_DIP_FROM = 0.75;      // ...over the last quarter of its run, and is back up as it arrives
 
 interface StanceParts {
   body?: THREE.Mesh;
@@ -69,7 +71,7 @@ function plantedAtStepStart(frames: PlayFrame[], idx: number, playerId: string |
   for (let f = idx - 1; f >= 0; f--) {
     const seq = playerActionSequence(frames[f], playerId);
     for (let k = seq.length - 1; k >= 0; k--) {
-      if (seq[k].type === "screen") return true;
+      if (seq[k].type === "screen" && !seq[k].ghost) return true;
       if (isMovement(seq[k])) return false;
     }
   }
@@ -83,11 +85,13 @@ function stanceAt(t: number, seq: PlayAction[], frame: PlayFrame, startsPlanted:
   for (let k = activeIdx; k >= 0; k--) if (isMovement(seq[k])) { mIdx = k; break; }
   if (mIdx < 0) return startsPlanted ? 1 : 0;           // hasn't moved yet this step
   const m = seq[mIdx];
-  if (mIdx !== activeIdx) return m.type === "screen" ? 1 : 0; // standing after their last move (e.g. passing)
+  if (mIdx !== activeIdx) return m.type === "screen" && !m.ghost ? 1 : 0; // standing after their last move (e.g. passing)
   const localT = localActionProgress(t, m, frame);
+  // Ghost: a quick half-dip as they arrive, never held.
+  if (m.type === "screen" && m.ghost) return GHOST_DIP * Math.sin(Math.PI * clamp01((localT - GHOST_DIP_FROM) / (1 - GHOST_DIP_FROM)));
   let prevIdx = -1;
   for (let k = mIdx - 1; k >= 0; k--) if (isMovement(seq[k])) { prevIdx = k; break; }
-  const wasPlanted = prevIdx >= 0 ? seq[prevIdx].type === "screen" : startsPlanted;
+  const wasPlanted = prevIdx >= 0 ? seq[prevIdx].type === "screen" && !seq[prevIdx].ghost : startsPlanted;
   const release = wasPlanted ? Math.max(0, 1 - localT / STANCE_RELEASE_BY) : 0;
   const arrive = m.type === "screen" ? settleEase(clamp01((localT - STANCE_ARRIVE_FROM) / (1 - STANCE_ARRIVE_FROM))) : 0;
   return Math.max(release, arrive);
@@ -618,7 +622,9 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
             if (moveAction && moveActionIdx === activeIdx) {
               // The active slot IS a movement — animate along it, following
               // its curve if it has one (see note above on curved routes).
-              const localT = localActionProgress(t, moveAction, animFromFrame!);
+              // pathProgress: steady speed, except a ghost screen's
+              // slow-in and the burst out of it.
+              const localT = pathProgress(localActionProgress(t, moveAction, animFromFrame!), moveAction, animFromFrame!);
               if (moveAction.curve2 && moveAction.curve) {
                 const mt = 1 - localT;
                 const w1 = toWorld(moveAction.x1, moveAction.y1), wc1 = toWorld(moveAction.curve.x, moveAction.curve.y), wc2 = toWorld(moveAction.curve2.x, moveAction.curve2.y), w2 = toWorld(moveAction.x2, moveAction.y2);

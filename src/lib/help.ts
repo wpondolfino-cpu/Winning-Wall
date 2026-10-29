@@ -80,6 +80,8 @@ const COACH: Record<string, Starter> = {
     "Place Players, Defenders and the Ball, then draw lines by dragging from the player who does the action.",
     "Start a new line at the tip of the last one to continue that player's path — a gold ring shows it'll attach.",
     "⇄ Handoff: drag from the end of the dribble to the receiver.",
+    "👻 Ghost: drag to the screen spot like a Screen, then draw a Cut from its tip for the slip. They slow in, fake it and sprint out.",
+    "📚 Pick the playbooks this play belongs in, under the category.",
     "+ Add step moves everyone to where their lines ended. Name each step and write the read in its notes.",
     "Play frame checks one step; Preview full play and Watch live show the whole thing.",
   ]),

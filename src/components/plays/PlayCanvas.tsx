@@ -9,7 +9,7 @@
 import { useRef, useState, useEffect, type MouseEvent as ReactMouseEvent } from "react";
 import type { CourtTemplate, PlayFrame, PlayPlayer, PlayAction, ActionType, PlayText, PlayZone, PlayPoint } from "../../lib/plays";
 import type { RosterPlayer } from "../../lib/plays";
-import { resolvePassEndpoint, localActionProgress, playerActionSequence, stepTimingUnits } from "../../lib/plays";
+import { resolvePassEndpoint, localActionProgress, pathProgress, playerActionSequence, stepTimingUnits } from "../../lib/plays";
 import { genPlayerId } from "../../lib/plays";
 
 export const CANVAS_W = 600;
@@ -22,7 +22,7 @@ interface Props {
   roster?: Record<string, RosterPlayer>;
   /** When true, clicks/drags on the court edit the frame via the callbacks below. */
   edit?: boolean;
-  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | null;
+  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | "ghost" | null;
   onAddPlayer?: (p: PlayPlayer) => void;
   onAddDefender?: (x: number, y: number) => void;
   onSetBall?: (x: number, y: number) => void;
@@ -229,7 +229,7 @@ function endDirection(a: PlayAction) {
 }
 
 /** Tools that draw a line from a player. */
-const DRAW_TOOLS: string[] = ["move", "pass", "dribble", "screen", "lob", "loop", "dho"];
+const DRAW_TOOLS: string[] = ["move", "pass", "dribble", "screen", "ghost", "lob", "loop", "dho"];
 
 /**
  * A player whose LAST action this step is a move (cut, dribble, screen)
@@ -302,6 +302,18 @@ function ActionShape({ a }: { a: PlayAction }) {
     const { dx, dy } = endDirection(a);
     const len = Math.hypot(dx, dy) || 1;
     const nx = (-dy / len) * 9, ny = (dx / len) * 9;
+    if (a.ghost) {
+      // Ghost screen: the same line, but the bar has a gap in the middle --
+      // they go through it, they don't set it.
+      const gx = nx / 3, gy = ny / 3;
+      return (
+        <g>
+          <path d={linePath(a)} fill="none" stroke="var(--court-ink)" strokeWidth={4} />
+          <line x1={a.x2 - nx * 1.2} y1={a.y2 - ny * 1.2} x2={a.x2 - gx} y2={a.y2 - gy} stroke="var(--court-ink)" strokeWidth={4} />
+          <line x1={a.x2 + gx} y1={a.y2 + gy} x2={a.x2 + nx * 1.2} y2={a.y2 + ny * 1.2} stroke="var(--court-ink)" strokeWidth={4} />
+        </g>
+      );
+    }
     return (
       <g>
         <path d={linePath(a)} fill="none" stroke="var(--court-ink)" strokeWidth={4} />
@@ -685,8 +697,9 @@ export default function PlayCanvas({
           curve2 = { x: startX + dx * 0.66 + nx * offset, y: startY + dy * 0.66 + ny * offset };
         }
         onAddAction?.({
-          type: (tool === "loop" ? "move" : tool) as ActionType, x1: startX, y1: startY, x2: p.x, y2: p.y,
+          type: (tool === "loop" ? "move" : tool === "ghost" ? "screen" : tool) as ActionType, x1: startX, y1: startY, x2: p.x, y2: p.y,
           sourcePlayerId: source?.id, targetPlayerId: target?.id, sequenceIndex, curve, curve2,
+          ...(tool === "ghost" ? { ghost: true } : {}),
         });
         const linked = [source?.id, target?.id].filter(Boolean) as string[];
         if (linked.length) {
@@ -935,9 +948,10 @@ export default function PlayCanvas({
       })}
 
       {animT !== null && frame.actions.map((a, i) => {
-        if (a.type === "screen") return null;
+        if (a.type === "screen" && !a.ghost) return null;
         const endpoint = a.type === "pass" ? resolvePassEndpoint(frame, a) : { x: a.x2, y: a.y2 };
-        const localT = localActionProgress(animT, a, frame);
+        // A ghost's run eases in and the slip after it bursts out.
+        const localT = pathProgress(localActionProgress(animT, a, frame), a, frame);
         let x: number, y: number;
         if (a.curve2 && a.curve) {
           const t = localT, mt = 1 - t;

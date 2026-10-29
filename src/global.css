@@ -584,3 +584,6 @@ html[data-theme="light"] .stat-card { box-shadow: 0 1px 2px rgba(20, 26, 42, 0.0
 html[data-theme="light"] .sidebar-overlay { background: rgba(20, 26, 42, 0.35); }
 html[data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator { filter: none; }
 
+
+/* The shot tool icon is a white PNG: dark ink on the light theme. */
+html[data-theme="light"] .shot-icon { filter: brightness(0) opacity(0.85); }

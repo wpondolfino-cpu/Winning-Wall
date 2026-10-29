@@ -913,8 +913,11 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
           if (!end) continue;
           // Only real moves: standing still isn't a tap question.
           if (Math.hypot(end.x - p.x, end.y - p.y) < 30) continue;
+          // A ghost screen ends somewhere else entirely (the slip), so it's
+          // asked as a move: "where does the 4 go", not "where's the screen".
+          const firstMove = [...mine].sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0))[0];
           pool.push({ i, num: p.num, id: p.id, profileId: p.profile_id ?? null, end: { x: end.x, y: end.y },
-            type: [...mine].sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0))[0].type });
+            type: firstMove.type === "screen" && firstMove.ghost ? "move" : firstMove.type });
         }
       });
       for (const c of pickN(pool, per.tap_place)) {
@@ -973,6 +976,7 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
           const mine = f.actions.filter(a => a.sourcePlayerId === p.id).sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0));
           const first = mine[0];
           if (!first || !ACTION_WORD[first.type]) continue;
+          if (first.type === "screen" && first.ghost) continue;   // "Screen" would be the wrong answer to teach
           if (givesBall(first.type)) {
             const to = f.players.find(q => q.id === first.targetPlayerId);
             const others = f.players.filter(q => q.id !== p.id && q.id !== to?.id).map(q => q.num);

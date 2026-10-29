@@ -18,6 +18,7 @@ import {
   getSavedActions, createSavedAction, deleteSavedAction,
   getFormations, createFormation, deleteFormation,
   getRoster, getStaff, sharePlay, getAllTags,
+  getPlaybooks, Playbook, getPlaybookIdsForPlay, appendPlayToPlaybook, removePlayFromPlaybook,
 } from "../../lib/plays";
 import { getPlayCategories, PlayCategory } from "../../lib/playCategories";
 import TemplatePickerModal from "./TemplatePickerModal";
@@ -42,7 +43,7 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | null;
+type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | "ghost" | null;
 
 const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "select", label: "Move", icon: "✥" },
@@ -52,6 +53,8 @@ const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "pass", label: "Pass", icon: "┄" },
   { tool: "dribble", label: "Dribble", icon: "〜" },
   { tool: "screen", label: "Screen", icon: "⊥" },
+  // Runs in as if to screen, then slips out -- draw a Cut from its end.
+  { tool: "ghost", label: "Ghost", icon: "👻" },
   { tool: "dho", label: "Handoff", icon: "⇄" },
   { tool: "shot", label: "Shot", icon: "🥅" },
   { tool: "lob", label: "Lob", icon: "🙌" },
@@ -80,6 +83,14 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const [videoUrl, setVideoUrl] = useState(existingPlay?.video_url ?? "");
   const [category, setCategory] = useState(existingPlay?.category ?? "");
   const [playCategories, setPlayCategories] = useState<PlayCategory[]>([]);
+  // Playbooks this play is in -- picked here like the category. Saved the
+  // moment it's ticked once the play exists; a brand-new play's picks are
+  // applied when it's first saved.
+  const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
+  const [inBooks, setInBooks] = useState<Set<string>>(new Set());
+  const inBooksRef = useRef<Set<string>>(new Set());
+  inBooksRef.current = inBooks;
+  const [showBooks, setShowBooks] = useState(false);
   const [courtTemplate, setCourtTemplate] = useState<CourtTemplate>(existingPlay?.court_template ?? "half");
   const [frames, setFrames] = useState<PlayFrame[]>(() => {
     const initial = existingPlay?.data?.frames ?? emptyPlayData().frames;
@@ -129,6 +140,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     if (currentUserRole === "player") getStaff().then(setStaff).catch(console.error);
     else {
       getPlayCategories().then(setPlayCategories).catch(console.error);
+      getPlaybooks().then(setPlaybooks).catch(console.error);
+      if (existingPlay) getPlaybookIdsForPlay(existingPlay.id).then((ids) => setInBooks(new Set(ids))).catch(console.error);
       if (!existingPlay) getFormations().then(setFormations).catch(console.error);
     }
   }, [currentUserRole]);
@@ -510,10 +523,15 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       actions: f.actions.map((a) => ({
         ...a, x1: CANVAS_W - a.x1, x2: CANVAS_W - a.x2,
         curve: a.curve ? { ...a.curve, x: CANVAS_W - a.curve.x } : undefined,
+        // A loop's second bend point flips too (it used to stay put, kinking flipped loops).
+        curve2: a.curve2 ? { ...a.curve2, x: CANVAS_W - a.curve2.x } : undefined,
       })),
       drawings: (f.drawings ?? []).map((d) => ({ points: d.points.map((pt) => ({ ...pt, x: CANVAS_W - pt.x })) })),
       texts: (f.texts ?? []).map((t) => ({ ...t, x: CANVAS_W - t.x })),
       zones: (f.zones ?? []).map((z) => ({ ...z, x: CANVAS_W - z.x - z.w })),
+      // Cones and coach markers flip with everything else.
+      ...(f.cones ? { cones: f.cones.map((c) => ({ ...c, x: CANVAS_W - c.x })) } : {}),
+      ...(f.coachMarkers ? { coachMarkers: f.coachMarkers.map((c) => ({ ...c, x: CANVAS_W - c.x })) } : {}),
     };
   }
   function flipCurrentStep() {
@@ -827,6 +845,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       } else {
         const created = await createPlay({ title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
         createdPlayRef.current = created;
+        await applyPickedPlaybooks(created.id);
         showToast("Play saved");
         onSaved?.(created);
       }
@@ -883,6 +902,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             title: vals.title.trim() || untitledRef.current, tags, court_template: vals.courtTemplate,
             data: { frames: vals.frames }, video_url, category: categoryValue,
           });
+          await applyPickedPlaybooks(createdPlayRef.current.id);
         }
         lastSavedSigRef.current = sig;
         setAutoStatus("saved");
@@ -931,6 +951,57 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     return () => { void maybeAutosaveDraft(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Set up once at mount -- this is what makes it fire on ANY unmount reason, not just an explicit Close click.
+
+  /** A new play's playbook picks, written once it has an id. */
+  async function applyPickedPlaybooks(playId: string) {
+    for (const id of inBooksRef.current) {
+      try { await appendPlayToPlaybook(id, playId); } catch (e) { console.error(e); }
+    }
+  }
+
+  async function togglePlaybook(id: string) {
+    const on = !inBooks.has(id);
+    const next = new Set(inBooks);
+    if (on) next.add(id); else next.delete(id);
+    setInBooks(next);
+    const playId = (existingPlay ?? createdPlayRef.current)?.id;
+    if (!playId) return;                       // applied on first save
+    try {
+      if (on) await appendPlayToPlaybook(id, playId); else await removePlayFromPlaybook(id, playId);
+      const name = playbooks.find((b) => b.id === id)?.name ?? "playbook";
+      showToast(on ? `Added to ${name}` : `Removed from ${name}`);
+    } catch (e: any) {
+      setInBooks(new Set(inBooks));            // put the tick back how it was
+      showToast("Couldn't update the playbook: " + (e?.message ?? "try again"));
+    }
+  }
+
+  // Archived playbooks only show if this play is already in one.
+  const pickableBooks = playbooks.filter((b) => b.status !== "archived" || inBooks.has(b.id));
+  const playbookPicker = currentUserRole === "player" || pickableBooks.length === 0 ? null : (
+    <div style={{ marginBottom: 10 }}>
+      <button type="button" onClick={() => setShowBooks((v) => !v)}
+        style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 8, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>
+        <span>📚</span>
+        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: inBooks.size ? "var(--text)" : "var(--muted)" }}>
+          {inBooks.size === 0 ? "Not in a playbook" : pickableBooks.filter((b) => inBooks.has(b.id)).map((b) => b.name).join(", ")}
+        </span>
+        <span style={{ color: "var(--muted)" }}>{showBooks ? "▴" : "▾"}</span>
+      </button>
+      {showBooks && (
+        <div style={{ marginTop: 4, padding: "6px 8px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, maxHeight: 220, overflowY: "auto" }}>
+          {pickableBooks.map((b) => (
+            <label key={b.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 2px", fontSize: 13, cursor: "pointer", color: "var(--text)" }}>
+              <input type="checkbox" checked={inBooks.has(b.id)} onChange={() => togglePlaybook(b.id)} />
+              <span style={{ flex: 1 }}>{b.name}</span>
+              {b.status !== "active" && <span style={{ fontSize: 11, color: "var(--muted)" }}>{b.status}</span>}
+            </label>
+          ))}
+          <div style={{ fontSize: 11, color: "var(--muted)", padding: "4px 2px 2px" }}>Added at the end of the playbook. Reorder it from the playbook.</div>
+        </div>
+      )}
+    </div>
+  );
 
   const autoBadge = autoStatus === "idle" ? null : (
     <span aria-live="polite" style={{ fontSize: 11, whiteSpace: "nowrap",
@@ -1052,6 +1123,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
                 {playCategories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
               </select>
             )}
+            {playbookPicker}
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => setMobileStage("draw")} style={{ flex: 1, padding: 10 }}>Cancel</button>
               <button onClick={handleSave} disabled={saving} className="coach-add-btn" style={{ flex: 1, justifyContent: "center" }}>
@@ -1101,6 +1173,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             { tool: "pass" as Tool, label: "Pass", icon: "┄" },
             { tool: "dribble" as Tool, label: "Dribble", icon: "〜" },
             { tool: "screen" as Tool, label: "Screen", icon: "⊥" },
+            { tool: "ghost" as Tool, label: "Ghost", icon: "👻" },
           ].map(({ tool: t, label, icon }) => (
             <button key={label} onClick={() => { setTool(t); setStampAction(null); }}
               style={{ padding: "6px 2px", fontSize: 10, border: tool === t ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: tool === t ? "rgba(240,192,64,0.12)" : "var(--surface2)", color: "var(--text)" }}>
@@ -1142,7 +1215,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             <button onClick={() => { redo(); setShowMoreTools(false); }} disabled={!future.length}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↪ Redo</button>
             <button onClick={() => { setTool("shot"); setStampAction(null); setShowMoreTools(false); }}
-              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "shot" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}><img src="/shot-icon.png" alt="" style={{ width: 13, height: 13, verticalAlign: -2, marginRight: 4 }} /> Shot</button>
+              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "shot" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}><img className="shot-icon" src="/shot-icon.png" alt="" style={{ width: 13, height: 13, verticalAlign: -2, marginRight: 4 }} /> Shot</button>
             <button onClick={() => { setTool("lob"); setStampAction(null); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "lob" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>🙌 Lob</button>
             <button onClick={() => { setTool("zone"); setStampAction(null); setShowMoreTools(false); }}
@@ -1329,12 +1402,13 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             {playCategories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
           </select>
         )}
+        {playbookPicker}
 
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: showMoreTools ? 6 : 8 }}>
           {PRIMARY_TOOLS.map(({ tool: t, label, icon }) => (
             <button key={label} onClick={() => { setTool(t); setStampAction(null); }}
               style={{ padding: "6px 10px", fontSize: 13, border: tool === t ? "2px solid var(--gold)" : "1px solid var(--border)", borderRadius: "8px", background: tool === t ? "rgba(240,192,64,0.12)" : "transparent" }}>
-              {t === "shot" ? <img src="/shot-icon.png" alt="" style={{ width: 14, height: 14, verticalAlign: -2, marginRight: 4 }} /> : icon + " "}
+              {t === "shot" ? <img className="shot-icon" src="/shot-icon.png" alt="" style={{ width: 14, height: 14, verticalAlign: -2, marginRight: 4 }} /> : icon + " "}
               {label}
             </button>
           ))}
@@ -1369,10 +1443,19 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         </div>
 
         {stampAction && (
-          <p style={{ fontSize: 13, color: "var(--gold)", marginBottom: 6 }}>
-            Click the court to stamp in "{stampAction.name}" — <button onClick={() => setStampFlip((f) => !f)} title="Mirror it left-to-right"
-              style={{ fontSize: 12, fontWeight: 600, marginRight: 6, ...(stampFlip ? { background: "var(--gold)", color: "#1a1a1a", border: "1px solid var(--gold)" } : {}) }}>⇋ Flip{stampFlip ? "ped" : ""}</button><button onClick={() => { setStampAction(null); setStampFlip(false); }} style={{ fontSize: 12 }}>cancel</button>
-          </p>
+          // A bar of its own, readable in light and dark mode, with buttons
+          // that match the toolbar above.
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 13, marginBottom: 6,
+            padding: "6px 10px", borderRadius: 8, background: "rgba(240,192,64,0.12)", border: "1px solid var(--gold)", color: "var(--gold-text)" }}>
+            <span style={{ flex: 1, minWidth: 160 }}>Click the court to stamp in <b>"{stampAction.name}"</b></span>
+            <button onClick={() => setStampFlip((f) => !f)} title="Mirror it left-to-right"
+              style={{ fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit",
+                ...(stampFlip
+                  ? { background: "var(--gold)", color: "#1a1a1a", border: "1px solid var(--gold)" }
+                  : { background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)" }) }}>⇋ {stampFlip ? "Flipped" : "Flip"}</button>
+            <button onClick={() => { setStampAction(null); setStampFlip(false); }}
+              style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", background: "transparent", color: "var(--muted)", border: "1px solid var(--border)" }}>Cancel</button>
+          </div>
         )}
 
         <div
