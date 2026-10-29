@@ -50,12 +50,19 @@ const STANCE_DROP = 0.1;          // -10% height at full stance
 const STANCE_ARRIVE_FROM = 0.8;   // plant over the last 20% of the screen's travel
 const STANCE_RELEASE_BY = 0.25;   // back to normal within the first 25% of the next move
 const GHOST_DIP = 0.35;           // a ghost screen only sinks about a third of the way into a real plant
-const GHOST_DIP_FROM = 0.75;
-const SEAL_LEVEL = 1.35;          // a seal sits lower and wider than a screen
+const GHOST_DIP_FROM = 0.75;      // ...over the last quarter of its run, and is back up as it arrives
+
+// ── Post seal ────────────────────────────────────────────────────
+// Not a screen stance: the post player sits low on a wide base, leans
+// back into the defender they're sealing, and puts a target hand up on
+// the other side, where they want the ball.
 const SEAL_ARRIVE_FROM = 0.6;     // sinks in as they reach the spot (at ~75%, see pathProgress)
 const SEAL_ARRIVE_TO = 0.8;
-/** How deep a planted player stays after this move: screen 1, seal deeper, anything else 0. */
-const holdLevel = (a: PlayAction) => (a.type === "screen" && !a.ghost ? 1 : a.type === "move" && a.seal ? SEAL_LEVEL : 0);      // ...over the last quarter of its run, and is back up as it arrives
+const SEAL_WIDEN = 0.45;
+const SEAL_DROP = 0.2;            // lower than a screen
+const SEAL_LEAN = 0.24;           // radians (~14 degrees) back into the defender
+const isSeal = (a: PlayAction) => a.type === "move" && !!a.seal;
+const plantLevel = (a: PlayAction) => (a.type === "screen" && !a.ghost ? 1 : 0);
 
 interface StanceParts {
   body?: THREE.Mesh;
@@ -63,6 +70,8 @@ interface StanceParts {
   headBaseY?: number;
   numberFront?: THREE.Mesh;
   numberBack?: THREE.Mesh;
+  /** The raised target hand, shown only while sealing. */
+  arm?: THREE.Group;
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -70,46 +79,94 @@ const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const settleEase = (a: number) => { const c = 1.7; return 1 + (c + 1) * Math.pow(a - 1, 3) + c * Math.pow(a - 1, 2); };
 const isMovement = (a: PlayAction) => a.type === "move" || a.type === "dribble" || a.type === "screen";
 
-/** Whether this player is still standing in a screen when a step begins: their most recent movement in any earlier step was a screen. */
-function plantedAtStepStart(frames: PlayFrame[], idx: number, playerId: string | undefined): number {
-  if (!playerId) return 0;
+/** The player's last movement before this step -- what they're still doing (screening, sealing) as it starts. */
+function lastMoveBefore(frames: PlayFrame[], idx: number, playerId: string | undefined): PlayAction | null {
+  if (!playerId) return null;
   for (let f = idx - 1; f >= 0; f--) {
     const seq = playerActionSequence(frames[f], playerId);
-    for (let k = seq.length - 1; k >= 0; k--) {
-      if (isMovement(seq[k])) return holdLevel(seq[k]);   // still screening or sealing from before
-    }
+    for (let k = seq.length - 1; k >= 0; k--) if (isMovement(seq[k])) return seq[k];
   }
-  return 0;
+  return null;
+}
+
+/** Whether this player is still standing in a screen when a step begins. */
+function plantedAtStepStart(frames: PlayFrame[], idx: number, playerId: string | undefined): number {
+  const last = lastMoveBefore(frames, idx, playerId);
+  return last ? plantLevel(last) : 0;
+}
+
+/** The seal a player is still holding when a step begins, if any. */
+function sealAtStepStart(frames: PlayFrame[], idx: number, playerId: string | undefined): PlayAction | null {
+  const last = lastMoveBefore(frames, idx, playerId);
+  return last && isSeal(last) ? last : null;
+}
+
+/** Where the player is in their movement chain at t: the current/last movement, whether it's active, its progress and the one before. */
+function movementAt(t: number, seq: PlayAction[], frame: PlayFrame) {
+  const activeIdx = seq.length > 0 ? activeSequenceIndex(t, seq, frame) : -1;
+  let mIdx = -1;
+  for (let k = activeIdx; k >= 0; k--) if (isMovement(seq[k])) { mIdx = k; break; }
+  if (mIdx < 0) return null;
+  let prevIdx = -1;
+  for (let k = mIdx - 1; k >= 0; k--) if (isMovement(seq[k])) { prevIdx = k; break; }
+  return { m: seq[mIdx], active: mIdx === activeIdx, localT: localActionProgress(t, seq[mIdx], frame), prev: prevIdx >= 0 ? seq[prevIdx] : null };
 }
 
 /** How far into the set stance (0 = normal, 1 = planted, briefly a bit over 1 while settling) a player is at beat progress t. */
 function stanceAt(t: number, seq: PlayAction[], frame: PlayFrame, startsPlanted: number): number {
-  const activeIdx = seq.length > 0 ? activeSequenceIndex(t, seq, frame) : -1;
-  let mIdx = -1;
-  for (let k = activeIdx; k >= 0; k--) if (isMovement(seq[k])) { mIdx = k; break; }
-  if (mIdx < 0) return startsPlanted;                   // hasn't moved yet this step
-  const m = seq[mIdx];
-  if (mIdx !== activeIdx) return holdLevel(m); // standing after their last move (e.g. passing)
-  const localT = localActionProgress(t, m, frame);
+  const mv = movementAt(t, seq, frame);
+  if (!mv) return startsPlanted;                        // hasn't moved yet this step
+  const { m, active, localT, prev } = mv;
+  if (!active) return plantLevel(m);                    // standing after their last move (e.g. passing)
   // Ghost: a quick half-dip as they arrive, never held.
   if (m.type === "screen" && m.ghost) return GHOST_DIP * Math.sin(Math.PI * clamp01((localT - GHOST_DIP_FROM) / (1 - GHOST_DIP_FROM)));
-  let prevIdx = -1;
-  for (let k = mIdx - 1; k >= 0; k--) if (isMovement(seq[k])) { prevIdx = k; break; }
-  const wasPlanted = prevIdx >= 0 ? holdLevel(seq[prevIdx]) : startsPlanted;
+  const wasPlanted = prev ? plantLevel(prev) : startsPlanted;
   const release = wasPlanted * Math.max(0, 1 - localT / STANCE_RELEASE_BY);
-  // Seal: sink in low and wide as they reach the spot, then hold.
-  if (m.type === "move" && m.seal) {
-    return Math.max(release, SEAL_LEVEL * settleEase(clamp01((localT - SEAL_ARRIVE_FROM) / (SEAL_ARRIVE_TO - SEAL_ARRIVE_FROM))));
-  }
   const arrive = m.type === "screen" ? settleEase(clamp01((localT - STANCE_ARRIVE_FROM) / (1 - STANCE_ARRIVE_FROM))) : 0;
   return Math.max(release, arrive);
 }
 
-function applyStance(g: THREE.Group, k: number) {
+/** How far into a seal (0-1, briefly over while settling) and which seal, at beat progress t. */
+function sealAt(t: number, seq: PlayAction[], frame: PlayFrame, startSeal: PlayAction | null): { amt: number; seal: PlayAction | null } {
+  const mv = movementAt(t, seq, frame);
+  if (!mv) return { amt: startSeal ? 1 : 0, seal: startSeal };
+  const { m, active, localT, prev } = mv;
+  if (!active) return isSeal(m) ? { amt: 1, seal: m } : { amt: 0, seal: null };
+  if (isSeal(m)) return { amt: settleEase(clamp01((localT - SEAL_ARRIVE_FROM) / (SEAL_ARRIVE_TO - SEAL_ARRIVE_FROM))), seal: m };
+  const was = prev ? (isSeal(prev) ? prev : null) : startSeal;
+  if (was) return { amt: Math.max(0, 1 - localT / STANCE_RELEASE_BY), seal: was };
+  return { amt: 0, seal: null };
+}
+
+/** The seal's direction in canvas units: toward the defender being sealed. */
+function sealDirection(a: PlayAction): { dx: number; dy: number } {
+  if (a.sealToward) return { dx: a.sealToward.x - a.x2, dy: a.sealToward.y - a.y2 };
+  if (a.curve2) return { dx: a.x2 - a.curve2.x, dy: a.y2 - a.curve2.y };
+  if (a.curve) return { dx: a.x2 - a.curve.x, dy: a.y2 - a.curve.y };
+  return { dx: a.x2 - a.x1, dy: a.y2 - a.y1 };
+}
+
+/**
+ * Body shape for a screen stance (k) and/or a seal (seal.amt, leaning
+ * along seal.wx/wz in world space). Whichever is deeper sets the size.
+ */
+function applyStance(g: THREE.Group, k: number, seal?: { amt: number; wx: number; wz: number }) {
   const u = g.userData as StanceParts;
   if (!u.body) return;
-  const sx = 1 + STANCE_WIDEN * k;
-  const sy = 1 - STANCE_DROP * k;
+  const sa = seal ? Math.max(0, seal.amt) : 0;
+  const sx = Math.max(1 + STANCE_WIDEN * k, 1 + SEAL_WIDEN * sa);
+  const sy = Math.min(1 - STANCE_DROP * k, 1 - SEAL_DROP * sa);
+  // Lean back into the defender, pivoting at the feet.
+  const len = seal ? Math.hypot(seal.wx, seal.wz) || 1 : 1;
+  const lx = seal ? seal.wx / len : 0, lz = seal ? seal.wz / len : 0;
+  g.rotation.x = lz * SEAL_LEAN * sa;
+  g.rotation.z = -lx * SEAL_LEAN * sa;
+  // Target hand up on the far side from the defender.
+  if (u.arm) {
+    u.arm.visible = sa > 0.05;
+    u.arm.position.set(-lx * 0.34 * sx, 0, -lz * 0.34 * sx);
+    u.arm.scale.set(1, Math.max(0.01, Math.min(1, sa)), 1);
+  }
   u.body.scale.set(sx, sy, sx);
   u.body.position.y = BODY_BOTTOM + 0.45 * sy;
   if (u.head && u.headBaseY !== undefined) u.head.position.y = u.headBaseY - 0.9 * (1 - sy);
@@ -386,6 +443,19 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
         const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.9, 12), new THREE.MeshStandardMaterial({ color }));
         body.position.y = 0.55;
         g.add(body);
+        // Seal target hand: an arm straight up from the shoulder with a hand
+        // on top. Hidden until they seal (applyStance shows and places it).
+        const arm = new THREE.Group();
+        const armMat = new THREE.MeshStandardMaterial({ color });
+        const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.6, 8), armMat);
+        upper.position.y = 1.15;
+        arm.add(upper);
+        const hand = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 10), armMat);
+        hand.position.y = 1.48;
+        arm.add(hand);
+        arm.visible = false;
+        g.add(arm);
+        (g.userData as StanceParts).arm = arm;
 
         const isSelf = !!(selfOv && p.id === selfOv.playerId);
         const avatarUrl = isSelf ? selfOv!.avatarUrl : (p.profile_id ? rosterMap[p.profile_id]?.avatar_url : null);
@@ -448,7 +518,9 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
         // Still screening from an earlier step? Show them planted while idle
         // on this step too, so the stance doesn't pop off between steps.
         const allFrames = stateRef.current.play.data.frames;
-        applyStance(g, plantedAtStepStart(allFrames, allFrames.indexOf(frame), p.id));
+        const heldSeal = sealAtStepStart(allFrames, allFrames.indexOf(frame), p.id);
+        const hsd = heldSeal ? sealDirection(heldSeal) : null;
+        applyStance(g, plantedAtStepStart(allFrames, allFrames.indexOf(frame), p.id), hsd ? { amt: 1, wx: hsd.dx, wz: hsd.dy } : undefined);
         scene.add(g);
         playerGroups[i] = g;
       });
@@ -696,7 +768,13 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
           } else {
             stance = 0;
           }
-          applyStance(playerGroups[i], stance);
+          // Seal pose (low, leaning back, target hand), tracked separately.
+          const startSeal = sealAtStepStart(stateRef.current.play.data.frames, stateRef.current.frameIdx, fp.id);
+          const sp = fullSeq.length > 0
+            ? sealAt(t, fullSeq, animFromFrame!, startSeal)
+            : { amt: startSeal ? (fp.x !== tp.x || fp.y !== tp.y ? Math.max(0, 1 - t / STANCE_RELEASE_BY) : 1) : 0, seal: startSeal };
+          const sdir = sp.seal ? sealDirection(sp.seal) : null;
+          applyStance(playerGroups[i], stance, sdir ? { amt: sp.amt, wx: sdir.dx, wz: sdir.dy } : undefined);
         });
         // A defender only ever gets Cut or Loop (both stored as "move"),
         // so this mirrors the player loop above but simpler — no ball,
