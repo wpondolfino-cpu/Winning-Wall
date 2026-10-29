@@ -451,6 +451,11 @@ export default function PlayCanvas({
 
   function handleMouseDown(e: ReactMouseEvent) {
     if (!edit || !tool) return;
+    // A drag on the court is drawing, never text selection: without this
+    // the browser highlighted the player numbers (and anything else the
+    // drag crossed) in blue and the stroke was lost.
+    e.preventDefault();
+    try { window.getSelection()?.removeAllRanges(); } catch { /* nothing selected */ }
     const p = pointFromEvent(e);
     if (tool === "player") { onAddPlayer?.({ id: genPlayerId(), num: nextNum, x: p.x, y: p.y }); return; }
     if (tool === "defender") { onAddDefender?.(p.x, p.y); return; }
@@ -772,7 +777,7 @@ export default function PlayCanvas({
     <svg
       ref={svgRef}
       viewBox={!edit && viewBox ? viewBox.join(" ") : `0 0 ${CANVAS_W} ${CANVAS_H}`}
-      style={{ ["--court-ink" as any]: courtInk(courtBg), width: "100%", height: "auto", display: "block", background: courtBg, borderRadius: 8, cursor: !edit || !tool ? "default" : tool === "select" ? (moveDrag ? "grabbing" : "grab") : "crosshair" }}
+      style={{ ["--court-ink" as any]: courtInk(courtBg), width: "100%", height: "auto", display: "block", background: courtBg, borderRadius: 8, userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none", cursor: !edit || !tool ? "default" : tool === "select" ? (moveDrag ? "grabbing" : "grab") : "crosshair" }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
