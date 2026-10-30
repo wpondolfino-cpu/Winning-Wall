@@ -893,10 +893,20 @@ export default function PlayCanvas({
         const seq = playerActionSequence(displayFrame, a.sourcePlayerId);
         if (seq.length <= 1) return null;
         const order = (a.sequenceIndex ?? 0) + 1;
+        // A line that starts at a ghost mark has its number moved a little
+        // way along it, so the broken bar stays visible underneath.
+        const prev = seq[seq.indexOf(a) - 1];
+        let bx = a.x1, by = a.y1;
+        if (prev && prev.type === "screen" && prev.ghost) {
+          const toward = a.curve ?? { x: a.x2, y: a.y2 };
+          const dx = toward.x - a.x1, dy = toward.y - a.y1, len = Math.hypot(dx, dy) || 1;
+          const step = Math.min(26, len * 0.5);
+          bx = a.x1 + (dx / len) * step; by = a.y1 + (dy / len) * step;
+        }
         return (
           <g key={"seq-" + i}>
-            <circle cx={a.x1} cy={a.y1} r={8} fill="var(--gold)" stroke="#5a4200" strokeWidth={1} />
-            <text x={a.x1} y={a.y1 + 3} textAnchor="middle" fontSize={10} fontWeight={700} fill="#2a1e00">{order}</text>
+            <circle cx={bx} cy={by} r={8} fill="var(--gold)" stroke="#5a4200" strokeWidth={1} />
+            <text x={bx} y={by + 3} textAnchor="middle" fontSize={10} fontWeight={700} fill="#2a1e00">{order}</text>
           </g>
         );
       })}
