@@ -893,11 +893,13 @@ export default function PlayCanvas({
         const seq = playerActionSequence(displayFrame, a.sourcePlayerId);
         if (seq.length <= 1) return null;
         const order = (a.sequenceIndex ?? 0) + 1;
-        // A line that starts at a ghost mark has its number moved a little
-        // way along it, so the broken bar stays visible underneath.
-        const prev = seq[seq.indexOf(a) - 1];
+        // Every line after the first in a player's chain (the roll after a
+        // screen, the handoff after a dribble, the slip after a ghost) has
+        // its number moved a little way along it, so the screen bar, ghost
+        // mark or arrowhead where the two lines meet stays visible.
+        const isFollowOn = seq.indexOf(a) > 0;
         let bx = a.x1, by = a.y1;
-        if (prev && prev.type === "screen" && prev.ghost) {
+        if (isFollowOn) {
           const toward = a.curve ?? { x: a.x2, y: a.y2 };
           const dx = toward.x - a.x1, dy = toward.y - a.y1, len = Math.hypot(dx, dy) || 1;
           const step = Math.min(26, len * 0.5);
