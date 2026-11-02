@@ -317,7 +317,8 @@ function ActionLine({ a }: { a: PlayAction }) {
     // in an arrowhead -- the ball goes out and comes back. The dribble he
     // keeps it on starts at that arrowhead.
     const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1;
-    const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+    const side = a.keepSide === -1 ? -1 : 1;
+    const ux = dx / len, uy = dy / len, nx = -uy * side, ny = ux * side;
     const reach = Math.max(len - 16, len * 0.6);
     const ex = a.x1 + ux * reach, ey = a.y1 + uy * reach;            // where it turns
     const tip = keepHookTip(a);
