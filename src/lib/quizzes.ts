@@ -978,6 +978,7 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
           if (!first || !ACTION_WORD[first.type]) continue;
           if (first.type === "screen" && first.ghost) continue;   // "Screen" would be the wrong answer to teach
           if (first.type === "move" && first.seal) continue;       // nor would "Cut" for a seal
+          if (first.type === "dho" && first.keep) continue;        // nor "Hand off" for a keep
           if (givesBall(first.type)) {
             const to = f.players.find(q => q.id === first.targetPlayerId);
             const others = f.players.filter(q => q.id !== p.id && q.id !== to?.id).map(q => q.num);
@@ -1037,7 +1038,7 @@ export function buildPlayQuestions(plays: Play[], settings: PlayQuizSettings): Q
       const pool: { i: number; from: number; fromId: string; to: number; others: number[]; type: string }[] = [];
       frames.forEach((f, i) => {
         for (const a of f.actions) {
-          if (!givesBall(a.type) || !a.sourcePlayerId || !a.targetPlayerId) continue;
+          if (!givesBall(a.type) || a.keep || !a.sourcePlayerId || !a.targetPlayerId) continue;
           const from = f.players.find(p => p.id === a.sourcePlayerId);
           const to = f.players.find(p => p.id === a.targetPlayerId);
           if (!from || !to) continue;
@@ -1133,7 +1134,7 @@ export function stepOptions(play: Play, i: number): { acts: string[]; moves: str
     if (mine.length && ACTION_WORD[mine[0].type]) acts.push(p.id);
     const end = after.players.find(q => q.id === p.id);
     if (mine.some(a => ["move", "dribble", "screen"].includes(a.type)) && end && Math.hypot(end.x - p.x, end.y - p.y) >= 30) moves.push(p.id);
-    if (mine.some(a => givesBall(a.type) && a.targetPlayerId && f.players.some(q => q.id === a.targetPlayerId))) passes.push(p.id);
+    if (mine.some(a => givesBall(a.type) && !a.keep && a.targetPlayerId && f.players.some(q => q.id === a.targetPlayerId))) passes.push(p.id);
   }
   return { acts, moves, passes, blanks: f.note ? noteBlanks(f.note).length : 0 };
 }
@@ -1234,7 +1235,7 @@ export function buildChosenQuestion(type: PickType, play: Play, stepIdx: number 
       reveal: reveal(playerId), ...(groupId ? { groupId, groupPart: 2 } : {}) };
   };
   const whoQ = (groupId?: string): QuestionDraft => {
-    const pass = f.actions.find(x => x.sourcePlayerId === playerId && givesBall(x.type) && x.targetPlayerId);
+    const pass = f.actions.find(x => x.sourcePlayerId === playerId && givesBall(x.type) && !x.keep && x.targetPlayerId);
     const to = f.players.find(x => x.id === pass?.targetPlayerId);
     if (!pass || !to) throw new Error("That player doesn't pass on this step.");
     const others = f.players.filter(x => x.id !== playerId && x.id !== to.id).map(x => x.num);
@@ -1250,7 +1251,7 @@ export function buildChosenQuestion(type: PickType, play: Play, stepIdx: number 
   if (type === "who_ball") return [whoQ()];
   // two_part: part 2 is a tap for a cut/screen/dribble, "who to" for a pass
   const gid = crypto.randomUUID();
-  const isPass = a && givesBall(a.type);
+  const isPass = a && givesBall(a.type) && !a.keep;
   return [whatNext(gid), isPass ? whoQ(gid) : tapQ(gid)];
 }
 

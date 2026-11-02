@@ -44,7 +44,7 @@ interface Props {
   onClose?: () => void;
 }
 
-type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | "ghost" | "seal" | null;
+type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | "ghost" | "seal" | "keep" | null;
 
 const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "select", label: "Move", icon: "✥" },
@@ -59,6 +59,8 @@ const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   // Post seal: drag to the spot (or a short drag to seal in place) toward the defender.
   { tool: "seal", label: "Seal", icon: "◖" },
   { tool: "dho", label: "Handoff", icon: "⇄" },
+  // Fake handoff: drag to the receiver like a Handoff, then draw his Dribble from the hook's arrowhead.
+  { tool: "keep", label: "Keep", icon: "↩" },
   { tool: "shot", label: "Shot", icon: "🥅" },
   { tool: "lob", label: "Lob", icon: "🙌" },
   { tool: "loop", label: "Loop", icon: "↻" },

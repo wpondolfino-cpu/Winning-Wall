@@ -9,7 +9,7 @@
 import { useRef, useState, useEffect, type MouseEvent as ReactMouseEvent } from "react";
 import type { CourtTemplate, PlayFrame, PlayPlayer, PlayAction, ActionType, PlayText, PlayZone, PlayPoint } from "../../lib/plays";
 import type { RosterPlayer } from "../../lib/plays";
-import { resolvePassEndpoint, localActionProgress, pathProgress, playerActionSequence, stepTimingUnits } from "../../lib/plays";
+import { resolvePassEndpoint, localActionProgress, pathProgress, playerActionSequence, stepTimingUnits, keepHookTip } from "../../lib/plays";
 import { genPlayerId } from "../../lib/plays";
 
 export const CANVAS_W = 600;
@@ -22,7 +22,7 @@ interface Props {
   roster?: Record<string, RosterPlayer>;
   /** When true, clicks/drags on the court edit the frame via the callbacks below. */
   edit?: boolean;
-  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | "ghost" | "seal" | null;
+  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | "ghost" | "seal" | "keep" | null;
   onAddPlayer?: (p: PlayPlayer) => void;
   onAddDefender?: (x: number, y: number) => void;
   onSetBall?: (x: number, y: number) => void;
@@ -231,7 +231,7 @@ function endDirection(a: PlayAction) {
 }
 
 /** Tools that draw a line from a player. */
-const DRAW_TOOLS: string[] = ["move", "pass", "dribble", "screen", "ghost", "seal", "lob", "loop", "dho"];
+const DRAW_TOOLS: string[] = ["move", "pass", "dribble", "screen", "ghost", "seal", "lob", "loop", "dho", "keep"];
 
 /** Below this length a Seal drag means "seal right here": no run, just the side. */
 const SEAL_IN_PLACE = 30;
@@ -250,8 +250,11 @@ function chainEndAt(frame: PlayFrame, x: number, y: number, withDefenders: boole
     const seq = frame.actions.filter((a) => a.sourcePlayerId === entity.id)
       .sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0));
     const last = seq[seq.length - 1];
-    if (!last || !(last.type === "move" || last.type === "dribble" || last.type === "screen")) return;
-    const d = Math.hypot(last.x2 - x, last.y2 - y);
+    const isKeep = !!last && last.type === "dho" && !!last.keep;
+    if (!last || !(last.type === "move" || last.type === "dribble" || last.type === "screen" || isKeep)) return;
+    // A keep continues from its hook's arrowhead (the dribble he keeps it on).
+    const end = isKeep ? keepHookTip(last) : { x: last.x2, y: last.y2 };
+    const d = Math.hypot(end.x - x, end.y - y);
     if (d < bestDist) { bestDist = d; best = { entity, action: last }; }
   };
   frame.players.forEach(consider);
@@ -308,6 +311,33 @@ function ActionShape({ a }: { a: PlayAction }) {
 }
 
 function ActionLine({ a }: { a: PlayAction }) {
+  if (a.type === "dho" && a.keep) {
+    // Keep (fake handoff): the handoff line runs most of the way to the
+    // receiver, then hooks round and comes back toward the giver, ending
+    // in an arrowhead -- the ball goes out and comes back. The dribble he
+    // keeps it on starts at that arrowhead.
+    const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+    const reach = Math.max(len - 16, len * 0.6);
+    const ex = a.x1 + ux * reach, ey = a.y1 + uy * reach;            // where it turns
+    const tip = keepHookTip(a);
+    const c1x = ex + ux * 16, c1y = ey + uy * 16, c2x = ex + ux * 16 + nx * 20, c2y = ey + uy * 16 + ny * 20;
+    const bx = ex + nx * 20, by = ey + ny * 20;                       // back on the return side
+    const hx = tip.x - bx, hy = tip.y - by, hl = Math.hypot(hx, hy) || 1;
+    const hux = hx / hl, huy = hy / hl;                              // arrowhead direction
+    const mx = a.x1 + ux * reach * 0.45, my = a.y1 + uy * reach * 0.45;
+    const px = -uy * 8, py = ux * 8;
+    return (
+      <g>
+        <path d={`M ${a.x1} ${a.y1} L ${ex} ${ey} C ${c1x} ${c1y} ${c2x} ${c2y} ${bx} ${by} L ${tip.x} ${tip.y}`}
+          fill="none" stroke="#C2541F" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+        <path d={`M ${tip.x - hux * 9 - huy * 6} ${tip.y - huy * 9 + hux * 6} L ${tip.x} ${tip.y} L ${tip.x - hux * 9 + huy * 6} ${tip.y - huy * 9 - hux * 6}`}
+          fill="none" stroke="#C2541F" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+        <line x1={mx - ux * 4 + px} y1={my - uy * 4 + py} x2={mx - ux * 4 - px} y2={my - uy * 4 - py} stroke="#C2541F" strokeWidth={3} />
+        <line x1={mx + ux * 4 + px} y1={my + uy * 4 + py} x2={mx + ux * 4 - px} y2={my + uy * 4 - py} stroke="#C2541F" strokeWidth={3} />
+      </g>
+    );
+  }
   if (a.type === "dho") {
     // Dribble handoff: a short line from the giver to the receiver with the
     // usual double bar across its middle.
@@ -729,7 +759,7 @@ export default function PlayCanvas({
         // A handoff goes to whoever is near the end of the line -- where
         // they start this step, or where their move ends (they come to it).
         const target = (tool === "pass" || tool === "lob") ? nearestPlayer(p.x, p.y)
-          : tool === "dho" ? nearestPlayerOrArrival(frame, p.x, p.y, source?.id) : null;
+          : tool === "dho" || tool === "keep" ? nearestPlayerOrArrival(frame, p.x, p.y, source?.id) : null;
         // If the selected entity already has an action in this step (e.g.
         // a screen), a new one chains onto the end of it — starting where
         // the previous one left off, one slot further in their sequence —
@@ -738,8 +768,10 @@ export default function PlayCanvas({
           ? frame.actions.filter((a) => a.sourcePlayerId === selectedEntity.id).sort((a, b) => (a.sequenceIndex ?? 0) - (b.sequenceIndex ?? 0))
           : [];
         const priorAction = existingSeq[existingSeq.length - 1];
-        const startX = priorAction ? priorAction.x2 : selectedEntity ? selectedEntity.x : dragStart.x;
-        const startY = priorAction ? priorAction.y2 : selectedEntity ? selectedEntity.y : dragStart.y;
+        const priorEnd = priorAction && priorAction.type === "dho" && priorAction.keep ? keepHookTip(priorAction)
+          : priorAction ? { x: priorAction.x2, y: priorAction.y2 } : null;
+        const startX = priorEnd ? priorEnd.x : selectedEntity ? selectedEntity.x : dragStart.x;
+        const startY = priorEnd ? priorEnd.y : selectedEntity ? selectedEntity.y : dragStart.y;
         const sequenceIndex = selectedEntity ? existingSeq.length : undefined;
         // The Loop tool is really just a Cut ("move") with two bend points
         // instead of one, seeded right away so there's something to see
@@ -761,11 +793,12 @@ export default function PlayCanvas({
           ? { x2: startX, y2: startY, sealToward: { x: p.x, y: p.y } }
           : { x2: p.x, y2: p.y };
         onAddAction?.({
-          type: (tool === "loop" || tool === "seal" ? "move" : tool === "ghost" ? "screen" : tool) as ActionType,
+          type: (tool === "loop" || tool === "seal" ? "move" : tool === "ghost" ? "screen" : tool === "keep" ? "dho" : tool) as ActionType,
           x1: startX, y1: startY, ...sealEnd,
           sourcePlayerId: source?.id, targetPlayerId: target?.id, sequenceIndex, curve, curve2,
           ...(tool === "ghost" ? { ghost: true } : {}),
           ...(tool === "seal" ? { seal: true } : {}),
+          ...(tool === "keep" ? { keep: true } : {}),
         });
         const linked = [source?.id, target?.id].filter(Boolean) as string[];
         if (linked.length) {
@@ -1028,6 +1061,12 @@ export default function PlayCanvas({
       {animT !== null && frame.actions.map((a, i) => {
         if (a.type === "screen" && !a.ghost) return null;
         if (a.seal && Math.hypot(a.x2 - a.x1, a.y2 - a.y1) <= 2) return null;   // sealing in place: nothing travels
+        if (a.type === "dho" && a.keep) {
+          // The ball goes partway toward the receiver and comes back.
+          const u = localActionProgress(animT, a, frame);
+          const out = Math.sin(Math.PI * Math.min(1, Math.max(0, u))) * 0.4;
+          return <circle key={i} cx={a.x1 + (a.x2 - a.x1) * out} cy={a.y1 + (a.y2 - a.y1) * out} r={6} fill="#378ADD" opacity={0.9} />;
+        }
         const endpoint = a.type === "pass" ? resolvePassEndpoint(frame, a) : { x: a.x2, y: a.y2 };
         // A ghost's run eases in and the slip after it bursts out.
         const localT = pathProgress(localActionProgress(animT, a, frame), a, frame);

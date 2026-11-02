@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { Play, RosterPlayer, PlayFrame, PlayAction, resolvePassEndpoint, playerActionSequence, localActionProgress, pathProgress, ballChainSequence, activeSequenceIndex, stepTimingUnits, stepButtonText } from "../../lib/plays";
+import { Play, RosterPlayer, PlayFrame, PlayAction, resolvePassEndpoint, playerActionSequence, localActionProgress, pathProgress, motionAction, keepRoles, ballChainSequence, activeSequenceIndex, stepTimingUnits, stepButtonText } from "../../lib/plays";
 import StepNote from "./StepNote";
 import { courtLines, hoopPositions } from "./courtGeometry";
 
@@ -710,18 +710,21 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
               // pathProgress: steady speed, except a ghost screen's
               // slow-in and the burst out of it.
               const localT = pathProgress(localActionProgress(t, moveAction, animFromFrame!), moveAction, animFromFrame!);
-              if (moveAction.curve2 && moveAction.curve) {
+              // The drive after a keep is drawn from the hook's arrowhead but
+              // starts from where the giver is actually standing.
+              const geo = motionAction(moveAction, animFromFrame!);
+              if (geo.curve2 && geo.curve) {
                 const mt = 1 - localT;
-                const w1 = toWorld(moveAction.x1, moveAction.y1), wc1 = toWorld(moveAction.curve.x, moveAction.curve.y), wc2 = toWorld(moveAction.curve2.x, moveAction.curve2.y), w2 = toWorld(moveAction.x2, moveAction.y2);
+                const w1 = toWorld(geo.x1, geo.y1), wc1 = toWorld(geo.curve.x, geo.curve.y), wc2 = toWorld(geo.curve2.x, geo.curve2.y), w2 = toWorld(geo.x2, geo.y2);
                 x = mt * mt * mt * w1.x + 3 * mt * mt * localT * wc1.x + 3 * mt * localT * localT * wc2.x + localT * localT * localT * w2.x;
                 z = mt * mt * mt * w1.z + 3 * mt * mt * localT * wc1.z + 3 * mt * localT * localT * wc2.z + localT * localT * localT * w2.z;
-              } else if (moveAction.curve) {
+              } else if (geo.curve) {
                 const mt = 1 - localT;
-                const w1 = toWorld(moveAction.x1, moveAction.y1), wc = toWorld(moveAction.curve.x, moveAction.curve.y), w2 = toWorld(moveAction.x2, moveAction.y2);
+                const w1 = toWorld(geo.x1, geo.y1), wc = toWorld(geo.curve.x, geo.curve.y), w2 = toWorld(geo.x2, geo.y2);
                 x = mt * mt * w1.x + 2 * mt * localT * wc.x + localT * localT * w2.x;
                 z = mt * mt * w1.z + 2 * mt * localT * wc.z + localT * localT * w2.z;
               } else {
-                const from = toWorld(moveAction.x1, moveAction.y1), to = toWorld(moveAction.x2, moveAction.y2);
+                const from = toWorld(geo.x1, geo.y1), to = toWorld(geo.x2, geo.y2);
                 x = from.x + (to.x - from.x) * localT;
                 z = from.z + (to.z - from.z) * localT;
               }
@@ -915,7 +918,13 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
             // receiver's end point -- before the handoff even happens.
             // One drawn BEFORE it (a pass to the giver) hands over to the
             // handoff once it has landed.
-            const dhoInStep = animFromFrame.actions.find((a) => a.type === "dho" && a.sourcePlayerId && a.targetPlayerId);
+            const dhoInStep = animFromFrame.actions.find((a) => a.type === "dho" && !a.keep && a.sourcePlayerId && a.targetPlayerId);
+            // Keep (fake handoff): the ball never leaves the giver.
+            const kr = keepRoles(animFromFrame);
+            const keepGiverIdx = kr ? animFromFrame.players.findIndex((p) => p.id === kr.keep.sourcePlayerId) : -1;
+            const keepRecvIdx = kr && kr.keep.targetPlayerId ? animFromFrame.players.findIndex((p) => p.id === kr.keep.targetPlayerId) : -1;
+            const keepOwnsBall = !!kr && keepGiverIdx >= 0 && !!playerGroups[keepGiverIdx]
+              && !(passAction && ballLocalT > 0) && !(lobAction && ballLocalT > 0) && !(shotAction && shotT > 0);
             const otherBall = passAction ?? shotAction ?? lobAction;
             let dhoOwnsBall = !!dhoInStep && !otherBall;
             if (dhoInStep && otherBall) {
@@ -926,7 +935,48 @@ function buildEntities(frame: PlayFrame, rosterMap: Record<string, RosterPlayer>
             const dhoAction = dhoOwnsBall ? dhoInStep : undefined;
             const giverIdx = dhoAction ? animFromFrame.players.findIndex((p) => p.id === dhoAction.sourcePlayerId) : -1;
             const recvIdx = dhoAction ? animFromFrame.players.findIndex((p) => p.id === dhoAction.targetPlayerId) : -1;
-            if (dhoAction && giverIdx >= 0 && recvIdx >= 0 && playerGroups[giverIdx] && playerGroups[recvIdx]) {
+            if (!dhoAction && kr && keepOwnsBall) {
+              const g = playerGroups[keepGiverIdx].position;
+              const rp = keepRecvIdx >= 0 && playerGroups[keepRecvIdx] ? playerGroups[keepRecvIdx].position : null;
+              const u = localActionProgress(t, kr.keep, animFromFrame);
+              const unit = (x: number, z: number) => { const l = Math.hypot(x, z) || 1; return { x: x / l, z: z / l }; };
+              const toR = rp ? unit(rp.x - g.x, rp.z - g.z) : unit(kr.keep.x2 - kr.keep.x1, kr.keep.y2 - kr.keep.y1);
+              const post = kr.giverPost[0];
+              const postEnd = post ? toWorld(post.x2, post.y2) : null;
+              const toD = postEnd ? unit(postEnd.x - g.x, postEnd.z - g.z) : toR;
+              const HAND = 0.36;
+              let bx: number, bz: number, by: number;
+              if (kr.live) {
+                // Ball on the receiver's side coming in, crossed low in
+                // front of him during the keep, then on the far side as he
+                // speeds off. Never stops bouncing.
+                const pre = kr.giverPre[kr.giverPre.length - 1];
+                const inDir = pre ? unit(pre.x2 - pre.x1, pre.y2 - pre.y1) : toD;
+                const dir = u < 1 ? inDir : toD;
+                let px = -dir.z, pz = dir.x;
+                if (rp && px * (rp.x - g.x) + pz * (rp.z - g.z) < 0) { px = -px; pz = -pz; }
+                const c = Math.min(1, Math.max(0, u)), cs = c * c * (3 - 2 * c);
+                const lateral = HAND * (1 - 2 * cs), fwd = 0.12 + Math.sin(Math.PI * cs) * 0.22;
+                bx = g.x + px * lateral + dir.x * fwd; bz = g.z + pz * lateral + dir.z * fwd;
+                const crossing = c > 0 && c < 1;
+                const beat = dribbleBounce || Math.abs(Math.sin(t * 28));
+                by = crossing ? 0.15 + Math.abs(Math.sin(t * 40)) * 0.3 : 0.2 + beat * 0.62;
+              } else if (u <= 0) {
+                bx = g.x + toR.x * HAND; bz = g.z + toR.z * HAND; by = 0.95;    // held, facing the receiver
+              } else if (u < 1) {
+                const reach = HAND + Math.sin(Math.PI * u) * 0.42;              // show it to him
+                bx = g.x + toR.x * reach; bz = g.z + toR.z * reach; by = 0.95;
+              } else {
+                const lt = post ? localActionProgress(t, post, animFromFrame) : 1;
+                if (lt < 0.15) {                                                 // rip it low across
+                  const k = lt / 0.15, sx = toR.x + (toD.x - toR.x) * k, sz = toR.z + (toD.z - toR.z) * k, sl = Math.hypot(sx, sz) || 1;
+                  bx = g.x + (sx / sl) * HAND; bz = g.z + (sz / sl) * HAND; by = 0.95 - k * 0.6;
+                } else {
+                  bx = g.x + toD.x * HAND; bz = g.z + toD.z * HAND; by = 0.25 + dribbleBounce * 0.6;
+                }
+              }
+              ballMesh.position.set(bx, by, bz);
+            } else if (dhoAction && giverIdx >= 0 && recvIdx >= 0 && playerGroups[giverIdx] && playerGroups[recvIdx]) {
               const u = localActionProgress(t, dhoAction, animFromFrame);
               const g = playerGroups[giverIdx].position, r = playerGroups[recvIdx].position;
               const HAND = 0.38;

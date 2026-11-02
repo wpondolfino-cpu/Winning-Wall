@@ -72,6 +72,33 @@ export interface PlayAction {
    * wait with them.
    */
   hold?: number;
+  /**
+   * Handoffs only: a keep (fake handoff). Drawn from the giver to the
+   * receiver like a handoff, but the line hooks back to the giver, the ball
+   * never changes hands, and the giver's next line (the dribble he keeps it
+   * on) starts at the hook's arrowhead.
+   */
+  keep?: boolean;
+}
+
+/** Where a keep's hook ends: just in front of the giver, off to one side. The giver's next line starts here. */
+export function keepHookTip(a: PlayAction): PlayPoint {
+  const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+  const along = Math.min(26, len * 0.35);
+  return { x: a.x1 + ux * along + nx * 20, y: a.y1 + uy * along + ny * 20 };
+}
+
+/**
+ * The line as the player actually runs it. The dribble after a keep is
+ * drawn from the hook's arrowhead, but the giver is standing at the start
+ * of the keep, so that's where his drive really begins.
+ */
+export function motionAction(a: PlayAction, frame: PlayFrame): PlayAction {
+  if (!a.sourcePlayerId || (a.type !== "dribble" && a.type !== "move")) return a;
+  const seq = playerActionSequence(frame, a.sourcePlayerId);
+  const prev = seq[seq.indexOf(a) - 1];
+  return prev && prev.type === "dho" && prev.keep ? { ...a, x1: prev.x1, y1: prev.y1 } : a;
 }
 
 /** All of a given entity's actions in a frame, in sequence order (lowest sequenceIndex first). Works for a player OR a defender's id — sourcePlayerId just holds whichever one is actually moving, this doesn't care which. */
@@ -153,7 +180,8 @@ export function deriveNextFrame(prev: PlayFrame): PlayFrame {
       ballHolderId = handoffPlayer.id;
     } else {
       // A handoff action gives the ball to its receiver, the same as a pass.
-      const passTarget = [...prev.actions].reverse().find((a) => (a.type === "pass" || a.type === "dho") && a.targetPlayerId);
+      // (A keep never gives it up: the giver still has it.)
+      const passTarget = [...prev.actions].reverse().find((a) => (a.type === "pass" || (a.type === "dho" && !a.keep)) && a.targetPlayerId);
       if (passTarget?.targetPlayerId) {
         ballHolderId = passTarget.targetPlayerId;
       } else {
@@ -475,6 +503,15 @@ export function pathProgress(localT: number, action: PlayAction, frame: PlayFram
   // A seal gets there by three-quarters of the way through and sits, so
   // they're sealed before an entry pass lands.
   if (action.type === "move" && action.seal) { const v = Math.min(1, u / 0.75); return 1 - (1 - v) * (1 - v); }
+  // Keep: into the spot fast-then-slow, out of it slow-then-fast; from
+  // standing the drive waits a beat for the rip, then accelerates.
+  const kr = keepRoles(frame);
+  if (kr) {
+    const lastOf = (xs: PlayAction[]) => xs[xs.length - 1];
+    if ((kr.live && action === lastOf(kr.giverPre)) || action === lastOf(kr.recvPre)) return (2 - GHOST_SLOW) * u + (GHOST_SLOW - 1) * u * u;
+    if (action === kr.recvPost[0] || (kr.live && action === kr.giverPost[0])) return GHOST_SLOW * u + (1 - GHOST_SLOW) * u * u;
+    if (!kr.live && action === kr.giverPost[0]) { const v = Math.max(0, (u - 0.15) / 0.85); return v * v; }
+  }
   if (action.sourcePlayerId && (action.type === "move" || action.type === "dribble")) {
     const seq = playerActionSequence(frame, action.sourcePlayerId);
     const i = seq.indexOf(action);
@@ -619,8 +656,8 @@ function stepTiming(frame: PlayFrame): StepTiming | null {
 const HANDOFF_SPOT_RADIUS = 60;
 
 function computeHandoffTiming(frame: PlayFrame): StepTiming | null {
-  const dho = frame.actions.find((a) => a.type === "dho" && a.sourcePlayerId && a.targetPlayerId);
-  if (!dho) return null;
+  const dho = frame.actions.find((a) => a.type === "dho" && !a.keep && a.sourcePlayerId && a.targetPlayerId);
+  if (!dho) return computeKeepTiming(frame);
   const giverSeq = playerActionSequence(frame, dho.sourcePlayerId!);
   const recvSeq = playerActionSequence(frame, dho.targetPlayerId!);
   const at = giverSeq.indexOf(dho);
@@ -656,6 +693,60 @@ function computeHandoffTiming(frame: PlayFrame): StepTiming | null {
     + (recvPre.length ? Math.max(1, recvPre.length) * 0.75 : 0.25)
     + Math.max(0.75, giverPost.length, recvPost.length);
   return { bounds, wave, waves: 1, maxPerWave: Math.max(1, units), waveStarts: [0, 1], units: Math.max(1, units) };
+}
+
+// ── Keep (fake handoff) timing ───────────────────────────────────
+// Out of a live dribble the giver never stops: he slows into the spot as
+// the receiver arrives, crosses it over away from him (the keep itself)
+// and speeds off. From standing he holds it, shows it as the receiver
+// slows by, then rips it and drives. Either way the receiver slows but
+// keeps moving, and carries on into whatever's drawn next.
+interface KeepRoles { keep: PlayAction; live: boolean; giverPre: PlayAction[]; giverPost: PlayAction[]; recvPre: PlayAction[]; recvPost: PlayAction[] }
+const keepCache = new WeakMap<PlayFrame, KeepRoles | null>();
+
+export function keepRoles(frame: PlayFrame): KeepRoles | null {
+  if (keepCache.has(frame)) return keepCache.get(frame)!;
+  let result: KeepRoles | null = null;
+  const keep = frame.actions.find((a) => a.type === "dho" && a.keep && a.sourcePlayerId);
+  if (keep) {
+    const gSeq = playerActionSequence(frame, keep.sourcePlayerId!);
+    const at = gSeq.indexOf(keep);
+    const giverPre = gSeq.slice(0, at), giverPost = gSeq.slice(at + 1);
+    const rSeq = keep.targetPlayerId ? playerActionSequence(frame, keep.targetPlayerId) : [];
+    let k = -1;
+    rSeq.forEach((a, i) => {
+      if ((a.type === "move" || a.type === "dribble" || a.type === "screen") && Math.hypot(a.x2 - keep.x1, a.y2 - keep.y1) <= HANDOFF_SPOT_RADIUS) k = i;
+    });
+    result = {
+      keep, live: giverPre.some((a) => a.type === "dribble"),
+      giverPre, giverPost, recvPre: rSeq.slice(0, k + 1), recvPost: rSeq.slice(k + 1),
+    };
+  }
+  keepCache.set(frame, result);
+  return result;
+}
+
+function computeKeepTiming(frame: PlayFrame): StepTiming | null {
+  const r = keepRoles(frame);
+  if (!r) return null;
+  const bounds = new Map<PlayAction, SliceBounds>();
+  const wave = new Map<PlayAction, number>();
+  if (r.live) {
+    sliceWindow(r.giverPre, 0, 0.46, bounds);
+    bounds.set(r.keep, { moveStart: 0.4, moveEnd: 0.52 });   // the crossover
+    sliceWindow(r.giverPost, 0.46, 1, bounds);
+    sliceWindow(r.recvPre, 0, 0.47, bounds);
+    sliceWindow(r.recvPost, 0.47, 1, bounds);
+  } else {
+    sliceWindow(r.giverPre, 0, 0.3, bounds);
+    bounds.set(r.keep, { moveStart: 0.3, moveEnd: 0.5 });    // show it
+    sliceWindow(r.giverPost, 0.5, 1, bounds);                // rip and drive
+    sliceWindow(r.recvPre, 0, 0.44, bounds);
+    sliceWindow(r.recvPost, 0.44, 1, bounds);
+  }
+  [r.keep, ...r.giverPre, ...r.giverPost, ...r.recvPre, ...r.recvPost].forEach((a) => wave.set(a, 0));
+  const units = 1.1 * Math.max(1.5, runUnits(r.giverPre) + runUnits(r.giverPost), runUnits(r.recvPre) + runUnits(r.recvPost));
+  return { bounds, wave, waves: 1, maxPerWave: 1, waveStarts: [0, 1], units };
 }
 
 function computeStepTiming(frame: PlayFrame): StepTiming | null {
