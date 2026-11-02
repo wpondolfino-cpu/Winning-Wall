@@ -79,14 +79,37 @@ export interface PlayAction {
    * on) starts at the hook's arrowhead.
    */
   keep?: boolean;
+  /** Keeps only: which side the hook curls to (1 or -1, default 1). "Flip hook" swaps it. */
+  keepSide?: number;
 }
 
 /** Where a keep's hook ends: just in front of the giver, off to one side. The giver's next line starts here. */
 export function keepHookTip(a: PlayAction): PlayPoint {
   const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1;
-  const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+  const side = a.keepSide === -1 ? -1 : 1;
+  const ux = dx / len, uy = dy / len, nx = -uy * side, ny = ux * side;
   const along = Math.min(26, len * 0.35);
   return { x: a.x1 + ux * along + nx * 20, y: a.y1 + uy * along + ny * 20 };
+}
+
+/**
+ * Curls a keep's hook to the other side. The dribble drawn from its
+ * arrowhead moves with it, so it still starts at the tip.
+ */
+export function flipKeepHook(frame: PlayFrame, index: number): PlayFrame {
+  const a = frame.actions[index];
+  if (!a || a.type !== "dho" || !a.keep) return frame;
+  const oldTip = keepHookTip(a);
+  const flipped: PlayAction = { ...a, keepSide: a.keepSide === -1 ? 1 : -1 };
+  const newTip = keepHookTip(flipped);
+  const seq = a.sourcePlayerId ? playerActionSequence(frame, a.sourcePlayerId) : [];
+  const next = seq[seq.indexOf(a) + 1];
+  const nextAttached = next && Math.hypot(next.x1 - oldTip.x, next.y1 - oldTip.y) < 4;
+  return {
+    ...frame,
+    actions: frame.actions.map((o, i) =>
+      i === index ? flipped : nextAttached && o === next ? { ...o, x1: newTip.x, y1: newTip.y } : o),
+  };
 }
 
 /**
@@ -511,6 +534,13 @@ export function pathProgress(localT: number, action: PlayAction, frame: PlayFram
     if ((kr.live && action === lastOf(kr.giverPre)) || action === lastOf(kr.recvPre)) return (2 - GHOST_SLOW) * u + (GHOST_SLOW - 1) * u * u;
     if (action === kr.recvPost[0] || (kr.live && action === kr.giverPost[0])) return GHOST_SLOW * u + (1 - GHOST_SLOW) * u * u;
     if (!kr.live && action === kr.giverPost[0]) { const v = Math.max(0, (u - 0.15) / 0.85); return v * v; }
+    if (kr.recvPass && action === kr.recvPass.a) {
+      // Fast to slow as he reaches the giver, slow to fast after.
+      const meet = kr.live ? KEEP_MEET_LIVE : KEEP_MEET_STAND, at = kr.recvPass.at;
+      if (u <= meet) { const v = u / meet; return at * ((2 - GHOST_SLOW) * v + (GHOST_SLOW - 1) * v * v); }
+      const v = (u - meet) / (1 - meet);
+      return at + (1 - at) * (GHOST_SLOW * v + (1 - GHOST_SLOW) * v * v);
+    }
   }
   if (action.sourcePlayerId && (action.type === "move" || action.type === "dribble")) {
     const seq = playerActionSequence(frame, action.sourcePlayerId);
@@ -701,7 +731,13 @@ function computeHandoffTiming(frame: PlayFrame): StepTiming | null {
 // and speeds off. From standing he holds it, shows it as the receiver
 // slows by, then rips it and drives. Either way the receiver slows but
 // keeps moving, and carries on into whatever's drawn next.
-interface KeepRoles { keep: PlayAction; live: boolean; giverPre: PlayAction[]; giverPost: PlayAction[]; recvPre: PlayAction[]; recvPost: PlayAction[] }
+interface KeepRoles {
+  keep: PlayAction; live: boolean; giverPre: PlayAction[]; giverPost: PlayAction[]; recvPre: PlayAction[]; recvPost: PlayAction[];
+  /** A receiver whose one cut runs PAST the giver (not ending at him): that cut, and how far along it he's closest. */
+  recvPass: { a: PlayAction; at: number } | null;
+}
+/** When the receiver reaches the giver: live keeps a touch later than standing ones. */
+const KEEP_MEET_LIVE = 0.47, KEEP_MEET_STAND = 0.5;
 const keepCache = new WeakMap<PlayFrame, KeepRoles | null>();
 
 export function keepRoles(frame: PlayFrame): KeepRoles | null {
@@ -717,9 +753,21 @@ export function keepRoles(frame: PlayFrame): KeepRoles | null {
     rSeq.forEach((a, i) => {
       if ((a.type === "move" || a.type === "dribble" || a.type === "screen") && Math.hypot(a.x2 - keep.x1, a.y2 - keep.y1) <= HANDOFF_SPOT_RADIUS) k = i;
     });
+    // No cut ends at the giver? Then look for one running past him -- the
+    // receiver slows as he goes by and speeds up to finish it.
+    let recvPass: KeepRoles["recvPass"] = null;
+    if (k < 0 && rSeq.length === 1) {
+      let best = { d: HANDOFF_SPOT_RADIUS * 1.5, a: null as PlayAction | null, at: 0 };
+      for (const a of rSeq) {
+        if (a.type !== "move" && a.type !== "dribble") continue;
+        const c = closestApproach(a, { x: keep.x1, y: keep.y1 });
+        if (c.dist < best.d && c.at > 0.05 && c.at < 0.95) best = { d: c.dist, a, at: c.at };
+      }
+      if (best.a) recvPass = { a: best.a, at: best.at };
+    }
     result = {
       keep, live: giverPre.some((a) => a.type === "dribble"),
-      giverPre, giverPost, recvPre: rSeq.slice(0, k + 1), recvPost: rSeq.slice(k + 1),
+      giverPre, giverPost, recvPre: rSeq.slice(0, k + 1), recvPost: recvPass ? [] : rSeq.slice(k + 1), recvPass,
     };
   }
   keepCache.set(frame, result);
@@ -731,18 +779,27 @@ function computeKeepTiming(frame: PlayFrame): StepTiming | null {
   if (!r) return null;
   const bounds = new Map<PlayAction, SliceBounds>();
   const wave = new Map<PlayAction, number>();
+  // Everything hangs off the moment the receiver gets to the giver.
+  const meet = r.live ? KEEP_MEET_LIVE : KEEP_MEET_STAND;
   if (r.live) {
-    sliceWindow(r.giverPre, 0, 0.46, bounds);
-    bounds.set(r.keep, { moveStart: 0.4, moveEnd: 0.52 });   // the crossover
-    sliceWindow(r.giverPost, 0.46, 1, bounds);
-    sliceWindow(r.recvPre, 0, 0.47, bounds);
-    sliceWindow(r.recvPost, 0.47, 1, bounds);
+    sliceWindow(r.giverPre, 0, meet - 0.01, bounds);
+    bounds.set(r.keep, { moveStart: meet - 0.07, moveEnd: meet + 0.05 });   // the crossover, as he goes by
+    sliceWindow(r.giverPost, meet - 0.01, 1, bounds);
   } else {
     sliceWindow(r.giverPre, 0, 0.3, bounds);
-    bounds.set(r.keep, { moveStart: 0.3, moveEnd: 0.5 });    // show it
-    sliceWindow(r.giverPost, 0.5, 1, bounds);                // rip and drive
-    sliceWindow(r.recvPre, 0, 0.44, bounds);
-    sliceWindow(r.recvPost, 0.44, 1, bounds);
+    // Show it as he comes in and slows, pull it back as he's level...
+    bounds.set(r.keep, { moveStart: meet - 0.16, moveEnd: meet + 0.03 });
+    // ...then rip and drive while he speeds away.
+    sliceWindow(r.giverPost, meet + 0.03, 1, bounds);
+  }
+  if (r.recvPass) {
+    // One cut past him: its whole step, with the slow-down placed at the
+    // giver (see pathProgress).
+    bounds.set(r.recvPass.a, { moveStart: 0, moveEnd: 1 });
+    wave.set(r.recvPass.a, 0);
+  } else {
+    sliceWindow(r.recvPre, 0, meet, bounds);
+    sliceWindow(r.recvPost, meet, 1, bounds);
   }
   [r.keep, ...r.giverPre, ...r.giverPost, ...r.recvPre, ...r.recvPost].forEach((a) => wave.set(a, 0));
   const units = 1.1 * Math.max(1.5, runUnits(r.giverPre) + runUnits(r.giverPost), runUnits(r.recvPre) + runUnits(r.recvPost));
