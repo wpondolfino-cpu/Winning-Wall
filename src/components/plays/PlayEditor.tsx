@@ -18,7 +18,7 @@ import {
   getSavedActions, createSavedAction, deleteSavedAction,
   getFormations, createFormation, deleteFormation,
   getRoster, getStaff, sharePlay, getAllTags,
-  toggleGhostMark,
+  toggleGhostMark, flipKeepHook,
   getPlaybooks, Playbook, getPlaybookIdsForPlay, appendPlayToPlaybook, removePlayFromPlaybook,
 } from "../../lib/plays";
 import { getPlayCategories, PlayCategory } from "../../lib/playCategories";
@@ -980,6 +980,11 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
               border: on ? "1.5px solid var(--gold)" : "1px solid var(--border)", fontWeight: on ? 600 : 400 }}>{label}</button>
         );
       })}
+      {selectedAction.type === "dho" && selectedAction.keep && (
+        <button onClick={() => selected && updateFrame((f) => flipKeepHook(f, selected.index))}
+          style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, cursor: "pointer", fontFamily: "inherit", marginLeft: "auto",
+            background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)" }}>↩ Flip hook</button>
+      )}
     </div>
   );
 
