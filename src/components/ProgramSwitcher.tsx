@@ -205,6 +205,9 @@ export default function ProgramSwitcher({ userId, onOpenPlatform }: Props) {
           position: "absolute", top: 52, right: 0, width: "min(366px, calc(100vw - 24px))", zIndex: 300,
           background: "var(--surface)", border: "1px solid rgba(176,184,200,0.22)", borderRadius: 16,
           boxShadow: "0 18px 40px rgba(0,0,0,0.55)", padding: 8, display: "flex", flexDirection: "column", gap: 2,
+          // Fits the screen and scrolls inside, so the View-as list at the
+          // bottom can always be reached (it used to run off the page).
+          maxHeight: "calc(100dvh - 76px)", overflowY: "auto", overscrollBehavior: "contain",
         }}>
           {data.isPlatformAdmin && onOpenPlatform && (
             <>
