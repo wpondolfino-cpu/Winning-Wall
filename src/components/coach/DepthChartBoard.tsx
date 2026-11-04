@@ -174,6 +174,8 @@ export default function DepthChartBoard({ lanes, positions, cards, hideGraduatin
                 <span style={{ fontWeight: 500, color: "var(--muted)", marginLeft: 5 }}>
                   ({new Set(visible.filter(c => c.zone === "lane" && c.lane_id === l.id).map(c => c.id)).size})
                 </span>
+                {/* The team's class mix, same style as the position rows. */}
+                <ClassMix cards={visible.filter(c => c.zone === "lane" && c.lane_id === l.id)} size={11} center />
               </div>
             ))}
           </div>
@@ -184,17 +186,7 @@ export default function DepthChartBoard({ lanes, positions, cards, hideGraduatin
                 <div style={{ fontSize: 13, color: "var(--muted)" }}>{pos.name}</div>
                 {/* The whole point of colouring by grade: how many of each
                     class you have at this spot, across every team. */}
-                <div style={{ display: "flex", gap: 5, marginTop: 3 }}>
-                  {[9, 10, 11, 12].map(g => {
-                    const n = visible.filter(c => c.zone === "lane" && c.position_id === pos.id && gradeFromGradYear(c.graduation_year) === g).length;
-                    if (!n) return null;
-                    return (
-                      <span key={g} style={{ fontSize: 10, fontWeight: 700, color: GRADE_COLORS[g] }}>
-                        {n}{GRADE_LABELS[g]}
-                      </span>
-                    );
-                  })}
-                </div>
+                <ClassMix cards={visible.filter(c => c.zone === "lane" && c.position_id === pos.id)} size={10} />
               </div>
               {lanes.map(lane => {
                 const column = inCell(lane.id, pos.id);
@@ -226,3 +218,26 @@ const miniBtn: React.CSSProperties = {
   border: "none", background: "none", cursor: "pointer",
   fontSize: 10, color: "var(--text)", padding: "0 2px",
 };
+
+/**
+ * "Sr-5  Jr-4  So-2  Fr-1" in each class's colour, seniors first. Classes
+ * with nobody are left out; anyone with no grad year shows as a grey "?-n"
+ * so the counts still add up to the total.
+ */
+function ClassMix({ cards, size, center }: { cards: BoardCard[]; size: number; center?: boolean }) {
+  const parts: { key: string; label: string; n: number; color: string }[] = [];
+  for (const g of [12, 11, 10, 9]) {
+    const n = cards.filter(c => gradeFromGradYear(c.graduation_year) === g).length;
+    if (n) parts.push({ key: String(g), label: GRADE_LABELS[g], n, color: GRADE_COLORS[g] });
+  }
+  const unknown = cards.filter(c => { const g = gradeFromGradYear(c.graduation_year); return g == null || g < 9 || g > 12; }).length;
+  if (unknown) parts.push({ key: "x", label: "?", n: unknown, color: "#6b7280" });
+  if (!parts.length) return null;
+  return (
+    <div style={{ display: "flex", gap: 7, marginTop: 3, flexWrap: "wrap", justifyContent: center ? "center" : "flex-start" }}>
+      {parts.map(p => (
+        <span key={p.key} style={{ fontSize: size, fontWeight: 700, color: p.color, whiteSpace: "nowrap" }}>{p.label}-{p.n}</span>
+      ))}
+    </div>
+  );
+}
