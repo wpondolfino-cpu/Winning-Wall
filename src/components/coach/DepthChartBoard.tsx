@@ -167,7 +167,14 @@ export default function DepthChartBoard({ lanes, positions, cards, hideGraduatin
           <div style={{ display: "grid", gridTemplateColumns: `120px repeat(${lanes.length}, minmax(160px, 1fr))`, gap: 8, marginBottom: 6 }}>
             <div />
             {lanes.map(l => (
-              <div key={l.id} style={{ fontSize: 13, fontWeight: 700, textAlign: "center" }}>{l.name}</div>
+              <div key={l.id} style={{ fontSize: 13, fontWeight: 700, textAlign: "center" }}>
+                {l.name}
+                {/* How many are on this team (every position), matching the
+                    "Unplaced (n)" style below. Follows the hide-seniors switch. */}
+                <span style={{ fontWeight: 500, color: "var(--muted)", marginLeft: 5 }}>
+                  ({new Set(visible.filter(c => c.zone === "lane" && c.lane_id === l.id).map(c => c.id)).size})
+                </span>
+              </div>
             ))}
           </div>
 
