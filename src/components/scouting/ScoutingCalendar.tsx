@@ -26,7 +26,7 @@ import { time12 } from "../../lib/scheduleImport";
 import { inputStyle } from "../../lib/inputStyle";
 import {
   ScoutingGame, Ranking, OurGame, ScoutMode, getScoutingGames, getRankings, getOurUpcomingGames,
-  addScout, setScoutMode, removeScout, addVideo, removeVideo, deleteScoutingGame, videoInfo,
+  addScout, setScoutMode, removeScout, addVideo, removeVideo, deleteScoutingGame, updateScoutingGame, videoInfo,
   teamKey, isoDate, parseIso, weekStart, addDays,
 } from "../../lib/scoutingCalendar";
 import { PasteGamesModal, AddGameModal, RankingsModal } from "./ScoutingImport";
@@ -279,6 +279,7 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
                         <div style={{ fontWeight: 600 }}>{g.away_team}</div>
                         <div>@ {g.home_team}</div>
                         <div style={{ color: "var(--muted)" }}>{g.tip_time ? time12(g.tip_time.slice(0, 5)) : "TBA"}{opp ? " · we play" : ""}</div>
+                        {g.location && <div style={{ color: "var(--muted)" }}>at {g.location}</div>}
                         {g.assignments.length > 0 && (
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: 3 }}>
                             {g.assignments.map(a => (
@@ -330,6 +331,7 @@ function GameCard({ g, showDay, rankBy, ours, teamById, staff, me, coachLabel, a
   const [url, setUrl] = useState("");
   const [note, setNote] = useState("");
   const [playing, setPlaying] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
 
   const assigned = new Set(g.assignments.map(a => a.coach_id));
   const free = staff.filter(s => !assigned.has(s.id));
@@ -339,14 +341,14 @@ function GameCard({ g, showDay, rankBy, ours, teamById, staff, me, coachLabel, a
 
   const patchGame = (fn: (x: ScoutingGame) => ScoutingGame) => (gs: ScoutingGame[]) => gs.map(x => x.id === g.id ? fn(x) : x);
 
-  const line = (team: string, side: string) => {
-    const r = rankBy.get(teamKey(team));
-    const o = ours.get(teamKey(team));
+  // A team's name with its division/rank and, if we play them, when.
+  const team = (name: string) => {
+    const r = rankBy.get(teamKey(name));
+    const o = ours.get(teamKey(name));
     const t = o?.roster_id ? teamById.get(o.roster_id) : null;
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 15, fontWeight: 700 }}>{team}</span>
-        <span style={{ fontSize: 11, color: "var(--muted)" }}>{side}</span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 15, fontWeight: 700 }}>{name}</span>
         {r && <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 7px", borderRadius: 6, background: "rgba(37,80,212,0.14)", color: "var(--info-text, var(--royal-light))" }}>D{r.division}{r.rank ? ` #${r.rank}` : ""}{r.record ? ` · ${r.record}` : ""}</span>}
         {o && (
           <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 7px", borderRadius: 6, background: "rgba(240,192,64,0.16)", color: "var(--gold-text)", display: "inline-flex", alignItems: "center", gap: 5 }}>
@@ -354,19 +356,33 @@ function GameCard({ g, showDay, rankBy, ours, teamById, staff, me, coachLabel, a
             {t && <span style={{ fontSize: 10, padding: "0 6px", borderRadius: 999, background: t.color, color: "#fff" }}>{t.name}</span>}
           </span>
         )}
-      </div>
+      </span>
     );
   };
 
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: "11px 13px", background: "var(--surface2)" }}>
+      {editing ? <EditGame g={g} onCancel={() => setEditing(false)} onSave={async patch => {
+        const { error } = await updateScoutingGame(g.id, patch);
+        if (error) { alert(error); return; }
+        setEditing(false);
+        await act(Promise.resolve({ error: null }));
+      }} /> :
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-        <div style={{ display: "grid", gap: 4, minWidth: 0 }}>{line(g.away_team, "away")}{line(g.home_team, "home")}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
+          {team(g.away_team)}
+          <span style={{ fontSize: 14, color: "var(--muted)", fontWeight: 600 }}>@</span>
+          {team(g.home_team)}
+        </div>
         <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
           <div style={{ fontSize: 14, fontWeight: 700 }}>{g.tip_time ? time12(g.tip_time.slice(0, 5)) : "TBA"}</div>
-          <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{showDay ? `${shortDate(g.game_date)} · ` : ""}at {g.home_team}</div>
+          {(showDay || g.location) && (
+            <div style={{ fontSize: 11.5, color: "var(--muted)" }}>
+              {[showDay ? shortDate(g.game_date) : null, g.location ? `at ${g.location}` : null].filter(Boolean).join(" · ")}
+            </div>
+          )}
         </div>
-      </div>
+      </div>}
 
       {/* Scouts */}
       <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
@@ -464,12 +480,49 @@ function GameCard({ g, showDay, rankBy, ours, teamById, staff, me, coachLabel, a
         {!addingVideo
           ? <button type="button" onClick={() => setAddingVideo(true)} style={{ background: "none", border: "none", color: "var(--royal-light)", cursor: "pointer", fontSize: 12, padding: 0, fontFamily: "inherit" }}>+ Add video link</button>
           : <span />}
+        <span style={{ display: "flex", gap: 14 }}>
+        <button type="button" onClick={() => setEditing(true)}
+          style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 11.5, padding: 0, fontFamily: "inherit" }}>Edit game</button>
         <button type="button"
           onClick={() => {
             const extra = g.assignments.length || g.videos.length ? " Its scouts and video links go with it." : "";
             if (confirm(`Remove ${g.away_team} at ${g.home_team} from the calendar?${extra}`)) act(deleteScoutingGame(g.id), gs => gs.filter(x => x.id !== g.id));
           }}
           style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 11.5, padding: 0, fontFamily: "inherit" }}>Remove game</button>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ── Editing a game ───────────────────────────────────────────
+function EditGame({ g, onCancel, onSave }: {
+  g: ScoutingGame; onCancel: () => void;
+  onSave: (patch: { game_date: string; tip_time: string | null; away_team: string; home_team: string; location: string | null }) => Promise<void>;
+}) {
+  const [date, setDate] = useState(g.game_date);
+  const [time, setTime] = useState(g.tip_time ? g.tip_time.slice(0, 5) : "");
+  const [away, setAway] = useState(g.away_team);
+  const [home, setHome] = useState(g.home_team);
+  const [loc, setLoc] = useState(g.location ?? "");
+  const [busy, setBusy] = useState(false);
+  const field: React.CSSProperties = { ...inputStyle, width: "100%", boxSizing: "border-box", padding: "6px 9px", fontSize: 13 };
+  const lab: React.CSSProperties = { fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 3 };
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
+        <label><span style={lab}>Away</span><input value={away} onChange={e => setAway(e.target.value)} style={field} /></label>
+        <label><span style={lab}>Home</span><input value={home} onChange={e => setHome(e.target.value)} style={field} /></label>
+        <label><span style={lab}>Date</span><input type="date" value={date} onChange={e => setDate(e.target.value)} style={field} /></label>
+        <label><span style={lab}>Tip time</span><input type="time" value={time} onChange={e => setTime(e.target.value)} style={field} /></label>
+        <label style={{ gridColumn: "1 / -1" }}><span style={lab}>Location — only if it isn't at {home.trim() || "the home team"}'s gym</span>
+          <input value={loc} onChange={e => setLoc(e.target.value)} placeholder="e.g. TD Garden, or the tournament site" style={field} maxLength={80} /></label>
+      </div>
+      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 8 }}>
+        <button type="button" style={{ ...linkBtn, padding: "6px 12px" }} onClick={onCancel}>Cancel</button>
+        <button type="button" disabled={busy}
+          onClick={async () => { setBusy(true); await onSave({ game_date: date, tip_time: time || null, away_team: away, home_team: home, location: loc || null }); setBusy(false); }}
+          style={{ ...linkBtn, padding: "6px 12px", background: "var(--royal)", color: "#fff", border: "1px solid var(--royal)" }}>{busy ? "Saving…" : "Save"}</button>
       </div>
     </div>
   );
