@@ -1016,14 +1016,7 @@ export async function copyDrillToSegment(
   if (error || !newId) return { id: null, droppedFromGroups: 0, error: error ?? "Couldn't create the drill." };
 
   const groups = await getSegmentDrillGroups(sourceDrillId);
-  let dropped = 0;
-  const rows = groups.map((g, i) => {
-    const members = keep(g.member_ids);
-    dropped += g.member_ids.length - members.length;
-    return { segment_drill_id: newId, group_label: g.group_label, order_index: i, member_ids: members };
-  }).filter(r => r.member_ids.length > 0);
-
-  if (rows.length) await supabase.from("segment_drill_groups").insert(rows);
+  const dropped = await copyGroupsTo(newId, groups, keep);
   return { id: newId, droppedFromGroups: dropped, error: null };
 }
 
@@ -1346,12 +1339,7 @@ export async function copyPracticeContents(
         if (!newDrillId || !opts.withPeople) continue;
 
         const groups = await getSegmentDrillGroups(d.id);
-        if (groups.length) {
-          await supabase.from("segment_drill_groups").insert(groups.map((g, i) => ({
-            segment_drill_id: newDrillId, group_label: g.group_label,
-            order_index: i, member_ids: g.member_ids,
-          })));
-        }
+        if (groups.length) await copyGroupsTo(newDrillId, groups);
       }
     }
   }
@@ -1840,10 +1828,16 @@ export async function clearSegmentDrillGroups(segmentDrillId: string): Promise<{
 // freshly generated set. This is the "snapshot" moment — editing a
 // saved grouping later never touches what gets written here.
 export async function saveGeneratedGroups(segmentDrillId: string, groups: string[][], tryoutIds?: Set<string>, labels?: string[]): Promise<{ error: string | null }> {
+  // Places and coaches stay put by position: Group A's hoop and coach are
+  // still Group A's after regenerating.
+  const { data: before } = await supabase.from("segment_drill_groups").select("order_index, location, coach_ids").eq("segment_drill_id", segmentDrillId);
+  const kept = new Map<number, { location: string | null; coach_ids: string[] }>(
+    ((before ?? []) as any[]).map(g => [g.order_index, { location: g.location ?? null, coach_ids: g.coach_ids ?? [] }]));
   await supabase.from("segment_drill_groups").delete().eq("segment_drill_id", segmentDrillId);
   for (let i = 0; i < groups.length; i++) {
     const { data, error } = await supabase.from("segment_drill_groups")
-      .insert({ segment_drill_id: segmentDrillId, group_label: labels?.[i] ?? GROUP_LABELS[i] ?? `Group ${i + 1}`, order_index: i })
+      .insert({ segment_drill_id: segmentDrillId, group_label: labels?.[i] ?? GROUP_LABELS[i] ?? `Group ${i + 1}`, order_index: i,
+                ...(kept.get(i) ?? {}) })
       .select("id").single();
     if (error || !data?.id) return { error: error?.message ?? "Failed to create group" };
     if (groups[i].length > 0) {
@@ -1904,6 +1898,43 @@ export interface SegmentDrillGroup {
   member_ids: string[];
   /** The subset of member_ids that are tryout-pool names, so callers know which column to write and which list to resolve names from. */
   tryout_member_ids?: string[];
+  /** Where this group goes, e.g. "Hoop 1" (208). */
+  location?: string | null;
+  /** Coaches running this group (208). Shown instead of the drill's coaches when set. */
+  coach_ids?: string[];
+}
+
+/**
+ * Copies groups (with their members, place and coaches) onto another
+ * drill. `keep` filters members (e.g. dropping players who aren't on the
+ * new practice); a group left empty is skipped.
+ *
+ * Duplicating a practice used to write members straight into the group
+ * row, which has no such column, so the copy failed and groups silently
+ * didn't come along. Members go in their own table, like everywhere else.
+ */
+async function copyGroupsTo(newDrillId: string, groups: SegmentDrillGroup[], keep?: (ids: string[]) => string[]): Promise<number> {
+  let dropped = 0, order = 0;
+  for (const g of groups) {
+    const members = keep ? keep(g.member_ids) : g.member_ids;
+    dropped += g.member_ids.length - members.length;
+    if (!members.length) continue;
+    const { data, error } = await supabase.from("segment_drill_groups").insert({
+      segment_drill_id: newDrillId, group_label: g.group_label, order_index: order++,
+      // Only sent when set, so copying still works before 208 is run.
+      ...(g.location ? { location: g.location } : {}), ...(g.coach_ids?.length ? { coach_ids: g.coach_ids } : {}),
+    }).select("id").single();
+    if (error || !data?.id) continue;
+    const tryouts = new Set(g.tryout_member_ids ?? []);
+    await supabase.from("segment_drill_group_members").insert(members.map(pid => memberRow({ group_id: data.id }, pid, tryouts)));
+  }
+  return dropped;
+}
+
+/** Sets a group's place and coaches (from the drill's Coach window). */
+export async function updateGroupPlaceAndCoaches(groupId: string, patch: { location?: string | null; coach_ids?: string[] }): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("segment_drill_groups").update(patch).eq("id", groupId);
+  return { error: error?.message ?? null };
 }
 
 /**
@@ -2184,7 +2215,11 @@ export async function bulkSetPlayerRoster(playerIds: string[], rosterId: string)
 // assignments, all names resolved (rosters, drills, coaches, players)
 // instead of raw ids.
 
-export interface PrintDrillGroup { label: string; memberNames: string[]; }
+export interface PrintDrillGroup {
+  label: string; memberNames: string[];
+  /** Where the group goes and who runs it (208), when set. */
+  place?: string | null; coachNames?: string[];
+}
 export interface PrintDrill {
   title: string; label: string | null; duration_minutes: number;
   goal_text: string | null; coachNames: string[]; groups: PrintDrillGroup[];
@@ -2417,7 +2452,11 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
 
   blockPrintData.forEach(b => b.segments.forEach(s => s.drills.forEach((d: any) => {
     const raw = d._rawGroups as SegmentDrillGroup[] | undefined;
-    if (raw) d.groups = raw.map(g => ({ label: g.group_label ?? "Group", memberNames: g.member_ids.map(id => nameById[id]).filter(Boolean) }));
+    if (raw) d.groups = raw.map(g => ({
+      label: g.group_label ?? "Group", memberNames: g.member_ids.map(id => nameById[id]).filter(Boolean),
+      place: g.location ?? null,
+      coachNames: (g.coach_ids ?? []).map(id => coachNameById[id]).filter(Boolean) as string[],
+    }));
     delete d._rawGroups;
   })));
 
