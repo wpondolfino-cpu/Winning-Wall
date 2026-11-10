@@ -26,7 +26,9 @@ import {
   TryoutPlayer, getTryoutPlayers, getTryoutAttendance, setTryoutAttendance, getCurrentSeason,
   savePracticeAsTemplate, applyTemplateToPractice,
   deletePracticeTemplate, renamePracticeTemplate,
+  updatePracticeDrill, getPracticeDrillCategories, PracticeDrillCategory, getPlaysForLinking,
 } from "../../lib/practicePlanner";
+import VideoUrlNote from "../shared/VideoUrlNote";
 import GroupingEditor from "./GroupingEditor";
 import StationsEditor from "./StationsEditor";
 import CopyDrillPicker from "./CopyDrillPicker";
@@ -115,6 +117,13 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
   const [coachPickerTarget, setCoachPickerTarget] = useState<{ drill: SegmentDrill; block: PracticeBlock } | null>(null);
   const [coachSelection, setCoachSelection] = useState<Set<string>>(new Set());
   const [detailsLabel, setDetailsLabel] = useState("");
+  // The drill's own details (the Drill Library fields), editable from here.
+  // Saved to the drill itself, so they change it everywhere it's used.
+  interface DrillDetailsForm { title: string; description: string; video_url: string; category_name: string; tags: string; linked_play_id: string; is_competitive: boolean }
+  const [drillForm, setDrillForm] = useState<DrillDetailsForm | null>(null);
+  const [drillFormOrig, setDrillFormOrig] = useState<DrillDetailsForm | null>(null);
+  const [drillCategories, setDrillCategories] = useState<PracticeDrillCategory[]>([]);
+  const [linkPlays, setLinkPlays] = useState<{ id: string; title: string }[]>([]);
   const [coaches, setCoaches] = useState<CoachLite[]>([]);
   const [blockDurationDrafts, setBlockDurationDrafts] = useState<Record<string, string>>({});
   const [drillDurationDrafts, setDrillDurationDrafts] = useState<Record<string, string>>({});
@@ -486,11 +495,42 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
   function openDrillDetails(drill: SegmentDrill, block: PracticeBlock) {
     setDetailsLabel(drill.label ?? "");
     setEditingDrillDetails({ drill, block });
+    setDrillForm(null); setDrillFormOrig(null);
+    const lib = drill.drill_id ? drillsById[drill.drill_id] : null;
+    if (lib) {
+      // Fill the drill's fields, then its tags, categories and plays to link.
+      const base: DrillDetailsForm = {
+        title: lib.title ?? "", description: lib.description ?? "", video_url: lib.video_url ?? "",
+        category_name: lib.category_name ?? "", tags: "", linked_play_id: lib.linked_play_id ?? "", is_competitive: !!lib.is_competitive,
+      };
+      setDrillForm(base); setDrillFormOrig(base);
+      supabase.from("practice_drill_tag_links").select("tag_name").eq("drill_id", lib.id).then(({ data }) => {
+        const tags = ((data ?? []) as { tag_name: string }[]).map(t => t.tag_name).join(", ");
+        setDrillForm(f => (f ? { ...f, tags } : f));
+        setDrillFormOrig(f => (f ? { ...f, tags } : f));
+      });
+      if (!drillCategories.length) getPracticeDrillCategories().then(setDrillCategories).catch(console.error);
+      if (!linkPlays.length) getPlaysForLinking().then(setLinkPlays).catch(console.error);
+    }
   }
 
   async function saveDrillDetails() {
     if (!editingDrillDetails) return;
     const { drill } = editingDrillDetails;
+    // The drill itself, only if something in its box changed.
+    if (drill.drill_id && drillForm && drillFormOrig && JSON.stringify(drillForm) !== JSON.stringify(drillFormOrig)) {
+      if (!drillForm.title.trim()) { alert("The drill needs a title."); return; }
+      const tags = drillForm.tags.split(",").map(t => t.trim()).filter(Boolean);
+      const patch = {
+        title: drillForm.title.trim(), description: drillForm.description.trim() || null,
+        video_url: drillForm.video_url.trim() || null, category_name: drillForm.category_name || null,
+        linked_play_id: drillForm.linked_play_id || null, is_competitive: drillForm.is_competitive,
+      };
+      const res = await updatePracticeDrill(drill.drill_id, { ...patch, tags });
+      if (res.error) { alert("Couldn't save the drill: " + res.error); return; }
+      const id = drill.drill_id;
+      setDrillsById(prev => (prev[id] ? { ...prev, [id]: { ...prev[id], ...patch } } : prev));
+    }
     const { error } = await updateSegmentDrill(drill.id, {
       label: detailsLabel.trim() || null,
     });
@@ -1113,11 +1153,40 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
 
       {editingDrillDetails && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setEditingDrillDetails(null)}>
-          <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(420px, 96vw)", padding: 20 }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(480px, 96vw)", maxHeight: "92vh", overflowY: "auto", padding: 20 }} onClick={e => e.stopPropagation()}>
             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)", marginBottom: 10 }}>
               Edit — {editingDrillDetails.drill.drill_id ? (drillsById[editingDrillDetails.drill.drill_id]?.title ?? "Drill") : "Drill"}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {/* The drill itself: the Drill Library fields, right here. */}
+              {drillForm && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, borderRadius: 10, border: "1px solid var(--gold)", background: "rgba(240,192,64,0.08)", marginBottom: 4 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--gold-text)" }}>The drill</div>
+                    <div style={{ fontSize: 11.5, color: "var(--gold-text)" }}>Changes here update this drill everywhere it's used.</div>
+                  </div>
+                  <input value={drillForm.title} onChange={e => setDrillForm({ ...drillForm, title: e.target.value })} placeholder="Title" style={inputStyle} />
+                  <textarea value={drillForm.description} onChange={e => setDrillForm({ ...drillForm, description: e.target.value })} placeholder="Description" rows={3} style={{ ...inputStyle, resize: "vertical" as const }} />
+                  <input value={drillForm.video_url} onChange={e => setDrillForm({ ...drillForm, video_url: e.target.value })} placeholder="YouTube link" style={inputStyle} />
+                  <VideoUrlNote url={drillForm.video_url} />
+                  <select value={drillForm.category_name} onChange={e => setDrillForm({ ...drillForm, category_name: e.target.value })} style={inputStyle}>
+                    <option value="">No category</option>
+                    {drillForm.category_name && !drillCategories.some(c => c.name === drillForm.category_name) && <option value={drillForm.category_name}>{drillForm.category_name}</option>}
+                    {drillCategories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                  </select>
+                  <input value={drillForm.tags} onChange={e => setDrillForm({ ...drillForm, tags: e.target.value })} placeholder="Tags, comma separated" style={inputStyle} />
+                  <select value={drillForm.linked_play_id} onChange={e => setDrillForm({ ...drillForm, linked_play_id: e.target.value })} style={inputStyle}>
+                    <option value="">No linked play</option>
+                    {drillForm.linked_play_id && !linkPlays.some(p => p.id === drillForm.linked_play_id) && <option value={drillForm.linked_play_id}>Linked play</option>}
+                    {linkPlays.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+                  </select>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "var(--text)" }}>
+                    <input type="checkbox" checked={drillForm.is_competitive} onChange={e => setDrillForm({ ...drillForm, is_competitive: e.target.checked })} />
+                    Somebody wins this drill
+                    <span style={{ color: "var(--muted)", fontSize: 11 }}>— shows it in Practice Wins</span>
+                  </label>
+                </div>
+              )}
               <div>
                 <div style={fieldLabel}>Station/sub-label (optional)</div>
                 <input value={detailsLabel} onChange={e => setDetailsLabel(e.target.value)} placeholder="e.g. Station 1, Guards" style={inputStyle} />
