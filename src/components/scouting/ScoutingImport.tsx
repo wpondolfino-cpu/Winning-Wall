@@ -8,11 +8,11 @@
 import { useMemo, useState } from "react";
 import { inputStyle } from "../../lib/inputStyle";
 import {
-  ParsedGame, parseScoutingPaste, addScoutingGames, Ranking, parseRankingsPaste, saveRankings,
+  ParsedGame, parseScoutingPaste, addScoutingGames, getScoutingGames, gameKey, teamKey, Ranking, parseRankingsPaste, saveRankings,
 } from "../../lib/scoutingCalendar";
 
 const overlay: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 };
-const box: React.CSSProperties = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 18, width: "100%", maxWidth: 720, maxHeight: "90vh", overflowY: "auto" };
+const box: React.CSSProperties = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 18, width: "100%", maxWidth: 880, maxHeight: "90vh", overflowY: "auto" };
 const primary: React.CSSProperties = { background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 16px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: 13 };
 const plain: React.CSSProperties = { background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 16px", cursor: "pointer", fontFamily: "inherit", fontSize: 13 };
 const cell: React.CSSProperties = { padding: "6px 8px", borderTop: "1px solid var(--border)", fontSize: 12.5, verticalAlign: "middle" };
@@ -42,7 +42,27 @@ export function PasteGamesModal({ onClose, onSaved }: { onClose: () => void; onS
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const good = (rows ?? []).filter(r => !r.problem);
+  // Games already on the calendar, to flag repeats before saving.
+  const [existing, setExisting] = useState<Set<string>>(new Set());
+  // A row is a repeat if it's on the calendar already or earlier in this paste.
+  const dupes = useMemo(() => {
+    const seen = new Set(existing);
+    return (rows ?? []).map(r => {
+      if (r.problem) return false;
+      const k = gameKey(r);
+      const d = seen.has(k); seen.add(k); return d;
+    });
+  }, [rows, existing]);
+  const good = (rows ?? []).filter((r, i) => !r.problem && !dupes[i]);
+
+  async function read() {
+    const parsed = parseScoutingPaste(raw);
+    const dates = parsed.map(r => r.game_date).filter(Boolean).sort();
+    try {
+      setExisting(new Set(dates.length ? (await getScoutingGames(dates[0], dates[dates.length - 1])).map(gameKey) : []));
+    } catch { setExisting(new Set()); }
+    setRows(parsed);
+  }
   const update = (i: number, patch: Partial<ParsedGame>) => setRows(rs => (rs ?? []).map((r, j) => {
     if (j !== i) return r;
     const n = { ...r, ...patch };
@@ -67,26 +87,30 @@ export function PasteGamesModal({ onClose, onSaved }: { onClose: () => void; onS
             placeholder={"Any of these work, one game per line:\n\nTue 12/15   Lowell   Cambridge   7:00\nLowell at Cambridge 7:00 PM\nCambridge vs Lowell 7pm\n\nA line with only a date (Wednesday 12/16) sets the date for the games under it."}
             style={{ ...inputStyle, width: "100%", boxSizing: "border-box", fontFamily: "ui-monospace, Menlo, monospace", fontSize: 12.5 }} />
           <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "6px 0 12px" }}>
-            Spreadsheet columns: away team first, then home. "A at B" means B is home; "A vs B" means A is home. A time with no AM/PM is read as evening.
+            Spreadsheet columns: away team first, then home, then location if it's a neutral site. "High School" is dropped from names so they match. Don't know the opponent yet? Put TBA. "A at B" means B is home; "A vs B" means A is home. A time with no AM/PM is read as evening.
           </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button type="button" style={plain} onClick={onClose}>Cancel</button>
-            <button type="button" style={primary} disabled={!raw.trim()} onClick={() => setRows(parseScoutingPaste(raw))}>Read games →</button>
+            <button type="button" style={primary} disabled={!raw.trim()} onClick={read}>Read games →</button>
           </div>
         </>
       ) : (
         <>
           <div style={{ fontSize: 12.5, marginBottom: 8 }}>
-            <b>{good.length}</b> game{good.length === 1 ? "" : "s"} ready{rows.length - good.length ? <span style={{ color: "var(--gold-text)" }}> · {rows.length - good.length} need fixing or will be skipped</span> : null}. Fix anything that's wrong right here; ⇄ swaps home and away.
+            <b>{good.length}</b> new game{good.length === 1 ? "" : "s"} ready
+            {dupes.filter(Boolean).length > 0 && <span style={{ color: "var(--muted)" }}> · {dupes.filter(Boolean).length} duplicate{dupes.filter(Boolean).length === 1 ? "" : "s"} skipped</span>}
+            {rows.filter(r => r.problem).length > 0 && <span style={{ color: "var(--gold-text)" }}> · {rows.filter(r => r.problem).length} need fixing</span>}
+            . Fix anything that's wrong right here; ⇄ swaps home and away. Location is only for a neutral site.
           </div>
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
               <thead><tr style={{ fontSize: 11, color: "var(--muted)", textAlign: "left" }}>
-                <th style={{ padding: "4px 8px" }}>Date</th><th style={{ padding: "4px 8px" }}>Time</th><th style={{ padding: "4px 8px" }}>Away</th><th></th><th style={{ padding: "4px 8px" }}>Home</th><th></th>
+                <th style={{ padding: "4px 8px" }}>Date</th><th style={{ padding: "4px 8px" }}>Time</th><th style={{ padding: "4px 8px" }}>Away</th><th></th><th style={{ padding: "4px 8px" }}>Home</th><th style={{ padding: "4px 8px" }}>Location</th><th></th>
               </tr></thead>
               <tbody>
                 {rows.map((r, i) => (
-                  <tr key={i} style={{ background: r.problem ? "rgba(240,192,64,0.08)" : undefined }}>
+                  <tr key={i} title={dupes[i] ? "This game is already on the calendar (or earlier in this paste), so it won't be added again" : undefined}
+                    style={{ background: r.problem ? "rgba(240,192,64,0.08)" : undefined, opacity: dupes[i] ? 0.45 : 1 }}>
                     <td style={{ ...cell, width: 130 }}><input type="date" value={r.game_date} onChange={e => update(i, { game_date: e.target.value })} style={small} /></td>
                     <td style={{ ...cell, width: 104 }}><input type="time" value={r.tip_time ?? ""} onChange={e => update(i, { tip_time: e.target.value || null })} style={small} /></td>
                     <td style={cell}><input value={r.away_team} onChange={e => update(i, { away_team: e.target.value })} style={small} /></td>
@@ -95,6 +119,11 @@ export function PasteGamesModal({ onClose, onSaved }: { onClose: () => void; onS
                         style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, color: "var(--muted)", cursor: "pointer", padding: "2px 6px" }}>⇄</button>
                     </td>
                     <td style={cell}><input value={r.home_team} onChange={e => update(i, { home_team: e.target.value })} style={small} /></td>
+                    <td style={cell}>
+                      {dupes[i]
+                        ? <span style={{ fontSize: 11.5, color: "var(--muted)", whiteSpace: "nowrap" }}>Duplicate · skipped</span>
+                        : <input value={r.location ?? ""} onChange={e => update(i, { location: e.target.value || null })} placeholder="Home gym" style={small} />}
+                    </td>
                     <td style={{ ...cell, width: 30 }}>
                       <button type="button" title="Leave this one out" onClick={() => setRows(rs => (rs ?? []).filter((_, j) => j !== i))}
                         style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 15 }}>×</button>
@@ -126,13 +155,14 @@ export function AddGameModal({ defaultDate, onClose, onSaved }: { defaultDate: s
   const [time, setTime] = useState("19:00");
   const [away, setAway] = useState("");
   const [home, setHome] = useState("");
+  const [loc, setLoc] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const ok = date && away.trim() && home.trim();
 
   async function save() {
     setBusy(true); setErr(null);
-    const res = await addScoutingGames([{ game_date: date, tip_time: time || null, away_team: away, home_team: home }]);
+    const res = await addScoutingGames([{ game_date: date, tip_time: time || null, away_team: away, home_team: home, location: loc || null }]);
     setBusy(false);
     if (res.error) { setErr(res.error); return; }
     if (!res.added) { setErr("That game is already on the calendar."); return; }
@@ -145,8 +175,10 @@ export function AddGameModal({ defaultDate, onClose, onSaved }: { defaultDate: s
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         <label><span style={label}>Date</span><input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} /></label>
         <label><span style={label}>Tip time</span><input type="time" value={time} onChange={e => setTime(e.target.value)} style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} /></label>
-        <label><span style={label}>Away team</span><input value={away} onChange={e => setAway(e.target.value)} autoFocus style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} /></label>
-        <label><span style={label}>Home team (where it's played)</span><input value={home} onChange={e => setHome(e.target.value)} style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} /></label>
+        <label><span style={label}>Away team</span><input value={away} onChange={e => setAway(e.target.value)} placeholder="Team, or TBA" autoFocus style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} /></label>
+        <label><span style={label}>Home team</span><input value={home} onChange={e => setHome(e.target.value)} placeholder="Team, or TBA" style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} /></label>
+        <label style={{ gridColumn: "1 / -1" }}><span style={label}>Location — only if it isn't at the home team's gym (tournaments: the site)</span>
+          <input value={loc} onChange={e => setLoc(e.target.value)} placeholder="e.g. a neutral site or tournament" maxLength={80} style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} /></label>
       </div>
       {err && <div className="error-msg" style={{ marginTop: 10 }}>{err}</div>}
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
@@ -169,7 +201,7 @@ export function RankingsModal({ current, scheduleTeams, onClose, onSaved }: {
   const [rows, setRows] = useState<Ranking[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const known = useMemo(() => new Set(scheduleTeams.map(t => t.toLowerCase().replace(/[^a-z0-9]/g, ""))), [scheduleTeams]);
+  const known = useMemo(() => new Set(scheduleTeams.map(teamKey)), [scheduleTeams]);
   const byDiv = useMemo(() => {
     const m = new Map<number, number>();
     current.forEach(r => m.set(r.division, (m.get(r.division) ?? 0) + 1));
@@ -230,7 +262,7 @@ export function RankingsModal({ current, scheduleTeams, onClose, onSaved }: {
               </tr></thead>
               <tbody>
                 {rows.map((r, i) => {
-                  const match = known.has(r.team.toLowerCase().replace(/[^a-z0-9]/g, ""));
+                  const match = known.has(teamKey(r.team));
                   const set = (p: Partial<Ranking>) => setRows(rs => (rs ?? []).map((x, j) => j === i ? { ...x, ...p } : x));
                   return (
                     <tr key={i}>
@@ -258,4 +290,3 @@ export function RankingsModal({ current, scheduleTeams, onClose, onSaved }: {
     </Shell>
   );
 }
-
