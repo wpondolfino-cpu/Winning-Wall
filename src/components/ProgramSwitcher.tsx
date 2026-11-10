@@ -101,7 +101,9 @@ export default function ProgramSwitcher({ userId, onOpenPlatform }: Props) {
     return (
       <div className="program-switcher" style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <Badge p={current} size={28} />
-        <span className="program-switcher-name" style={{ fontSize: 13, fontWeight: 600, color: "var(--silver-light)" }}>{current.name}</span>
+        {/* Sits on the blue header in both themes, so it's always light
+            (the theme's grey turned dark in light mode). */}
+        <span className="program-switcher-name" style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.88)" }}>{current.name}</span>
       </div>
     );
   }
