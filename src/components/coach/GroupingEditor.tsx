@@ -6,6 +6,7 @@
 // saved grouping (e.g. "Varsity Starters") SNAPSHOTS its current
 // members in — editing the saved grouping later never changes this.
 
+import { supabase } from "../../lib/supabase";
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   SavedGrouping, SegmentDrillGroup, SegmentDrill, getSegmentDrillGroups,
@@ -71,9 +72,17 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
   const { current: thisSeasonGroupings, previous: earlierGroupings } = splitGroupingsBySeason<SavedGrouping>(savedGroupings, currentSeasonId);
   const visibleGroupings = showEarlier ? [...thisSeasonGroupings, ...earlierGroupings] : thisSeasonGroupings;
 
+  // Names of the coaches set on groups (from the drill's Coach button).
+  const [coachNames, setCoachNames] = useState<Record<string, string>>({});
   const load = useCallback(async () => {
     setLoading(true);
-    setGroups(await getSegmentDrillGroups(drill.id));
+    const gs = await getSegmentDrillGroups(drill.id);
+    setGroups(gs);
+    const ids = Array.from(new Set(gs.flatMap(g => g.coach_ids ?? [])));
+    if (ids.length) {
+      const { data } = await supabase.from("profiles").select("id, name").in("id", ids);
+      setCoachNames(Object.fromEntries(((data ?? []) as any[]).map(p => [p.id, p.name])));
+    }
     setLoading(false);
   }, [drill.id]);
 
@@ -331,6 +340,13 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
                     }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: hasExcused ? "var(--gold-text)" : "var(--text)", marginBottom: 6 }}>
                       {hasExcused && "⚠ "}{g.group_label}
+                      {/* Set from the drill's Coach button. */}
+                      {(g.location || (g.coach_ids ?? []).length > 0) && (
+                        <span style={{ fontWeight: 500, color: "var(--muted)" }}>
+                          {g.location ? ` · ${g.location}` : ""}
+                          {(g.coach_ids ?? []).length ? ` · Coach ${(g.coach_ids ?? []).map(id => coachNames[id]).filter(Boolean).join(" & ")}` : ""}
+                        </span>
+                      )}
                     </div>
                     {g.member_ids.map(pid => {
                       const excused = excusedIds.has(pid);
