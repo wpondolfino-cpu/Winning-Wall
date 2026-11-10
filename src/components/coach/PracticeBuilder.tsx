@@ -1129,7 +1129,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                         <td style={{ padding: "6px 10px" }}>
                           {drills.length > 1 && (
                             <button onClick={() => setStationsTarget({ segment: seg, drills, block })}
-                              style={{ background: "var(--gold)", color: "#1a1a1a", border: "none", borderRadius: 7, padding: "6px 11px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                              style={{ background: "var(--gold)", color: "#1a1a1a", border: "none", borderRadius: 7, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
                               {/* Like a drill's "+ Groups": a + until it's set
                                   up, then a tick. */}
                               {(blocksWithStationGroups.has(block.id) || drills.some(d => (d.station_member_ids ?? []).length > 0))
