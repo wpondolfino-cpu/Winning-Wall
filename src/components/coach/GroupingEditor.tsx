@@ -9,13 +9,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   SavedGrouping, SegmentDrillGroup, SegmentDrill, getSegmentDrillGroups,
-  generateBalancedGroups, saveGeneratedGroups, assignSavedArrangementToSegmentDrill, createSavedArrangement,
+  generateBalancedGroups, generateGroupsByGrade, generateGradeMixedGroups, saveGeneratedGroups, assignSavedArrangementToSegmentDrill, createSavedArrangement,
   getSavedGroupingArrangement, deleteSavedGrouping, clearSegmentDrillGroups,
   movePlayerBetweenGroups, removeGroupMember, addGroupMember, updateSegmentDrill,
   getCurrentSeason, splitGroupingsBySeason,
 } from "../../lib/practicePlanner";
 
-interface PlayerLite { id: string; name: string; home_roster_id: string | null; }
+interface PlayerLite { id: string; name: string; home_roster_id: string | null; grade?: number | null; }
 
 interface Props {
   drill: SegmentDrill;
@@ -37,6 +37,10 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
   const [groups, setGroups]     = useState<SegmentDrillGroup[]>([]);
   const [loading, setLoading]   = useState(true);
   const [groupSize, setGroupSize] = useState(drill.group_size ?? 5);
+  // How Generate splits: across teams (the original), one group per grade,
+  // or the chosen number of groups with grades spread evenly.
+  const [splitBy, setSplitBy] = useState<"teams" | "grade" | "gradeMix">("teams");
+  const noGradeCount = attendees.filter(p => p.grade == null || p.grade < 9 || p.grade > 12).length;
   const [numGroups, setNumGroups] = useState(drill.num_groups ?? 2);
   const [groupSizeDraft, setGroupSizeDraft] = useState<string | null>(null);
   const [numGroupsDraft, setNumGroupsDraft] = useState<string | null>(null);
@@ -85,7 +89,15 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
   const nameOf = (id: string) => attendees.find(p => p.id === id)?.name ?? "Unknown";
 
   async function handleGenerate() {
-    const { groups: generated } = generateBalancedGroups(attendees, groupSize, numGroups);
+    if (splitBy === "grade") {
+      const { groups: generated, labels } = generateGroupsByGrade(attendees);
+      await saveGeneratedGroups(drill.id, generated, tryoutIds, labels);
+      await load(); onChanged(); flashSaved();
+      return;
+    }
+    const { groups: generated } = splitBy === "gradeMix"
+      ? generateGradeMixedGroups(attendees, numGroups)
+      : generateBalancedGroups(attendees, groupSize, numGroups);
     await saveGeneratedGroups(drill.id, generated, tryoutIds);
     await updateSegmentDrill(drill.id, { group_size: groupSize, num_groups: numGroups });
     await load(); onChanged(); flashSaved();
@@ -180,7 +192,22 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
         </div>
         <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 14 }}>Drag a player chip to move them between groups or the bench. Generate replaces the current split; manual moves stick until you generate again. Everything saves as you go — there’s nothing to submit.</div>
 
+        {/* How Generate splits everyone up. */}
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+          <span style={{ ...fieldLabel, marginBottom: 0 }}>Split</span>
+          {([["teams", "Mix teams"], ["grade", "By grade"], ["gradeMix", "Grades mixed evenly"]] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setSplitBy(k)}
+              style={{ ...inputStyle, padding: "5px 11px", fontSize: 12, cursor: "pointer",
+                ...(splitBy === k ? { background: "var(--royal)", color: "#fff", border: "1px solid var(--royal)" } : {}) }}>{label}</button>
+          ))}
+          {splitBy !== "teams" && noGradeCount > 0 && (
+            <span style={{ fontSize: 11, color: "var(--gold-text)" }}>{noGradeCount} with no grade will stay on the bench</span>
+          )}
+        </div>
         <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 14, flexWrap: "wrap" }}>
+          {splitBy === "grade" ? (
+            <div style={{ fontSize: 12, color: "var(--muted)", paddingBottom: 8 }}>One group per grade: Seniors, Juniors, Sophomores, Freshmen.</div>
+          ) : (<>
           <div>
             <div style={fieldLabel}>Group size</div>
             <input type="number" min={1}
@@ -200,6 +227,7 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
           <div style={{ fontSize: 11, color: "var(--muted)", paddingBottom: 8 }}>
             {groupSize}v{Array(numGroups).fill(groupSize).join("v")}
           </div>
+          </>)}
           <button onClick={handleGenerate} style={primaryBtn}>Generate</button>
           {/* Always shown, even with nothing saved yet -- a button that
               vanishes when the list is empty is how you end up saving a
