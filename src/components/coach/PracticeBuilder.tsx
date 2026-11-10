@@ -29,6 +29,7 @@ import {
   updatePracticeDrill, getPracticeDrillCategories, PracticeDrillCategory, getPlaysForLinking,
 } from "../../lib/practicePlanner";
 import VideoUrlNote from "../shared/VideoUrlNote";
+import { gradeFromGradYear } from "../../lib/teamDesigner";
 import GroupingEditor from "./GroupingEditor";
 import StationsEditor from "./StationsEditor";
 import CopyDrillPicker from "./CopyDrillPicker";
@@ -39,7 +40,7 @@ import PracticePrintView from "./PracticePrintView";
 import PracticeCoverList from "../quizzes/PracticeCoverList";
 import type { PracticeDrillLibraryDrill } from "../../lib/practicePlanner";
 
-interface PlayerLite { id: string; name: string; home_roster_id: string | null; }
+interface PlayerLite { id: string; name: string; home_roster_id: string | null; grade?: number | null; }
 
 interface Props {
   practiceId?: string;   // omit to create a new practice
@@ -199,8 +200,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
     // showing "No week" made the safe default look like the risky one.
     if (!practiceId && w.length > 0) setWeekId(prev => prev ?? w[0].id);
 
-    const { data: p } = await supabase.from("profiles").select("id,name,home_roster_id").eq("role", "player");
-    setPlayers(p ?? []);
+    // Grade comes from the grad year, for splitting groups by grade.
+    const { data: p } = await supabase.from("profiles").select("id,name,home_roster_id,graduation_year").eq("role", "player");
+    setPlayers(((p ?? []) as any[]).map(x => ({ id: x.id, name: x.name, home_roster_id: x.home_roster_id, grade: gradeFromGradYear(x.graduation_year ?? null) })));
 
     if (practiceId) {
       const pr = await getPractice(practiceId);
@@ -609,13 +611,15 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
     ...overrides.filter(o => o.override_type === "call_up").map(o => o.player_id),
   ]);
   const accountName = new Map<string, string>(players.map(p => [p.id, p.name]));
+  const accountGrade = new Map<string, number | null>(players.map(p => [p.id, p.grade ?? null]));
   const effectiveAttendees = isTryout
     ? [
         ...rosterAttendees,
         ...tryoutPool
           .filter(t => tryoutPresent.size === 0 || tryoutPresent.has(t.id))
           .filter(t => !(t.linked_profile_id && onTickedRoster.has(t.linked_profile_id)))
-          .map(t => ({ id: t.id, name: (t.linked_profile_id && accountName.get(t.linked_profile_id)) || t.name, home_roster_id: null } as any)),
+          .map(t => ({ id: t.id, name: (t.linked_profile_id && accountName.get(t.linked_profile_id)) || t.name, home_roster_id: null,
+            grade: t.grade ?? (t.linked_profile_id ? accountGrade.get(t.linked_profile_id) ?? null : null) } as any)),
       ]
     : rosterAttendees;
   const absentIds = new Set(overrides.filter(o => o.override_type === "absent").map(o => o.player_id));
@@ -1055,7 +1059,11 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                                 A drill with no rule keeps the button,
                                 because then there's nothing else doing the
                                 work. */}
-                            {(block.station_mode === "rotating" || (d.split_rule && d.split_rule !== "none")) ? (
+                            {/* Rotating only means something with more than one
+                                drill (stations) in the block. Every block is
+                                rotating by default, which used to hide the
+                                Groups button on single drills too. */}
+                            {((block.station_mode === "rotating" && (drillsBySeg[seg.id] ?? []).length > 1) || (d.split_rule && d.split_rule !== "none")) ? (
                               <span style={{ fontSize: 11, color: "var(--muted)" }}>
                                 {d.split_rule === "teams" ? `${d.split_n ?? 2} teams`
                                   : d.split_rule === "size" ? `groups of ${d.split_n ?? 2}`
