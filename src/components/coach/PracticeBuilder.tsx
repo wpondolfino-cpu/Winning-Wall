@@ -26,7 +26,7 @@ import {
   TryoutPlayer, getTryoutPlayers, getTryoutAttendance, setTryoutAttendance, getCurrentSeason,
   savePracticeAsTemplate, applyTemplateToPractice,
   deletePracticeTemplate, renamePracticeTemplate,
-  updatePracticeDrill, createPracticeDrillCategory, getPracticeDrillCategories, PracticeDrillCategory, getPlaysForLinking, getPracticeDrillTags,
+  updatePracticeDrill, createPracticeDrillCategory, getSegmentDrillGroups, updateGroupPlaceAndCoaches, getPracticeDrillCategories, PracticeDrillCategory, getPlaysForLinking, getPracticeDrillTags,
 } from "../../lib/practicePlanner";
 import VideoUrlNote from "../shared/VideoUrlNote";
 import TagChipPicker from "./TagChipPicker";
@@ -140,6 +140,19 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
   const [drillDurationDrafts, setDrillDurationDrafts] = useState<Record<string, string>>({});
   const [notesDrafts, setNotesDrafts] = useState<Record<string, string>>({});
   const [groupCounts, setGroupCounts] = useState<Record<string, number>>({});
+  // Each drill's groups' coaches, for the Coach column ("Houle (A)").
+  const [groupCoachesByDrill, setGroupCoachesByDrill] = useState<Record<string, { label: string; coach_ids: string[] }[]>>({});
+  async function loadGroupCoaches(drillIds: string[]) {
+    if (!drillIds.length) return;
+    const { data, error } = await supabase.from("segment_drill_groups")
+      .select("segment_drill_id, group_label, order_index, coach_ids").in("segment_drill_id", drillIds).order("order_index");
+    if (error) return;                                   // before 208 is run: nothing to show
+    const next: Record<string, { label: string; coach_ids: string[] }[]> = Object.fromEntries(drillIds.map(id => [id, []]));
+    ((data ?? []) as any[]).forEach(g => next[g.segment_drill_id]?.push({ label: g.group_label ?? "Group", coach_ids: g.coach_ids ?? [] }));
+    setGroupCoachesByDrill(prev => ({ ...prev, ...next }));
+  }
+  // The Coach window's group rows, when the drill has groups.
+  const [coachGroups, setCoachGroups] = useState<{ id: string; label: string; location: string; coach_ids: string[]; size: number; orig: string }[] | null>(null);
 
   function hexToRgba(hex: string, alpha: number): string {
     const clean = hex.replace("#", "");
@@ -166,6 +179,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
   async function refreshGroupCounts(allDrills: SegmentDrill[]) {
     const counts = await getGroupCountsForDrills(allDrills.map(d => d.id));
     setGroupCounts(prev => ({ ...prev, ...counts }));
+    void loadGroupCoaches(allDrills.map(d => d.id));
   }
 
   // Patches one drill's fields in local state directly — used after a
@@ -556,14 +570,30 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
   function openCoachPicker(drill: SegmentDrill, block: PracticeBlock) {
     setCoachSelection(new Set(drill.coach_ids ?? []));
     setCoachPickerTarget({ drill, block });
+    // A drill split into groups gets a row per group: where it goes and
+    // who runs it (e.g. three hoops, a coach at each).
+    setCoachGroups(null);
+    getSegmentDrillGroups(drill.id).then(gs => setCoachGroups(gs.map(g => {
+      const row = { id: g.id, label: g.group_label ?? "Group", location: g.location ?? "", coach_ids: g.coach_ids ?? [], size: g.member_ids.length };
+      return { ...row, orig: JSON.stringify([row.location, row.coach_ids]) };
+    }))).catch(() => setCoachGroups([]));
   }
 
   async function saveCoachPicker() {
     if (!coachPickerTarget) return;
     const { drill } = coachPickerTarget;
+    for (const g of coachGroups ?? []) {
+      if (JSON.stringify([g.location, g.coach_ids]) === g.orig) continue;
+      const res = await updateGroupPlaceAndCoaches(g.id, { location: g.location.trim() || null, coach_ids: g.coach_ids });
+      if (res.error) {
+        alert(/column/i.test(res.error) ? "Run 208_group_place_and_coaches.sql in Supabase first, then try again." : "Couldn't save a group: " + res.error);
+        return;
+      }
+    }
     const { error } = await updateSegmentDrill(drill.id, { coach_ids: Array.from(coachSelection) });
     if (error) { alert("Couldn't save coaches: " + error); return; }
     patchLocalDrill(drill.segment_id, drill.id, { coach_ids: Array.from(coachSelection) });
+    void loadGroupCoaches([drill.id]);
     setCoachPickerTarget(null);
   }
 
@@ -1098,9 +1128,15 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                           </td>
                           <td style={{ padding: "10px" }}>
                             <button onClick={() => openCoachPicker(d, block)} style={smallBtn}>
-                              {(d.coach_ids ?? []).length > 0
-                                ? d.coach_ids.map(id => coaches.find(c => c.id === id)?.name).filter(Boolean).join(", ")
-                                : "+ Coach"}
+                              {(() => {
+                                const nameOf = (id: string) => coaches.find(c => c.id === id)?.name;
+                                // Groups with their own coaches: "Houle (A) · Oliver (B)".
+                                const byGroup = (groupCoachesByDrill[d.id] ?? []).filter(g => g.coach_ids.length);
+                                if (byGroup.length) return byGroup.map(g => `${g.coach_ids.map(nameOf).filter(Boolean).join(" & ")} (${g.label.replace(/^Group /, "")})`).join(" · ");
+                                return (d.coach_ids ?? []).length > 0
+                                  ? d.coach_ids.map(nameOf).filter(Boolean).join(", ")
+                                  : "+ Coach";
+                              })()}
                             </button>
                           </td>
                         </tr>
@@ -1245,8 +1281,46 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
 
       {coachPickerTarget && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setCoachPickerTarget(null)}>
-          <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(360px, 96vw)", padding: 20 }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)", marginBottom: 10 }}>Coaches</div>
+          <div style={{ background: "var(--surface)", borderRadius: 16, width: coachGroups?.length ? "min(480px, 96vw)" : "min(360px, 96vw)", maxHeight: "92vh", overflowY: "auto", padding: 20 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 18, color: "var(--title)", marginBottom: 10 }}>
+              Coaches{coachPickerTarget.drill.drill_id && drillsById[coachPickerTarget.drill.drill_id] ? ` — ${drillsById[coachPickerTarget.drill.drill_id].title}` : ""}
+            </div>
+            {coachGroups && coachGroups.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+                  This drill has {coachGroups.length} group{coachGroups.length === 1 ? "" : "s"}. Give each a place and a coach.
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {coachGroups.map((g, gi) => (
+                    <div key={g.id} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10, background: "var(--surface2)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                        <span style={{ fontWeight: 700, fontSize: 13, minWidth: 64 }}>{g.label}</span>
+                        <input value={g.location} placeholder="Where? e.g. Hoop 1"
+                          onChange={e => setCoachGroups(prev => prev!.map((x, i) => i === gi ? { ...x, location: e.target.value } : x))}
+                          style={{ ...inputStyle, flex: 1, padding: "6px 9px" }} />
+                        <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>{g.size} player{g.size === 1 ? "" : "s"}</span>
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                        {coaches.map(c => {
+                          const on = g.coach_ids.includes(c.id);
+                          return (
+                            <button key={c.id} type="button"
+                              onClick={() => setCoachGroups(prev => prev!.map((x, i) => i !== gi ? x
+                                : { ...x, coach_ids: on ? x.coach_ids.filter(id => id !== c.id) : [...x.coach_ids, c.id] }))}
+                              style={{ fontSize: 12, padding: "4px 10px", borderRadius: 999, cursor: "pointer", fontFamily: "inherit",
+                                background: on ? "var(--royal)" : "var(--surface)", color: on ? "#fff" : "var(--text)",
+                                border: on ? "1px solid var(--royal)" : "1px solid var(--border)" }}>
+                              {on ? "✓ " : ""}{c.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "12px 0 6px" }}>Whole drill (shown when no group has a coach):</div>
+              </div>
+            )}
             <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 220, overflowY: "auto", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, marginBottom: 12 }}>
               {coaches.map(c => (
                 <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
@@ -1261,9 +1335,17 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
               ))}
               {coaches.length === 0 && <div style={{ fontSize: 11, color: "var(--muted)" }}>No coach accounts found.</div>}
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button onClick={saveCoachPicker} style={primaryBtn}>Save</button>
               <button onClick={() => setCoachPickerTarget(null)} style={smallBtn}>Cancel</button>
+              {coachGroups && coachGroups.length === 0 && (() => {
+                // No groups yet: split the drill first, then come back for coaches.
+                const seg = (segByBlock[coachPickerTarget.block.id] ?? []).find(sg => sg.id === coachPickerTarget.drill.segment_id);
+                return seg ? (
+                  <button onClick={() => { const d = coachPickerTarget.drill; setCoachPickerTarget(null); void openGroupingEditor(d, seg); }}
+                    style={{ ...smallBtn, marginLeft: "auto" }}>Make groups →</button>
+                ) : null;
+              })()}
             </div>
           </div>
         </div>
@@ -1355,6 +1437,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
             getGroupCountsForDrills([groupingTarget.drill.id]).then(counts => {
               setGroupCounts(prev => ({ ...prev, [groupingTarget.drill.id]: counts[groupingTarget.drill.id] ?? 0 }));
             });
+            void loadGroupCoaches([groupingTarget.drill.id]);
           }}
         />
       )}
