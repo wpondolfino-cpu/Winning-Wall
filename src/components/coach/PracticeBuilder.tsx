@@ -26,7 +26,7 @@ import {
   TryoutPlayer, getTryoutPlayers, getTryoutAttendance, setTryoutAttendance, getCurrentSeason,
   savePracticeAsTemplate, applyTemplateToPractice,
   deletePracticeTemplate, renamePracticeTemplate,
-  updatePracticeDrill, getPracticeDrillCategories, PracticeDrillCategory, getPlaysForLinking, getPracticeDrillTags,
+  updatePracticeDrill, createPracticeDrillCategory, getPracticeDrillCategories, PracticeDrillCategory, getPlaysForLinking, getPracticeDrillTags,
 } from "../../lib/practicePlanner";
 import VideoUrlNote from "../shared/VideoUrlNote";
 import TagChipPicker from "./TagChipPicker";
@@ -1190,10 +1190,22 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                   <textarea value={drillForm.description} onChange={e => setDrillForm({ ...drillForm, description: e.target.value })} placeholder="Description" rows={3} style={{ ...inputStyle, resize: "vertical" as const }} />
                   <input value={drillForm.video_url} onChange={e => setDrillForm({ ...drillForm, video_url: e.target.value })} placeholder="YouTube link" style={inputStyle} />
                   <VideoUrlNote url={drillForm.video_url} />
-                  <select value={drillForm.category_name} onChange={e => setDrillForm({ ...drillForm, category_name: e.target.value })} style={inputStyle}>
+                  <select value={drillForm.category_name} style={inputStyle}
+                    onChange={async e => {
+                      if (e.target.value !== "__new__") { setDrillForm({ ...drillForm, category_name: e.target.value }); return; }
+                      // "+ New category…": make it, then pick it for this drill.
+                      const name = (window.prompt("New category name") ?? "").trim();
+                      if (!name) return;
+                      const { error } = await createPracticeDrillCategory(name);
+                      if (error && !/already exists/i.test(error)) { alert(error); return; }
+                      setDrillCategories(await getPracticeDrillCategories());
+                      const match = drillCategories.find(c => c.name.toLowerCase() === name.toLowerCase())?.name ?? name;
+                      setDrillForm(f => (f ? { ...f, category_name: match } : f));
+                    }}>
                     <option value="">No category</option>
                     {drillForm.category_name && !drillCategories.some(c => c.name === drillForm.category_name) && <option value={drillForm.category_name}>{drillForm.category_name}</option>}
                     {drillCategories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                    <option value="__new__">+ New category…</option>
                   </select>
                   <TagChipPicker all={allDrillTags}
                     value={drillForm.tags.split(",").map(t => t.trim()).filter(Boolean)}
