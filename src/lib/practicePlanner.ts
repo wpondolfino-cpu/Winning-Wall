@@ -1793,6 +1793,43 @@ export function generateBalancedGroups<P extends { id: string; home_roster_id: s
 
 const GROUP_LABELS = ["Group A", "Group B", "Group C", "Group D", "Group E", "Group F", "Group G", "Group H"];
 
+const CLASS_NAMES: Record<number, string> = { 12: "Seniors", 11: "Juniors", 10: "Sophomores", 9: "Freshmen" };
+const knownGrade = (g: number | null | undefined) => (g != null && g >= 9 && g <= 12 ? g : null);
+
+/**
+ * One group per grade: seniors together, juniors together, and so on,
+ * oldest first, each named for its class. Players with no grade aren't
+ * placed (they stay on the bench to be dragged in).
+ */
+export function generateGroupsByGrade<P extends { id: string; grade?: number | null }>(players: P[]): { groups: string[][]; labels: string[] } {
+  const groups: string[][] = [], labels: string[] = [];
+  for (const g of [12, 11, 10, 9]) {
+    const ids = players.filter(p => knownGrade(p.grade) === g).map(p => p.id);
+    if (ids.length) { groups.push(ids); labels.push(CLASS_NAMES[g]); }
+  }
+  return { groups, labels };
+}
+
+/**
+ * The chosen number of groups, with each grade spread evenly across them:
+ * seniors are dealt out first, then juniors carry on from where the
+ * seniors stopped, so group sizes stay within one of each other and every
+ * group gets its share of each class. Players with no grade stay on the
+ * bench.
+ */
+export function generateGradeMixedGroups<P extends { id: string; grade?: number | null }>(players: P[], numGroups: number): { groups: string[][] } {
+  const n = Math.max(1, numGroups);
+  const groups: string[][] = Array.from({ length: n }, () => []);
+  let k = 0;
+  for (const g of [12, 11, 10, 9]) {
+    const list = players.filter(p => knownGrade(p.grade) === g);
+    // Shuffle within a class so regenerating gives a different mix.
+    for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
+    for (const p of list) { groups[k % n].push(p.id); k++; }
+  }
+  return { groups };
+}
+
 /** Removes every group on a drill. Used before loading a saved arrangement, which replaces rather than appends. */
 export async function clearSegmentDrillGroups(segmentDrillId: string): Promise<{ error: string | null }> {
   const { error } = await supabase.from("segment_drill_groups").delete().eq("segment_drill_id", segmentDrillId);
@@ -1802,11 +1839,11 @@ export async function clearSegmentDrillGroups(segmentDrillId: string): Promise<{
 // Replaces whatever groups currently exist on a segment_drill with a
 // freshly generated set. This is the "snapshot" moment — editing a
 // saved grouping later never touches what gets written here.
-export async function saveGeneratedGroups(segmentDrillId: string, groups: string[][], tryoutIds?: Set<string>): Promise<{ error: string | null }> {
+export async function saveGeneratedGroups(segmentDrillId: string, groups: string[][], tryoutIds?: Set<string>, labels?: string[]): Promise<{ error: string | null }> {
   await supabase.from("segment_drill_groups").delete().eq("segment_drill_id", segmentDrillId);
   for (let i = 0; i < groups.length; i++) {
     const { data, error } = await supabase.from("segment_drill_groups")
-      .insert({ segment_drill_id: segmentDrillId, group_label: GROUP_LABELS[i] ?? `Group ${i + 1}`, order_index: i })
+      .insert({ segment_drill_id: segmentDrillId, group_label: labels?.[i] ?? GROUP_LABELS[i] ?? `Group ${i + 1}`, order_index: i })
       .select("id").single();
     if (error || !data?.id) return { error: error?.message ?? "Failed to create group" };
     if (groups[i].length > 0) {
