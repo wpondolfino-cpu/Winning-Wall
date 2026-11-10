@@ -61,6 +61,14 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
   const [players, setPlayers]     = useState<PlayerLite[]>([]);
   const [overrides, setOverrides] = useState<AttendanceOverride[]>([]);
   const [blocks, setBlocks]       = useState<PracticeBlock[]>([]);
+  // Blocks whose station groups (rotation groups) have been made -- what
+  // the tick on "Station Groups" means.
+  const [blocksWithStationGroups, setBlocksWithStationGroups] = useState<Set<string>>(new Set());
+  async function loadStationGroupFlags(blockIds: string[]) {
+    if (!blockIds.length) { setBlocksWithStationGroups(new Set()); return; }
+    const { data } = await supabase.from("block_rotation_groups").select("block_id").in("block_id", blockIds);
+    setBlocksWithStationGroups(new Set(((data ?? []) as { block_id: string }[]).map(r => r.block_id)));
+  }
   const [segByBlock, setSegByBlock]     = useState<Record<string, BlockSegment[]>>({});
   const [drillsBySeg, setDrillsBySeg]   = useState<Record<string, SegmentDrill[]>>({});
   const [loading, setLoading]     = useState(true);
@@ -180,6 +188,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
   const reloadStructure = useCallback(async (id: string) => {
     const bl = await getPracticeBlocks(id);
     setBlocks(bl);
+    void loadStationGroupFlags(bl.map(b => b.id));
     const segEntries = await Promise.all(bl.map(async b => [b.id, await getSegments(b.id)] as const));
     const segMap = Object.fromEntries(segEntries);
     setSegByBlock(segMap);
@@ -994,7 +1003,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                       rowsRenderedSoFar++;
                       const gCount = groupCounts[d.id] ?? 0;
                       blockRows.push(
-                        <tr key={d.id} style={{ background: rowBg, borderTop: isVeryFirstRow && blockIndex > 0 ? undefined : `1px solid ${rowBorder}` }}>
+                        <tr key={d.id} style={{ background: rowBg, borderTop: isVeryFirstRow && blockIndex > 0 ? "2px solid var(--border)" : `1px solid ${rowBorder}` }}>
                           {isVeryFirstRow && timeCell}
                           <td style={{ padding: "10px" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -1098,7 +1107,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                     const isVeryFirstRow = rowsRenderedSoFar === 0;
                     rowsRenderedSoFar++;
                     blockRows.push(
-                      <tr key={`${seg.id}-add`} style={{ borderTop: isVeryFirstRow && blockIndex > 0 ? undefined : "1px dashed var(--border)" }}>
+                      <tr key={`${seg.id}-add`} style={{ borderTop: isVeryFirstRow && blockIndex > 0 ? "2px solid var(--border)" : "1px dashed var(--border)" }}>
                         {isVeryFirstRow && timeCell}
                         <td colSpan={2} style={{ padding: "6px 10px" }}>
                           <button onClick={() => handleAddDrill(seg, block)} style={{ ...smallBtn, fontSize: 11 }}>
@@ -1121,10 +1130,11 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                           {drills.length > 1 && (
                             <button onClick={() => setStationsTarget({ segment: seg, drills, block })}
                               style={{ background: "var(--gold)", color: "#1a1a1a", border: "none", borderRadius: 7, padding: "6px 11px", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                              ⇉ Stations
-                              {(block.station_mode === "rotating" || drills.some(d => (d.station_member_ids ?? []).length > 0)) && (
-                                <span style={{ color: "#2d6b45", marginLeft: 5 }}>✓</span>
-                              )}
+                              {/* Like a drill's "+ Groups": a + until it's set
+                                  up, then a tick. */}
+                              {(blocksWithStationGroups.has(block.id) || drills.some(d => (d.station_member_ids ?? []).length > 0))
+                                ? <>Station Groups<span style={{ color: "#2d6b45", marginLeft: 5 }}>✓</span></>
+                                : "+ Station Groups"}
                             </button>
                           )}
                         </td>
@@ -1285,8 +1295,8 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
               : effectiveAttendees
           }
           tryoutIds={isTryout ? tryoutIds : undefined}
-          onClose={() => setStationsTarget(null)}
-          onChanged={() => { void refreshBlock(stationsTarget.segment.block_id); }}
+          onClose={() => { setStationsTarget(null); void loadStationGroupFlags(blocks.map(b => b.id)); }}
+          onChanged={() => { void refreshBlock(stationsTarget.segment.block_id); void loadStationGroupFlags(blocks.map(b => b.id)); }}
         />
       )}
 
