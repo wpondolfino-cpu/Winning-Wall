@@ -11,6 +11,7 @@
 // attendance" button below — never on an individual checkbox toggle —
 // and overwritten (not logged) on every later re-completion.
 
+import { time12 } from "../../lib/scheduleImport";
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../lib/supabase";
 import {
@@ -123,7 +124,7 @@ export default function PracticeDayAttendance({ practiceId, onClose, onSaved }: 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
         <div>
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", letterSpacing: 1 }}>Practice day</div>
-          <div style={{ fontSize: 13, color: "var(--muted)" }}>{formatDate(practice.practice_date)} @ {practice.start_time.slice(0, 5)}</div>
+          <div style={{ fontSize: 13, color: "var(--muted)" }}>{formatDate(practice.practice_date)} @ {time12(practice.start_time)}</div>
         </div>
         <button onClick={onClose} style={secondaryBtn}>Close</button>
       </div>
