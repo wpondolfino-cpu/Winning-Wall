@@ -27,7 +27,7 @@ import { inputStyle } from "../../lib/inputStyle";
 import {
   ScoutingGame, Ranking, OurGame, ScoutMode, getScoutingGames, getRankings, getOurUpcomingGames,
   addScout, setScoutMode, removeScout, addVideo, removeVideo, deleteScoutingGame, updateScoutingGame, videoInfo,
-  teamKey, isoDate, parseIso, weekStart, addDays,
+  teamKey, isTBA, isoDate, parseIso, weekStart, addDays,
 } from "../../lib/scoutingCalendar";
 import { PasteGamesModal, AddGameModal, RankingsModal } from "./ScoutingImport";
 
@@ -341,6 +341,7 @@ function GameCard({ g, showDay, rankBy, ours, teamById, staff, me, coachLabel, a
 
   // A team's name with its division/rank and, if we play them, when.
   const team = (name: string) => {
+    if (isTBA(name)) return <span title="Opponent not known yet; Edit game once it is" style={{ fontSize: 15, fontWeight: 600, color: "var(--muted)", fontStyle: "italic" }}>TBA</span>;
     const r = rankBy.get(teamKey(name));
     const o = ours.get(teamKey(name));
     const t = o?.roster_id ? teamById.get(o.roster_id) : null;
@@ -501,11 +502,11 @@ function EditGame({ g, onCancel, onSave }: {
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
-        <label><span style={lab}>Away</span><input value={away} onChange={e => setAway(e.target.value)} style={field} /></label>
-        <label><span style={lab}>Home</span><input value={home} onChange={e => setHome(e.target.value)} style={field} /></label>
+        <label><span style={lab}>Away</span><input value={away} onChange={e => setAway(e.target.value)} placeholder="Team, or TBA" style={field} /></label>
+        <label><span style={lab}>Home</span><input value={home} onChange={e => setHome(e.target.value)} placeholder="Team, or TBA" style={field} /></label>
         <label><span style={lab}>Date</span><input type="date" value={date} onChange={e => setDate(e.target.value)} style={field} /></label>
         <label><span style={lab}>Tip time</span><input type="time" value={time} onChange={e => setTime(e.target.value)} style={field} /></label>
-        <label style={{ gridColumn: "1 / -1" }}><span style={lab}>Location — only if it isn't at {home.trim() || "the home team"}'s gym</span>
+        <label style={{ gridColumn: "1 / -1" }}><span style={lab}>Location — only if it isn't at {home.trim() && !isTBA(home) ? home.trim() : "the home team"}'s gym</span>
           <input value={loc} onChange={e => setLoc(e.target.value)} placeholder="e.g. TD Garden, or the tournament site" style={field} maxLength={80} /></label>
       </div>
       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 8 }}>
