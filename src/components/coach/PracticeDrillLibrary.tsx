@@ -16,6 +16,9 @@ import {
 import { Workout, getWorkouts } from "../../lib/supabase";
 import NewInSharedLibrary from "../library/NewInSharedLibrary";
 import AddToSharedLibrary from "../library/AddToSharedLibrary";
+import TagChipPicker from "./TagChipPicker";
+import WorkoutBuilder from "./WorkoutBuilder";
+import { supabase } from "../../lib/supabase";
 
 interface Props {
   canManage?: boolean;
@@ -72,6 +75,24 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
   async function pickPlayerDrill(w: Workout) {
     const imported = await importWorkoutAsPracticeDrill(w as any);
     if (imported && onPick) onPick(imported);
+  }
+
+  // "+ New player drill" from the practice picker: the full player drill
+  // builder (the one Manage Workouts uses). Once saved, the new drill is
+  // kept hidden from players -- off in Workouts and archived in their
+  // library -- until the coach chooses to show it, then it drops into the
+  // practice the same way picking an existing player drill does.
+  const [buildingPlayerDrill, setBuildingPlayerDrill] = useState(false);
+  async function handleNewPlayerDrillSaved() {
+    setBuildingPlayerDrill(false);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data } = await supabase.from("workouts").select("*")
+      .eq("coach_id", user?.id ?? "").order("created_at", { ascending: false }).limit(1);
+    const w = (data ?? [])[0] as Workout | undefined;
+    if (!w) { alert("The player drill was saved, but couldn't be added to the practice. Pick it from Player drills."); return; }
+    await supabase.from("workouts").update({ library_archived: true, is_active: false }).eq("id", w.id);
+    setPlayerDrills([]);                       // reload the list next time the tab opens
+    await pickPlayerDrill(w);
   }
 
   async function handleToggleStar(d: PracticeDrillLibraryDrill, e: React.MouseEvent) {
@@ -172,10 +193,12 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", letterSpacing: 1 }}>
-          {isPicker ? "Add a drill" : "Practice Drill Library"}
+          {isPicker ? "Add a drill" : "Team drills"}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          {canManage && <button onClick={startNewDrill} style={primaryBtn}>+ New drill</button>}
+          {canManage && (isPicker && source === "player"
+            ? <button onClick={() => setBuildingPlayerDrill(true)} style={primaryBtn}>+ New player drill</button>
+            : <button onClick={startNewDrill} style={primaryBtn}>+ New team drill</button>)}
           {isPicker && <button onClick={onClose} style={smallBtn}>Cancel</button>}
         </div>
       </div>
@@ -287,7 +310,8 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
       {editDrill && (
         <div style={overlayStyle} onClick={() => setEditDrill(null)}>
           <div style={modalStyle} onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 10 }}>{editDrill.id ? "Edit drill" : "New drill"}</div>
+            <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 2 }}>{editDrill.id ? "Edit team drill" : "New team drill"}</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Saves to your team drills (the practice drill library).</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <input value={editDrill.title ?? ""} onChange={e => setEditDrill({ ...editDrill, title: e.target.value })} placeholder="Title" style={inputStyle} />
               <textarea value={editDrill.description ?? ""} onChange={e => setEditDrill({ ...editDrill, description: e.target.value })} placeholder="Description" rows={3} style={{ ...inputStyle, resize: "vertical" as const }} />
@@ -297,7 +321,7 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
                 <option value="">No category</option>
                 {categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
               </select>
-              <input value={(editDrill.tags ?? []).join(", ")} onChange={e => setEditDrill({ ...editDrill, tags: e.target.value.split(",").map(t => t.trim()).filter(Boolean) })} placeholder="Tags, comma separated" style={inputStyle} />
+              <TagChipPicker all={allTags} value={editDrill.tags ?? []} onChange={tags => setEditDrill({ ...editDrill, tags })} />
               <div style={{ display: "flex", gap: 8 }}>
                 <input type="number" min={1} value={editDrill.default_duration_minutes ?? ""} onChange={e => setEditDrill({ ...editDrill, default_duration_minutes: e.target.value ? parseInt(e.target.value) : null })} placeholder="Default min" style={{ ...inputStyle, flex: 1 }} />
                 <input type="number" min={1} value={editDrill.default_group_size ?? ""} onChange={e => setEditDrill({ ...editDrill, default_group_size: e.target.value ? parseInt(e.target.value) : null })} placeholder="Group size" style={{ ...inputStyle, flex: 1 }} />
@@ -330,6 +354,20 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
     </div>
   );
 
+  if (isPicker && buildingPlayerDrill) {
+    return (
+      <div style={overlayStyle}>
+        <div style={{ ...modalStyle, width: "min(640px, 96vw)" }} onClick={e => e.stopPropagation()}>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+            New player drill. It saves to your player drills, hidden from players until you show it, and goes into this practice.
+          </div>
+          <WorkoutBuilder editWorkout={null} defaultIsActive={false}
+            onSaved={() => { void handleNewPlayerDrillSaved(); }}
+            onCancel={() => setBuildingPlayerDrill(false)} />
+        </div>
+      </div>
+    );
+  }
   if (isPicker) {
     return (
       <div style={overlayStyle} onClick={onClose}>

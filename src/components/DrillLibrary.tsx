@@ -151,14 +151,15 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-        <div className="section-title" style={{ margin: 0 }}>📚 Drill Library</div>
+        {/* Coaches see this as the Drill Library's "Player drills" tab. */}
+        <div className="section-title" style={{ margin: 0 }}>{canManage ? "Player drills" : "📚 Drill Library"}</div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={() => setShowRandomModal(true)} style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
             🎲 Random Drill
           </button>
           {canManage && (
             <button onClick={() => setShowBuilder(true)} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>
-              + Add Drill
+              + New player drill
             </button>
           )}
           {canManage && (

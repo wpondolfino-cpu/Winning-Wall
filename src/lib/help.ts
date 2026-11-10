@@ -62,8 +62,10 @@ const COACH: Record<string, Starter> = {
     "Split a block when two teams practice together but do different things.",
     "Publish, Print, Duplicate and Save as template are in the header.",
   ]),
-  practicelibrary: S("Practice Drills", "Your team drill library — what the practice builder's drill picker draws from.", [
-    "+ New drill: title, description, video and category.",
+  practicelibrary: S("Drill Library", "All your drills in one place: Team drills (what practices are built from), Player drills (the scored offseason ones) and Categories & tags.", [
+    "Team drills: + New drill sets title, description, video, category and tags (tap as many as apply).",
+    "Player drills: the scored offseason drills. Players see their own Player Drills page.",
+    "Categories & tags: see how many drills use each one, then rename, merge, delete or reorder. Team and player drills keep separate lists.",
     "Fill in default minutes and group size so drills land in a practice ready to go.",
     "Tick “Somebody wins this drill” to record practice wins for it.",
     "Link a play so the drill opens with its diagram.",

@@ -29,7 +29,7 @@ import AnnouncementPanel from "./components/coach/AnnouncementPanel";
 import SendNotificationPanel from "./components/coach/SendNotificationPanel";
 import NavReorderModal, { NavItemConfig, NavSection } from "./components/NavReorderModal";
 import PracticeWeeksList from "./components/coach/PracticeWeeksList";
-import PracticeDrillLibrary from "./components/coach/PracticeDrillLibrary";
+import DrillLibraryHub from "./components/coach/DrillLibraryHub";
 import DrillLibrary from "./components/DrillLibrary";
 import PlaysHub from "./components/plays/PlaysHub";
 import GameStatsHub from "./components/game-stats/GameStatsHub";
@@ -73,12 +73,14 @@ const COACH_NAV_CONFIG: NavItemConfig[] = [
   { key: "leaderboard",   icon: "🏆", label: "Leaderboard",       section: "offseason" },
   { key: "lifting",       icon: "💪", label: "Lifting Programs",  section: "offseason" },
   { key: "challenges",    icon: "⚔️", label: "Challenges",        section: "offseason" },
-  { key: "library",       icon: "📚", label: "Player Drills",     section: "offseason" },
   { key: "hof",           icon: "👑", label: "Hall of Fame",      section: "offseason" },
   { key: "plays",         icon: "🏀", label: "Plays",             section: "inseason" },
   { key: "schedule",      icon: "📆", label: "Schedule",          section: "always" },
   { key: "practices",     icon: "🗓️", label: "Practices",         section: "inseason" },
-  { key: "practicelibrary", icon: "📒", label: "Team Drills",     section: "inseason" },
+  // One Drill Library (team drills, player drills, categories & tags).
+  // It took over this key so saved sidebar orders keep its spot; the old
+  // "library" (Player Drills) item folded into it.
+  { key: "practicelibrary", icon: "📚", label: "Drill Library",   section: "always" },
   { key: "gamestats",     icon: "📊", label: "Analytics",         section: "inseason" },
   { key: "scoutsheets",   icon: "🔎", label: "Scout Sheets",      section: "inseason" },
   { key: "quizzes",       icon: "📝", label: "Quizzes",           section: "inseason" },
@@ -99,13 +101,15 @@ const ADMIN_NAV_CONFIG: NavItemConfig[] = [
   { key: "leaderboard",   icon: "🏆", label: "Leaderboard",       section: "offseason" },
   { key: "lifting",       icon: "💪", label: "Lifting Programs",  section: "offseason" },
   { key: "challenges",    icon: "⚔️", label: "Challenges",        section: "offseason" },
-  { key: "library",       icon: "📚", label: "Player Drills",     section: "offseason" },
   { key: "hof",           icon: "👑", label: "Hall of Fame",      section: "offseason" },
   { key: "admin",         icon: "👑", label: "Admin",             section: "offseason" },
   { key: "plays",         icon: "🏀", label: "Plays",             section: "inseason" },
   { key: "schedule",      icon: "📆", label: "Schedule",          section: "always" },
   { key: "practices",     icon: "🗓️", label: "Practices",         section: "inseason" },
-  { key: "practicelibrary", icon: "📒", label: "Team Drills",     section: "inseason" },
+  // One Drill Library (team drills, player drills, categories & tags).
+  // It took over this key so saved sidebar orders keep its spot; the old
+  // "library" (Player Drills) item folded into it.
+  { key: "practicelibrary", icon: "📚", label: "Drill Library",   section: "always" },
   { key: "gamestats",     icon: "📊", label: "Analytics",         section: "inseason" },
   { key: "scoutsheets",   icon: "🔎", label: "Scout Sheets",      section: "inseason" },
   { key: "quizzes",       icon: "📝", label: "Quizzes",           section: "inseason" },
@@ -134,11 +138,13 @@ const PLAYER_URL_TABS = new Set<string>([
   "schedule", "workouts", "leaderboard", "h2h", "plays", "gamestats",
   "scoutsheets", "quizzes", "lifting", "progress", "hof", "profile", "library", "more",
 ]);
-const COACH_URL_TABS = new Set<string>(COACH_NAV_DEFAULT_ORDER);
+// "library" (the old Player Drills page) stays a valid address so old
+// links land on the Drill Library's Player drills tab.
+const COACH_URL_TABS = new Set<string>([...COACH_NAV_DEFAULT_ORDER, "library"]);
 // "platform" is the platform admin's page (reached from the program
 // switcher, not the nav); the page itself is only rendered for them.
 const PLATFORM_TABS = ["platform", "platform-schools", "platform-trainers", "platform-announcements", "platform-messages", "platform-library", "platform-sandbox"];
-const ADMIN_URL_TABS = new Set<string>([...ADMIN_NAV_DEFAULT_ORDER, ...PLATFORM_TABS]);
+const ADMIN_URL_TABS = new Set<string>([...ADMIN_NAV_DEFAULT_ORDER, ...PLATFORM_TABS, "library"]);
 
 function urlTabsForRole(role: string | undefined): Set<string> | null {
   if (role === "player") return PLAYER_URL_TABS;
@@ -981,12 +987,15 @@ export default function App() {
 
           {/* Coach panels */}
           {isCoach && coachTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={false} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
-          {isCoach && coachTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} onChallenge={() => setCoachTab("challenges")} />}
+          {isCoach && (coachTab === "library" || coachTab === "practicelibrary") && (
+            <DrillLibraryHub initialTab={coachTab === "library" ? "player" : undefined}
+              showTeam={!offTabs.has("drills_team")} showPlayer={!offTabs.has("library")}
+              onPlayerDrillsChanged={refreshWorkouts} onChallenge={() => setCoachTab("challenges")} />
+          )}
           {isCoach && coachTab === "plays" && <PlaysHub currentUserRole="coach"
             onMakeQuiz={(pb, quizId) => { setQuizPrefill({ playbookId: pb.id, name: pb.name, quizId }); setCoachTab("quizzes"); }} />}
           {isCoach && coachTab === "schedule" && <SchedulePage role="coach" onOpenTab={(t, payload) => { setScheduleTarget(payload ?? null); setCoachTab(t as CoachTab); }} />}
           {isCoach && coachTab === "practices" && <PracticeWeeksList initialPracticeId={scheduleTarget?.practiceId ?? null} key={scheduleTarget?.practiceId ?? "list"} />}
-          {isCoach && coachTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
           {isCoach && coachTab === "gamestats" && <GameStatsHub currentUserRole="coach" userId={user.id} initialGameId={scheduleTarget?.gameId ?? null} initialView={scheduleTarget?.view ?? null} key={scheduleTarget?.gameId ?? "hub"} />}
           {isCoach && coachTab === "scoutsheets" && <ScoutSheetsHub canManage={true} initialGameId={scheduleTarget?.gameId ?? null} key={scheduleTarget?.gameId ?? "list"} />}
           {isCoach && coachTab === "quizzes" && <QuizzesPage prefill={quizPrefill} onPrefillUsed={() => setQuizPrefill(null)} />}
@@ -1024,7 +1033,11 @@ export default function App() {
 
           {/* Admin panels */}
           {isAdmin && adminTab === "workouts" && <CoachPanel workouts={workouts} onPublished={refreshWorkouts} coachId={user.id} coachName={displayProfile.name} isAdmin={true} openWorkoutId={deepLinkWorkoutId} onDeepLinkHandled={() => setDeepLinkWorkoutId(null)} />}
-          {isAdmin && adminTab === "library" && <DrillLibrary canManage={true} onChanged={refreshWorkouts} onChallenge={() => setAdminTab("challenges")} />}
+          {isAdmin && (adminTab === "library" || adminTab === "practicelibrary") && (
+            <DrillLibraryHub initialTab={adminTab === "library" ? "player" : undefined}
+              showTeam={!offTabs.has("drills_team")} showPlayer={!offTabs.has("library")}
+              onPlayerDrillsChanged={refreshWorkouts} onChallenge={() => setAdminTab("challenges")} />
+          )}
           {isAdmin && adminTab === "plays" && <PlaysHub currentUserRole="admin"
             onMakeQuiz={(pb, quizId) => { setQuizPrefill({ playbookId: pb.id, name: pb.name, quizId }); setAdminTab("quizzes"); }} />}
           {isAdmin && adminTab === "gamestats" && <GameStatsHub currentUserRole="admin" userId={user.id} initialGameId={scheduleTarget?.gameId ?? null} initialView={scheduleTarget?.view ?? null} key={scheduleTarget?.gameId ?? "hub"} />}
@@ -1033,7 +1046,6 @@ export default function App() {
           {isAdmin && adminTab === "gameday" && <GameDaySheetsList initialSheetId={scheduleTarget?.sheetId ?? null} key={scheduleTarget?.sheetId ?? "list"} />}
           {isAdmin && adminTab === "schedule" && <SchedulePage role="admin" onOpenTab={(t, payload) => { setScheduleTarget(payload ?? null); setAdminTab(t as AdminTab); }} />}
           {isAdmin && adminTab === "practices" && <PracticeWeeksList initialPracticeId={scheduleTarget?.practiceId ?? null} key={scheduleTarget?.practiceId ?? "list"} />}
-          {isAdmin && adminTab === "practicelibrary" && <PracticeDrillLibrary canManage={true} />}
           {isAdmin && adminTab === "leaderboard" && <LeaderboardHub canManage={true} profile={displayProfile} />}
           {/* Head coaches also get their inbox with Winning Wall here; the
               platform admin uses Platform › Messages instead. */}

@@ -26,9 +26,10 @@ import {
   TryoutPlayer, getTryoutPlayers, getTryoutAttendance, setTryoutAttendance, getCurrentSeason,
   savePracticeAsTemplate, applyTemplateToPractice,
   deletePracticeTemplate, renamePracticeTemplate,
-  updatePracticeDrill, getPracticeDrillCategories, PracticeDrillCategory, getPlaysForLinking,
+  updatePracticeDrill, getPracticeDrillCategories, PracticeDrillCategory, getPlaysForLinking, getPracticeDrillTags,
 } from "../../lib/practicePlanner";
 import VideoUrlNote from "../shared/VideoUrlNote";
+import TagChipPicker from "./TagChipPicker";
 import { gradeFromGradYear } from "../../lib/teamDesigner";
 import GroupingEditor from "./GroupingEditor";
 import StationsEditor from "./StationsEditor";
@@ -133,6 +134,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
   const [drillFormOrig, setDrillFormOrig] = useState<DrillDetailsForm | null>(null);
   const [drillCategories, setDrillCategories] = useState<PracticeDrillCategory[]>([]);
   const [linkPlays, setLinkPlays] = useState<{ id: string; title: string }[]>([]);
+  const [allDrillTags, setAllDrillTags] = useState<string[]>([]);
   const [coaches, setCoaches] = useState<CoachLite[]>([]);
   const [blockDurationDrafts, setBlockDurationDrafts] = useState<Record<string, string>>({});
   const [drillDurationDrafts, setDrillDurationDrafts] = useState<Record<string, string>>({});
@@ -522,6 +524,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
       });
       if (!drillCategories.length) getPracticeDrillCategories().then(setDrillCategories).catch(console.error);
       if (!linkPlays.length) getPlaysForLinking().then(setLinkPlays).catch(console.error);
+      getPracticeDrillTags().then(setAllDrillTags).catch(console.error);
     }
   }
 
@@ -1192,7 +1195,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                     {drillForm.category_name && !drillCategories.some(c => c.name === drillForm.category_name) && <option value={drillForm.category_name}>{drillForm.category_name}</option>}
                     {drillCategories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
                   </select>
-                  <input value={drillForm.tags} onChange={e => setDrillForm({ ...drillForm, tags: e.target.value })} placeholder="Tags, comma separated" style={inputStyle} />
+                  <TagChipPicker all={allDrillTags}
+                    value={drillForm.tags.split(",").map(t => t.trim()).filter(Boolean)}
+                    onChange={tags => setDrillForm({ ...drillForm, tags: tags.join(", ") })} />
                   <select value={drillForm.linked_play_id} onChange={e => setDrillForm({ ...drillForm, linked_play_id: e.target.value })} style={inputStyle}>
                     <option value="">No linked play</option>
                     {drillForm.linked_play_id && !linkPlays.some(p => p.id === drillForm.linked_play_id) && <option value={drillForm.linked_play_id}>Linked play</option>}

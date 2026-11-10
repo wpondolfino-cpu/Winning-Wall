@@ -17,9 +17,9 @@ export interface FeatureGroup {
 
 export const FEATURE_GROUPS: FeatureGroup[] = [
   { key: "core",      name: "Core", items: "Schedule · Players & Coaches · Announcements · Settings · Profile", locked: true },
-  { key: "offseason", name: "Offseason training", items: "Manage Workouts · Leaderboard · Player Drills · Challenges & Class Clash · Hall of Fame · XP & perks" },
+  { key: "offseason", name: "Offseason training", items: "Manage Workouts · Leaderboard · Player drills (Drill Library) · Challenges & Class Clash · Hall of Fame · XP & perks" },
   { key: "lifting",   name: "Lifting", items: "Lifting Programs · lifting logs & records" },
-  { key: "inseason",  name: "In-season coaching", items: "Practices · Team Drills · Analytics · Scout Sheets · Game Day · lineups & rotations" },
+  { key: "inseason",  name: "In-season coaching", items: "Practices · Team drills (Drill Library) · Analytics · Scout Sheets · Game Day · lineups & rotations" },
   { key: "playbook",  name: "Playbook", items: "Plays · playbooks shared with players" },
   { key: "quizzes",   name: "Quizzes", items: "Quizzes · live quizzes · review deck" },
 ];
@@ -29,7 +29,10 @@ const TAB_FEATURE: Record<string, FeatureKey> = {
   workouts: "offseason", leaderboard: "offseason", library: "offseason", challenges: "offseason",
   h2h: "offseason", hof: "offseason", progress: "offseason", admin: "offseason",
   lifting: "lifting",
-  practices: "inseason", practicelibrary: "inseason", gamestats: "inseason", scoutsheets: "inseason", gameday: "inseason",
+  // drills_team isn't a page: it's the Drill Library's Team drills tab.
+  // The Drill Library itself (practicelibrary) has both kinds, so it's
+  // only hidden when both features are off (see tabsOff).
+  practices: "inseason", drills_team: "inseason", gamestats: "inseason", scoutsheets: "inseason", gameday: "inseason",
   plays: "playbook", playbooks: "playbook",
   quizzes: "quizzes",
 };
@@ -50,6 +53,7 @@ export async function loadFeaturesOff(programId: string | null | undefined): Pro
 export function tabsOff(off: Set<FeatureKey>): Set<string> {
   const s = new Set<string>();
   for (const [tab, f] of Object.entries(TAB_FEATURE)) if (off.has(f)) s.add(tab);
+  if (off.has("inseason") && off.has("offseason")) s.add("practicelibrary");
   return s;
 }
 
