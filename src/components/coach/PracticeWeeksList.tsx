@@ -5,6 +5,7 @@
 // with a live "needs attention" badge and a click-through into
 // PracticeBuilder.
 
+import { time12 } from "../../lib/scheduleImport";
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   PracticeWeek, Practice, RosterWithCount, Season, getPracticeWeeks, getPracticesInWeek,
@@ -641,7 +642,7 @@ export default function PracticeWeeksList(props: Props) {
                             <input type="checkbox" checked={selectedForPrint.has(p.id)}
                               onClick={e => e.stopPropagation()}
                               onChange={() => toggleSelectForPrint(p.id)} />
-                            <div style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(p.practice_date)} @ {p.start_time.slice(0, 5)}</div>
+                            <div style={{ fontSize: 13, fontWeight: 600 }}>{formatDate(p.practice_date)} @ {time12(p.start_time)}</div>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <button onClick={e => { e.stopPropagation(); setPrintIds([p.id]); }} style={iconBtn} title="Print this practice">🖨️</button>
