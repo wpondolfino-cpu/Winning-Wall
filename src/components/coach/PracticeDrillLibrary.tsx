@@ -354,9 +354,21 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
               <textarea value={editDrill.description ?? ""} onChange={e => setEditDrill({ ...editDrill, description: e.target.value })} placeholder="Description" rows={3} style={{ ...inputStyle, resize: "vertical" as const }} />
               <input value={editDrill.video_url ?? ""} onChange={e => setEditDrill({ ...editDrill, video_url: e.target.value })} placeholder="YouTube link" style={inputStyle} />
               <VideoUrlNote url={editDrill.video_url} />
-              <select value={editDrill.category_name ?? ""} onChange={e => setEditDrill({ ...editDrill, category_name: e.target.value || null })} style={inputStyle}>
+              <select value={editDrill.category_name ?? ""} style={inputStyle}
+                onChange={async e => {
+                  if (e.target.value !== "__new__") { setEditDrill({ ...editDrill, category_name: e.target.value || null }); return; }
+                  // "+ New category…": make it, then pick it for this drill.
+                  const name = (window.prompt("New category name") ?? "").trim();
+                  if (!name) return;
+                  const { error } = await createPracticeDrillCategory(name);
+                  if (error && !/already exists/i.test(error)) { alert(error); return; }
+                  setCategories(await getPracticeDrillCategories());
+                  const match = categories.find(c => c.name.toLowerCase() === name.toLowerCase())?.name ?? name;
+                  setEditDrill(d => (d ? { ...d, category_name: match } : d));
+                }}>
                 <option value="">No category</option>
                 {categories.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                <option value="__new__">+ New category…</option>
               </select>
               <TagChipPicker all={allTags} value={editDrill.tags ?? []} onChange={tags => setEditDrill({ ...editDrill, tags })} />
               <div style={{ display: "flex", gap: 8 }}>
