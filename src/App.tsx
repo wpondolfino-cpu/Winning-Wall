@@ -34,6 +34,7 @@ import DrillLibrary from "./components/DrillLibrary";
 import PlaysHub from "./components/plays/PlaysHub";
 import GameStatsHub from "./components/game-stats/GameStatsHub";
 import ScoutSheetsHub from "./components/scouting/ScoutSheetsHub";
+import ScoutingPage from "./components/scouting/ScoutingPage";
 import PageErrorBoundary from "./components/PageErrorBoundary";
 import HelpButton from "./components/help/HelpButton";
 import ProgramSwitcher from "./components/ProgramSwitcher";
@@ -82,7 +83,8 @@ const COACH_NAV_CONFIG: NavItemConfig[] = [
   // "library" (Player Drills) item folded into it.
   { key: "practicelibrary", icon: "📚", label: "Drill Library",   section: "always" },
   { key: "gamestats",     icon: "📊", label: "Analytics",         section: "inseason" },
-  { key: "scoutsheets",   icon: "🔎", label: "Scout Sheets",      section: "inseason" },
+  // Calendar (who scouts which game) + Scout Sheets, as two tabs.
+  { key: "scoutsheets",   icon: "🔎", label: "Scouting",          section: "inseason" },
   { key: "quizzes",       icon: "📝", label: "Quizzes",           section: "inseason" },
   { key: "gameday",       icon: "📋", label: "Game Day",          section: "inseason" },
   { key: "players",       icon: "👥", label: "Players & Coaches", section: "always" },
@@ -111,7 +113,8 @@ const ADMIN_NAV_CONFIG: NavItemConfig[] = [
   // "library" (Player Drills) item folded into it.
   { key: "practicelibrary", icon: "📚", label: "Drill Library",   section: "always" },
   { key: "gamestats",     icon: "📊", label: "Analytics",         section: "inseason" },
-  { key: "scoutsheets",   icon: "🔎", label: "Scout Sheets",      section: "inseason" },
+  // Calendar (who scouts which game) + Scout Sheets, as two tabs.
+  { key: "scoutsheets",   icon: "🔎", label: "Scouting",          section: "inseason" },
   { key: "quizzes",       icon: "📝", label: "Quizzes",           section: "inseason" },
   { key: "gameday",       icon: "📋", label: "Game Day",          section: "inseason" },
   { key: "players",       icon: "👥", label: "Players & Coaches", section: "always" },
@@ -997,7 +1000,7 @@ export default function App() {
           {isCoach && coachTab === "schedule" && <SchedulePage role="coach" onOpenTab={(t, payload) => { setScheduleTarget(payload ?? null); setCoachTab(t as CoachTab); }} />}
           {isCoach && coachTab === "practices" && <PracticeWeeksList initialPracticeId={scheduleTarget?.practiceId ?? null} key={scheduleTarget?.practiceId ?? "list"} />}
           {isCoach && coachTab === "gamestats" && <GameStatsHub currentUserRole="coach" userId={user.id} initialGameId={scheduleTarget?.gameId ?? null} initialView={scheduleTarget?.view ?? null} key={scheduleTarget?.gameId ?? "hub"} />}
-          {isCoach && coachTab === "scoutsheets" && <ScoutSheetsHub canManage={true} initialGameId={scheduleTarget?.gameId ?? null} key={scheduleTarget?.gameId ?? "list"} />}
+          {isCoach && coachTab === "scoutsheets" && <ScoutingPage initialGameId={scheduleTarget?.gameId ?? null} key={scheduleTarget?.gameId ?? "page"} />}
           {isCoach && coachTab === "quizzes" && <QuizzesPage prefill={quizPrefill} onPrefillUsed={() => setQuizPrefill(null)} />}
           {isCoach && coachTab === "gameday" && <GameDaySheetsList initialSheetId={scheduleTarget?.sheetId ?? null} key={scheduleTarget?.sheetId ?? "list"} />}
           {isCoach && coachTab === "leaderboard" && <LeaderboardHub canManage={true} profile={displayProfile} />}
@@ -1041,7 +1044,7 @@ export default function App() {
           {isAdmin && adminTab === "plays" && <PlaysHub currentUserRole="admin"
             onMakeQuiz={(pb, quizId) => { setQuizPrefill({ playbookId: pb.id, name: pb.name, quizId }); setAdminTab("quizzes"); }} />}
           {isAdmin && adminTab === "gamestats" && <GameStatsHub currentUserRole="admin" userId={user.id} initialGameId={scheduleTarget?.gameId ?? null} initialView={scheduleTarget?.view ?? null} key={scheduleTarget?.gameId ?? "hub"} />}
-          {isAdmin && adminTab === "scoutsheets" && <ScoutSheetsHub canManage={true} initialGameId={scheduleTarget?.gameId ?? null} key={scheduleTarget?.gameId ?? "list"} />}
+          {isAdmin && adminTab === "scoutsheets" && <ScoutingPage initialGameId={scheduleTarget?.gameId ?? null} key={scheduleTarget?.gameId ?? "page"} />}
           {isAdmin && adminTab === "quizzes" && <QuizzesPage prefill={quizPrefill} onPrefillUsed={() => setQuizPrefill(null)} />}
           {isAdmin && adminTab === "gameday" && <GameDaySheetsList initialSheetId={scheduleTarget?.sheetId ?? null} key={scheduleTarget?.sheetId ?? "list"} />}
           {isAdmin && adminTab === "schedule" && <SchedulePage role="admin" onOpenTab={(t, payload) => { setScheduleTarget(payload ?? null); setAdminTab(t as AdminTab); }} />}

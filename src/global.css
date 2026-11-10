@@ -587,3 +587,11 @@ html[data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator {
 
 /* The shot tool icon is a white PNG: dark ink on the light theme. */
 html[data-theme="light"] .shot-icon { filter: brightness(0) opacity(0.85); }
+
+/* Scouting calendar, whole-week view: seven columns, stacked on a phone. */
+.scout-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.scout-week-col { border: 1px solid var(--border); border-radius: 10px; padding: 7px; min-height: 140px; background: var(--surface2); min-width: 0; }
+@media (max-width: 760px) {
+  .scout-week { grid-template-columns: 1fr; }
+  .scout-week-col { min-height: 0; }
+}

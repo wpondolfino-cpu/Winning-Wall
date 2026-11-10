@@ -131,8 +131,14 @@ const COACH: Record<string, Starter> = {
     "← Back steps back a screen; Undo removes the last saved trip.",
     "End the period with End Q, and the game with Finish game.",
   ]),
-  scoutsheets: S("Scout Sheets", "Opponent reports, one sheet per game. Players see a sheet once it's published.", [
-    "Open a game's sheet from the Schedule (Scout sheet), or from an opponent here.",
+  scoutsheets: S("Scouting", "Calendar: other teams' games and who's scouting them. Scout Sheets: opponent reports, one per game.", [
+    "Calendar: + Paste games from a schedule page or your spreadsheet; you check them before they're saved.",
+    "Assign as many coaches as you like to a game, each one Live (in the gym) or Film.",
+    "+ Add video link takes YouTube, Google Drive, Hudl, NFHS or any link. YouTube plays right on the card.",
+    "Rankings: paste the MIAA power rankings to show divisions and ranks and filter by them. Paste again weekly.",
+    "One night is for assigning; Whole week shows which nights are covered. Players never see the calendar.",
+    "Scout Sheets: players see a sheet once it's published.",
+    "Open a game's sheet from the Schedule (Scout sheet), from the Calendar, or from an opponent here.",
     "Scouted them before? Copy last sheet brings their roster, sets and defense.",
     "Publish when it's ready — players can't see drafts.",
     "Print gives a two-page sheet; the Quiz tab builds a scout quiz.",
