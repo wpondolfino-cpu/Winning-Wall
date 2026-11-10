@@ -335,8 +335,6 @@ function GameCard({ g, showDay, rankBy, ours, teamById, staff, me, coachLabel, a
 
   const assigned = new Set(g.assignments.map(a => a.coach_id));
   const free = staff.filter(s => !assigned.has(s.id));
-  const live = g.assignments.filter(a => a.mode === "live").length;
-  const film = g.assignments.length - live;
   const opponents = [g.away_team, g.home_team].map(t => ours.get(teamKey(t))).filter(Boolean) as OurGame[];
 
   const patchGame = (fn: (x: ScoutingGame) => ScoutingGame) => (gs: ScoutingGame[]) => gs.map(x => x.id === g.id ? fn(x) : x);
@@ -384,50 +382,9 @@ function GameCard({ g, showDay, rankBy, ours, teamById, staff, me, coachLabel, a
         </div>
       </div>}
 
-      {/* Scouts */}
-      <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
-        {g.assignments.map(a => (
-          <span key={a.id} title={staff.find(s => s.id === a.coach_id)?.name ?? ""}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, padding: "3px 4px 3px 9px", borderRadius: 8,
-              border: `1px solid ${a.mode === "film" ? FILM : LIVE}`, color: a.mode === "film" ? FILM : LIVE, background: "var(--surface)" }}>
-            {a.coach_id === me ? "You" : `Coach ${coachLabel(a.coach_id)}`}
-            <span style={{ display: "inline-flex", borderRadius: 6, overflow: "hidden", border: "1px solid var(--border)" }}>
-              {(["live", "film"] as ScoutMode[]).map(m => (
-                <button key={m} type="button" onClick={() => a.mode !== m && act(setScoutMode(a.id, m), patchGame(x => ({ ...x, assignments: x.assignments.map(y => y.id === a.id ? { ...y, mode: m } : y) })))}
-                  style={{ fontSize: 11, padding: "2px 8px", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600,
-                    background: a.mode === m ? (m === "film" ? FILM : LIVE) : "transparent", color: a.mode === m ? "#fff" : "var(--muted)" }}>
-                  {m === "live" ? "Live" : "Film"}
-                </button>
-              ))}
-            </span>
-            <button type="button" title="Remove" aria-label="Remove scout"
-              onClick={() => act(removeScout(a.id), patchGame(x => ({ ...x, assignments: x.assignments.filter(y => y.id !== a.id) })))}
-              style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 14, padding: "0 4px", lineHeight: 1 }}>×</button>
-          </span>
-        ))}
-        {free.length > 0 && (
-          <select value="" onChange={e => { const id = e.target.value; if (id) act(addScout(g.id, id)); }}
-            style={{ ...inputStyle, padding: "5px 8px", fontSize: 12.5, width: "auto" }}>
-            <option value="">{g.assignments.length ? "+ Add coach" : "Assign scouts…"}</option>
-            {me && !assigned.has(me) && <option value={me}>Me</option>}
-            {free.filter(s => s.id !== me).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        )}
-        {opponents.map(o => (
-          <button key={o.id} type="button" style={linkBtn} onClick={() => onOpenSheet(o.id)}>
-            Open {o.opponent} scout sheet →
-          </button>
-        ))}
-      </div>
-      {g.assignments.length > 0 && (
-        <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>
-          {[live && `${live} live`, film && `${film} on film`].filter(Boolean).join(" · ")}
-        </div>
-      )}
-
       {/* Video */}
       {(g.videos.length > 0 || addingVideo) && (
-        <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid var(--border)", display: "grid", gap: 6 }}>
+        <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
           {g.videos.map(v => {
             const info = videoInfo(v.url);
             return (
@@ -476,19 +433,52 @@ function GameCard({ g, showDay, rankBy, ours, teamById, staff, me, coachLabel, a
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, gap: 8 }}>
-        {!addingVideo
-          ? <button type="button" onClick={() => setAddingVideo(true)} style={{ background: "none", border: "none", color: "var(--royal-light)", cursor: "pointer", fontSize: 12, padding: 0, fontFamily: "inherit" }}>+ Add video link</button>
-          : <span />}
-        <span style={{ display: "flex", gap: 14 }}>
-        <button type="button" onClick={() => setEditing(true)}
-          style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 11.5, padding: 0, fontFamily: "inherit" }}>Edit game</button>
-        <button type="button"
-          onClick={() => {
-            const extra = g.assignments.length || g.videos.length ? " Its scouts and video links go with it." : "";
-            if (confirm(`Remove ${g.away_team} at ${g.home_team} from the calendar?${extra}`)) act(deleteScoutingGame(g.id), gs => gs.filter(x => x.id !== g.id));
-          }}
-          style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 11.5, padding: 0, fontFamily: "inherit" }}>Remove game</button>
+      {/* Scouts, then the card's actions, all on one row */}
+      <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+        {g.assignments.map(a => (
+          <span key={a.id} title={staff.find(s => s.id === a.coach_id)?.name ?? ""}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, padding: "3px 4px 3px 9px", borderRadius: 8,
+              border: `1px solid ${a.mode === "film" ? FILM : LIVE}`, color: a.mode === "film" ? FILM : LIVE, background: "var(--surface)" }}>
+            {a.coach_id === me ? "You" : `Coach ${coachLabel(a.coach_id)}`}
+            <span style={{ display: "inline-flex", borderRadius: 6, overflow: "hidden", border: "1px solid var(--border)" }}>
+              {(["live", "film"] as ScoutMode[]).map(m => (
+                <button key={m} type="button" onClick={() => a.mode !== m && act(setScoutMode(a.id, m), patchGame(x => ({ ...x, assignments: x.assignments.map(y => y.id === a.id ? { ...y, mode: m } : y) })))}
+                  style={{ fontSize: 11, padding: "2px 8px", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600,
+                    background: a.mode === m ? (m === "film" ? FILM : LIVE) : "transparent", color: a.mode === m ? "#fff" : "var(--muted)" }}>
+                  {m === "live" ? "Live" : "Film"}
+                </button>
+              ))}
+            </span>
+            <button type="button" title="Remove" aria-label="Remove scout"
+              onClick={() => act(removeScout(a.id), patchGame(x => ({ ...x, assignments: x.assignments.filter(y => y.id !== a.id) })))}
+              style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 14, padding: "0 4px", lineHeight: 1 }}>×</button>
+          </span>
+        ))}
+        {free.length > 0 && (
+          <select value="" onChange={e => { const id = e.target.value; if (id) act(addScout(g.id, id)); }}
+            style={{ ...inputStyle, padding: "5px 8px", fontSize: 12.5, width: "auto" }}>
+            <option value="">{g.assignments.length ? "+ Add coach" : "Assign scouts…"}</option>
+            {me && !assigned.has(me) && <option value={me}>Me</option>}
+            {free.filter(s => s.id !== me).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        )}
+        {opponents.map(o => (
+          <button key={o.id} type="button" style={linkBtn} onClick={() => onOpenSheet(o.id)}>
+            Open {o.opponent} scout sheet →
+          </button>
+        ))}
+        {!addingVideo && (
+          <button type="button" onClick={() => setAddingVideo(true)} style={{ background: "none", border: "none", color: "var(--royal-light)", cursor: "pointer", fontSize: 12, padding: "0 4px", fontFamily: "inherit" }}>+ Add video link</button>
+        )}
+        <span style={{ display: "flex", gap: 14, marginLeft: "auto" }}>
+          <button type="button" onClick={() => setEditing(true)}
+            style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 11.5, padding: 0, fontFamily: "inherit" }}>Edit game</button>
+          <button type="button"
+            onClick={() => {
+              const extra = g.assignments.length || g.videos.length ? " Its scouts and video links go with it." : "";
+              if (confirm(`Remove ${g.away_team} at ${g.home_team} from the calendar?${extra}`)) act(deleteScoutingGame(g.id), gs => gs.filter(x => x.id !== g.id));
+            }}
+            style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 11.5, padding: 0, fontFamily: "inherit" }}>Remove game</button>
         </span>
       </div>
     </div>
