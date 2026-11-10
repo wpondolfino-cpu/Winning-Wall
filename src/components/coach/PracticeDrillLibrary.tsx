@@ -40,6 +40,10 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [tagFilter, setTagFilter]   = useState<string[]>([]);
   const [starredOnly, setStarredOnly] = useState(false);
+  // Tags work like the player drills page: hidden behind a search on
+  // "All", shown under a category as smaller 🏷️ chips.
+  const [tagSearchOpen, setTagSearchOpen] = useState(false);
+  const [tagSearchQuery, setTagSearchQuery] = useState("");
   const [search, setSearch]         = useState("");
   // Which library the picker is showing. Player drills are the scored
   // offseason ones -- a shooting or dribbling drill you'd also want to run
@@ -215,10 +219,11 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search drills…" style={{ ...inputStyle, width: "100%", marginBottom: 10, boxSizing: "border-box" }} />
 
       <div style={{ display: source === "player" ? "none" : "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-        <button onClick={() => setCategoryFilter(null)} style={categoryFilter === null ? chipActive : chip}>All</button>
+        <button onClick={() => { setCategoryFilter(null); setTagFilter([]); }} style={categoryFilter === null ? chipActive : chip}>All</button>
         {categories.map(c => (
-          <button key={c.name} onClick={() => setCategoryFilter(c.name)} style={categoryFilter === c.name ? chipActive : chip}>{c.name}</button>
+          <button key={c.name} onClick={() => { setCategoryFilter(c.name); setTagFilter([]); }} style={categoryFilter === c.name ? chipActive : chip}>{c.name}</button>
         ))}
+        <button onClick={() => setStarredOnly(s => !s)} style={starredOnly ? chipActive : chip}>★ Starred</button>
         {canManage && (showNewCategory ? (
           <span style={{ display: "flex", gap: 4 }}>
             <input value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder="Category name" style={{ ...inputStyle, width: 120 }} />
@@ -229,13 +234,45 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
         ))}
       </div>
 
-      <div style={{ display: source === "player" ? "none" : "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
-        <button onClick={() => setStarredOnly(s => !s)} style={starredOnly ? chipActive : chip}>★ Starred</button>
-        {allTags.map(t => (
-          <button key={t} onClick={() => setTagFilter(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])}
-            style={tagFilter.includes(t) ? chipActive : chip}>{t}</button>
-        ))}
-      </div>
+      {/* Tags: smaller, square, 🏷️ -- never mistaken for a category. On
+          "All" they sit behind one search; with a category picked, the
+          tags its drills use appear underneath. */}
+      {source !== "player" && (() => {
+        const inCategory = Array.from(new Set(Object.values(tagsByDrill).flat())).sort((a, b) => a.localeCompare(b));
+        const toggle = (t: string) => setTagFilter(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+        if (categoryFilter) {
+          if (!inCategory.length) return null;
+          return (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, paddingLeft: 8 }}>
+              {inCategory.map(t => (
+                <button key={t} onClick={() => toggle(t)} style={tagFilter.includes(t) ? tagChipActive : tagChip}>🏷️ {t}</button>
+              ))}
+            </div>
+          );
+        }
+        if (!allTags.length) return null;
+        return (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, paddingLeft: 8, alignItems: "flex-start" }}>
+            {tagFilter.map(t => (
+              <button key={t} onClick={() => toggle(t)} style={tagChipActive}>🏷️ {t} ✕</button>
+            ))}
+            {!tagSearchOpen ? (
+              <button onClick={() => setTagSearchOpen(true)} style={tagChip}>🏷️ Filter by tag</button>
+            ) : (
+              <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, maxWidth: 340 }}>
+                <input value={tagSearchQuery} onChange={e => setTagSearchQuery(e.target.value)} placeholder="Search tags…" autoFocus
+                  style={{ ...inputStyle, fontSize: 12, padding: "6px 9px", marginBottom: 6 }} />
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                  {allTags.filter(t => !tagFilter.includes(t) && t.toLowerCase().includes(tagSearchQuery.toLowerCase())).map(t => (
+                    <button key={t} onClick={() => { toggle(t); setTagSearchOpen(false); setTagSearchQuery(""); }} style={tagChip}>{t}</button>
+                  ))}
+                  <button onClick={() => { setTagSearchOpen(false); setTagSearchQuery(""); }} style={{ ...tagChip, border: "none" }}>Close</button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {isPicker && recent.length > 0 && !search && !categoryFilter && tagFilter.length === 0 && !starredOnly && (
         <div style={{ marginBottom: 14 }}>
@@ -378,6 +415,8 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
   return content;
 }
 
+const tagChip: React.CSSProperties = { padding: "4px 10px", borderRadius: 6, border: "1px solid var(--border)", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, background: "transparent", color: "var(--muted)" };
+const tagChipActive: React.CSSProperties = { ...tagChip, background: "var(--gold)", color: "#1a1a1a", border: "1px solid var(--gold)" };
 const overlayStyle: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 };
 const modalStyle: React.CSSProperties = { background: "var(--surface)", borderRadius: 16, width: "min(560px, 96vw)", maxHeight: "90vh", overflowY: "auto", padding: 20 };
 const inputStyle: React.CSSProperties = {
