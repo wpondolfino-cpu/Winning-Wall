@@ -25,6 +25,8 @@ export interface ScoutingGame {
   tip_time: string | null;      // HH:MM[:SS]
   away_team: string;
   home_team: string;
+  /** Only set when it isn't the home team's gym (a neutral site). */
+  location: string | null;
   note: string | null;
   assignments: ScoutAssignment[];
   videos: ScoutVideo[];
@@ -61,14 +63,14 @@ export function addDays(d: Date, n: number): Date {
 export async function getScoutingGames(from: string, to: string): Promise<ScoutingGame[]> {
   const { data, error } = await supabase
     .from("scouting_games")
-    .select("id, game_date, tip_time, away_team, home_team, note, scouting_assignments(id, coach_id, mode), scouting_videos(id, url, note, created_at)")
+    .select("id, game_date, tip_time, away_team, home_team, location, note, scouting_assignments(id, coach_id, mode), scouting_videos(id, url, note, created_at)")
     .gte("game_date", from).lte("game_date", to)
     .order("game_date", { ascending: true })
     .order("tip_time", { ascending: true, nullsFirst: false })
     .order("home_team", { ascending: true });
   if (error) throw error;
   return ((data ?? []) as any[]).map(g => ({
-    id: g.id, game_date: g.game_date, tip_time: g.tip_time, away_team: g.away_team, home_team: g.home_team, note: g.note,
+    id: g.id, game_date: g.game_date, tip_time: g.tip_time, away_team: g.away_team, home_team: g.home_team, location: g.location ?? null, note: g.note,
     assignments: (g.scouting_assignments ?? []) as ScoutAssignment[],
     videos: ((g.scouting_videos ?? []) as ScoutVideo[]).sort((a, b) => a.created_at.localeCompare(b.created_at)),
   }));
@@ -131,6 +133,22 @@ export async function addScoutingGames(rows: NewScoutingGame[]): Promise<{ added
     }
     return { added: fresh.length, skipped: rows.length - fresh.length, error: null };
   } catch (e) { return { added: 0, skipped: 0, ...fail(e) }; }
+}
+
+/**
+ * Changes a game's date, time, teams or location. A location that's just
+ * the home team's name is cleared, since that's where it's played anyway.
+ */
+export async function updateScoutingGame(id: string, patch: { game_date: string; tip_time: string | null; away_team: string; home_team: string; location: string | null }): Promise<Result> {
+  const away = patch.away_team.trim(), home = patch.home_team.trim();
+  if (!away || !home) return { error: "Both teams need a name." };
+  if (!patch.game_date) return { error: "Pick a date." };
+  let location = patch.location?.trim() || null;
+  if (location && teamKey(location) === teamKey(home)) location = null;
+  const { error } = await supabase.from("scouting_games")
+    .update({ game_date: patch.game_date, tip_time: patch.tip_time || null, away_team: away, home_team: home, location }).eq("id", id);
+  if (error?.code === "23505") return { error: "That game is already on the calendar for that date." };
+  return { error: error?.message ?? null };
 }
 
 export async function deleteScoutingGame(id: string): Promise<Result> {
