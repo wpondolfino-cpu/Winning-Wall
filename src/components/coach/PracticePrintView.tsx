@@ -96,11 +96,18 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                       <td style={{ padding: "6px 8px" }}>
                         {row.drill.groups.length === 0 ? "—" : row.drill.groups.map((g, gi) => (
                           <div key={gi} style={{ marginBottom: 4 }}>
-                            <span style={{ fontWeight: 700 }}>{g.label}:</span> {g.memberNames.join(", ") || "(empty)"}
+                            <span style={{ fontWeight: 700 }}>
+                              {g.label}{g.place ? ` · ${g.place}` : ""}{g.coachNames?.length ? ` · Coach ${g.coachNames.join(" & ")}` : ""}:
+                            </span> {g.memberNames.join(", ") || "(empty)"}
                           </div>
                         ))}
                       </td>
-                      <td style={{ padding: "6px 8px" }}>{row.drill.coachNames.join(", ") || "—"}</td>
+                      <td style={{ padding: "6px 8px" }}>
+                        {/* Coaches by group when the groups have them ("Houle (A)"), otherwise the drill's. */}
+                        {row.drill.groups.some(g => g.coachNames?.length)
+                          ? row.drill.groups.filter(g => g.coachNames?.length).map(g => `${g.coachNames!.join(" & ")} (${g.label.replace(/^Group /, "")})`).join(", ")
+                          : row.drill.coachNames.join(", ") || "—"}
+                      </td>
                     </tr>
                   ));
                 })}
