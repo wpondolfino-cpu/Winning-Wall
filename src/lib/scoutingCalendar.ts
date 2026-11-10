@@ -38,7 +38,25 @@ const fail = (e: any): Result => ({ error: e?.message ?? String(e) });
 
 /** A team name squashed to letters and digits -- the same rule the database uses. */
 export function teamKey(name: string): string {
-  return (name ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return shortTeamName(name ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** An opponent nobody knows yet (a tournament's second round): TBA, TBD, "To be determined". */
+export function isTBA(name: string | null | undefined): boolean {
+  return /^\(?\s*(tba|tbd|to be (announced|determined)|opponent tba|opponent tbd)\s*\)?$/i.test((name ?? "").trim());
+}
+
+/**
+ * Drops "High School" / "HS" off the end of a name, so "Andover High
+ * School" and "Andover" are the same team -- on the calendar, in the
+ * rankings and against our own schedule. Everything else is kept
+ * ("Billerica Memorial High School" -> "Billerica Memorial").
+ */
+export function shortTeamName(name: string): string {
+  const s = (name ?? "").replace(/\s+/g, " ").trim();
+  if (isTBA(s)) return "TBA";
+  const short = s.replace(/[\s,-]+(high\s+school|h\.?\s?s\.?|high|school)$/i, "").trim();
+  return short || s;
 }
 
 // ── Dates ────────────────────────────────────────────────────
@@ -110,7 +128,16 @@ export async function getOurUpcomingGames(): Promise<Map<string, OurGame>> {
 }
 
 // ── Games ────────────────────────────────────────────────────
-export interface NewScoutingGame { game_date: string; tip_time: string | null; away_team: string; home_team: string }
+export interface NewScoutingGame { game_date: string; tip_time: string | null; away_team: string; home_team: string; location?: string | null }
+
+/** A location that's just the home team is no location at all. */
+export function cleanLocation(location: string | null | undefined, home: string): string | null {
+  const l = (location ?? "").trim();
+  return l && teamKey(l) !== teamKey(home) ? l : null;
+}
+
+/** The same game, whoever's spelling: date + both teams. */
+export const gameKey = (g: { game_date: string; away_team: string; home_team: string }) => `${g.game_date}|${teamKey(g.away_team)}|${teamKey(g.home_team)}`;
 
 /** Adds games, skipping any already on the calendar. Returns how many were added. */
 export async function addScoutingGames(rows: NewScoutingGame[]): Promise<{ added: number; skipped: number; error: string | null }> {
@@ -118,13 +145,14 @@ export async function addScoutingGames(rows: NewScoutingGame[]): Promise<{ added
   try {
     const dates = rows.map(r => r.game_date).sort();
     const existing = await getScoutingGames(dates[0], dates[dates.length - 1]);
-    const have = new Set(existing.map(g => `${g.game_date}|${teamKey(g.away_team)}|${teamKey(g.home_team)}`));
+    const have = new Set(existing.map(gameKey));
     const fresh: NewScoutingGame[] = [];
     for (const r of rows) {
-      const k = `${r.game_date}|${teamKey(r.away_team)}|${teamKey(r.home_team)}`;
+      const k = gameKey(r);
       if (have.has(k)) continue;
       have.add(k);
-      fresh.push({ game_date: r.game_date, tip_time: r.tip_time, away_team: r.away_team.trim(), home_team: r.home_team.trim() });
+      const away = shortTeamName(r.away_team), home = shortTeamName(r.home_team);
+      fresh.push({ game_date: r.game_date, tip_time: r.tip_time, away_team: away, home_team: home, location: cleanLocation(r.location, home) });
     }
     if (fresh.length) {
       const { data: { user } } = await supabase.auth.getUser();
@@ -140,11 +168,10 @@ export async function addScoutingGames(rows: NewScoutingGame[]): Promise<{ added
  * the home team's name is cleared, since that's where it's played anyway.
  */
 export async function updateScoutingGame(id: string, patch: { game_date: string; tip_time: string | null; away_team: string; home_team: string; location: string | null }): Promise<Result> {
-  const away = patch.away_team.trim(), home = patch.home_team.trim();
+  const away = shortTeamName(patch.away_team), home = shortTeamName(patch.home_team);
   if (!away || !home) return { error: "Both teams need a name." };
   if (!patch.game_date) return { error: "Pick a date." };
-  let location = patch.location?.trim() || null;
-  if (location && teamKey(location) === teamKey(home)) location = null;
+  const location = cleanLocation(patch.location, home);
   const { error } = await supabase.from("scouting_games")
     .update({ game_date: patch.game_date, tip_time: patch.tip_time || null, away_team: away, home_team: home, location }).eq("id", id);
   if (error?.code === "23505") return { error: "That game is already on the calendar for that date." };
@@ -235,7 +262,7 @@ export async function saveRankings(rows: Ranking[]): Promise<Result> {
     // One row per team: if a team appears twice, the first one wins.
     const seen = new Set<string>();
     const clean = rows.filter(r => { const k = teamKey(r.team); if (!k || seen.has(k)) return false; seen.add(k); return true; })
-      .map(r => ({ team: r.team.trim(), division: r.division, rank: r.rank, record: r.record, updated_at: new Date().toISOString() }));
+      .map(r => ({ team: shortTeamName(r.team), division: r.division, rank: r.rank, record: r.record, updated_at: new Date().toISOString() }));
     const { error } = await supabase.from("scouting_rankings").insert(clean);
     if (error) throw error;
     return { error: null };
@@ -243,7 +270,10 @@ export async function saveRankings(rows: Ranking[]): Promise<Result> {
 }
 
 // ── Pasting games ────────────────────────────────────────────
-export interface ParsedGame extends NewScoutingGame { problem: string | null; raw: string }
+export interface ParsedGame extends NewScoutingGame {
+  problem: string | null; raw: string;
+}
+
 
 const MONTHS: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
 
@@ -319,7 +349,7 @@ export function parseScoutingPaste(raw: string, startYear = seasonStartYear()): 
     if (date && !time && cells.length === 0) { currentDate = date.iso; continue; }   // a day heading
     if (date) currentDate = date.iso;
 
-    let away = "", home = "";
+    let away = "", home = "", location: string | null = null;
     const joined = cells.join(" ");
     const at = joined.match(/^(.+?)\s+(?:at|@)\s+(.+)$/i);
     const vs = joined.match(/^(.+?)\s+(?:vs\.?|v\.?)\s+(.+)$/i);
@@ -328,9 +358,13 @@ export function parseScoutingPaste(raw: string, startYear = seasonStartYear()): 
     else {
       cells = cells.filter(c => !/^(@|at|vs\.?|v)$/i.test(c));
       if (cells.length >= 2) { away = cells[0]; home = cells[1]; }
+      // A spreadsheet's next column can be where it's played -- but not
+      // the level, the league or a result some schedules put there.
+      const third = cells[2];
+      if (third && !/^(boys|girls|varsity|jv|junior varsity|freshman|basketball|league|non-league|conference|tournament|scrimmage|home|away|neutral|final|tbd|tba|postponed|cancell?ed|[wlt]|\d+\s*-\s*\d+)\b/i.test(third)) location = third;
     }
 
-    const g: ParsedGame = { game_date: currentDate ?? "", tip_time: time?.hhmm ?? null, away_team: away, home_team: home, problem: null, raw: line };
+    const g: ParsedGame = { game_date: currentDate ?? "", tip_time: time?.hhmm ?? null, away_team: shortTeamName(away), home_team: shortTeamName(home), location: cleanLocation(location, home), problem: null, raw: line };
     if (!away && !home) {
       if (!date) { g.problem = "couldn't find two teams"; out.push(g); }
       continue;
