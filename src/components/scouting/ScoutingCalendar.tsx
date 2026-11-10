@@ -27,7 +27,7 @@ import { inputStyle } from "../../lib/inputStyle";
 import {
   ScoutingGame, Ranking, OurGame, ScoutMode, getScoutingGames, getRankings, getOurUpcomingGames,
   addScout, setScoutMode, removeScout, addVideo, removeVideo, deleteScoutingGame, updateScoutingGame, videoInfo,
-  teamKey, isTBA, isoDate, parseIso, weekStart, addDays,
+  teamKey, isTBA, isoDate, parseIso, weekStart, addDays, seasonStartYear,
 } from "../../lib/scoutingCalendar";
 import { PasteGamesModal, AddGameModal, RankingsModal } from "./ScoutingImport";
 
@@ -82,16 +82,43 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
 
   const [modal, setModal] = useState<null | "paste" | "add" | "rankings">(null);
   const [allTeamNames, setAllTeamNames] = useState<string[]>([]);
+  // One team's whole season, instead of a week (tap a team's name, or pick one).
+  const [teamFocus, setTeamFocus] = useState<string | null>(null);
+  const [teamPick, setTeamPick] = useState("");
 
   useEffect(() => { try { localStorage.setItem(VIEW_KEY, view); } catch { /* fine */ } }, [view]);
 
   const from = isoDate(week), to = isoDate(addDays(week, 6));
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => isoDate(addDays(week, i))), [from]);
 
+  const loadTeamNames = useCallback(async () => {
+    const { data } = await supabase.from("scouting_games").select("away_team, home_team");
+    const names = new Map<string, string>();
+    ((data ?? []) as any[]).flatMap(g => [g.away_team, g.home_team]).forEach((n: string) => {
+      if (n && !isTBA(n) && !names.has(teamKey(n))) names.set(teamKey(n), n);
+    });
+    const list = [...names.values()].sort((a, b) => a.localeCompare(b));
+    setAllTeamNames(list);
+    return list;
+  }, []);
+
   const loadGames = useCallback(async () => {
-    try { setGames(await getScoutingGames(from, to)); setErr(null); }
-    catch (e: any) { setErr(e?.message ?? "Couldn't load the calendar."); }
-  }, [from, to]);
+    try {
+      if (teamFocus) {
+        // The whole season (Aug to Jul) for one team.
+        const y = seasonStartYear();
+        const k = teamKey(teamFocus);
+        const all = await getScoutingGames(`${y}-08-01`, `${y + 1}-07-31`);
+        setGames(all.filter(g => teamKey(g.away_team) === k || teamKey(g.home_team) === k)
+          .sort((x, y) => (x.game_date + (x.tip_time ?? "")).localeCompare(y.game_date + (y.tip_time ?? ""))));
+      } else {
+        setGames(await getScoutingGames(from, to));
+      }
+      setErr(null);
+    } catch (e: any) { setErr(e?.message ?? "Couldn't load the calendar."); }
+  }, [from, to, teamFocus]);
+
+  useEffect(() => { loadTeamNames(); }, [loadTeamNames]);
 
   // Everything that doesn't change week to week.
   useEffect(() => {
@@ -152,9 +179,14 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
   }
 
   async function openAllTeams(m: "rankings") {
-    const { data } = await supabase.from("scouting_games").select("away_team, home_team");
-    setAllTeamNames(Array.from(new Set(((data ?? []) as any[]).flatMap(g => [g.away_team, g.home_team]))));
+    await loadTeamNames();
     setModal(m);
+  }
+
+  function showTeam(name: string) {
+    if (!name || isTBA(name)) return;
+    setTeamFocus(name); setTeamPick("");
+    window.scrollTo?.({ top: 0, behavior: "smooth" });
   }
 
   const weekLabel = (() => {
@@ -165,6 +197,48 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
 
   const nightGames = mine ? games.filter(pass) : games.filter(g => g.game_date === day && pass(g));
   const nightTotal = mine ? games.length : games.filter(g => g.game_date === day).length;
+
+  if (teamFocus) {
+    const k = teamKey(teamFocus);
+    const r = rankBy.get(k), o = ours.get(k);
+    const upcoming = games.filter(g => g.game_date >= today).length;
+    let dividerShown = false;
+    return (
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+          <button type="button" style={actionBtn} onClick={() => setTeamFocus(null)}>← Calendar</button>
+          <span style={{ fontSize: 19, fontWeight: 800 }}>{teamFocus}</span>
+          {r && <span style={{ fontSize: 12, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "rgba(37,80,212,0.14)", color: "var(--info-text, var(--royal-light))" }}>D{r.division}{r.rank ? ` #${r.rank}` : ""}{r.record ? ` · ${r.record}` : ""}</span>}
+          {o && <span style={{ fontSize: 12, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "rgba(240,192,64,0.16)", color: "var(--gold-text)" }}>We play them {monthDay(o.game_date)}</span>}
+        </div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
+          {loading ? "Loading…" : `${games.length} game${games.length === 1 ? "" : "s"} on the calendar this season · ${upcoming} still to play. Only games you've pasted or added show here.`}
+        </div>
+        {err && <div className="error-msg">{err}</div>}
+        <div style={{ display: "grid", gap: 10 }}>
+          {games.map(g => {
+            const past = g.game_date < today;
+            const divider = !past && !dividerShown && games.some(x => x.game_date < today);
+            if (!past) dividerShown = true;
+            return (
+              <div key={g.id}>
+                {divider && <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--gold-text)", margin: "6px 0 8px", letterSpacing: 0.5 }}>UPCOMING</div>}
+                <div style={{ opacity: past ? 0.6 : 1 }}>
+                  <GameCard g={g} showDay={true} rankBy={rankBy} ours={ours} teamById={teamById} focus={k} onTeam={showTeam}
+                    staff={staff} me={me} coachLabel={coachLabel} act={act} onOpenSheet={onOpenSheet} />
+                </div>
+              </div>
+            );
+          })}
+          {!loading && games.length === 0 && (
+            <div style={{ fontSize: 13, color: "var(--muted)", padding: "18px 12px", textAlign: "center", border: "1px dashed var(--border)", borderRadius: 12 }}>
+              No games for {teamFocus} this season yet. + Paste games from their schedule to fill it in.
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -222,8 +296,17 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
         <button type="button" style={chip(onlyOurs)} onClick={() => setOnlyOurs(v => !v)}>Teams we play</button>
         <button type="button" style={chip(mine)} onClick={() => { setMine(v => !v); setNeeds(false); }}>My scouting</button>
         <button type="button" style={chip(needs)} onClick={() => { setNeeds(v => !v); setMine(false); }}>Needs a scout</button>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search a team"
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search this week"
           style={{ ...inputStyle, flex: "1 1 140px", minWidth: 120, padding: "6px 10px", fontSize: 13 }} />
+        <input value={teamPick} list="scout-team-names" placeholder="Team schedule…"
+          onChange={e => {
+            const v = e.target.value; setTeamPick(v);
+            const hit = allTeamNames.find(n => teamKey(n) === teamKey(v));
+            if (hit && allTeamNames.some(n => n === v)) showTeam(hit);   // picked from the list
+          }}
+          onKeyDown={e => { if (e.key === "Enter") { const hit = allTeamNames.find(n => teamKey(n) === teamKey(teamPick)); if (hit) showTeam(hit); } }}
+          style={{ ...inputStyle, flex: "1 1 160px", minWidth: 140, padding: "6px 10px", fontSize: 13 }} />
+        <datalist id="scout-team-names">{allTeamNames.map(n => <option key={n} value={n} />)}</datalist>
       </div>
       {divisionsOnFile.length === 0 && (
         <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: -6, marginBottom: 10 }}>
@@ -242,7 +325,7 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
           </div>
           <div style={{ display: "grid", gap: 10 }}>
             {nightGames.map(g => (
-              <GameCard key={g.id} g={g} showDay={mine} rankBy={rankBy} ours={ours} teamById={teamById}
+              <GameCard key={g.id} g={g} showDay={mine} rankBy={rankBy} ours={ours} teamById={teamById} onTeam={showTeam}
                 staff={staff} me={me} coachLabel={coachLabel} act={act} onOpenSheet={onOpenSheet} />
             ))}
             {!loading && nightGames.length === 0 && (
@@ -305,12 +388,12 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
       </div>
 
       {modal === "paste" && <PasteGamesModal onClose={() => setModal(null)} onSaved={first => {
-        setModal(null);
+        setModal(null); loadTeamNames();
         if (first) { setWeek(weekStart(parseIso(first))); setDay(first); }
         loadGames();
       }} />}
       {modal === "add" && <AddGameModal defaultDate={days.includes(day) ? day : from} onClose={() => setModal(null)} onSaved={d => {
-        setModal(null); setWeek(weekStart(parseIso(d))); setDay(d); setView("night"); loadGames();
+        setModal(null); loadTeamNames(); setWeek(weekStart(parseIso(d))); setDay(d); setView("night"); loadGames();
       }} />}
       {modal === "rankings" && <RankingsModal current={rankings} scheduleTeams={allTeamNames} onClose={() => setModal(null)} onSaved={async () => {
         setModal(null); setRankings(await getRankings().catch(() => []));
@@ -320,8 +403,12 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
 }
 
 // ── One game ─────────────────────────────────────────────────
-function GameCard({ g, showDay, rankBy, ours, teamById, staff, me, coachLabel, act, onOpenSheet }: {
+function GameCard({ g, showDay, rankBy, ours, teamById, staff, me, coachLabel, act, onOpenSheet, onTeam, focus }: {
   g: ScoutingGame; showDay: boolean;
+  /** Tapping a team's name opens its whole schedule. */
+  onTeam: (name: string) => void;
+  /** On a team's schedule: that team's key (its name isn't a link there). */
+  focus?: string;
   rankBy: Map<string, Ranking>; ours: Map<string, OurGame>; teamById: Map<string, TeamTag>;
   staff: { id: string; name: string }[]; me: string | null; coachLabel: (id: string) => string;
   act: (p: Promise<{ error: string | null }>, optimistic?: (gs: ScoutingGame[]) => ScoutingGame[]) => Promise<void>;
@@ -341,13 +428,18 @@ function GameCard({ g, showDay, rankBy, ours, teamById, staff, me, coachLabel, a
 
   // A team's name with its division/rank and, if we play them, when.
   const team = (name: string) => {
+    // On a team's own schedule its badges are in the heading, not on every game.
+    if (focus === teamKey(name)) return <span style={{ fontSize: 15, fontWeight: 700 }}>{name}</span>;
     if (isTBA(name)) return <span title="Opponent not known yet; Edit game once it is" style={{ fontSize: 15, fontWeight: 600, color: "var(--muted)", fontStyle: "italic" }}>TBA</span>;
     const r = rankBy.get(teamKey(name));
     const o = ours.get(teamKey(name));
     const t = o?.roster_id ? teamById.get(o.roster_id) : null;
     return (
       <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 15, fontWeight: 700 }}>{name}</span>
+        {focus === teamKey(name)
+          ? <span style={{ fontSize: 15, fontWeight: 700 }}>{name}</span>
+          : <button type="button" onClick={() => onTeam(name)} title={`${name}'s schedule`}
+              style={{ fontSize: 15, fontWeight: 700, background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--text)", fontFamily: "inherit", textAlign: "left", textDecoration: "underline", textDecorationColor: "var(--border)", textUnderlineOffset: 3 }}>{name}</button>}
         {r && <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 7px", borderRadius: 6, background: "rgba(37,80,212,0.14)", color: "var(--info-text, var(--royal-light))" }}>D{r.division}{r.rank ? ` #${r.rank}` : ""}{r.record ? ` · ${r.record}` : ""}</span>}
         {o && (
           <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 7px", borderRadius: 6, background: "rgba(240,192,64,0.16)", color: "var(--gold-text)", display: "inline-flex", alignItems: "center", gap: 5 }}>
