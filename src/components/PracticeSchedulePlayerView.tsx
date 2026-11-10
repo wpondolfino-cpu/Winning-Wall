@@ -78,7 +78,9 @@ export default function PracticeSchedulePlayerView({ homeRosterId, practiceId }:
                   {d.groups.length > 0 && (
                     <div style={{ marginTop: 4 }}>
                       {d.groups.map((g, gi) => (
-                        <div key={gi} style={{ fontSize: 11, color: "var(--muted)" }}>{g.label}: {g.memberNames.join(", ")}</div>
+                        <div key={gi} style={{ fontSize: 11, color: "var(--muted)" }}>
+                          <b style={{ fontWeight: 600 }}>{g.label}{g.place ? ` · ${g.place}` : ""}{g.coachNames?.length ? ` · Coach ${g.coachNames.join(" & ")}` : ""}</b>: {g.memberNames.join(", ")}
+                        </div>
                       ))}
                     </div>
                   )}
