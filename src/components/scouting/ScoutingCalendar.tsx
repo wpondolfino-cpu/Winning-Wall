@@ -242,6 +242,21 @@ export default function ScoutingCalendar({ onOpenSheet, onOpenLooseSheet }: Prop
     </div>
   );
 
+  // "Team schedule…": type or pick any team on the calendar to see its season.
+  const teamBox = (flex: string) => (
+    <>
+      <input value={teamPick} list="scout-team-names" placeholder={teamFocus ? "Another team…" : "Team schedule…"} aria-label="Team schedule"
+        onChange={e => {
+          const v = e.target.value; setTeamPick(v);
+          const hit = allTeamNames.find(n => teamKey(n) === teamKey(v));
+          if (hit && allTeamNames.some(n => n === v)) showTeam(hit);   // picked from the list
+        }}
+        onKeyDown={e => { if (e.key === "Enter") { const hit = allTeamNames.find(n => teamKey(n) === teamKey(teamPick)); if (hit) showTeam(hit); } }}
+        style={{ ...inputStyle, flex, minWidth: 140, padding: "6px 10px", fontSize: 13 }} />
+      <datalist id="scout-team-names">{allTeamNames.map(n => <option key={n} value={n} />)}</datalist>
+    </>
+  );
+
   function showTeam(name: string) {
     if (!name || isTBA(name)) return;
     setTeamFocus(name); setTeamPick("");
@@ -272,6 +287,7 @@ export default function ScoutingCalendar({ onOpenSheet, onOpenLooseSheet }: Prop
           <span style={{ fontSize: 19, fontWeight: 800 }}>{teamFocus}</span>
           {o && <span style={{ fontSize: 12, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "rgba(240,192,64,0.16)", color: "var(--gold-text)" }}>vs {slashDate(o.game_date)}</span>}
           <button type="button" style={{ ...linkBtn, fontSize: 12 }} onClick={() => openTeamSheet(teamFocus)}>Scout sheet →</button>
+          <span style={{ flex: "1 1 180px", display: "flex", justifyContent: "flex-end", maxWidth: 320, marginLeft: "auto" }}>{teamBox("1 1 180px")}</span>
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
           {loading ? "Loading…" : `${games.length} game${games.length === 1 ? "" : "s"} on the calendar this season · ${upcoming} still to play. Only games you've pasted or added show here.`}
@@ -361,15 +377,7 @@ export default function ScoutingCalendar({ onOpenSheet, onOpenLooseSheet }: Prop
         <button type="button" style={chip(needs)} onClick={() => { setNeeds(v => !v); setMine(false); }}>Needs a scout</button>
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search this week"
           style={{ ...inputStyle, flex: "1 1 140px", minWidth: 120, padding: "6px 10px", fontSize: 13 }} />
-        <input value={teamPick} list="scout-team-names" placeholder="Team schedule…"
-          onChange={e => {
-            const v = e.target.value; setTeamPick(v);
-            const hit = allTeamNames.find(n => teamKey(n) === teamKey(v));
-            if (hit && allTeamNames.some(n => n === v)) showTeam(hit);   // picked from the list
-          }}
-          onKeyDown={e => { if (e.key === "Enter") { const hit = allTeamNames.find(n => teamKey(n) === teamKey(teamPick)); if (hit) showTeam(hit); } }}
-          style={{ ...inputStyle, flex: "1 1 160px", minWidth: 140, padding: "6px 10px", fontSize: 13 }} />
-        <datalist id="scout-team-names">{allTeamNames.map(n => <option key={n} value={n} />)}</datalist>
+        {teamBox("1 1 160px")}
       </div>
       {divisionsOnFile.length === 0 && (
         <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: -6, marginBottom: 10 }}>
