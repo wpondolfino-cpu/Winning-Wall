@@ -254,7 +254,10 @@ export default function ScoutingCalendar({ onOpenSheet, onOpenLooseSheet }: Prop
     return a.getMonth() === b.getMonth() ? `${m(a)} ${a.getDate()} – ${b.getDate()}` : `${m(a)} ${a.getDate()} – ${m(b)} ${b.getDate()}`;
   })();
 
-  const nightGames = mine ? games.filter(pass) : games.filter(g => g.game_date === day && pass(g));
+  // Games with a scout go to the top (then by date and tip time, as loaded).
+  const scoutedFirst = (list: ScoutingGame[]) =>
+    list.map((g, i) => ({ g, i })).sort((a, b) => (Number(b.g.assignments.length > 0) - Number(a.g.assignments.length > 0)) || a.i - b.i).map(x => x.g);
+  const nightGames = scoutedFirst(mine ? games.filter(pass) : games.filter(g => g.game_date === day && pass(g)));
   const nightTotal = mine ? games.length : games.filter(g => g.game_date === day).length;
 
   if (teamFocus) {
@@ -406,7 +409,7 @@ export default function ScoutingCalendar({ onOpenSheet, onOpenLooseSheet }: Prop
           </div>
           <div className="scout-week">
             {days.map(d => {
-              const list = games.filter(g => g.game_date === d && pass(g));
+              const list = scoutedFirst(games.filter(g => g.game_date === d && pass(g)));
               return (
                 <div key={d} className="scout-week-col" style={{ borderColor: d === today ? "var(--gold)" : undefined }}>
                   <div style={{ fontSize: 11, color: "var(--muted)" }}>{DAY_NAMES[parseIso(d).getDay()]}</div>
@@ -525,7 +528,13 @@ function GameCard({ g, showDay, ours, staff, me, coachLabel, act, onTeam }: {
   const popHead: React.CSSProperties = { fontSize: 11.5, color: "var(--muted)", padding: "3px 9px 6px" };
 
   return (
-    <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: "11px 13px", background: "var(--surface2)" }}>
+    <div style={{
+      border: "1px solid var(--border)", borderRadius: 12, padding: "11px 13px",
+      // A game someone's scouting stands out: green edge, light green tint.
+      ...(g.assignments.length
+        ? { borderLeft: `4px solid ${LIVE}`, background: "linear-gradient(rgba(45,155,90,0.08), rgba(45,155,90,0.08)), var(--surface2)" }
+        : { background: "var(--surface2)" }),
+    }}>
       {editing ? <EditGame g={g} onCancel={() => setEditing(false)} onSave={async patch => {
         const { error } = await updateScoutingGame(g.id, patch);
         if (error) { alert(error); return; }
