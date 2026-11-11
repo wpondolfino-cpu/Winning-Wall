@@ -138,9 +138,10 @@ export async function getTeamTags(): Promise<TeamTag[]> {
     .map((r, i) => ({ id: r.id, name: r.name, color: r.color || TEAM_FALLBACK_COLORS[i % TEAM_FALLBACK_COLORS.length] }));
 }
 
-export async function getScoutSheetPrintContext(gameId: string, opponentId: string): Promise<{ gameDate: string | null; opponentName: string; rosterId: string | null }> {
+export async function getScoutSheetPrintContext(gameId: string | null, opponentId: string): Promise<{ gameDate: string | null; opponentName: string; rosterId: string | null }> {
+  // A sheet scouting a team we don't play (yet) has no game: no date, no team.
   const [{ data: game }, { data: opponent }] = await Promise.all([
-    supabase.from("games").select("game_date, roster_id").eq("id", gameId).maybeSingle(),
+    gameId ? supabase.from("games").select("game_date, roster_id").eq("id", gameId).maybeSingle() : Promise.resolve({ data: null }),
     supabase.from("opponents").select("name").eq("id", opponentId).maybeSingle(),
   ]);
   return { gameDate: game?.game_date ?? null, opponentName: opponent?.name ?? "Opponent", rosterId: (game as any)?.roster_id ?? null };
@@ -149,7 +150,7 @@ export async function getScoutSheetPrintContext(gameId: string, opponentId: stri
 // ── Scout sheet shell ────────────────────────────────────────
 export interface ScoutSheet {
   id: string;
-  game_id: string;
+  game_id: string | null;      // null: scouting a team we don't play (yet)
   opponent_id: string;
   team_record: string | null;
   tempo: string | null;
@@ -366,6 +367,13 @@ export async function ensureScoutSheetForGame(gameId: string): Promise<{ sheet: 
     if (linkErr) throw linkErr;
   }
 
+  // Already scouting them without a game (a possible playoff opponent
+  // from the Scouting calendar)? That sheet becomes this game's, notes and
+  // all, instead of a blank one -- for varsity's game (or a game with no
+  // team), since that's who the calendar scouts for.
+  const loose = await adoptLooseSheet(gameId, opponentId);
+  if (loose) return { sheet: loose, opponentId, created: false };
+
   try {
     const sheet = await createScoutSheet(gameId, opponentId);
     return { sheet, opponentId, created: true };
@@ -375,6 +383,69 @@ export async function ensureScoutSheetForGame(gameId: string): Promise<{ sheet: 
     if (raced) return { sheet: raced, opponentId: raced.opponent_id, created: false };
     throw e;
   }
+}
+
+async function adoptLooseSheet(gameId: string, opponentId: string): Promise<ScoutSheet | null> {
+  const { data: loose } = await supabase.from("scout_sheets").select("id")
+    .eq("opponent_id", opponentId).is("game_id", null)
+    .order("updated_at", { ascending: false, nullsFirst: false }).limit(1).maybeSingle();
+  if (!loose) return null;
+  const { data: g } = await supabase.from("games").select("roster_id").eq("id", gameId).maybeSingle();
+  const rosterId: string | null = (g as any)?.roster_id ?? null;
+  let varsityOrNone = !rosterId;
+  if (rosterId) {
+    const { data: r } = await supabase.from("rosters").select("name").eq("id", rosterId).maybeSingle();
+    const name: string = (r as any)?.name ?? "";
+    varsityOrNone = /varsity/i.test(name) && !/junior|\bjv\b/i.test(name);
+  }
+  if (!varsityOrNone) return null;
+  const { data, error } = await supabase.from("scout_sheets")
+    .update({ game_id: gameId, updated_at: new Date().toISOString() })
+    .eq("id", (loose as any).id).is("game_id", null)
+    .select().maybeSingle();
+  if (error) return null;               // e.g. raced with another tap: fall back to a new sheet
+  return data as ScoutSheet | null;
+}
+
+/**
+ * A scout sheet for a team we don't play (yet) -- a possible playoff
+ * opponent spotted on the Scouting calendar. Finds the team among our
+ * opponents (by name, ignoring capitals, punctuation and "High School"),
+ * or adds it; then opens its game-less sheet, or starts one. One
+ * game-less sheet per team: tapping the team again opens the same one.
+ */
+export async function ensureLooseScoutSheet(teamName: string): Promise<{ sheetId: string; opponent: Opponent; created: boolean }> {
+  const clean = teamName.trim().replace(/\s+/g, " ");
+  if (!clean) throw new Error("No team name.");
+  const k = looseKey(clean);
+  const opponent = (await getOpponents()).find(o => looseKey(o.name) === k) ?? await createOpponent(clean);
+  const { data: existing } = await supabase.from("scout_sheets").select("id")
+    .eq("opponent_id", opponent.id).is("game_id", null)
+    .order("updated_at", { ascending: false, nullsFirst: false }).limit(1).maybeSingle();
+  if (existing) return { sheetId: (existing as any).id, opponent, created: false };
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not signed in");
+  const { data, error } = await supabase.from("scout_sheets")
+    .insert({ game_id: null, opponent_id: opponent.id, created_by: user.id }).select("id").single();
+  if (error) throw error;
+  return { sheetId: (data as any).id, opponent, created: true };
+}
+
+/** The game-less sheet for a team, if there is one (without making anything). */
+export async function findLooseScoutSheet(teamName: string): Promise<{ sheetId: string; opponentId: string } | null> {
+  const k = looseKey(teamName);
+  const opponent = (await getOpponents()).find(o => looseKey(o.name) === k);
+  if (!opponent) return null;
+  const { data } = await supabase.from("scout_sheets").select("id")
+    .eq("opponent_id", opponent.id).is("game_id", null)
+    .order("updated_at", { ascending: false, nullsFirst: false }).limit(1).maybeSingle();
+  return data ? { sheetId: (data as any).id, opponentId: opponent.id } : null;
+}
+
+/** Like opponentKey, but "Lowell High School" and "Lowell" are the same team. */
+function looseKey(name: string): string {
+  const short = name.replace(/\s+/g, " ").trim().replace(/[\s,-]+(high\s+school|h\.?\s?s\.?|high|school)$/i, "").trim() || name;
+  return opponentKey(short);
 }
 
 export async function updateScoutSheet(id: string, patch: Partial<Pick<ScoutSheet,
@@ -569,7 +640,7 @@ export async function scoutSheetToExportPayload(sheetId: string) {
     getOffenseSets(sheetId),
     getSpecials(sheetId),
     getDefenseSections(sheetId),
-    supabase.from("games").select("game_date").eq("id", sheet.game_id).maybeSingle(),
+    sheet.game_id ? supabase.from("games").select("game_date").eq("id", sheet.game_id).maybeSingle() : Promise.resolve({ data: null as { game_date: string } | null }),
   ]);
   return {
     opponentName: opponent?.name ?? "Opponent",

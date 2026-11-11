@@ -23,8 +23,10 @@ export default function ScoutingPage({ initialGameId }: Props) {
     if (initialGameId) return "sheets";
     try { return (localStorage.getItem(KEY) as Tab) === "sheets" ? "sheets" : "calendar"; } catch { return "calendar"; }
   });
-  // Which game's sheet to open on the Scout Sheets tab (from the Schedule or the Calendar).
+  // Which sheet to open on the Scout Sheets tab: a game's (from the Schedule
+  // or the Calendar), or a team's sheet with no game (a team we don't play).
   const [sheetGameId, setSheetGameId] = useState<string | null>(initialGameId ?? null);
+  const [looseSheet, setLooseSheet] = useState<{ sheetId: string; opponentId: string } | null>(null);
 
   useEffect(() => { if (initialGameId) { setSheetGameId(initialGameId); setTab("sheets"); } }, [initialGameId]);
   useEffect(() => { try { localStorage.setItem(KEY, tab); } catch { /* fine */ } }, [tab]);
@@ -36,7 +38,7 @@ export default function ScoutingPage({ initialGameId }: Props) {
       <div role="tablist" style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, paddingBottom: 12, borderBottom: "1px solid var(--border)" }}>
         {(["calendar", "sheets"] as Tab[]).map(t => (
           <button key={t} type="button" role="tab" aria-selected={tab === t}
-            onClick={() => { setTab(t); if (t === "sheets") setSheetGameId(null); }}
+            onClick={() => { setTab(t); if (t === "sheets") { setSheetGameId(null); setLooseSheet(null); } }}
             style={{
               fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 999, cursor: "pointer", fontFamily: "inherit",
               background: tab === t ? "var(--royal)" : "var(--surface2)", color: tab === t ? "#fff" : "var(--text)",
@@ -46,8 +48,15 @@ export default function ScoutingPage({ initialGameId }: Props) {
           </button>
         ))}
       </div>
-      {tab === "calendar" && <ScoutingCalendar onOpenSheet={id => { setSheetGameId(id); setTab("sheets"); }} />}
-      {tab === "sheets" && <ScoutSheetsHub canManage={true} initialGameId={sheetGameId} key={sheetGameId ?? "list"} />}
+      {tab === "calendar" && (
+        <ScoutingCalendar
+          onOpenSheet={id => { setLooseSheet(null); setSheetGameId(id); setTab("sheets"); }}
+          onOpenLooseSheet={t => { setSheetGameId(null); setLooseSheet(t); setTab("sheets"); }} />
+      )}
+      {tab === "sheets" && (
+        <ScoutSheetsHub canManage={true} initialGameId={sheetGameId} initialSheet={looseSheet}
+          key={sheetGameId ?? looseSheet?.sheetId ?? "list"} />
+      )}
     </div>
   );
 }

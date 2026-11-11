@@ -17,7 +17,8 @@ import { getYouTubeId } from "./youtube";
 
 export type ScoutMode = "live" | "film";
 
-export interface ScoutAssignment { id: string; coach_id: string; mode: ScoutMode }
+/** sheet_team: which team this coach is watching (a label; null = both / not set). */
+export interface ScoutAssignment { id: string; coach_id: string; mode: ScoutMode; sheet_team: string | null }
 export interface ScoutVideo { id: string; url: string; note: string | null; created_at: string }
 export interface ScoutingGame {
   id: string;
@@ -81,7 +82,7 @@ export function addDays(d: Date, n: number): Date {
 export async function getScoutingGames(from: string, to: string): Promise<ScoutingGame[]> {
   const { data, error } = await supabase
     .from("scouting_games")
-    .select("id, game_date, tip_time, away_team, home_team, location, note, scouting_assignments(id, coach_id, mode), scouting_videos(id, url, note, created_at)")
+    .select("id, game_date, tip_time, away_team, home_team, location, note, scouting_assignments(id, coach_id, mode, sheet_team), scouting_videos(id, url, note, created_at)")
     .gte("game_date", from).lte("game_date", to)
     .order("game_date", { ascending: true })
     .order("tip_time", { ascending: true, nullsFirst: false })
@@ -102,12 +103,13 @@ export async function getRankings(): Promise<Ranking[]> {
 }
 
 /**
- * Our own upcoming games, by opponent: what puts "We play them Dec 22" on
+ * Our own upcoming games, by opponent: what puts "We play them Feb 17" on
  * a game. Matched by name the same way as everywhere else (capitals,
- * spaces and punctuation ignored). Only the next game against each team.
+ * spaces, punctuation and "High School" ignored). Every level's games are
+ * kept, soonest first; the calendar picks which one to show.
  */
 export interface OurGame { id: string; game_date: string; roster_id: string | null; opponent: string }
-export async function getOurUpcomingGames(): Promise<Map<string, OurGame>> {
+export async function getOurUpcomingGames(): Promise<Map<string, OurGame[]>> {
   const today = isoDate(new Date());
   const { data, error } = await supabase
     .from("games")
@@ -115,16 +117,33 @@ export async function getOurUpcomingGames(): Promise<Map<string, OurGame>> {
     .gte("game_date", today)
     .order("game_date", { ascending: true });
   if (error) throw error;
-  const map = new Map<string, OurGame>();
+  const map = new Map<string, OurGame[]>();
   for (const g of (data ?? []) as any[]) {
     const opp = Array.isArray(g.opponents) ? g.opponents[0] : g.opponents;
-    const names = [g.opponent, opp?.name].filter(Boolean) as string[];
-    for (const n of names) {
-      const k = teamKey(n);
-      if (k && !map.has(k)) map.set(k, { id: g.id, game_date: g.game_date, roster_id: g.roster_id ?? null, opponent: opp?.name ?? g.opponent });
+    const game: OurGame = { id: g.id, game_date: g.game_date, roster_id: g.roster_id ?? null, opponent: shortTeamName(opp?.name ?? g.opponent ?? "") };
+    const keys = new Set([g.opponent, opp?.name].filter(Boolean).map((n: string) => teamKey(n)));
+    for (const k of keys) {
+      if (!k) continue;
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(game);
     }
   }
   return map;
+}
+
+/**
+ * Our next varsity game against a team (scouting is for varsity). A team
+ * only JV or freshman play doesn't count. Varsity is the team named
+ * Varsity (not JV / Junior Varsity); if no team is named that, every
+ * game counts.
+ */
+export function pickOurGame(list: OurGame[] | undefined, varsityIds: Set<string>): OurGame | undefined {
+  if (!list?.length) return undefined;
+  if (!varsityIds.size) return list[0];
+  return list.find(g => !g.roster_id || varsityIds.has(g.roster_id));   // no team = older games, counted
+}
+export function isVarsityName(name: string): boolean {
+  return /varsity/i.test(name) && !/junior|\bjv\b/i.test(name);
 }
 
 // ── Games ────────────────────────────────────────────────────
@@ -184,10 +203,15 @@ export async function deleteScoutingGame(id: string): Promise<Result> {
 }
 
 // ── Scouts ───────────────────────────────────────────────────
-export async function addScout(gameId: string, coachId: string, mode: ScoutMode = "live"): Promise<Result> {
+export async function addScout(gameId: string, coachId: string, sheetTeam: string | null, mode: ScoutMode = "live"): Promise<Result> {
   const { data: { user } } = await supabase.auth.getUser();
   const { error } = await supabase.from("scouting_assignments")
-    .insert({ scouting_game_id: gameId, coach_id: coachId, mode, created_by: user?.id ?? null });
+    .insert({ scouting_game_id: gameId, coach_id: coachId, mode, sheet_team: sheetTeam, created_by: user?.id ?? null });
+  return { error: error?.message ?? null };
+}
+/** Which team a scout is watching. Only a label: anyone can still edit any sheet. */
+export async function setScoutTeam(assignmentId: string, sheetTeam: string | null): Promise<Result> {
+  const { error } = await supabase.from("scouting_assignments").update({ sheet_team: sheetTeam }).eq("id", assignmentId);
   return { error: error?.message ?? null };
 }
 export async function setScoutMode(assignmentId: string, mode: ScoutMode): Promise<Result> {

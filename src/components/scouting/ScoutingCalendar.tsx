@@ -13,27 +13,32 @@
 // else open in a new tab). Every coach in the program sees the same
 // calendar; players never do.
 //
-// "We play them Dec 22" comes from our own schedule. "Open scout sheet"
-// opens (or starts) the sheet for that upcoming game -- the sheet is only
-// made when someone opens it, so assigning a scout never leaves a blank
-// sheet behind.
+// "vs 2/10" is our next varsity game against that team. Tapping a team's
+// name opens its scout sheet: the one for that game if varsity plays them,
+// otherwise (after asking) a sheet not tied to any game -- for a possible
+// playoff opponent -- which moves onto the game if we end up playing them.
+// Sheets are only made when someone opens one, so assigning a scout never
+// leaves a blank sheet behind. Each scout says which team they're watching;
+// that's a label only, anyone can edit any sheet.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { getStaff } from "../../lib/plays";
-import { getTeamTags, TeamTag } from "../../lib/scoutSheets";
+import { getTeamTags, TeamTag, findLooseScoutSheet, ensureLooseScoutSheet } from "../../lib/scoutSheets";
 import { time12 } from "../../lib/scheduleImport";
 import { inputStyle } from "../../lib/inputStyle";
 import {
   ScoutingGame, Ranking, OurGame, ScoutMode, getScoutingGames, getRankings, getOurUpcomingGames,
-  addScout, setScoutMode, removeScout, addVideo, removeVideo, deleteScoutingGame, updateScoutingGame, videoInfo,
-  teamKey, isTBA, isoDate, parseIso, weekStart, addDays, seasonStartYear,
+  addScout, setScoutMode, setScoutTeam, removeScout, addVideo, removeVideo, deleteScoutingGame, updateScoutingGame, videoInfo,
+  teamKey, isTBA, pickOurGame, isVarsityName, isoDate, parseIso, weekStart, addDays, seasonStartYear,
 } from "../../lib/scoutingCalendar";
 import { PasteGamesModal, AddGameModal, RankingsModal } from "./ScoutingImport";
 
 interface Props {
   /** Opens the Scout Sheets tab on our game's sheet. */
   onOpenSheet: (ourGameId: string) => void;
+  /** Opens the Scout Sheets tab on a sheet that isn't tied to a game. */
+  onOpenLooseSheet: (target: { sheetId: string; opponentId: string }) => void;
 }
 
 type View = "night" | "week";
@@ -54,19 +59,24 @@ function shortDate(iso: string) {
   const d = parseIso(iso);
   return `${DAY_NAMES[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`;
 }
+/** 2/10 */
+function slashDate(iso: string) {
+  const d = parseIso(iso);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
 function monthDay(iso: string) {
   const d = parseIso(iso);
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export default function ScoutingCalendar({ onOpenSheet }: Props) {
+export default function ScoutingCalendar({ onOpenSheet, onOpenLooseSheet }: Props) {
   const today = isoDate(new Date());
   const [week, setWeek] = useState<Date>(() => weekStart(new Date()));
   const [view, setView] = useState<View>(() => { try { return (localStorage.getItem(VIEW_KEY) as View) || "night"; } catch { return "night"; } });
   const [day, setDay] = useState<string>(today);
   const [games, setGames] = useState<ScoutingGame[]>([]);
   const [rankings, setRankings] = useState<Ranking[]>([]);
-  const [ours, setOurs] = useState<Map<string, OurGame>>(new Map());
+  const [ourAll, setOurAll] = useState<Map<string, OurGame[]>>(new Map());
   const [teams, setTeams] = useState<TeamTag[]>([]);
   const [staff, setStaff] = useState<{ id: string; name: string }[]>([]);
   const [me, setMe] = useState<string | null>(null);
@@ -127,12 +137,12 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
         supabase.auth.getUser(),
         getStaff().catch(() => []),
         getRankings().catch(() => []),
-        getOurUpcomingGames().catch(() => new Map<string, OurGame>()),
+        getOurUpcomingGames().catch(() => new Map<string, OurGame[]>()),
         getTeamTags().catch(() => []),
       ]);
       setMe(user?.id ?? null);
       setStaff((s as any[]).map(p => ({ id: p.id, name: p.name ?? "Coach" })));
-      setRankings(r); setOurs(o); setTeams(t);
+      setRankings(r); setOurAll(o); setTeams(t);
     })();
   }, []);
 
@@ -148,7 +158,14 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
   }, [from, games]);
 
   const rankBy = useMemo(() => new Map(rankings.map(r => [teamKey(r.team), r])), [rankings]);
-  const teamById = useMemo(() => new Map(teams.map(t => [t.id, t])), [teams]);
+  // One of our games per opponent: the next varsity game, or (if varsity
+  // doesn't play them) the next JV/freshman one.
+  const ours = useMemo(() => {
+    const varsity = new Set(teams.filter(t => isVarsityName(t.name)).map(t => t.id));
+    const m = new Map<string, OurGame>();
+    ourAll.forEach((list, k) => { const g = pickOurGame(list, varsity); if (g) m.set(k, g); });
+    return m;
+  }, [ourAll, teams]);
   const nameOf = useMemo(() => new Map(staff.map(s => [s.id, s.name])), [staff]);
   const divisionsOnFile = useMemo(() => Array.from(new Set(rankings.map(r => r.division))).sort((a, b) => a - b), [rankings]);
 
@@ -183,6 +200,48 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
     setModal(m);
   }
 
+  // Tapping a team's name: its scout sheet. Our game's if varsity plays
+  // them; else its sheet that isn't tied to a game, asking before making one.
+  const [askLoose, setAskLoose] = useState<string | null>(null);
+  const [looseBusy, setLooseBusy] = useState(false);
+  async function openTeamSheet(name: string) {
+    if (!name || isTBA(name)) return;
+    const o = ours.get(teamKey(name));
+    if (o) { onOpenSheet(o.id); return; }
+    try {
+      const found = await findLooseScoutSheet(name);
+      if (found) { onOpenLooseSheet(found); return; }
+    } catch { /* fall through to asking */ }
+    setAskLoose(name);
+  }
+  async function createLoose() {
+    if (!askLoose) return;
+    setLooseBusy(true);
+    try {
+      const { sheetId, opponent } = await ensureLooseScoutSheet(askLoose);
+      setAskLoose(null);
+      onOpenLooseSheet({ sheetId, opponentId: opponent.id });
+    } catch (e: any) { alert(e?.message ?? "Couldn't start that scout sheet."); }
+    finally { setLooseBusy(false); }
+  }
+  const looseModal = askLoose && (
+    <div onClick={() => !looseBusy && setAskLoose(null)}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} role="dialog" aria-label="Create a scout sheet"
+        style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 18, maxWidth: 420, width: "100%" }}>
+        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>{askLoose} isn't on your schedule</div>
+        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 14 }}>
+          Create a scout sheet for {askLoose}? It's kept under {askLoose} in Scout Sheets as "Not on our schedule". If you end up playing them, it moves onto that game.
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button type="button" disabled={looseBusy} onClick={() => setAskLoose(null)} style={{ ...actionBtn }}>Cancel</button>
+          <button type="button" disabled={looseBusy} onClick={createLoose}
+            style={{ ...actionBtn, background: "var(--royal)", color: "#fff", border: "1px solid var(--royal)" }}>{looseBusy ? "Creating…" : "Create scout sheet"}</button>
+        </div>
+      </div>
+    </div>
+  );
+
   function showTeam(name: string) {
     if (!name || isTBA(name)) return;
     setTeamFocus(name); setTeamPick("");
@@ -200,7 +259,7 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
 
   if (teamFocus) {
     const k = teamKey(teamFocus);
-    const r = rankBy.get(k), o = ours.get(k);
+    const o = ours.get(k);
     const upcoming = games.filter(g => g.game_date >= today).length;
     let dividerShown = false;
     return (
@@ -208,8 +267,8 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
           <button type="button" style={actionBtn} onClick={() => setTeamFocus(null)}>← Calendar</button>
           <span style={{ fontSize: 19, fontWeight: 800 }}>{teamFocus}</span>
-          {r && <span style={{ fontSize: 12, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "rgba(37,80,212,0.14)", color: "var(--info-text, var(--royal-light))" }}>D{r.division}{r.rank ? ` #${r.rank}` : ""}{r.record ? ` · ${r.record}` : ""}</span>}
-          {o && <span style={{ fontSize: 12, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "rgba(240,192,64,0.16)", color: "var(--gold-text)" }}>We play them {monthDay(o.game_date)}</span>}
+          {o && <span style={{ fontSize: 12, fontWeight: 600, padding: "2px 8px", borderRadius: 6, background: "rgba(240,192,64,0.16)", color: "var(--gold-text)" }}>vs {slashDate(o.game_date)}</span>}
+          <button type="button" style={{ ...linkBtn, fontSize: 12 }} onClick={() => openTeamSheet(teamFocus)}>Scout sheet →</button>
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
           {loading ? "Loading…" : `${games.length} game${games.length === 1 ? "" : "s"} on the calendar this season · ${upcoming} still to play. Only games you've pasted or added show here.`}
@@ -224,8 +283,8 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
               <div key={g.id}>
                 {divider && <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--gold-text)", margin: "6px 0 8px", letterSpacing: 0.5 }}>UPCOMING</div>}
                 <div style={{ opacity: past ? 0.6 : 1 }}>
-                  <GameCard g={g} showDay={true} rankBy={rankBy} ours={ours} teamById={teamById} focus={k} onTeam={showTeam}
-                    staff={staff} me={me} coachLabel={coachLabel} act={act} onOpenSheet={onOpenSheet} />
+                  <GameCard g={g} showDay={true} ours={ours} onTeam={openTeamSheet}
+                    staff={staff} me={me} coachLabel={coachLabel} act={act} />
                 </div>
               </div>
             );
@@ -236,6 +295,7 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
             </div>
           )}
         </div>
+        {looseModal}
       </div>
     );
   }
@@ -325,8 +385,8 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
           </div>
           <div style={{ display: "grid", gap: 10 }}>
             {nightGames.map(g => (
-              <GameCard key={g.id} g={g} showDay={mine} rankBy={rankBy} ours={ours} teamById={teamById} onTeam={showTeam}
-                staff={staff} me={me} coachLabel={coachLabel} act={act} onOpenSheet={onOpenSheet} />
+              <GameCard key={g.id} g={g} showDay={mine} ours={ours} onTeam={openTeamSheet}
+                staff={staff} me={me} coachLabel={coachLabel} act={act} />
             ))}
             {!loading && nightGames.length === 0 && (
               <div style={{ fontSize: 13, color: "var(--muted)", padding: "18px 12px", textAlign: "center", border: "1px dashed var(--border)", borderRadius: 12 }}>
@@ -395,6 +455,7 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
       {modal === "add" && <AddGameModal defaultDate={days.includes(day) ? day : from} onClose={() => setModal(null)} onSaved={d => {
         setModal(null); loadTeamNames(); setWeek(weekStart(parseIso(d))); setDay(d); setView("night"); loadGames();
       }} />}
+      {looseModal}
       {modal === "rankings" && <RankingsModal current={rankings} scheduleTeams={allTeamNames} onClose={() => setModal(null)} onSaved={async () => {
         setModal(null); setRankings(await getRankings().catch(() => []));
       }} />}
@@ -403,53 +464,65 @@ export default function ScoutingCalendar({ onOpenSheet }: Props) {
 }
 
 // ── One game ─────────────────────────────────────────────────
-function GameCard({ g, showDay, rankBy, ours, teamById, staff, me, coachLabel, act, onOpenSheet, onTeam, focus }: {
+function GameCard({ g, showDay, ours, staff, me, coachLabel, act, onTeam }: {
   g: ScoutingGame; showDay: boolean;
-  /** Tapping a team's name opens its whole schedule. */
+  /** Tapping a team's name opens its scout sheet (or offers to start one). */
   onTeam: (name: string) => void;
-  /** On a team's schedule: that team's key (its name isn't a link there). */
-  focus?: string;
-  rankBy: Map<string, Ranking>; ours: Map<string, OurGame>; teamById: Map<string, TeamTag>;
+  ours: Map<string, OurGame>;
   staff: { id: string; name: string }[]; me: string | null; coachLabel: (id: string) => string;
   act: (p: Promise<{ error: string | null }>, optimistic?: (gs: ScoutingGame[]) => ScoutingGame[]) => Promise<void>;
-  onOpenSheet: (ourGameId: string) => void;
 }) {
   const [addingVideo, setAddingVideo] = useState(false);
   const [url, setUrl] = useState("");
   const [note, setNote] = useState("");
   const [playing, setPlaying] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  // Assign scouts: pick a coach, then which team they're watching.
+  const [picker, setPicker] = useState<null | { step: "coach" } | { step: "team"; coachId: string; assignmentId?: string }>(null);
 
   const assigned = new Set(g.assignments.map(a => a.coach_id));
-  const free = staff.filter(s => !assigned.has(s.id));
-  const opponents = [g.away_team, g.home_team].map(t => ours.get(teamKey(t))).filter(Boolean) as OurGame[];
+  const coachChoices = [
+    ...(me && !assigned.has(me) && staff.some(s => s.id === me) ? [{ id: me, name: "Me" }] : []),
+    ...staff.filter(s => !assigned.has(s.id) && s.id !== me),
+  ];
+  // Teams a scout can be watching (a TBA team can't be scouted yet).
+  const watchable = [g.away_team, g.home_team].filter(t => !isTBA(t));
 
   const patchGame = (fn: (x: ScoutingGame) => ScoutingGame) => (gs: ScoutingGame[]) => gs.map(x => x.id === g.id ? fn(x) : x);
 
-  // A team's name with its division/rank and, if we play them, when.
+  function pickCoach(coachId: string) {
+    if (watchable.length > 1) { setPicker({ step: "team", coachId }); return; }
+    setPicker(null);
+    act(addScout(g.id, coachId, watchable[0] ?? null));
+  }
+  function pickTeam(team: string | null) {
+    if (!picker || picker.step !== "team") return;
+    const p = picker;
+    setPicker(null);
+    if (p.assignmentId) {
+      act(setScoutTeam(p.assignmentId, team), patchGame(x => ({ ...x, assignments: x.assignments.map(y => y.id === p.assignmentId ? { ...y, sheet_team: team } : y) })));
+    } else {
+      act(addScout(g.id, p.coachId, team));
+    }
+  }
+
+  // A team's name -- tap it for its scout sheet -- and, if varsity plays
+  // them, when.
   const team = (name: string) => {
-    // On a team's own schedule its badges are in the heading, not on every game.
-    if (focus === teamKey(name)) return <span style={{ fontSize: 15, fontWeight: 700 }}>{name}</span>;
     if (isTBA(name)) return <span title="Opponent not known yet; Edit game once it is" style={{ fontSize: 15, fontWeight: 600, color: "var(--muted)", fontStyle: "italic" }}>TBA</span>;
-    const r = rankBy.get(teamKey(name));
     const o = ours.get(teamKey(name));
-    const t = o?.roster_id ? teamById.get(o.roster_id) : null;
     return (
       <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        {focus === teamKey(name)
-          ? <span style={{ fontSize: 15, fontWeight: 700 }}>{name}</span>
-          : <button type="button" onClick={() => onTeam(name)} title={`${name}'s schedule`}
-              style={{ fontSize: 15, fontWeight: 700, background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--text)", fontFamily: "inherit", textAlign: "left", textDecoration: "underline", textDecorationColor: "var(--border)", textUnderlineOffset: 3 }}>{name}</button>}
-        {r && <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 7px", borderRadius: 6, background: "rgba(37,80,212,0.14)", color: "var(--info-text, var(--royal-light))" }}>D{r.division}{r.rank ? ` #${r.rank}` : ""}{r.record ? ` · ${r.record}` : ""}</span>}
-        {o && (
-          <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 7px", borderRadius: 6, background: "rgba(240,192,64,0.16)", color: "var(--gold-text)", display: "inline-flex", alignItems: "center", gap: 5 }}>
-            We play them {monthDay(o.game_date)}
-            {t && <span style={{ fontSize: 10, padding: "0 6px", borderRadius: 999, background: t.color, color: "#fff" }}>{t.name}</span>}
-          </span>
-        )}
+        <button type="button" onClick={() => onTeam(name)} title={o ? `${name} scout sheet (our ${monthDay(o.game_date)} game)` : `${name} scout sheet`}
+          style={{ fontSize: 15, fontWeight: 700, background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--text)", fontFamily: "inherit", textAlign: "left", textDecoration: "underline", textDecorationColor: "var(--border)", textUnderlineOffset: 3 }}>{name}</button>
+        {o && <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 7px", borderRadius: 6, background: "rgba(240,192,64,0.16)", color: "var(--gold-text)" }}>vs {slashDate(o.game_date)}</span>}
       </span>
     );
   };
+
+  const popBox: React.CSSProperties = { position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 30, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: 6, minWidth: 220, boxShadow: "0 8px 24px rgba(0,0,0,0.25)" };
+  const popOpt: React.CSSProperties = { display: "block", width: "100%", textAlign: "left", fontSize: 13, padding: "7px 9px", borderRadius: 7, border: "none", background: "transparent", color: "var(--text)", cursor: "pointer", fontFamily: "inherit" };
+  const popHead: React.CSSProperties = { fontSize: 11.5, color: "var(--muted)", padding: "3px 9px 6px" };
 
   return (
     <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: "11px 13px", background: "var(--surface2)" }}>
@@ -528,38 +601,82 @@ function GameCard({ g, showDay, rankBy, ours, teamById, staff, me, coachLabel, a
 
       {/* Scouts, then the card's actions, all on one row */}
       <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
-        {g.assignments.map(a => (
-          <span key={a.id} title={staff.find(s => s.id === a.coach_id)?.name ?? ""}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, padding: "3px 4px 3px 9px", borderRadius: 8,
-              border: `1px solid ${a.mode === "film" ? FILM : LIVE}`, color: a.mode === "film" ? FILM : LIVE, background: "var(--surface)" }}>
-            {a.coach_id === me ? "You" : `Coach ${coachLabel(a.coach_id)}`}
-            <span style={{ display: "inline-flex", borderRadius: 6, overflow: "hidden", border: "1px solid var(--border)" }}>
-              {(["live", "film"] as ScoutMode[]).map(m => (
-                <button key={m} type="button" onClick={() => a.mode !== m && act(setScoutMode(a.id, m), patchGame(x => ({ ...x, assignments: x.assignments.map(y => y.id === a.id ? { ...y, mode: m } : y) })))}
-                  style={{ fontSize: 11, padding: "2px 8px", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600,
-                    background: a.mode === m ? (m === "film" ? FILM : LIVE) : "transparent", color: a.mode === m ? "#fff" : "var(--muted)" }}>
-                  {m === "live" ? "Live" : "Film"}
-                </button>
-              ))}
+        {g.assignments.map(a => {
+          const canSwitch = watchable.length > 1;
+          return (
+            <span key={a.id} title={staff.find(s => s.id === a.coach_id)?.name ?? ""}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, padding: "3px 4px 3px 9px", borderRadius: 8,
+                border: `1px solid ${a.mode === "film" ? FILM : LIVE}`, color: a.mode === "film" ? FILM : LIVE, background: "var(--surface)" }}>
+              <span role={canSwitch ? "button" : undefined} tabIndex={canSwitch ? 0 : undefined}
+                title={canSwitch ? "Change which team they're watching" : undefined}
+                onClick={() => canSwitch && setPicker({ step: "team", coachId: a.coach_id, assignmentId: a.id })}
+                onKeyDown={e => { if (canSwitch && e.key === "Enter") setPicker({ step: "team", coachId: a.coach_id, assignmentId: a.id }); }}
+                style={{ cursor: canSwitch ? "pointer" : "default" }}>
+                {a.coach_id === me ? "You" : `Coach ${coachLabel(a.coach_id)}`}
+                {a.sheet_team
+                  ? <span style={{ fontWeight: 400, color: "var(--muted)" }}> · {a.sheet_team}</span>
+                  : canSwitch ? <span style={{ fontWeight: 400, color: "var(--muted)" }}> · both</span> : null}
+              </span>
+              <span style={{ display: "inline-flex", borderRadius: 6, overflow: "hidden", border: "1px solid var(--border)" }}>
+                {(["live", "film"] as ScoutMode[]).map(m => (
+                  <button key={m} type="button" onClick={() => a.mode !== m && act(setScoutMode(a.id, m), patchGame(x => ({ ...x, assignments: x.assignments.map(y => y.id === a.id ? { ...y, mode: m } : y) })))}
+                    style={{ fontSize: 11, padding: "2px 8px", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600,
+                      background: a.mode === m ? (m === "film" ? FILM : LIVE) : "transparent", color: a.mode === m ? "#fff" : "var(--muted)" }}>
+                    {m === "live" ? "Live" : "Film"}
+                  </button>
+                ))}
+              </span>
+              <button type="button" title="Remove" aria-label="Remove scout"
+                onClick={() => act(removeScout(a.id), patchGame(x => ({ ...x, assignments: x.assignments.filter(y => y.id !== a.id) })))}
+                style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 14, padding: "0 4px", lineHeight: 1 }}>×</button>
             </span>
-            <button type="button" title="Remove" aria-label="Remove scout"
-              onClick={() => act(removeScout(a.id), patchGame(x => ({ ...x, assignments: x.assignments.filter(y => y.id !== a.id) })))}
-              style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 14, padding: "0 4px", lineHeight: 1 }}>×</button>
-          </span>
-        ))}
-        {free.length > 0 && (
-          <select value="" onChange={e => { const id = e.target.value; if (id) act(addScout(g.id, id)); }}
-            style={{ ...inputStyle, padding: "5px 8px", fontSize: 12.5, width: "auto" }}>
-            <option value="">{g.assignments.length ? "+ Add coach" : "Assign scouts…"}</option>
-            {me && !assigned.has(me) && <option value={me}>Me</option>}
-            {free.filter(s => s.id !== me).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        )}
-        {opponents.map(o => (
-          <button key={o.id} type="button" style={linkBtn} onClick={() => onOpenSheet(o.id)}>
-            Open {o.opponent} scout sheet →
-          </button>
-        ))}
+          );
+        })}
+
+        <span style={{ position: "relative" }}>
+          {(coachChoices.length > 0 || picker) && (
+            <button type="button" onClick={() => setPicker(p => p ? null : { step: "coach" })}
+              style={{ ...linkBtn, borderRadius: 8, padding: "5px 11px", fontSize: 12.5, fontWeight: 600 }}>
+              {g.assignments.length ? "+ Add scout" : "Assign scouts"}
+            </button>
+          )}
+          {picker && (
+            <>
+              {/* Tap anywhere else to close. */}
+              <div onClick={() => setPicker(null)} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
+              <div style={popBox} role="menu">
+                {picker.step === "coach" ? (
+                  <>
+                    <div style={popHead}>Who's scouting?</div>
+                    {coachChoices.map(c => (
+                      <button key={c.id} type="button" role="menuitem" style={popOpt} onClick={() => pickCoach(c.id)}
+                        onMouseEnter={e => (e.currentTarget.style.background = "var(--surface2)")} onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+                        {c.name}
+                      </button>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <div style={popHead}>
+                      Which team is {picker.coachId === me ? "you" : `Coach ${coachLabel(picker.coachId)}`} watching?
+                    </div>
+                    {[...watchable.map(t => ({ value: t as string | null, label: t })), { value: null, label: "Both teams" }].map(o => {
+                      const our = o.value ? ours.get(teamKey(o.value)) : undefined;
+                      return (
+                        <button key={o.label} type="button" role="menuitem" style={popOpt} onClick={() => pickTeam(o.value)}
+                          onMouseEnter={e => (e.currentTarget.style.background = "var(--surface2)")} onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+                          {o.label}
+                          {our && <span style={{ color: "var(--muted)", fontSize: 11.5 }}> · vs {slashDate(our.game_date)}</span>}
+                        </button>
+                      );
+                    })}
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </span>
+
         {!addingVideo && (
           <button type="button" onClick={() => setAddingVideo(true)} style={{ background: "none", border: "none", color: "var(--royal-light)", cursor: "pointer", fontSize: 12, padding: "0 4px", fontFamily: "inherit" }}>+ Add video link</button>
         )}

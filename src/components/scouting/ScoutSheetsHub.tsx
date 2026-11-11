@@ -6,7 +6,7 @@ import { createGame } from "../../lib/gameStats";
 import { deleteScoutSheet, renameOpponent, deleteOpponent,
   Opponent, getOpponents, createOpponent, uploadOpponentLogo,
   getOpponentGames, OpponentGame, getScoutSheetsForOpponent, getTeamTags, TeamTag,
-  createScoutSheet, duplicateScoutSheet, ensureScoutSheetForGame,
+  createScoutSheet, duplicateScoutSheet, ensureScoutSheetForGame, ensureLooseScoutSheet,
   scoutSheetToExportPayload, importScoutSheetFromExportPayload, SCOUT_SHEET_EXPORT_SCHEMA_VERSION,
 } from "../../lib/scoutSheets";
 import { embedJsonInPdf, extractJsonFromPdf, drawTextDocument } from "../../lib/pdfDataExport";
@@ -16,6 +16,8 @@ import { inputStyle } from "../../lib/inputStyle";
 interface Props {
   /** Opens straight to this game's scout sheet — what tapping a Schedule row means. */
   initialGameId?: string | null;
+  /** Opens straight to a sheet that has no game (a team we don't play, from the Scouting calendar). */
+  initialSheet?: { sheetId: string; opponentId: string } | null;
   canManage: boolean; // coach/admin = true, player = false (read-only, published only)
 }
 
@@ -150,6 +152,26 @@ export default function ScoutSheetsHub(props: Props) {
   useEffect(() => {
     if (props.initialGameId) openForGame(props.initialGameId);
   }, [props.initialGameId]);
+
+  useEffect(() => {
+    const target = props.initialSheet;
+    if (!target) return;
+    (async () => {
+      const { data: opp } = await supabase.from("opponents").select("*").eq("id", target.opponentId).maybeSingle();
+      if (opp) await openOpponent(opp as Opponent);
+      setOpenSheetId(target.sheetId);
+    })();
+  }, [props.initialSheet?.sheetId]);
+
+  /** A sheet for this team that isn't tied to one of our games (e.g. a possible playoff opponent). */
+  async function startLooseSheet() {
+    if (!activeOpponent) return;
+    try {
+      const { sheetId } = await ensureLooseScoutSheet(activeOpponent.name);
+      await openOpponent(activeOpponent, { keepTeam: true });
+      setOpenSheetId(sheetId);
+    } catch (e: any) { setError(e?.message ?? "Couldn't start that sheet."); }
+  }
 
   async function addOpponent() {
     if (!newOpponentName.trim()) return;
@@ -347,6 +369,36 @@ export default function ScoutSheetsHub(props: Props) {
           </div>
         )}
 
+        {(() => {
+          // Sheets with no game: scouting them before (or without) playing them.
+          const loose = allSheets.filter((s: any) => !s.game_id);
+          if (!loose.length && !canManage) return null;
+          return (
+            <div style={{ marginBottom: 18 }}>
+              {loose.length > 0 && <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Not on our schedule</div>}
+              {loose.map((s: any) => (
+                <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderTop: "1px solid var(--border)" }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>Scouting sheet</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>Not tied to a game yet · {s.status ?? "draft"}. If we play them, it moves to that game.</div>
+                  </div>
+                  <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <button type="button" onClick={() => setOpenSheetId(s.id)} style={{ background: "none", border: "none", color: "var(--royal-light)", cursor: "pointer", fontSize: 12 }}>View scout sheet →</button>
+                    {canManage && (
+                      <button type="button" title="Delete this scout sheet" onClick={() => handleDeleteSheet(s.id, "the not-on-our-schedule sheet")} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6, padding: "3px 7px", fontSize: 11, cursor: "pointer" }}>✕</button>
+                    )}
+                  </span>
+                </div>
+              ))}
+              {canManage && loose.length === 0 && (
+                <button type="button" onClick={startLooseSheet} style={{ background: "none", border: "none", color: "var(--royal-light)", cursor: "pointer", fontSize: 12, padding: 0 }}>
+                  Scouting them without a game on our schedule? Start a sheet →
+                </button>
+              )}
+            </div>
+          );
+        })()}
+
         <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Last 5 games{filterName ? ` — ${filterName}` : ""}</div>
         {lastGames.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)", padding: "8px 0" }}>No games against them yet.</div>}
         {lastGames.map(g => (
@@ -389,7 +441,7 @@ export default function ScoutSheetsHub(props: Props) {
             {teamSheets.map((s: any) => (
               <div key={s.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid var(--border)", fontSize: 12 }}>
                 <span onClick={() => setOpenSheetId(s.id)} style={{ cursor: "pointer", flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
-                  {s.games?.game_date ? formatDateOnly(s.games.game_date) : "—"}
+                  {s.games?.game_date ? formatDateOnly(s.games.game_date) : !s.game_id ? "Not on our schedule" : "—"}
                   <TeamPill team={s.games?.roster_id ? teamById.get(s.games.roster_id) : null} />
                 </span>
                 <span style={{ color: "var(--muted)", marginRight: 8 }}>{s.status}</span>
