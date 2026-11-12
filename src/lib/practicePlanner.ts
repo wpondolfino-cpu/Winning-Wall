@@ -564,20 +564,68 @@ export async function addTryoutPlayer(
   return { id: data?.id ?? null, error: error?.message ?? null };
 }
 
-/** Bulk add from a pasted list — one name per line. Forty kids at a tryout is a lot of typing one at a time. */
-export async function addTryoutPlayersBulk(seasonId: string | null, block: string): Promise<{ added: number; error: string | null }> {
-  // "Name, grade" per line — paste straight off the sign-in sheet. A line
-  // with no grade still works; the grade can be filled in afterwards.
-  const rows = block.split("\n").map(l => l.trim()).filter(Boolean).map(line => {
-    const [rawName, rawGrade] = line.split(/[,\t]/);
-    const grade = rawGrade ? parseInt(rawGrade.replace(/\D/g, ""), 10) : NaN;
-    return { name: (rawName ?? "").trim(), grade: Number.isFinite(grade) ? grade : null };
-  }).filter(r => r.name);
-  if (!rows.length) return { added: 0, error: "Nothing to add." };
+/**
+ * Reads a pasted tryout list, one player per line, the way sign-in sheets
+ * and school exports actually come:
+ *   Connor Houle                 name
+ *   Connor Houle, 10             name, grade
+ *   Houle, Connor                last, first  -> "Connor Houle"
+ *   Houle, Connor, 10            last, first, grade
+ *   Houle <tab> Connor <tab> Jr  spreadsheet columns, same rules
+ * After a comma, a number (9, 10th, Gr 11) or Fr/So/Jr/Sr is a grade;
+ * anything else is a first name. Stray spaces are tidied and an
+ * ALL-CAPS name is put in normal capitals.
+ */
+export function parseTryoutPaste(block: string): { name: string; grade: number | null }[] {
+  const GRADE_WORDS: Record<string, number> = { fr: 9, freshman: 9, so: 10, soph: 10, sophomore: 10, jr: 11, junior: 11, sr: 12, senior: 12 };
+  const gradeOf = (raw: string): number | null => {
+    const t = raw.trim().toLowerCase().replace(/\./g, "");
+    if (!t) return null;
+    if (t in GRADE_WORDS) return GRADE_WORDS[t];
+    const m = t.match(/^(?:gr(?:ade)?\s*)?(\d{1,2})(?:st|nd|rd|th)?$/);
+    if (!m) return null;
+    const n = parseInt(m[1], 10);
+    return n >= 6 && n <= 12 ? n : null;
+  };
+  const tidy = (s: string) => s.replace(/\s+/g, " ").trim();
+  // Only fixes a name typed in all capitals ("HANRAHAN"); anything mixed is left as typed.
+  const caps = (s: string) => s.split(" ").map(w =>
+    w.length > 1 && w === w.toUpperCase() && /[A-Z]/.test(w)
+      ? w.toLowerCase().replace(/(^|[-'])([a-z])/g, (_, p, c) => p + c.toUpperCase())
+      : w).join(" ");
+
+  return block.split(/\r?\n/).map(line => {
+    const parts = line.split(/\s*[,\t]\s*/).map(tidy).filter(Boolean);
+    if (!parts.length) return null;
+    let grade: number | null = null;
+    // A grade can be the last piece: "Houle, Connor, 10" or "Connor Houle, 10".
+    if (parts.length > 1 && gradeOf(parts[parts.length - 1]) != null) grade = gradeOf(parts.pop()!);
+    // Two pieces left means "Last, First".
+    const name = parts.length >= 2 ? `${parts.slice(1).join(" ")} ${parts[0]}` : parts[0];
+    return { name: caps(tidy(name)), grade };
+  }).filter((r): r is { name: string; grade: number | null } => Boolean(r && r.name));
+}
+
+/**
+ * Bulk add from a pasted list. Forty kids at a tryout is a lot of typing
+ * one at a time. Every name is put in contention for rosterIds -- the
+ * teams of the tryout practice it was pasted from, as Add does -- and a
+ * name already in this season's pool is skipped rather than doubled.
+ */
+export async function addTryoutPlayersBulk(
+  seasonId: string | null, block: string, rosterIds: string[] = []
+): Promise<{ added: number; skipped: number; error: string | null }> {
+  const rows = parseTryoutPaste(block);
+  if (!rows.length) return { added: 0, skipped: 0, error: "Nothing to add." };
+  const existing = await getTryoutPlayers(seasonId, true);
+  const key = (n: string) => n.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const have = new Set(existing.map(p => key(p.name)));
+  const fresh = rows.filter(r => { const k = key(r.name); if (have.has(k)) return false; have.add(k); return true; });
+  if (!fresh.length) return { added: 0, skipped: rows.length, error: null };
   const { data: { user } } = await supabase.auth.getUser();
   const { error } = await supabase.from("tryout_players")
-    .insert(rows.map(r => ({ season_id: seasonId, name: r.name, grade: r.grade, tryout_group: groupForGrade(r.grade), created_by: user?.id })));
-  return { added: error ? 0 : rows.length, error: error?.message ?? null };
+    .insert(fresh.map(r => ({ season_id: seasonId, name: r.name, grade: r.grade, tryout_group: groupForGrade(r.grade), roster_ids: rosterIds, created_by: user?.id })));
+  return { added: error ? 0 : fresh.length, skipped: rows.length - fresh.length, error: error?.message ?? null };
 }
 
 export async function updateTryoutPlayer(id: string, patch: Partial<Pick<TryoutPlayer, "name" | "jersey" | "grade" | "tryout_group" | "roster_ids" | "notes" | "status" | "linked_profile_id">>): Promise<{ error: string | null }> {
