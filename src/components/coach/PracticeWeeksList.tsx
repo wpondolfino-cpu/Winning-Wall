@@ -182,8 +182,10 @@ export default function PracticeWeeksList(props: Props) {
     }
   }
 
+  // "Monday Nov 30"
   function formatDate(d: string) {
-    return new Date(d + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const dt = new Date(d + "T00:00:00");
+    return `${dt.toLocaleDateString(undefined, { weekday: "long" })} ${dt.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
   }
 
   function toggleSelectForPrint(id: string) {
