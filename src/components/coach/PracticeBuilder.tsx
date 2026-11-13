@@ -39,6 +39,7 @@ import TryoutPoolManager from "./TryoutPoolManager";
 import PracticeDrillLibrary from "./PracticeDrillLibrary";
 import PracticePrintView from "./PracticePrintView";
 import PracticeCoverList from "../quizzes/PracticeCoverList";
+import NotesBox from "./NotesBox";
 import type { PracticeDrillLibraryDrill } from "../../lib/practicePlanner";
 
 interface PlayerLite { id: string; name: string; home_roster_id: string | null; grade?: number | null; }
@@ -489,9 +490,14 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
   }
 
   async function handleEditNotes(drill: SegmentDrill, blockId: string, text: string) {
-    const { error } = await updateSegmentDrill(drill.id, { goal_text: text.trim() || null });
+    // One point per line. A left-over empty "4) " or "-" at the end isn't a point.
+    const lines = text.split("\n").map(l => l.replace(/\s+$/, ""));
+    while (lines.length && /^\s*(\d+[.)]|[-•*])?\s*$/.test(lines[lines.length - 1])) lines.pop();
+    const clean = lines.join("\n").trim() || null;
+    if (clean === (drill.goal_text ?? null)) return;
+    const { error } = await updateSegmentDrill(drill.id, { goal_text: clean });
     if (error) { alert("Couldn't save note: " + error); return; }
-    patchLocalDrill(drill.segment_id, drill.id, { goal_text: text.trim() || null });
+    patchLocalDrill(drill.segment_id, drill.id, { goal_text: clean });
   }
 
   async function handleDeleteDrill(drill: SegmentDrill, blockId: string) {
@@ -979,7 +985,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
               <thead>
                 <tr style={{ background: "var(--surface)", textAlign: "left" }}>
                   <th style={{ padding: "8px 10px", fontSize: 11, color: "var(--muted)", width: 120 }}>Time</th>
-                  <th style={{ padding: "8px 10px", fontSize: 11, color: "var(--muted)" }}>Drill</th>
+                  <th style={{ padding: "8px 10px", fontSize: 11, color: "var(--muted)", width: "24%" }}>Drill</th>
                   <th style={{ padding: "8px 10px", fontSize: 11, color: "var(--muted)" }}>Notes</th>
                   <th style={{ padding: "8px 10px", fontSize: 11, color: "var(--muted)", width: 130 }}>Group</th>
                   <th style={{ padding: "8px 10px", fontSize: 11, color: "var(--muted)", width: 140 }}>Coach</th>
@@ -1072,17 +1078,14 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                               <span style={{ fontSize: 9, color: "var(--muted)" }}>min</span>
                             </div>
                           </td>
-                          <td style={{ padding: "10px" }}>
-                            <input
+                          <td style={{ padding: "10px", minWidth: 220 }}>
+                            <NotesBox
                               value={notesDrafts[d.id] ?? (d.goal_text ?? "")}
-                              onChange={e => setNotesDrafts(prev => ({ ...prev, [d.id]: e.target.value }))}
-                              onBlur={e => {
+                              onChange={v => setNotesDrafts(prev => ({ ...prev, [d.id]: v }))}
+                              onBlur={v => {
                                 setNotesDrafts(prev => { const next = { ...prev }; delete next[d.id]; return next; });
-                                handleEditNotes(d, block.id, e.target.value);
+                                handleEditNotes(d, block.id, v);
                               }}
-                              placeholder="Add a note…"
-                              style={{ width: "100%", background: "transparent", border: "none", borderBottom: "1px dashed transparent", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none", padding: "2px 0" }}
-                              onFocus={e => { e.target.style.borderBottom = "1px dashed var(--border)"; }}
                             />
                           </td>
                           <td style={{ padding: "10px" }}>

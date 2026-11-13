@@ -92,7 +92,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                         {row.drill.label && <div style={{ fontSize: 10.5, color: "#666" }}>{row.drill.label}</div>}
                         {row.seg.rosterName && <div style={{ fontSize: 10.5, color: "#666" }}>{row.seg.rosterName}</div>}
                       </td>
-                      <td style={{ padding: "6px 8px" }}>{row.drill.goal_text ?? "—"}</td>
+                      <td style={{ padding: "6px 8px", whiteSpace: "pre-wrap" }}>{row.drill.goal_text ?? "—"}</td>
                       <td style={{ padding: "6px 8px" }}>
                         {row.drill.groups.length === 0 ? "—" : row.drill.groups.map((g, gi) => (
                           <div key={gi} style={{ marginBottom: 4 }}>

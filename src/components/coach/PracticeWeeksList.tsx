@@ -156,7 +156,7 @@ export default function PracticeWeeksList(props: Props) {
         heading: `Block ${i + 1} (${b.duration_minutes} min)`,
         lines: b.segments.flatMap(s => [
           s.rosterName ? `— ${s.rosterName} —` : "— Combined —",
-          ...s.drills.map(d => `${d.title}${d.label ? ` — ${d.label}` : ""} · ${d.duration_minutes} min${d.goal_text ? ` — ${d.goal_text}` : ""}`),
+          ...s.drills.map(d => `${d.title}${d.label ? ` — ${d.label}` : ""} · ${d.duration_minutes} min${d.goal_text ? ` — ${d.goal_text.replace(/\n+/g, " · ")}` : ""}`),
         ]),
       }));
       const dateLabel = new Date(payload.practice_date + "T00:00:00").toLocaleDateString();

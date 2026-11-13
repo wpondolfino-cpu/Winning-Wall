@@ -74,7 +74,7 @@ export default function PracticeSchedulePlayerView({ homeRosterId, practiceId }:
                     {d.title}{d.label && <span style={{ color: "var(--muted)", fontWeight: 400 }}> — {d.label}</span>}
                     <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 12 }}> · {d.duration_minutes} min</span>
                   </div>
-                  {d.goal_text && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{d.goal_text}</div>}
+                  {d.goal_text && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2, whiteSpace: "pre-wrap" }}>{d.goal_text}</div>}
                   {d.groups.length > 0 && (
                     <div style={{ marginTop: 4 }}>
                       {d.groups.map((g, gi) => (
