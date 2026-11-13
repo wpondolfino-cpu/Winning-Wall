@@ -8,8 +8,8 @@
 import { time12 } from "../../lib/scheduleImport";
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  PracticeWeek, Practice, RosterWithCount, Season, getPracticeWeeks, getPracticesInWeek,
-  getPracticeAttentionCount, suggestNextWeekName, renamePracticeWeek,
+  PracticeWeek, Practice, RosterWithCount, Season, getPracticeWeeks, getPracticesInWeeks,
+  getPracticeAttentionCounts, suggestNextWeekName, renamePracticeWeek,
   deletePracticeWeek, deletePractice, movePracticesToWeek, getRosters, getSeasons, getCurrentSeason,
   getTryoutPlayers, clearTryoutPool,
   getPracticeTemplates, deletePracticeTemplate, createEmptyTemplate, PracticeTemplate,
@@ -125,12 +125,18 @@ export default function PracticeWeeksList(props: Props) {
       getSeasons(),
       getCurrentSeason(),
     ]);
-    const rowData = await Promise.all(weeks.map(async w => {
-      const practices = await getPracticesInWeek(w.id);
-      const attentionEntries = await Promise.all(practices.map(async p => [p.id, await getPracticeAttentionCount(p.id)] as const));
-      return { week: w, practices, attention: Object.fromEntries(attentionEntries) };
-    }));
+    // Every week's practices in one request; the "needs attention" badges
+    // are filled in just after, so they never hold up the page.
+    const byWeek = await getPracticesInWeeks(weeks.map(w => w.id));
+    const rowData = weeks.map(w => ({ week: w, practices: byWeek[w.id] ?? [], attention: {} as Record<string, number> }));
     setRows(rowData);
+    const allPracticeIds = rowData.flatMap(r => r.practices.map(p => p.id));
+    void getPracticeAttentionCounts(allPracticeIds).then(counts => {
+      setRows(current => current.map(r => ({
+        ...r,
+        attention: Object.fromEntries(r.practices.map(p => [p.id, counts[p.id] ?? r.attention[p.id] ?? 0])),
+      })));
+    });
     setActiveRosters(allActiveRosters);
     setArchivedRosters(allRosters.filter(r => r.status === "archived"));
     setSeasons(seasonList);
