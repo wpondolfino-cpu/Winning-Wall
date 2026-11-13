@@ -968,6 +968,17 @@ export async function getCurrentPublishedPracticeForRoster(rosterId: string): Pr
   return data;
 }
 
+/**
+ * Every practice in these weeks, in one request (by date), grouped by
+ * week. The Practices page used to ask once per week.
+ */
+export async function getPracticesInWeeks(weekIds: string[]): Promise<Record<string, Practice[]>> {
+  const out: Record<string, Practice[]> = Object.fromEntries(weekIds.map(id => [id, [] as Practice[]]));
+  const rows = await selectIn<Practice>("practices", "*", "week_id", weekIds, q => q.order("practice_date", { ascending: true }));
+  for (const p of rows) if (p.week_id && out[p.week_id]) out[p.week_id].push(p);
+  return out;
+}
+
 export async function getPracticesInWeek(weekId: string): Promise<Practice[]> {
   const { data, error } = await supabase.from("practices").select("*").eq("week_id", weekId).order("practice_date", { ascending: true });
   if (error) { console.error("Failed to load practices:", error); return []; }
@@ -2034,6 +2045,83 @@ export async function addGroupMember(groupId: string, playerId: string, isTryout
 // Counts how many groups across a whole practice contain a player
 // who's excused for that practice — drives the "N groups need
 // attention" badge in the weeks list without opening every block.
+/**
+ * Rows where `column` is any of `ids`, asked for in chunks so a long list
+ * doesn't make a request URL too long for the server. Errors are logged
+ * and treated as no rows, like the single loaders.
+ */
+async function selectIn<T = any>(table: string, columns: string, column: string, ids: string[], shape?: (q: any) => any): Promise<T[]> {
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  if (!unique.length) return [];
+  const chunks: string[][] = [];
+  for (let i = 0; i < unique.length; i += 100) chunks.push(unique.slice(i, i + 100));
+  const results = await Promise.all(chunks.map(async chunk => {
+    let q: any = supabase.from(table).select(columns).in(column, chunk);
+    if (shape) q = shape(q);
+    const { data, error } = await q;
+    if (error) { console.error(`Failed to load ${table}:`, error); return []; }
+    return (data ?? []) as T[];
+  }));
+  return results.flat();
+}
+
+/**
+ * The "needs attention" badge for many practices at once: how many groups
+ * (or group-less stations) hold someone marked absent. Same rule as
+ * getPracticeAttentionCount below, but a handful of requests in total --
+ * absences, then blocks, segments, drills and groups for just the
+ * practices that have someone out -- instead of a chain of requests per
+ * block, segment and drill of every practice.
+ */
+export async function getPracticeAttentionCounts(practiceIds: string[]): Promise<Record<string, number>> {
+  const counts: Record<string, number> = Object.fromEntries(practiceIds.map(id => [id, 0]));
+  if (!practiceIds.length) return counts;
+
+  const overrides = await selectIn<any>("practice_attendance_overrides", "practice_id, player_id, override_type", "practice_id", practiceIds);
+  const excused = new Map<string, Set<string>>();
+  for (const o of overrides) {
+    if (o.override_type !== "absent") continue;
+    if (!excused.has(o.practice_id)) excused.set(o.practice_id, new Set());
+    excused.get(o.practice_id)!.add(o.player_id);
+  }
+  if (!excused.size) return counts;                     // nobody out anywhere: nothing to walk
+
+  const blocks = await selectIn<any>("practice_blocks", "id, practice_id", "practice_id", [...excused.keys()]);
+  const practiceOfBlock = new Map(blocks.map(b => [b.id, b.practice_id]));
+  const segs = await selectIn<any>("block_segments", "id, block_id", "block_id", blocks.map(b => b.id));
+  const practiceOfSeg = new Map(segs.map(sg => [sg.id, practiceOfBlock.get(sg.block_id)]));
+  const drills = await selectIn<any>("segment_drills", "id, segment_id, station_member_ids, station_tryout_member_ids", "segment_id", segs.map(sg => sg.id));
+  const groups = await selectIn<any>("segment_drill_groups", "id, segment_drill_id", "segment_drill_id", drills.map(d => d.id));
+  const members = await selectIn<any>("segment_drill_group_members", "group_id, player_id, tryout_player_id", "group_id", groups.map(g => g.id));
+
+  const membersOf = new Map<string, string[]>();
+  for (const m of members) {
+    const id = m.player_id ?? m.tryout_player_id;
+    if (!membersOf.has(m.group_id)) membersOf.set(m.group_id, []);
+    membersOf.get(m.group_id)!.push(id);
+  }
+  const groupsOf = new Map<string, string[]>();
+  for (const g of groups) {
+    if (!groupsOf.has(g.segment_drill_id)) groupsOf.set(g.segment_drill_id, []);
+    groupsOf.get(g.segment_drill_id)!.push(g.id);
+  }
+
+  for (const d of drills) {
+    const practiceId = practiceOfSeg.get(d.segment_id);
+    const out = practiceId ? excused.get(practiceId) : undefined;
+    if (!practiceId || !out) continue;
+    const gs = groupsOf.get(d.id) ?? [];
+    if (gs.length) {
+      counts[practiceId] += gs.filter(gid => (membersOf.get(gid) ?? []).some(pid => out.has(pid))).length;
+    } else {
+      // A station with no groups of its own still has people at it.
+      const stationMembers = [...(d.station_member_ids ?? []), ...(d.station_tryout_member_ids ?? [])];
+      if (stationMembers.some((pid: string) => out.has(pid))) counts[practiceId] += 1;
+    }
+  }
+  return counts;
+}
+
 export async function getPracticeAttentionCount(practiceId: string): Promise<number> {
   const overrides = await getAttendanceOverrides(practiceId);
   const excused = new Set(overrides.filter(o => o.override_type === "absent").map(o => o.player_id));
