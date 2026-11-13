@@ -594,16 +594,137 @@ export function parseTryoutPaste(block: string): { name: string; grade: number |
       ? w.toLowerCase().replace(/(^|[-'])([a-z])/g, (_, p, c) => p + c.toUpperCase())
       : w).join(" ");
 
+  const SUFFIX = /^(jr|sr|ii|iii|iv)\.?$/i;
   return block.split(/\r?\n/).map(line => {
-    const parts = line.split(/\s*[,\t]\s*/).map(tidy).filter(Boolean);
+    // Columns: a comma, a tab, or a run of 2+ spaces (a spreadsheet pasted as text).
+    const parts = line.split(/\s*[,\t]\s*|\s{2,}/).map(tidy).filter(Boolean);
     if (!parts.length) return null;
     let grade: number | null = null;
     // A grade can be the last piece: "Houle, Connor, 10" or "Connor Houle, 10".
     if (parts.length > 1 && gradeOf(parts[parts.length - 1]) != null) grade = gradeOf(parts.pop()!);
-    // Two pieces left means "Last, First".
-    const name = parts.length >= 2 ? `${parts.slice(1).join(" ")} ${parts[0]}` : parts[0];
+    // ...or a number on the end after one space: "Houle, Connor 12".
+    if (grade == null) {
+      const m = parts[parts.length - 1].match(/^(.*\S)\s+(\d{1,2}(?:st|nd|rd|th)?)$/i);
+      if (m && gradeOf(m[2]) != null) { grade = gradeOf(m[2]); parts[parts.length - 1] = m[1]; }
+    }
+    // Two pieces left means "Last, First". A Jr/III on the first name
+    // belongs after the last: "Smith, John Jr" -> "John Smith Jr".
+    let name: string;
+    if (parts.length >= 2) {
+      const first = parts.slice(1).join(" ").split(" ");
+      const suffix = first.length > 1 && SUFFIX.test(first[first.length - 1]) ? first.pop()! : "";
+      name = `${first.join(" ")} ${parts[0]}${suffix ? " " + suffix : ""}`;
+    } else name = parts[0];
     return { name: caps(tidy(name)), grade };
   }).filter((r): r is { name: string; grade: number | null } => Boolean(r && r.name));
+}
+
+// ── Matching pool names to player accounts ──────────────────
+
+/** A player account a tryout name might belong to. */
+export interface PlayerAccountLite { id: string; name: string; graduation_year: number | null }
+
+/** This program's player accounts (row security keeps it to the program). */
+export async function getPlayerAccounts(): Promise<PlayerAccountLite[]> {
+  const { data, error } = await supabase.from("profiles").select("id, name, graduation_year").eq("role", "player");
+  if (error) { console.error("Failed to load player accounts:", error); return []; }
+  return ((data ?? []) as PlayerAccountLite[]).filter(p => p.name);
+}
+
+// Common short names, both ways round.
+const NICKNAMES: string[][] = [
+  ["christopher", "chris", "topher"], ["michael", "mike", "mikey"], ["matthew", "matt"], ["nicholas", "nick", "nico"],
+  ["nicholai", "nick", "nico"], ["benjamin", "ben", "benny"], ["jonathan", "jon", "john"], ["john", "jack", "johnny"],
+  ["james", "jim", "jimmy", "jamie"], ["joseph", "joe", "joey"], ["joshua", "josh"], ["daniel", "dan", "danny"],
+  ["anthony", "tony", "ant"], ["william", "will", "bill", "billy", "liam"], ["robert", "rob", "bob", "bobby", "robbie"],
+  ["richard", "rich", "rick", "ricky"], ["thomas", "tom", "tommy"], ["alexander", "alex", "xander"], ["andrew", "andy", "drew"],
+  ["zachary", "zach", "zack"], ["samuel", "sam", "sammy"], ["edward", "ed", "eddie", "ted"], ["timothy", "tim", "timmy"],
+  ["jacob", "jake"], ["nathaniel", "nate", "nathan"], ["nathan", "nate"], ["gabriel", "gabe"], ["elijah", "eli"],
+  ["cameron", "cam"], ["dominic", "dom"], ["jeffrey", "jeff"], ["kenneth", "ken", "kenny"], ["steven", "steve"],
+  ["stephen", "steve"], ["patrick", "pat"], ["peter", "pete"], ["maxwell", "max"], ["maximilian", "max"],
+  ["isaiah", "zay"], ["jayden", "jay"], ["jason", "jay"], ["cody", "dakota"], ["frederick", "fred", "freddie"],
+  ["federico", "fede"], ["gregory", "greg"], ["jeremiah", "jerry"], ["lawrence", "larry"], ["leonardo", "leo"],
+  ["mathew", "matt"], ["raymond", "ray"], ["ronald", "ron"], ["theodore", "theo", "ted"], ["vincent", "vince", "vinny"],
+];
+const nickGroups = new Map<string, Set<string>>();
+for (const group of NICKNAMES) for (const n of group) {
+  if (!nickGroups.has(n)) nickGroups.set(n, new Set());
+  group.forEach(m => nickGroups.get(n)!.add(m));
+}
+const nameWords = (n: string) => n.toLowerCase().replace(/[^a-z\s'-]/g, " ").replace(/['-]/g, "").split(/\s+/).filter(w => w && !/^(jr|sr|ii|iii|iv)$/.test(w));
+const nameKey = (n: string) => nameWords(n).join("");
+
+function editDistance(a: string, b: string): number {
+  if (Math.abs(a.length - b.length) > 2) return 3;
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+
+/** Could two first names be the same kid? Chris/Christopher, Mike/Michael, one typo. */
+function firstNamesMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (nickGroups.get(a)?.has(b)) return true;
+  if (a.length >= 3 && b.length >= 3 && (a.startsWith(b) || b.startsWith(a))) return true;
+  return a.length >= 4 && b.length >= 4 && editDistance(a, b) <= 1;
+}
+
+/**
+ * Which account a tryout name belongs to.
+ *   exact -- the same name (ignoring capitals, spaces, punctuation and
+ *            Jr/III) on exactly one account: safe to link on its own.
+ *   close -- accounts that are probably the same kid under a different
+ *            spelling (Christopher / Chris Jones, a one-letter typo in the
+ *            last name): asked about, never linked without a tap.
+ */
+export function matchAccount(name: string, accounts: PlayerAccountLite[]): { exact: PlayerAccountLite | null; close: PlayerAccountLite[] } {
+  const key = nameKey(name);
+  const same = accounts.filter(a => nameKey(a.name) === key);
+  if (same.length === 1) return { exact: same[0], close: [] };
+  if (same.length > 1) return { exact: null, close: same };          // two kids with one name: ask
+  const w = nameWords(name);
+  if (w.length < 2) return { exact: null, close: [] };
+  const first = w[0], last = w.slice(1).join("");
+  const close = accounts.filter(a => {
+    const aw = nameWords(a.name);
+    if (aw.length < 2) return false;
+    const aFirst = aw[0], aLast = aw.slice(1).join("");
+    const lastOk = aLast === last || (last.length >= 5 && editDistance(aLast, last) <= (last.length >= 7 ? 2 : 1))
+      || aw[aw.length - 1] === w[w.length - 1];                      // middle name on one side only
+    return lastOk && firstNamesMatch(first, aFirst);
+  });
+  return { exact: null, close: close.slice(0, 4) };
+}
+
+/** A tryout name that might be a player with an account: shown to the coach to confirm. */
+export interface LinkSuggestion { tryoutId: string; name: string; candidates: PlayerAccountLite[] }
+
+/**
+ * Links pool names to accounts: exact matches straight away, close ones
+ * returned to ask about. Names already linked, or whose account is
+ * already linked to another pool name, are left alone. "Not him" answers
+ * are skipped via dismissed (tryout ids).
+ */
+export async function linkPoolToAccounts(
+  pool: TryoutPlayer[], accounts: PlayerAccountLite[], dismissed: Set<string> = new Set()
+): Promise<{ linked: number; suggestions: LinkSuggestion[] }> {
+  const taken = new Set(pool.map(p => p.linked_profile_id).filter(Boolean) as string[]);
+  let linked = 0;
+  const suggestions: LinkSuggestion[] = [];
+  for (const p of pool) {
+    if (p.linked_profile_id || dismissed.has(p.id)) continue;
+    const free = accounts.filter(a => !taken.has(a.id));
+    const { exact, close } = matchAccount(p.name, free);
+    if (exact) {
+      const { error } = await updateTryoutPlayer(p.id, { linked_profile_id: exact.id });
+      if (!error) { taken.add(exact.id); linked++; }
+    } else if (close.length) {
+      suggestions.push({ tryoutId: p.id, name: p.name, candidates: close });
+    }
+  }
+  return { linked, suggestions };
 }
 
 /**
@@ -611,21 +732,28 @@ export function parseTryoutPaste(block: string): { name: string; grade: number |
  * one at a time. Every name is put in contention for rosterIds -- the
  * teams of the tryout practice it was pasted from, as Add does -- and a
  * name already in this season's pool is skipped rather than doubled.
+ * Names are then matched to player accounts (see linkPoolToAccounts).
  */
 export async function addTryoutPlayersBulk(
   seasonId: string | null, block: string, rosterIds: string[] = []
-): Promise<{ added: number; skipped: number; error: string | null }> {
+): Promise<{ added: number; skipped: number; linked: number; suggestions: LinkSuggestion[]; error: string | null }> {
+  const none = { linked: 0, suggestions: [] as LinkSuggestion[] };
   const rows = parseTryoutPaste(block);
-  if (!rows.length) return { added: 0, skipped: 0, error: "Nothing to add." };
-  const existing = await getTryoutPlayers(seasonId, true);
-  const key = (n: string) => n.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const have = new Set(existing.map(p => key(p.name)));
-  const fresh = rows.filter(r => { const k = key(r.name); if (have.has(k)) return false; have.add(k); return true; });
-  if (!fresh.length) return { added: 0, skipped: rows.length, error: null };
+  if (!rows.length) return { added: 0, skipped: 0, ...none, error: "Nothing to add." };
+  const [existing, accounts] = await Promise.all([getTryoutPlayers(seasonId, true), getPlayerAccounts()]);
+  // Already in the pool -- by name, or as the account that name links to.
+  const have = new Set(existing.map(p => nameKey(p.name)));
+  existing.forEach(p => { const acct = accounts.find(a => a.id === p.linked_profile_id); if (acct) have.add(nameKey(acct.name)); });
+  const fresh = rows.filter(r => { const k = nameKey(r.name); if (have.has(k)) return false; have.add(k); return true; });
+  if (!fresh.length) return { added: 0, skipped: rows.length, ...none, error: null };
   const { data: { user } } = await supabase.auth.getUser();
-  const { error } = await supabase.from("tryout_players")
-    .insert(fresh.map(r => ({ season_id: seasonId, name: r.name, grade: r.grade, tryout_group: groupForGrade(r.grade), roster_ids: rosterIds, created_by: user?.id })));
-  return { added: error ? 0 : fresh.length, skipped: rows.length - fresh.length, error: error?.message ?? null };
+  const { data, error } = await supabase.from("tryout_players")
+    .insert(fresh.map(r => ({ season_id: seasonId, name: r.name, grade: r.grade, tryout_group: groupForGrade(r.grade), roster_ids: rosterIds, created_by: user?.id })))
+    .select("*");
+  if (error) return { added: 0, skipped: 0, ...none, error: error.message };
+  // Accounts already linked to someone in the pool can't be linked twice.
+  const result = await linkPoolToAccounts([...existing.filter(p => p.linked_profile_id), ...((data ?? []) as TryoutPlayer[])], accounts);
+  return { added: fresh.length, skipped: rows.length - fresh.length, linked: result.linked, suggestions: result.suggestions, error: null };
 }
 
 export async function updateTryoutPlayer(id: string, patch: Partial<Pick<TryoutPlayer, "name" | "jersey" | "grade" | "tryout_group" | "roster_ids" | "notes" | "status" | "linked_profile_id">>): Promise<{ error: string | null }> {
