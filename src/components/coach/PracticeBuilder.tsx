@@ -373,12 +373,13 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
     const { error } = await updateBlock(block.id, { duration_minutes: minutes });
     if (error) { alert("Couldn't save duration: " + error); return; }
     setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, duration_minutes: minutes } : b));
-    // Re-split any multi-drill segments in this block to the new duration —
-    // compute the even split locally instead of re-fetching from the server.
+    // Fit every segment's drills to the new duration -- split evenly across
+    // stations, or the whole block for a single drill -- computing it
+    // locally instead of re-fetching from the server.
     const segs = segByBlock[block.id] ?? [];
     for (const s of segs) {
       const drills = drillsBySeg[s.id] ?? [];
-      if (drills.length > 1) {
+      if (drills.length >= 1) {
         await autoSplitSegmentDrillDurations(s.id, minutes);
         const each = Math.max(1, Math.floor(minutes / drills.length));
         setDrillsBySeg(prev => ({ ...prev, [s.id]: (prev[s.id] ?? []).map(d => ({ ...d, duration_minutes: each })) }));
@@ -446,7 +447,8 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
 
     const existing = drillsBySeg[segment.id] ?? [];
     const label = existing.length > 0 ? `Station ${existing.length + 1}` : null;
-    const duration = drill.default_duration_minutes ?? block.duration_minutes;
+    // The only drill in the block fills it, like stations share it.
+    const duration = existing.length === 0 ? block.duration_minutes : (drill.default_duration_minutes ?? block.duration_minutes);
     const { id: newId, error } = await createSegmentDrill(segment.id, {
       drill_id: drill.id,
       order_index: existing.length,
@@ -503,7 +505,16 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
   async function handleDeleteDrill(drill: SegmentDrill, blockId: string) {
     const { error } = await deleteSegmentDrill(drill.id);
     if (error) { alert("Couldn't delete: " + error); return; }
-    setDrillsBySeg(prev => ({ ...prev, [drill.segment_id]: (prev[drill.segment_id] ?? []).filter(d => d.id !== drill.id) }));
+    const remaining = (drillsBySeg[drill.segment_id] ?? []).filter(d => d.id !== drill.id);
+    const block = blocks.find(b => b.id === blockId);
+    // The drills left fill the block again: shared evenly, or all of it for one.
+    if (block && remaining.length) {
+      await autoSplitSegmentDrillDurations(drill.segment_id, block.duration_minutes);
+      const each = Math.max(1, Math.floor(block.duration_minutes / remaining.length));
+      setDrillsBySeg(prev => ({ ...prev, [drill.segment_id]: remaining.map(d => ({ ...d, duration_minutes: each })) }));
+    } else {
+      setDrillsBySeg(prev => ({ ...prev, [drill.segment_id]: remaining }));
+    }
   }
 
   // Swaps a drill with its neighbor above/below within the same segment
