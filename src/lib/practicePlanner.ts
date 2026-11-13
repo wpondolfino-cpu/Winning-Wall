@@ -2592,7 +2592,7 @@ export async function getWinnableDrills(practiceId: string): Promise<WinnableDri
         out.push({
           drillId: d.id,
           title: lib?.title ?? d.label ?? "Untitled drill",
-          label: d.label,
+          label: d.drill_id ? d.label : null,   // an outline's words are its title; don't show them twice
           groups,
           // Rotating stations see the whole block, so no pool narrowing.
           poolIds: !rotating && station.length ? station : null,

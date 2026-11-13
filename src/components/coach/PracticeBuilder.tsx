@@ -140,6 +140,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
   const [blockDurationDrafts, setBlockDurationDrafts] = useState<Record<string, string>>({});
   const [drillDurationDrafts, setDrillDurationDrafts] = useState<Record<string, string>>({});
   const [notesDrafts, setNotesDrafts] = useState<Record<string, string>>({});
+  // "+ Outline": which segment is typing one, and the words so far.
+  const [outlineTarget, setOutlineTarget] = useState<string | null>(null);
+  const [outlineText, setOutlineText] = useState("");
   const [groupCounts, setGroupCounts] = useState<Record<string, number>>({});
   // Each drill's groups' coaches, for the Coach column ("Houle (A)").
   const [groupCoachesByDrill, setGroupCoachesByDrill] = useState<Record<string, { label: string; coach_ids: string[] }[]>>({});
@@ -437,10 +440,12 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
     setDrillsById(prev => ({ ...prev, [drill.id]: drill }));
 
     if (replacing) {
-      // Swapping which drill this slot points to — keep its own duration/label/goal/coach as-is.
-      const { error } = await updateSegmentDrill(replacing.id, { drill_id: drill.id });
+      // Swapping which drill this slot points to — keep its own duration/goal/coach as-is.
+      // An outline's words were only standing in for the drill, so they go.
+      const patch = replacing.drill_id ? { drill_id: drill.id } : { drill_id: drill.id, label: null };
+      const { error } = await updateSegmentDrill(replacing.id, patch);
       if (error) { alert("Couldn't change drill: " + error); return; }
-      patchLocalDrill(segment.id, replacing.id, { drill_id: drill.id });
+      patchLocalDrill(segment.id, replacing.id, patch);
       setDrillPickerTarget(null);
       return;
     }
@@ -483,6 +488,38 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
     }
     setDrillsBySeg(prev => ({ ...prev, [segment.id]: updatedList }));
     setDrillPickerTarget(null);
+  }
+
+  /**
+   * An outline: a spot in the block that's just words ("TRANSITION") until
+   * a drill is picked for it. Takes time like a drill -- all of the block
+   * on its own, an even share alongside stations. Tapping the words picks
+   * the drill, which replaces them.
+   */
+  async function handleAddOutline(segment: BlockSegment, block: PracticeBlock) {
+    const words = outlineText.trim().replace(/\s+/g, " ");
+    if (!words) { setOutlineTarget(null); return; }
+    const existing = drillsBySeg[segment.id] ?? [];
+    const { id: newId, error } = await createSegmentDrill(segment.id, {
+      drill_id: null, order_index: existing.length, label: words,
+      duration_minutes: existing.length === 0 ? block.duration_minutes : Math.max(1, Math.floor(block.duration_minutes / (existing.length + 1))),
+      group_size: null, num_groups: null,
+    });
+    if (error || !newId) { alert("Couldn't add outline: " + (error ?? "unknown error")); return; }
+    const outline: SegmentDrill = {
+      id: newId, segment_id: segment.id, drill_id: null, order_index: existing.length,
+      label: words, duration_minutes: block.duration_minutes, goal_text: null, coach_name: null, coach_ids: [],
+      group_size: null, num_groups: null, station_member_ids: [], station_tryout_member_ids: [],
+      split_rule: "none", split_n: null, is_competitive: null, split_overrides: {},
+    };
+    let updated = [...existing, outline];
+    if (updated.length > 1) {
+      await autoSplitSegmentDrillDurations(segment.id, block.duration_minutes);
+      const each = Math.max(1, Math.floor(block.duration_minutes / updated.length));
+      updated = updated.map(d => ({ ...d, duration_minutes: each }));
+    }
+    setDrillsBySeg(prev => ({ ...prev, [segment.id]: updated }));
+    setOutlineTarget(null); setOutlineText("");
   }
 
   async function handleEditDrillDuration(drill: SegmentDrill, blockId: string, minutes: number) {
@@ -1065,9 +1102,17 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                                     style={{ cursor: d.id === drills[drills.length - 1].id ? "default" : "pointer", opacity: d.id === drills[drills.length - 1].id ? 0.25 : 1, color: "var(--muted)", fontSize: 9, lineHeight: 1 }}>▼</span>
                                 </span>
                               )}
-                              <span style={{ fontSize: 13, fontWeight: 600 }}>
-                                {d.drill_id ? (drillsById[d.drill_id]?.title ?? "Loading…") : (d.label ?? "Untitled drill")}
-                              </span>
+                              {d.drill_id ? (
+                                <span style={{ fontSize: 13, fontWeight: 600 }}>{drillsById[d.drill_id]?.title ?? "Loading…"}</span>
+                              ) : (
+                                // An outline: just its words, made to stand out. Tap to pick the drill.
+                                <span role="button" tabIndex={0} title="Outline: tap to pick the drill for it"
+                                  onClick={() => setDrillPickerTarget({ segment: seg, block, replacing: d })}
+                                  onKeyDown={e => { if (e.key === "Enter") setDrillPickerTarget({ segment: seg, block, replacing: d }); }}
+                                  style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.6, color: "var(--gold-text)", cursor: "pointer" }}>
+                                  {d.label ?? "Outline"}
+                                </span>
+                              )}
                               <span onClick={() => openDrillDetails(d, block)} title="Edit" style={{ cursor: "pointer", color: "var(--muted)", fontSize: 12 }}>✎</span>
                               <span onClick={() => handleDeleteDrill(d, block.id)} title="Remove" style={{ cursor: "pointer", color: "var(--danger-text)", fontSize: 12, marginLeft: "auto" }}>✕</span>
                             </div>
@@ -1169,6 +1214,21 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                           {/* Adds a drill WITH its setup — note, coaches,
                               groups, station — instead of a fresh placement
                               you'd have to build again. */}
+                          {outlineTarget === seg.id ? (
+                            <span style={{ display: "inline-flex", gap: 6, marginLeft: 6, alignItems: "center" }}>
+                              <input autoFocus value={outlineText} onChange={e => setOutlineText(e.target.value)} maxLength={60}
+                                placeholder="e.g. Transition"
+                                onKeyDown={e => { if (e.key === "Enter") handleAddOutline(seg, block); if (e.key === "Escape") { setOutlineTarget(null); setOutlineText(""); } }}
+                                style={{ ...inputStyle, width: 170, padding: "4px 8px", fontSize: 12 }} />
+                              <button onClick={() => handleAddOutline(seg, block)} style={{ ...smallBtn, fontSize: 11 }}>Add</button>
+                              <button onClick={() => { setOutlineTarget(null); setOutlineText(""); }} style={{ ...smallBtn, fontSize: 11 }}>Cancel</button>
+                            </span>
+                          ) : (
+                            <button onClick={() => { setOutlineTarget(seg.id); setOutlineText(""); }} title="Save a spot with just a label, and pick the drill later"
+                              style={{ ...smallBtn, fontSize: 11, marginLeft: 6 }}>
+                              + Outline
+                            </button>
+                          )}
                           <button onClick={() => setCopyTarget({ segment: seg, block, orderIndex: drills.length })}
                             style={{ ...smallBtn, fontSize: 11, marginLeft: 6 }}>
                             ⧉ From a past practice
