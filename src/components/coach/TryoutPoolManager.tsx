@@ -16,7 +16,11 @@ import { useState, useEffect } from "react";
 import {
   TryoutPlayer, getTryoutPlayers, addTryoutPlayer, addTryoutPlayersBulk,
   updateTryoutPlayer, deleteTryoutPlayer, clearTryoutPool, Roster,
+  PlayerAccountLite, LinkSuggestion, getPlayerAccounts, linkPoolToAccounts,
 } from "../../lib/practicePlanner";
+import { gradeFromGradYear } from "../../lib/teamDesigner";
+
+const GRADE_LABEL: Record<number, string> = { 9: "Fr", 10: "So", 11: "Jr", 12: "Sr" };
 
 interface Props {
   seasonId: string | null;
@@ -41,8 +45,47 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
   const [notesFor, setNotesFor] = useState<string | null>(null);
   const [notesDraft, setNotesDraft] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  // Player accounts, for linking pool names to kids already on the site.
+  const [accounts, setAccounts] = useState<PlayerAccountLite[]>([]);
+  // Close matches waiting for a coach to say "same kid" or "not him".
+  const [suggestions, setSuggestions] = useState<LinkSuggestion[]>([]);
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [linking, setLinking] = useState(false);
 
   useEffect(() => { load(); }, [seasonId, showCut]);
+  useEffect(() => { getPlayerAccounts().then(setAccounts); }, []);
+  const accountById = new Map(accounts.map(a => [a.id, a]));
+
+  /** Exact name matches link on their own; close ones come back to ask about. */
+  async function findAccounts(silent = false) {
+    setLinking(true);
+    const pool = await getTryoutPlayers(seasonId, true);
+    const { linked, suggestions } = await linkPoolToAccounts(pool, accounts.length ? accounts : await getPlayerAccounts(), dismissed);
+    setSuggestions(suggestions);
+    setLinking(false);
+    if (!silent) setMsg(linked || suggestions.length
+      ? `Linked ${linked} to ${linked === 1 ? "an account" : "accounts"}.${suggestions.length ? ` ${suggestions.length} to check below.` : ""}`
+      : "No more names match player accounts.");
+    await load(); onChanged?.();
+    return { linked, suggestions };
+  }
+
+  async function confirmLink(tryoutId: string, accountId: string | null) {
+    if (accountId) await updateTryoutPlayer(tryoutId, { linked_profile_id: accountId });
+    else setDismissed(d => new Set(d).add(tryoutId));
+    setSuggestions(list => list
+      .filter(x => x.tryoutId !== tryoutId)
+      // That account is spoken for now.
+      .map(x => ({ ...x, candidates: x.candidates.filter(c => c.id !== accountId) }))
+      .filter(x => x.candidates.length));
+    if (accountId) { await load(); onChanged?.(); }
+  }
+
+  async function unlink(p: TryoutPlayer) {
+    await updateTryoutPlayer(p.id, { linked_profile_id: null });
+    setDismissed(d => new Set(d).add(p.id));
+    await load(); onChanged?.();
+  }
 
   async function load() {
     setLoading(true);
@@ -55,15 +98,19 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
     const { error } = await addTryoutPlayer(seasonId, newName, null, null, defaultRosterIds ?? []);
     if (error) { setMsg(error); return; }
     setNewName("");
-    await load(); onChanged?.();
+    const { linked, suggestions } = await findAccounts(true);
+    setMsg(linked ? "Added and linked to their account." : suggestions.length ? "Added. Check the possible account match below." : null);
   }
 
   async function handleBulk() {
-    const { added, skipped, error } = await addTryoutPlayersBulk(seasonId, bulkText, defaultRosterIds ?? []);
+    const { added, skipped, linked, suggestions, error } = await addTryoutPlayersBulk(seasonId, bulkText, defaultRosterIds ?? []);
     if (error) { setMsg(error); return; }
     setBulkText(""); setBulkOpen(false);
+    setSuggestions(suggestions.filter(x => !dismissed.has(x.tryoutId)));
     const teams = (defaultRosterIds ?? []).map(id => rosters.find(r => r.id === id)?.name).filter(Boolean).join(" + ");
     setMsg(`Added ${added} ${added === 1 ? "player" : "players"}${teams ? ` for ${teams}` : ""}.`
+      + (linked ? ` ${linked} linked to their accounts.` : "")
+      + (suggestions.length ? ` ${suggestions.length} to check below.` : "")
       + (skipped ? ` ${skipped} already in the pool, skipped.` : ""));
     await load(); onChanged?.();
   }
@@ -143,6 +190,34 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
 
         {msg && <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>{msg}</div>}
 
+        {/* Close matches: probably a kid who already has an account. */}
+        {suggestions.length > 0 && (
+          <div style={{ border: "1px solid rgba(240,192,64,0.5)", background: "rgba(240,192,64,0.08)", borderRadius: 10, padding: 10, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Same player?</div>
+            <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 8 }}>
+              These names are close to a player account. Link them if it's the same kid, so they show up once and use their account's grade.
+            </div>
+            {suggestions.map(sg => (
+              <div key={sg.tryoutId} style={{ borderTop: "1px solid var(--border)", padding: "7px 0" }}>
+                <div style={{ fontSize: 13, marginBottom: 5 }}><strong>{sg.name}</strong> <span style={{ color: "var(--muted)", fontSize: 12 }}>on the sign-up</span></div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {sg.candidates.map(c => {
+                    const g = gradeFromGradYear(c.graduation_year);
+                    return (
+                      <button key={c.id} onClick={() => confirmLink(sg.tryoutId, c.id)} style={{ ...primary, padding: "5px 10px", fontSize: 12 }}>
+                        Link to {c.name}{g && GRADE_LABEL[g] ? ` (${GRADE_LABEL[g]})` : ""}
+                      </button>
+                    );
+                  })}
+                  <button onClick={() => confirmLink(sg.tryoutId, null)} style={{ ...btn, padding: "5px 10px" }}>
+                    {sg.candidates.length > 1 ? "None of these" : "Not the same"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {loading ? (
           <div style={{ fontSize: 13, color: "var(--muted)" }}>Loading…</div>
         ) : active.length === 0 && cut.length === 0 ? (
@@ -171,9 +246,32 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
               <div key={p.id} style={{ borderTop: "1px solid var(--border)", padding: "8px 0", opacity: p.status === "cut" ? 0.5 : 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, textDecoration: p.status === "cut" ? "line-through" : "none" }}>
-                      {p.name}
-                    </div>
+                    {(() => {
+                      const acct = p.linked_profile_id ? accountById.get(p.linked_profile_id) : undefined;
+                      // A linked kid's grade comes from their account; otherwise the one typed in.
+                      const grade = acct ? gradeFromGradYear(acct.graduation_year) : p.grade;
+                      return (
+                        <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 14, textDecoration: p.status === "cut" ? "line-through" : "none" }}>{p.name}</span>
+                          {acct ? (
+                            <span style={{ fontSize: 11, color: "var(--muted)" }}>{grade && GRADE_LABEL[grade] ? GRADE_LABEL[grade] : grade ? `Gr ${grade}` : ""}</span>
+                          ) : (
+                            <select value={p.grade ?? ""} title="Grade"
+                              onChange={async e => { const g = e.target.value ? parseInt(e.target.value, 10) : null; await updateTryoutPlayer(p.id, { grade: g }); await load(); onChanged?.(); }}
+                              style={{ fontSize: 11, padding: "1px 4px", borderRadius: 5, border: "1px solid var(--border)", background: "var(--surface2)", color: p.grade ? "var(--text)" : "var(--muted)", fontFamily: "inherit" }}>
+                              <option value="">Grade?</option>
+                              {[9, 10, 11, 12].map(g => <option key={g} value={g}>{GRADE_LABEL[g]}</option>)}
+                            </select>
+                          )}
+                          {acct && (
+                            <span title={`Linked to ${acct.name}'s account`} style={{ fontSize: 10.5, padding: "1px 6px", borderRadius: 5, border: "1px solid rgba(45,155,90,0.5)", color: "var(--green, #2d9b5a)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                              ✓ account{acct.name.toLowerCase() !== p.name.toLowerCase() ? `: ${acct.name}` : ""}
+                              <button onClick={() => unlink(p)} title="Unlink" style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, fontSize: 11 }}>×</button>
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {/* Which teams they're up for. Tap to change — someone
                         pulled up to the varsity tryout is just in
                         contention for both. */}
@@ -239,9 +337,14 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
         )}
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
-          <button onClick={() => setShowCut(v => !v)} style={btn}>
-            {showCut ? "Hide cut players" : "Show cut players"}
-          </button>
+          <span style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <button onClick={() => setShowCut(v => !v)} style={btn}>
+              {showCut ? "Hide cut players" : "Show cut players"}
+            </button>
+            <button onClick={() => findAccounts()} disabled={linking} style={btn} title="Link names in the pool to players who already have accounts">
+              {linking ? "Checking…" : "Find accounts"}
+            </button>
+          </span>
           <button onClick={handleClearPool} style={{ ...btn, color: "#b8342e" }}>Clear pool</button>
         </div>
       </div>
