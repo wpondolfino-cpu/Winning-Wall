@@ -63,7 +63,7 @@ export default function PracticeSchedulePlayerView({ homeRosterId, practiceId }:
       {practice.blocks.map((b, bi) => (
         <div key={bi} style={{ marginBottom: 18 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "var(--royal-light)", marginBottom: 8 }}>
-            {formatClock(b.start)} – {formatClock(b.end)} <span style={{ color: "var(--muted)", fontWeight: 400 }}>({b.duration_minutes} min)</span>
+            {formatClock(b.start)} – {formatClock(b.end)} <span style={{ color: "var(--muted)", fontWeight: 400 }}>({b.duration_minutes} min)</span>{b.water_break ? " 💧" : ""}
           </div>
           {b.segments.map((s, si) => (
             <div key={si} style={{ marginBottom: 10, paddingLeft: 10, borderLeft: "2px solid var(--border)" }}>
@@ -71,7 +71,7 @@ export default function PracticeSchedulePlayerView({ homeRosterId, practiceId }:
               {s.drills.map((d, di) => (
                 <div key={di} style={{ marginBottom: 8 }}>
                   <div style={{ fontSize: 14, fontWeight: 600 }}>
-                    {d.title}{d.label && <span style={{ color: "var(--muted)", fontWeight: 400 }}> — {d.label}</span>}
+                    {d.title}{d.film ? " 🎥" : ""}{d.label && <span style={{ color: "var(--muted)", fontWeight: 400 }}> — {d.label}</span>}
                     <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 12 }}> · {d.duration_minutes} min</span>
                   </div>
                   {d.goal_text && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2, whiteSpace: "pre-wrap" }}>{d.goal_text}</div>}
@@ -88,6 +88,9 @@ export default function PracticeSchedulePlayerView({ homeRosterId, practiceId }:
               ))}
             </div>
           ))}
+          {b.water_break && (
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#1f6fb2", background: "rgba(31,111,178,0.08)", borderRadius: 8, padding: "5px 10px" }}>💧 Water break</div>
+          )}
         </div>
       ))}
     </div>

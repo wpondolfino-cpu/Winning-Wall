@@ -390,6 +390,22 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
     }
   }
 
+  // 💧 A water break after this block. A marker only: no minutes.
+  async function toggleWater(block: PracticeBlock) {
+    const next = !block.water_break;
+    setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, water_break: next } : b));
+    const { error } = await updateBlock(block.id, { water_break: next });
+    if (error) { alert("Couldn't save the water break: " + error); setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, water_break: !next } : b)); }
+  }
+
+  // 🎥 Film this drill. A marker only.
+  async function toggleFilm(drill: SegmentDrill) {
+    const next = !drill.film;
+    patchLocalDrill(drill.segment_id, drill.id, { film: next });
+    const { error } = await updateSegmentDrill(drill.id, { film: next });
+    if (error) { alert("Couldn't save: " + error); patchLocalDrill(drill.segment_id, drill.id, { film: !next }); }
+  }
+
   async function handleDeleteBlock(blockId: string) {
     if (!window.confirm("Delete this block and everything scheduled inside it?")) return;
     await deleteBlock(blockId);
@@ -1051,7 +1067,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                     <td rowSpan={totalRows} style={{ padding: "10px", verticalAlign: "top", borderRight: "1px solid var(--border)", borderTop: blockIndex > 0 ? "2px solid var(--border)" : undefined }}>
                       <div draggable onDragStart={() => handleBlockDragStart(block.id)} onDragOver={e => handleBlockDragOver(block.id, e)} onDragEnd={handleBlockDragEnd} style={{ cursor: "grab" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: "var(--gold-text)", whiteSpace: "nowrap" }}>
-                          <span style={{ color: "var(--muted)" }}>⠿</span> {block.start}–{block.end}
+                          <span style={{ color: "var(--muted)" }}>⠿</span> {block.start}–{block.end}{block.water_break ? " 💧" : ""}
                         </div>
                         <div style={{ display: "flex", gap: 4, alignItems: "center", marginTop: 4 }}>
                           <input type="number" min={1}
@@ -1072,6 +1088,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                             </button>
                           )}
                           <button onClick={() => handleDeleteBlock(block.id)} style={{ ...dangerSmallBtn, fontSize: 9, padding: "3px 6px" }}>Delete</button>
+                          <button onClick={() => toggleWater(block)} title={block.water_break ? "Water break after this block (tap to remove)" : "Add a water break after this block"}
+                            style={{ ...smallBtn, fontSize: 11, padding: "1px 6px", opacity: block.water_break ? 1 : 0.45, filter: block.water_break ? "none" : "grayscale(1)",
+                              ...(block.water_break ? { borderColor: "#1f6fb2", background: "rgba(31,111,178,0.10)" } : {}) }}>💧</button>
                         </div>
                       </div>
                     </td>
@@ -1114,6 +1133,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                                 </span>
                               )}
                               <span onClick={() => openDrillDetails(d, block)} title="Edit" style={{ cursor: "pointer", color: "var(--muted)", fontSize: 12 }}>✎</span>
+                              <span role="button" tabIndex={0} onClick={() => toggleFilm(d)} onKeyDown={e => { if (e.key === "Enter") toggleFilm(d); }}
+                                title={d.film ? "Filming this drill (tap to stop)" : "Film this drill"}
+                                style={{ cursor: "pointer", fontSize: 12, opacity: d.film ? 1 : 0.3, filter: d.film ? "none" : "grayscale(1)" }}>🎥</span>
                               <span onClick={() => handleDeleteDrill(d, block.id)} title="Remove" style={{ cursor: "pointer", color: "var(--danger-text)", fontSize: 12, marginLeft: "auto" }}>✕</span>
                             </div>
                             {(roster || (d.drill_id && d.label)) && (
@@ -1256,6 +1278,16 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                     );
                   });
 
+                  // 💧 after the block. A marker only: the next block's time doesn't move.
+                  if (block.water_break) {
+                    blockRows.push(
+                      <tr key={`${block.id}-water`}>
+                        <td colSpan={5} style={{ padding: "5px 12px", fontSize: 12, fontWeight: 700, color: "#1f6fb2", background: "rgba(31,111,178,0.08)", borderTop: "1px dashed rgba(31,111,178,0.4)" }}>
+                          💧 Water break
+                        </td>
+                      </tr>
+                    );
+                  }
                   return blockRows;
                 })}
               </tbody>

@@ -92,6 +92,8 @@ export interface PracticeBlock {
    *            splitting whoever arrives by its own rule.
    */
   station_mode: "fixed" | "rotating";
+  /** 💧 A water break after this block. A marker only: it takes no minutes. */
+  water_break?: boolean;
 }
 
 export interface RotationGroup {
@@ -135,6 +137,8 @@ export interface SegmentDrill {
   split_n: number | null;
   /** Overrides the library drill for this placement. Null = follow the library. */
   is_competitive: boolean | null;
+  /** 🎥 Film this drill. A marker only. */
+  film?: boolean;
   /**
    * A specific split for a particular rotation group at this station,
    * keyed by group index as a string. Absent = use split_rule.
@@ -1197,6 +1201,7 @@ export async function copyDrillToSegment(
     coach_name: src.coach_name, coach_ids: src.coach_ids ?? [],
     group_size: src.group_size, num_groups: src.num_groups,
     split_rule: src.split_rule ?? "none", split_n: src.split_n ?? null,
+    film: src.film ?? false,
     station_member_ids: keep(src.station_member_ids),
     station_tryout_member_ids: keep(src.station_tryout_member_ids),
   } as any);
@@ -1501,6 +1506,7 @@ export async function copyPracticeContents(
     const { id: newBlockId } = await createBlock(toPracticeId, block.duration_minutes, block.order_index);
     if (!newBlockId) continue;
     if (block.station_mode === "rotating") await setBlockStationMode(newBlockId, "rotating");
+    if (block.water_break) await updateBlock(newBlockId, { water_break: true });
     if (opts.withPeople && block.station_mode === "rotating") {
       const rot = await getRotationGroups(block.id);
       if (rot.length) await setRotationGroups(newBlockId, rot.map(g => g.member_ids));
@@ -1517,6 +1523,7 @@ export async function copyPracticeContents(
           coach_name: d.coach_name, coach_ids: d.coach_ids ?? [],
           group_size: d.group_size, num_groups: d.num_groups,
           is_competitive: d.is_competitive ?? null,
+          film: d.film ?? false,
           split_rule: d.split_rule ?? "none", split_n: d.split_n ?? null,
           // Named players only travel on a duplicate.
           station_member_ids: opts.withPeople ? (d.station_member_ids ?? []) : [],
@@ -1568,7 +1575,7 @@ export async function createBlock(practiceId: string, durationMinutes: number, o
   return { id: data?.id ?? null, error: error?.message ?? null };
 }
 
-export async function updateBlock(id: string, patch: Partial<Pick<PracticeBlock, "duration_minutes" | "order_index">>): Promise<{ error: string | null }> {
+export async function updateBlock(id: string, patch: Partial<Pick<PracticeBlock, "duration_minutes" | "order_index" | "water_break">>): Promise<{ error: string | null }> {
   const { error } = await supabase.from("practice_blocks").update(patch).eq("id", id);
   return { error: error?.message ?? null };
 }
@@ -2487,6 +2494,8 @@ export interface PrintDrillGroup {
 export interface PrintDrill {
   title: string; label: string | null; duration_minutes: number;
   goal_text: string | null; coachNames: string[]; groups: PrintDrillGroup[];
+  /** 🎥 Being filmed. */
+  film?: boolean;
 }
 export interface PrintSegment { rosterName: string | null; drills: PrintDrill[]; }
 /**
@@ -2502,6 +2511,7 @@ export interface PrintRotation {
   grid: string[][];
   stations: {
     title: string;
+    film?: boolean;
     ruleText: string;
     coachNames: string[];
     rounds: { round: number; groupLabel: string; parts: string[][] }[];
@@ -2509,6 +2519,8 @@ export interface PrintRotation {
 }
 export interface PrintBlock {
   start: string; end: string; duration_minutes: number; segments: PrintSegment[];
+  /** 💧 A water break after this block. */
+  water_break?: boolean;
   /** Set only when this block's stations rotate. */
   rotation?: PrintRotation;
 }
@@ -2661,6 +2673,7 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
           goal_text: d.goal_text,
           coachNames: (d.coach_ids ?? []).map(id => coachNameById[id]).filter(Boolean) as string[],
           groups: groups.map(g => ({ label: g.group_label ?? "Group", memberNames: [] /* filled below */ })),
+          film: !!d.film,
         });
         // stash raw groups temporarily on the drill for name-filling after batch lookup
         (drillPrintData[drillPrintData.length - 1] as any)._rawGroups = groups;
@@ -2686,6 +2699,7 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
           grid: sched.map(row => row.map(gi => letter(gi))),
           stations: rotDrills.map((d, si) => ({
             title: d.drill_id ? (drillTitleById[d.drill_id] ?? "Untitled drill") : (d.label ?? `Station ${si + 1}`),
+            film: !!d.film,
             ruleText: splitRuleText(d.split_rule ?? "none", d.split_n ?? null),
             coachNames: (d.coach_ids ?? []).map(id => coachNameById[id]).filter(Boolean) as string[],
             rounds: sched.map((row, r) => ({
@@ -2698,7 +2712,7 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
       }
     }
 
-    blockPrintData.push({ start: block.start, end: block.end, duration_minutes: block.duration_minutes, segments: segPrintData, rotation });
+    blockPrintData.push({ start: block.start, end: block.end, duration_minutes: block.duration_minutes, segments: segPrintData, rotation, water_break: !!(block as any).water_break });
   }
 
   const { data: memberProfiles } = allMemberIds.size > 0

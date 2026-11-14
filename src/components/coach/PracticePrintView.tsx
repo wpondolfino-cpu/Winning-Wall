@@ -80,15 +80,15 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                   // repeating the time only on the first row of the block.
                   const rows: { seg: typeof b.segments[number]; drill: typeof b.segments[number]["drills"][number] }[] = [];
                   b.segments.forEach(seg => seg.drills.forEach(drill => rows.push({ seg, drill })));
-                  return rows.map((row, ri) => (
+                  return [...rows.map((row, ri) => (
                     <tr key={`${bi}-${ri}`} style={{ borderBottom: "1px solid #ddd", verticalAlign: "top" }}>
                       {ri === 0 && (
                         <td rowSpan={rows.length} style={{ padding: "6px 8px", fontWeight: 700, whiteSpace: "nowrap" }}>
-                          {b.start}–{b.end}
+                          {b.start}–{b.end}{b.water_break ? " 💧" : ""}
                         </td>
                       )}
                       <td style={{ padding: "6px 8px" }}>
-                        {row.drill.title}
+                        {row.drill.title}{row.drill.film ? " 🎥" : ""}
                         {row.drill.label && <div style={{ fontSize: 10.5, color: "#666" }}>{row.drill.label}</div>}
                         {row.seg.rosterName && <div style={{ fontSize: 10.5, color: "#666" }}>{row.seg.rosterName}</div>}
                       </td>
@@ -109,7 +109,13 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                           : row.drill.coachNames.join(", ") || "—"}
                       </td>
                     </tr>
-                  ));
+                  )),
+                  // 💧 after the block: a marker only, it takes no minutes.
+                  ...(b.water_break ? [(
+                    <tr key={`${bi}-water`} style={{ borderBottom: "1px solid #ddd", background: "#eef5fb" }}>
+                      <td colSpan={5} style={{ padding: "4px 8px", fontWeight: 700, color: "#1f6fb2" }}>💧 Water break</td>
+                    </tr>
+                  )] : [])];
                 })}
                 {p.blocks.length === 0 && (
                   <tr><td colSpan={5} style={{ padding: "16px 8px", color: "#888" }}>No drills scheduled yet.</td></tr>
@@ -141,7 +147,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                     <tbody>
                       {rot.stations.map((st, si) => (
                         <tr key={si}>
-                          <td style={{ padding: "3px 6px", border: "0.5px solid #bbb" }}>{st.title}</td>
+                          <td style={{ padding: "3px 6px", border: "0.5px solid #bbb" }}>{st.title}{st.film ? " 🎥" : ""}</td>
                           {rot.grid.map((row, r) => (
                             <td key={r} style={{ textAlign: "center", padding: "3px 6px", border: "0.5px solid #bbb" }}>
                               {row[si].replace("Group ", "")}
@@ -155,7 +161,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                   {rot.stations.map((st, si) => (
                     <div key={si} style={{ marginBottom: 9, pageBreakInside: "avoid" }}>
                       <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 3 }}>
-                        {st.title.toUpperCase()} — {st.ruleText}
+                        {st.title.toUpperCase()}{st.film ? " 🎥" : ""} — {st.ruleText}
                         {st.coachNames.length > 0 && <> · {st.coachNames.join(", ")}</>}
                       </div>
                       <div style={{ fontSize: 10, lineHeight: 1.7 }}>
