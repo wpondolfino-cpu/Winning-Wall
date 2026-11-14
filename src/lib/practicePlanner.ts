@@ -1314,10 +1314,26 @@ export async function createEmptyTemplate(name: string, rosterLabel?: string | n
   return { id: data.id, error: null };
 }
 
-/** Pour a template's blocks into an existing practice. */
-export async function applyTemplateToPractice(templateId: string, practiceId: string): Promise<{ error: string | null }> {
+/**
+ * Pour a template's blocks into an existing practice.
+ *   add     -- after the blocks already there (the default)
+ *   replace -- the practice's own blocks are deleted first
+ */
+export async function applyTemplateToPractice(
+  templateId: string, practiceId: string, mode: "add" | "replace" = "add"
+): Promise<{ error: string | null }> {
   try {
-    await copyPracticeContents(templateId, practiceId, { withPeople: false });
+    const existing = await getPracticeBlocks(practiceId);
+    let orderOffset = 0;
+    if (mode === "replace") {
+      for (const b of existing) {
+        const { error } = await deleteBlock(b.id);
+        if (error) return { error };
+      }
+    } else if (existing.length) {
+      orderOffset = Math.max(...existing.map(b => b.order_index)) + 1;
+    }
+    await copyPracticeContents(templateId, practiceId, { withPeople: false, orderOffset });
     return { error: null };
   } catch (e: any) {
     return { error: e.message ?? "Couldn't apply the template." };
@@ -1498,12 +1514,13 @@ export async function getAllDrillTags(): Promise<string[]> {
 }
 
 export async function copyPracticeContents(
-  fromPracticeId: string, toPracticeId: string, opts: { withPeople: boolean; withDrills?: boolean }
+  fromPracticeId: string, toPracticeId: string, opts: { withPeople: boolean; withDrills?: boolean; orderOffset?: number }
 ): Promise<void> {
   const withDrills = opts.withDrills !== false;
   const blocks = await getPracticeBlocks(fromPracticeId);
   for (const block of blocks) {
-    const { id: newBlockId } = await createBlock(toPracticeId, block.duration_minutes, block.order_index);
+    // orderOffset puts the copies after blocks already in the practice.
+    const { id: newBlockId } = await createBlock(toPracticeId, block.duration_minutes, block.order_index + (opts.orderOffset ?? 0));
     if (!newBlockId) continue;
     if (block.station_mode === "rotating") await setBlockStationMode(newBlockId, "rotating");
     if (block.water_break) await updateBlock(newBlockId, { water_break: true });
