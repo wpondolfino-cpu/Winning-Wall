@@ -17,6 +17,7 @@ import {
   AttendanceOverride, SavedGrouping, getRosters, getPracticeWeeks, createPracticeWeek,
   suggestNextWeekName, getPractice, createPractice, updatePractice,
   setPracticeStatus, deletePractice, duplicatePractice, getPracticeBlocks,
+  getPracticeTemplates, PracticeTemplate,
   createBlock, updateBlock, deleteBlock, reorderBlocks, getSegments,
   createSegment, deleteSegment, getSegmentDrills, createSegmentDrill,
   updateSegmentDrill, deleteSegmentDrill, autoSplitSegmentDrillDurations, reorderSegmentDrills,
@@ -83,6 +84,11 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
   const [stationsTarget, setStationsTarget] = useState<{ segment: BlockSegment; drills: SegmentDrill[]; block: PracticeBlock } | null>(null);
   const [copyTarget, setCopyTarget] = useState<{ segment: BlockSegment; block: PracticeBlock; orderIndex: number } | null>(null);
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  // 📋 Template menu: fill this practice from a template, or save it as one.
+  const [tplMenu, setTplMenu] = useState(false);
+  const [tplList, setTplList] = useState<PracticeTemplate[] | null>(null);
+  const [tplAsk, setTplAsk] = useState<PracticeTemplate | null>(null);   // asking "add after / replace"
+  const [tplBusy, setTplBusy] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
   // Templates all live under 📋 Templates on the Practices page now. A new
   // practice started from there carries the template it should copy in
@@ -818,7 +824,71 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
           {practice?.status === "draft" && <button onClick={handlePublish} style={primaryBtn}>Publish</button>}
           {practice && <button onClick={() => setShowPrint(true)} style={secondaryBtn}>🖨️ Print</button>}
           {practice && <button onClick={handleDuplicate} style={secondaryBtn}>Duplicate</button>}
-          {practice && <button onClick={() => setShowSaveTemplate(true)} style={{ ...primaryBtn, background: "var(--gold)", color: "#1a1a1a" }}>📋 Save as template</button>}
+          {practice && (
+            <span style={{ position: "relative" }}>
+              <button onClick={() => {
+                  const open = !tplMenu;
+                  setTplMenu(open); setTplAsk(null);
+                  if (open) { setTplList(null); getPracticeTemplates().then(setTplList).catch(() => setTplList([])); }
+                }}
+                style={{ ...primaryBtn, background: "var(--gold)", color: "#1a1a1a" }}>📋 Template ▾</button>
+              {tplMenu && (
+                <>
+                  <div onClick={() => !tplBusy && setTplMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                  <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 41, width: 320, maxHeight: "70vh", overflowY: "auto",
+                    background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: 8, boxShadow: "0 10px 28px rgba(0,0,0,0.25)" }}>
+                    <div style={{ fontSize: 11.5, color: "var(--muted)", padding: "4px 8px 6px" }}>Fill this practice from a template</div>
+                    {tplList === null && <div style={{ fontSize: 12, color: "var(--muted)", padding: "6px 8px" }}>Loading…</div>}
+                    {tplList?.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)", padding: "6px 8px" }}>No templates yet.</div>}
+                    {tplList?.map(t => (
+                      <button key={t.id} disabled={tplBusy || t.blockCount === 0}
+                        onClick={async () => {
+                          if (blocks.length > 0) { setTplAsk(t); return; }
+                          setTplBusy(true);
+                          const { error } = await applyTemplateToPractice(t.id, practice.id, "add");
+                          setTplBusy(false);
+                          if (error) { alert(error); return; }
+                          setTplMenu(false); await reloadStructure(practice.id);
+                        }}
+                        style={{ display: "flex", justifyContent: "space-between", gap: 8, width: "100%", textAlign: "left", fontSize: 13, padding: "8px 9px", borderRadius: 8,
+                          border: "none", background: tplAsk?.id === t.id ? "var(--surface2)" : "transparent", color: "var(--text)", cursor: t.blockCount ? "pointer" : "default",
+                          opacity: t.blockCount ? 1 : 0.45, fontFamily: "inherit" }}>
+                        <span>{t.template_name}</span>
+                        <span style={{ fontSize: 11.5, color: "var(--muted)", whiteSpace: "nowrap" }}>{t.blockCount ? `${t.blockCount} block${t.blockCount === 1 ? "" : "s"}` : "empty"}</span>
+                      </button>
+                    ))}
+                    {tplAsk && (
+                      <div style={{ margin: "6px 8px 4px", fontSize: 12.5 }}>
+                        This practice already has blocks. <b>{tplAsk.template_name}</b>:
+                        <div style={{ display: "flex", gap: 6, marginTop: 7, flexWrap: "wrap" }}>
+                          {(["add", "replace"] as const).map(mode => (
+                            <button key={mode} disabled={tplBusy}
+                              onClick={async () => {
+                                if (mode === "replace" && !confirm(`Delete this practice's ${blocks.length} block${blocks.length === 1 ? "" : "s"} and use "${tplAsk.template_name}" instead?`)) return;
+                                setTplBusy(true);
+                                const { error } = await applyTemplateToPractice(tplAsk.id, practice.id, mode);
+                                setTplBusy(false);
+                                if (error) { alert(error); return; }
+                                setTplAsk(null); setTplMenu(false); await reloadStructure(practice.id);
+                              }}
+                              style={{ ...secondaryBtn, fontSize: 12, padding: "5px 10px", ...(mode === "replace" ? { color: "var(--danger-text)" } : {}) }}>
+                              {tplBusy ? "Working…" : mode === "add" ? "Add after mine" : "Replace mine"}
+                            </button>
+                          ))}
+                          <button disabled={tplBusy} onClick={() => setTplAsk(null)} style={{ ...secondaryBtn, fontSize: 12, padding: "5px 10px" }}>Cancel</button>
+                        </div>
+                      </div>
+                    )}
+                    <div style={{ borderTop: "1px solid var(--border)", margin: "6px 0" }} />
+                    <button disabled={tplBusy} onClick={() => { setTplMenu(false); setShowSaveTemplate(true); }}
+                      style={{ width: "100%", textAlign: "left", fontSize: 13, padding: "8px 9px", borderRadius: 8, border: "none", background: "transparent", color: "var(--text)", cursor: "pointer", fontFamily: "inherit" }}>
+                      💾 Save this practice as a template…
+                    </button>
+                  </div>
+                </>
+              )}
+            </span>
+          )}
           {practice && <button onClick={handleDelete} style={dangerBtn}>Delete</button>}
           {!practice && (
             <button onClick={handleSaveMeta} disabled={saving} style={primaryBtn}>
