@@ -925,7 +925,12 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
         <div>
           <div style={fieldLabel}>Date</div>
-          <input type="date" value={date} onChange={e => { setDate(e.target.value); autosaveMeta({ practice_date: e.target.value }); }} style={inputStyle} />
+          <input type="date" value={date} onChange={e => {
+            const v = e.target.value;
+            setDate(v);
+            // Typing a year goes 0002, 0020, 0202, 2026: only save a real one.
+            if (/^(19|20)\d\d-\d\d-\d\d$/.test(v)) autosaveMeta({ practice_date: v });
+          }} style={inputStyle} />
         </div>
         <div>
           <div style={fieldLabel}>Start time</div>
