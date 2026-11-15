@@ -317,7 +317,9 @@ export default function PracticeWeeksList(props: Props) {
         key={startTemplate?.id ?? openPracticeId ?? "new"}
         practiceId={openPracticeId ?? undefined}
         startFromTemplate={creatingNew ? startTemplate : null}
-        onClose={() => { setOpenPracticeId(null); setCreatingNew(false); setStartTemplate(null); }}
+        // Changes save as you make them (date, time, teams, week...), so the
+        // list is reloaded on the way out to show them.
+        onClose={() => { setOpenPracticeId(null); setCreatingNew(false); setStartTemplate(null); load(); }}
         onSaved={() => { load(); }}
       />
     );
