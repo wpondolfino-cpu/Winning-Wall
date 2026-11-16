@@ -3,7 +3,8 @@
 // hands off to the browser's native print-to-PDF — same approach
 // already used for Plays/Playbooks, no new dependencies.
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { getPracticePrintData, PrintPractice } from "../../lib/practicePlanner";
 
 interface Props {
@@ -21,9 +22,39 @@ function formatClock(t: string) {
   return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
+// A letter page printed with half-inch margins leaves 7.5 x 10 inches.
+// The preview lays the schedule out at that width so it can tell when a
+// schedule won't fit on one page.
+const PAGE_W_IN = 7.5;
+const PAGE_H_IN = 10;
+const DESC_KEY = "ww.printDrillDescriptions";
+
 export default function PracticePrintView({ practiceIds, onClose }: Props) {
   const [practices, setPractices] = useState<PrintPractice[]>([]);
   const [loading, setLoading] = useState(true);
+  // The back page of drill descriptions: on unless turned off (remembered).
+  const [withDescriptions, setWithDescriptions] = useState(() => {
+    try { return localStorage.getItem(DESC_KEY) !== "off"; } catch { return true; }
+  });
+  useEffect(() => { try { localStorage.setItem(DESC_KEY, withDescriptions ? "on" : "off"); } catch { /* fine */ } }, [withDescriptions]);
+
+  // Which practices' schedules run past one page (measured in the preview).
+  const scheduleRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const inchRef = useRef<HTMLDivElement | null>(null);
+  const [overflowing, setOverflowing] = useState<string[]>([]);
+  useLayoutEffect(() => {
+    if (loading) return;
+    const measure = () => {
+      const pxPerIn = inchRef.current?.offsetWidth || 96;
+      const limit = PAGE_H_IN * pxPerIn;
+      setOverflowing(practices.filter(p => (scheduleRefs.current[p.id]?.scrollHeight ?? 0) > limit + 2).map(p => p.id));
+    };
+    measure();
+    // Fonts can finish loading after the first measure and change heights.
+    const t = setTimeout(measure, 400);
+    return () => clearTimeout(t);
+  }, [loading, practices]);
+  const pageLinePx = PAGE_H_IN * (inchRef.current?.offsetWidth || 96);
 
   useEffect(() => {
     Promise.all(practiceIds.map(id => getPracticePrintData(id))).then(results => {
@@ -32,30 +63,59 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
     });
   }, [practiceIds]);
 
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "#fff", zIndex: 2000, overflowY: "auto" }}>
+  // Drawn straight onto the page body (not inside the app) so that when
+  // printing, the app can be hidden and the sheet laid out in full: a
+  // scrolling overlay would only ever print its first page.
+  return createPortal(
+    <div className="practice-print-root" style={{ position: "fixed", inset: 0, background: "#fff", zIndex: 2000, overflowY: "auto" }}>
       <style>{`
+        @page { size: letter; margin: 0.5in; }
         @media print {
+          #root { display: none !important; }
+          .practice-print-root { position: static !important; overflow: visible !important; inset: auto !important; height: auto !important; }
           .no-print { display: none !important; }
-          .practice-print-page { page-break-after: always; }
-          .practice-print-page:last-child { page-break-after: auto; }
+          .practice-print-page { padding: 0 !important; margin: 0 !important; }
+          /* Every page after the very first starts on a new sheet. */
+          .practice-print-page.new-sheet { break-before: page; page-break-before: always; }
           body { background: #fff; }
         }
       `}</style>
 
       <div className="no-print" style={{ position: "sticky", top: 0, background: "#f5f5f5", borderBottom: "1px solid #ddd", padding: "12px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 1 }}>
         <div style={{ fontWeight: 700, color: "#222" }}>Print Preview — {practiceIds.length} practice{practiceIds.length === 1 ? "" : "s"}</div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <label style={{ fontSize: 13, color: "#333", display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={withDescriptions} onChange={e => setWithDescriptions(e.target.checked)} />
+            Print drill descriptions on the back
+          </label>
           <button onClick={() => window.print()} style={{ background: "#1a3fa8", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontWeight: 600, cursor: "pointer" }}>Print / Save as PDF</button>
           <button onClick={onClose} style={{ background: "#fff", border: "1px solid #999", color: "#222", borderRadius: 8, padding: "8px 18px", fontWeight: 600, cursor: "pointer" }}>Close</button>
         </div>
       </div>
 
+      {/* 1 inch, for measuring pages in this screen's pixels. */}
+      <div ref={inchRef} aria-hidden style={{ position: "absolute", visibility: "hidden", width: "1in", height: 0 }} />
+
+      {!loading && withDescriptions && overflowing.length > 0 && (
+        <div className="no-print" style={{ maxWidth: `${PAGE_W_IN}in`, margin: "14px auto 0", padding: "10px 14px", borderRadius: 8, background: "#fff6dd", border: "1px solid #e8c25a", color: "#5a4300", fontSize: 13, lineHeight: 1.45 }}>
+          ⚠ {overflowing.map(id => { const p = practices.find(x => x.id === id); return p ? formatDate(p.practice_date) : ""; }).join(", ")}{" "}
+          {overflowing.length === 1 ? "runs" : "run"} past one page, so the drill descriptions won't land on the back of page 1 when printed two-sided.
+          The dashed line shows where page 1 ends. Shortening notes or splitting the practice will bring it back to one page.
+        </div>
+      )}
+
       {loading ? (
         <div style={{ padding: 40, textAlign: "center", color: "#666" }}>Preparing print view…</div>
       ) : (
-        practices.map(p => (
-          <div key={p.id} className="practice-print-page" style={{ maxWidth: 800, margin: "0 auto", padding: "30px 24px", color: "#111", fontFamily: "Georgia, serif" }}>
+        practices.map((p, pi) => (
+          <div key={p.id}>
+          <div className={`practice-print-page${pi > 0 ? " new-sheet" : ""}`} style={{ width: `${PAGE_W_IN}in`, maxWidth: "100%", margin: "0 auto", padding: "30px 0", color: "#111", fontFamily: "Georgia, serif" }}>
+          <div ref={el => { scheduleRefs.current[p.id] = el; }} style={{ position: "relative" }}>
+            {overflowing.includes(p.id) && (
+              <div className="no-print" style={{ position: "absolute", left: -8, right: -8, top: pageLinePx, borderTop: "2px dashed #d9534f", zIndex: 2, pointerEvents: "none" }}>
+                <span style={{ position: "absolute", right: 0, top: 2, fontSize: 11, color: "#d9534f", background: "#fff", padding: "0 4px", fontFamily: "sans-serif" }}>page 1 ends here</span>
+              </div>
+            )}
             <div style={{ borderBottom: "3px solid #111", paddingBottom: 10, marginBottom: 16 }}>
               <div style={{ fontSize: 22, fontWeight: 700 }}>{formatDate(p.practice_date)}</div>
               <div style={{ fontSize: 14, color: "#444" }}>
@@ -186,8 +246,32 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
               );
             })}
           </div>
+          </div>
+
+          {/* The back page: how each drill runs, for a coach who doesn't know it. */}
+          {withDescriptions && p.drillDescriptions.length > 0 && (
+            <div className="practice-print-page new-sheet" style={{ width: `${PAGE_W_IN}in`, maxWidth: "100%", margin: "0 auto", padding: "30px 0", color: "#111", fontFamily: "Georgia, serif", borderTop: "1px dashed #ccc" }}>
+              <div style={{ borderBottom: "3px solid #111", paddingBottom: 10, marginBottom: 16 }}>
+                <div style={{ fontSize: 20, fontWeight: 700 }}>Drill descriptions</div>
+                <div style={{ fontSize: 13, color: "#444" }}>{formatDate(p.practice_date)} · in practice order</div>
+              </div>
+              {p.drillDescriptions.map((d, i) => (
+                <div key={i} style={{ marginBottom: 14, pageBreakInside: "avoid" }}>
+                  <div style={{ fontSize: 14.5, fontWeight: 700 }}>
+                    {d.title}{d.film ? " 🎥" : ""}
+                    <span style={{ fontSize: 12, fontWeight: 400, color: "#666" }}> · {d.minutes} min</span>
+                  </div>
+                  <div style={{ fontSize: 12.5, lineHeight: 1.45, marginTop: 3, whiteSpace: "pre-wrap", color: d.description ? "#111" : "#999", fontStyle: d.description ? "normal" : "italic" }}>
+                    {d.description ?? "No description yet. Add one in the Drill Library."}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          </div>
         ))
       )}
-    </div>
+    </div>,
+    document.body
   );
 }
