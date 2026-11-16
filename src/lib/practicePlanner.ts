@@ -2543,6 +2543,13 @@ export interface PrintBlock {
 }
 export interface PrintPractice {
   id: string; practice_date: string; start_time: string; rosterNames: string[]; blocks: PrintBlock[];
+  /**
+   * Every drill the practice uses, once each, in practice order, with its
+   * Drill Library description -- the back page of the printout, for a
+   * coach who doesn't know how a drill runs. Outlines aren't drills yet,
+   * so they're left off.
+   */
+  drillDescriptions: { title: string; minutes: number; description: string | null; film: boolean }[];
 }
 
 /** "split into 2 teams" / "groups of 2" / "keep together", for the sheet. */
@@ -2653,10 +2660,11 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
     selectIn<any>("segment_drill_groups", "*", "segment_drill_id", allSegDrills.map(d => d.id), q => q.order("order_index", { ascending: true })),
     selectIn<RotationGroup>("block_rotation_groups", "*", "block_id", rotatingIds, q => q.order("group_index", { ascending: true })),
     // Only the titles of drills this practice uses, not the whole library.
-    selectIn<{ id: string; title: string }>("practice_drills_library", "id, title", "id", allSegDrills.map(d => d.drill_id).filter(Boolean) as string[]),
+    selectIn<{ id: string; title: string; description: string | null }>("practice_drills_library", "id, title, description", "id", allSegDrills.map(d => d.drill_id).filter(Boolean) as string[]),
   ]);
   const memberRows = await selectIn<any>("segment_drill_group_members", "group_id, player_id, tryout_player_id", "group_id", groupRows.map(g => g.id));
   const drillTitleById = Object.fromEntries(titleRows.map(d => [d.id, d.title]));
+  const drillDescById = Object.fromEntries(titleRows.map(d => [d.id, d.description]));
 
   const segsByBlock = new Map<string, BlockSegment[]>();
   allSegs.forEach(sg => { if (!segsByBlock.has(sg.block_id)) segsByBlock.set(sg.block_id, []); segsByBlock.get(sg.block_id)!.push(sg); });
@@ -2793,12 +2801,33 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
     delete d._rawGroups;
   })));
 
+  // The back page: each drill once, in the order it first comes up, with
+  // its minutes added up if it's used in more than one block.
+  const descOrder: string[] = [];
+  const descInfo = new Map<string, { minutes: number; film: boolean }>();
+  for (const block of timed) {
+    for (const seg of segsByBlock.get(block.id) ?? []) {
+      for (const d of drillsBySegId.get(seg.id) ?? []) {
+        if (!d.drill_id) continue;
+        const cur = descInfo.get(d.drill_id);
+        if (cur) { cur.minutes += d.duration_minutes; cur.film = cur.film || !!d.film; }
+        else { descOrder.push(d.drill_id); descInfo.set(d.drill_id, { minutes: d.duration_minutes, film: !!d.film }); }
+      }
+    }
+  }
+
   return {
     id: practice.id,
     practice_date: practice.practice_date,
     start_time: practice.start_time,
     rosterNames: practice.roster_ids.map(id => rosterNameById[id]).filter(Boolean) as string[],
     blocks: blockPrintData,
+    drillDescriptions: descOrder.map(id => ({
+      title: drillTitleById[id] ?? "Untitled drill",
+      minutes: descInfo.get(id)!.minutes,
+      description: drillDescById[id]?.trim() || null,
+      film: descInfo.get(id)!.film,
+    })),
   };
 }
 
