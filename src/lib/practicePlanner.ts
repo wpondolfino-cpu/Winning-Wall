@@ -2636,14 +2636,49 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
   const practice = await getPractice(practiceId);
   if (!practice) return null;
 
-  const [allRosters, allDrills, allCoaches] = await Promise.all([
-    getRosters(true), getPracticeDrillLibrary(), getAssignableCoaches(),
+  const [allRosters, allCoaches, blocks] = await Promise.all([
+    getRosters(true), getAssignableCoaches(), getPracticeBlocks(practiceId),
   ]);
   const rosterNameById = Object.fromEntries(allRosters.map(r => [r.id, r.name]));
-  const drillTitleById = Object.fromEntries(allDrills.drills.map(d => [d.id, d.title]));
   const coachNameById = Object.fromEntries(allCoaches.map(c => [c.id, c.name]));
 
-  const blocks = await getPracticeBlocks(practiceId);
+  // Everything under the blocks in a few batched requests -- segments, then
+  // drills, then their groups, rotation groups and drill titles together --
+  // instead of a chain of requests per segment and per drill.
+  const allSegs = await selectIn<BlockSegment>("block_segments", "*", "block_id", blocks.map(b => b.id));
+  const allSegDrills = await selectIn<SegmentDrill>("segment_drills", "*", "segment_id", allSegs.map(sg => sg.id),
+    q => q.order("order_index", { ascending: true }));
+  const rotatingIds = blocks.filter(b => b.station_mode === "rotating").map(b => b.id);
+  const [groupRows, rotRows, titleRows] = await Promise.all([
+    selectIn<any>("segment_drill_groups", "*", "segment_drill_id", allSegDrills.map(d => d.id), q => q.order("order_index", { ascending: true })),
+    selectIn<RotationGroup>("block_rotation_groups", "*", "block_id", rotatingIds, q => q.order("group_index", { ascending: true })),
+    // Only the titles of drills this practice uses, not the whole library.
+    selectIn<{ id: string; title: string }>("practice_drills_library", "id, title", "id", allSegDrills.map(d => d.drill_id).filter(Boolean) as string[]),
+  ]);
+  const memberRows = await selectIn<any>("segment_drill_group_members", "group_id, player_id, tryout_player_id", "group_id", groupRows.map(g => g.id));
+  const drillTitleById = Object.fromEntries(titleRows.map(d => [d.id, d.title]));
+
+  const segsByBlock = new Map<string, BlockSegment[]>();
+  allSegs.forEach(sg => { if (!segsByBlock.has(sg.block_id)) segsByBlock.set(sg.block_id, []); segsByBlock.get(sg.block_id)!.push(sg); });
+  const drillsBySegId = new Map<string, SegmentDrill[]>();
+  allSegDrills.forEach(d => { if (!drillsBySegId.has(d.segment_id)) drillsBySegId.set(d.segment_id, []); drillsBySegId.get(d.segment_id)!.push(d); });
+  const membersByGroup = new Map<string, any[]>();
+  memberRows.forEach(m => { if (!membersByGroup.has(m.group_id)) membersByGroup.set(m.group_id, []); membersByGroup.get(m.group_id)!.push(m); });
+  // Same shape getSegmentDrillGroups gives.
+  const groupsByDrill = new Map<string, SegmentDrillGroup[]>();
+  groupRows.forEach(g => {
+    const ms = membersByGroup.get(g.id) ?? [];
+    const group: SegmentDrillGroup = {
+      ...g,
+      member_ids: ms.map(m => m.player_id ?? m.tryout_player_id),
+      tryout_member_ids: ms.filter(m => m.tryout_player_id).map(m => m.tryout_player_id),
+    };
+    if (!groupsByDrill.has(g.segment_drill_id)) groupsByDrill.set(g.segment_drill_id, []);
+    groupsByDrill.get(g.segment_drill_id)!.push(group);
+  });
+  const rotByBlock = new Map<string, RotationGroup[]>();
+  rotRows.forEach(r => { if (!rotByBlock.has(r.block_id)) rotByBlock.set(r.block_id, []); rotByBlock.get(r.block_id)!.push(r); });
+
   const timed = computeBlockTimes(practice.start_time, blocks);
 
   // Collect every player id referenced in any group so we can resolve
@@ -2652,13 +2687,13 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
   const blockPrintData: PrintBlock[] = [];
 
   for (const block of timed) {
-    const segs = await getSegments(block.id);
+    const segs = segsByBlock.get(block.id) ?? [];
     const segPrintData: PrintSegment[] = [];
     for (const seg of segs) {
-      const drills = await getSegmentDrills(seg.id);
+      const drills = drillsBySegId.get(seg.id) ?? [];
       const drillPrintData: PrintDrill[] = [];
       for (const d of drills) {
-        let groups = await getSegmentDrillGroups(d.id);
+        let groups = groupsByDrill.get(d.id) ?? [];
         // A station with no groups of its own still has people at it, and
         // the printout is where you find out who. Rather than writing the
         // station's members out as a real group — which splitting the
@@ -2705,8 +2740,8 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
     // station shouldn't have to apply a rule in their head.
     let rotation: PrintRotation | undefined;
     if ((block as any).station_mode === "rotating") {
-      const rotGroups = await getRotationGroups(block.id);
-      const rotDrills = segs.length ? await getSegmentDrills(segs[0].id) : [];
+      const rotGroups = rotByBlock.get(block.id) ?? [];
+      const rotDrills = segs.length ? (drillsBySegId.get(segs[0].id) ?? []) : [];
       if (rotGroups.length > 0 && rotDrills.length > 0) {
         rotGroups.forEach(g => g.member_ids.forEach(id => allMemberIds.add(id)));
         const letter = (i: number) => String.fromCharCode(65 + i);
@@ -2732,10 +2767,13 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
     blockPrintData.push({ start: block.start, end: block.end, duration_minutes: block.duration_minutes, segments: segPrintData, rotation, water_break: !!(block as any).water_break });
   }
 
-  const { data: memberProfiles } = allMemberIds.size > 0
-    ? await supabase.from("profiles").select("id,name").in("id", Array.from(allMemberIds))
-    : { data: [] as any[] };
-  const nameById = Object.fromEntries((memberProfiles ?? []).map((p: any) => [p.id, p.name]));
+  // Names for everyone in a group: player accounts, and tryout-pool kids
+  // (who have no account, so they'd otherwise print as blanks).
+  const [memberProfiles, memberTryouts] = await Promise.all([
+    selectIn<any>("profiles", "id, name", "id", Array.from(allMemberIds)),
+    selectIn<any>("tryout_players", "id, name", "id", Array.from(allMemberIds)),
+  ]);
+  const nameById = Object.fromEntries([...memberTryouts, ...memberProfiles].map((p: any) => [p.id, p.name]));
 
   blockPrintData.forEach(b => {
     if (!b.rotation) return;
