@@ -3,7 +3,7 @@
 // hands off to the browser's native print-to-PDF — same approach
 // already used for Plays/Playbooks, no new dependencies.
 
-import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, type ReactNode, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { getPracticePrintData, PrintPractice } from "../../lib/practicePlanner";
 
@@ -63,6 +63,110 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
     });
   }, [practiceIds]);
 
+  // A rotating block, inside the schedule: one row per station with the
+  // group that starts there, then who's in each group. Teams print once
+  // with the groups when every station that splits makes the same teams;
+  // otherwise each splitting station lists its own teams right under it.
+  const rotationRows = (b: PrintPractice["blocks"][number], bi: number) => {
+    const rot = b.rotation!;
+    const letterOf = (label: string) => label.replace(/^Group /, "");
+    const n = rot.stations.length;
+    const drills = b.segments[0]?.drills ?? [];
+    const splitStations = rot.stations.filter(st => st.ruleText !== "keep together");
+    const norm = (parts: string[][]) => JSON.stringify(parts.map(pt => [...pt].sort()).sort());
+    const teamsFor = (st: typeof rot.stations[number], groupLabel: string) =>
+      st.rounds.find(rd => rd.groupLabel === groupLabel)?.parts ?? [];
+    const shared = splitStations.length > 0 && rot.groups.every(g =>
+      splitStations.every(st => norm(teamsFor(st, g.label)) === norm(teamsFor(splitStations[0], g.label))));
+    const perStation = splitStations.length > 0 && !shared;
+
+    const mins = Math.round(b.duration_minutes / Math.max(1, rot.grid.length));
+    const path = n > 1 ? ` (${Array.from({ length: n }, (_, i) => i + 1).join(" → ")} → 1)` : "";
+    const waiting = rot.groups.slice(n).map(g => letterOf(g.label));
+    const waitText = waiting.length
+      ? ` · ${waiting.join(", ")} start${waiting.length === 1 ? "s" : ""} waiting, and after station ${n} you wait your turn`
+      : "";
+    // Starting letters; a station with no group of its own in round 1 shows a dash.
+    const seen = new Set<string>();
+    const startAt = (rot.grid[0] ?? []).map(l => { if (seen.has(l)) return null; seen.add(l); return l; });
+
+    const shade = "#f1f1f1";
+    const cell = { padding: "5px 8px" } as const;
+    const teamLine = (parts: string[][], vs: boolean) => parts.map((part, i) => (
+      <span key={i}>
+        {i > 0 && (vs
+          ? <b style={{ margin: "0 6px", fontSize: 10.5 }}>vs</b>
+          : <b style={{ margin: "0 6px", fontSize: 13, fontWeight: 900 }}>┃</b>)}
+        {part.join(", ")}
+      </span>
+    ));
+    const cards = (items: { letter: string; body: ReactNode }[]) => (
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
+        {items.map(it => (
+          <div key={it.letter} style={{ border: "0.5px solid #999", borderRadius: 5, padding: "3px 8px", background: "#fff", fontSize: 10.5, lineHeight: 1.45 }}>
+            <b>{it.letter}</b>&nbsp;&nbsp;{it.body}
+          </div>
+        ))}
+      </div>
+    );
+    const isVs = (st: typeof rot.stations[number]) => st.ruleText.startsWith("split into");
+
+    const out: ReactElement[] = [
+      <tr key={`${bi}-head`} style={{ borderBottom: "1px solid #999", verticalAlign: "top" }}>
+        <td style={{ ...cell, fontWeight: 700, whiteSpace: "nowrap" }}>{b.start}–{b.end}{b.water_break ? " 💧" : ""}</td>
+        <td colSpan={4} style={{ ...cell, fontWeight: 700 }}>
+          Stations <span style={{ fontWeight: 400, color: "#555" }}>· {mins} min each, move to the next station{path}{waitText}</span>
+        </td>
+      </tr>,
+    ];
+    rot.stations.forEach((st, si) => {
+      const d = drills[si];
+      out.push(
+        <tr key={`${bi}-st-${si}`} style={{ borderBottom: "1px solid #ddd", verticalAlign: "top", background: shade }}>
+          <td style={{ ...cell, paddingLeft: 18, color: "#555" }}>{si + 1}</td>
+          <td style={cell}>
+            {st.title}{st.film ? " 🎥" : ""}
+            {d?.label && <div style={{ fontSize: 10.5, color: "#666" }}>{d.label}</div>}
+            {st.ruleText !== "keep together" && <div style={{ fontSize: 10.5, color: "#666" }}>{st.ruleText}</div>}
+          </td>
+          <td style={{ ...cell, whiteSpace: "pre-wrap" }}>{d?.goal_text ?? "—"}</td>
+          <td style={cell}>
+            {startAt[si]
+              ? <span style={{ display: "inline-block", minWidth: 18, textAlign: "center", fontWeight: 700, border: "1px solid #333", borderRadius: 4, padding: "0 4px" }}>{startAt[si]}</span>
+              : "—"}
+          </td>
+          <td style={cell}>{st.coachNames.join(", ") || "—"}</td>
+        </tr>
+      );
+      if (perStation && st.ruleText !== "keep together") {
+        out.push(
+          <tr key={`${bi}-tm-${si}`} style={{ borderBottom: "1px solid #ddd", background: shade }}>
+            <td colSpan={5} style={{ padding: "1px 8px 7px 18px" }}>
+              {cards(rot.groups.map(g => ({ letter: letterOf(g.label), body: teamLine(teamsFor(st, g.label), isVs(st)) })))}
+            </td>
+          </tr>
+        );
+      }
+    });
+    if (!perStation) {
+      const note = shared
+        ? `Teams ┃ same at ${splitStations.length === n ? "every station" : splitStations.map(st => st.title).join(" and ")}`
+        : null;
+      out.push(
+        <tr key={`${bi}-groups`} style={{ borderBottom: "1.5px solid #999", background: shade }}>
+          <td colSpan={5} style={{ padding: "4px 8px 7px 18px" }}>
+            {note && <div style={{ fontSize: 10, color: "#555", marginBottom: 4 }}>{note}</div>}
+            {cards(rot.groups.map(g => ({
+              letter: letterOf(g.label),
+              body: shared ? teamLine(teamsFor(splitStations[0], g.label), isVs(splitStations[0])) : (g.memberNames.join(", ") || "(empty)"),
+            })))}
+          </td>
+        </tr>
+      );
+    }
+    return out;
+  };
+
   // Drawn straight onto the page body (not inside the app) so that when
   // printing, the app can be hidden and the sheet laid out in full: a
   // scrolling overlay would only ever print its first page.
@@ -70,6 +174,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
     <div className="practice-print-root" style={{ position: "fixed", inset: 0, background: "#fff", zIndex: 2000, overflowY: "auto" }}>
       <style>{`
         @page { size: letter; margin: 0.5in; }
+        .practice-print-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         @media print {
           #root { display: none !important; }
           .practice-print-root { position: static !important; overflow: visible !important; inset: auto !important; height: auto !important; }
@@ -140,6 +245,12 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                   // repeating the time only on the first row of the block.
                   const rows: { seg: typeof b.segments[number]; drill: typeof b.segments[number]["drills"][number] }[] = [];
                   b.segments.forEach(seg => seg.drills.forEach(drill => rows.push({ seg, drill })));
+                  const waterRow = b.water_break ? [(
+                    <tr key={`${bi}-water`} style={{ borderBottom: "1px solid #ddd", background: "#eef5fb" }}>
+                      <td colSpan={5} style={{ padding: "4px 8px", fontWeight: 700, color: "#1f6fb2" }}>💧 Water break</td>
+                    </tr>
+                  )] : [];
+                  if (b.rotation) return [...rotationRows(b, bi), ...waterRow];
                   return [...rows.map((row, ri) => (
                     <tr key={`${bi}-${ri}`} style={{ borderBottom: "1px solid #ddd", verticalAlign: "top" }}>
                       {ri === 0 && (
@@ -171,11 +282,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                     </tr>
                   )),
                   // 💧 after the block: a marker only, it takes no minutes.
-                  ...(b.water_break ? [(
-                    <tr key={`${bi}-water`} style={{ borderBottom: "1px solid #ddd", background: "#eef5fb" }}>
-                      <td colSpan={5} style={{ padding: "4px 8px", fontWeight: 700, color: "#1f6fb2" }}>💧 Water break</td>
-                    </tr>
-                  )] : [])];
+                  ...waterRow];
                 })}
                 {p.blocks.length === 0 && (
                   <tr><td colSpan={5} style={{ padding: "16px 8px", color: "#888" }}>No drills scheduled yet.</td></tr>
@@ -183,68 +290,6 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
               </tbody>
             </table>
 
-            {/* Rotating blocks, written out in full. A coach standing at one
-                station needs to know who they've got and how they're
-                divided, so every round's split is printed by name rather
-                than left as a rule to apply. */}
-            {p.blocks.filter(b => b.rotation).map((b, bi) => {
-              const rot = b.rotation!;
-              return (
-                <div key={`rot-${bi}`} style={{ marginTop: 14, pageBreakInside: "avoid" }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, borderBottom: "1.5px solid #111", paddingBottom: 4, marginBottom: 8 }}>
-                    {b.start} – {b.end} · STATIONS — {rot.groups.length} groups rotate
-                  </div>
-
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10.5, marginBottom: 10 }}>
-                    <thead>
-                      <tr style={{ background: "#eee" }}>
-                        <th style={{ textAlign: "left", padding: "3px 6px", border: "0.5px solid #bbb" }}>Station</th>
-                        {rot.grid.map((_, r) => (
-                          <th key={r} style={{ padding: "3px 6px", border: "0.5px solid #bbb" }}>Rd {r + 1}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rot.stations.map((st, si) => (
-                        <tr key={si}>
-                          <td style={{ padding: "3px 6px", border: "0.5px solid #bbb" }}>{st.title}{st.film ? " 🎥" : ""}</td>
-                          {rot.grid.map((row, r) => (
-                            <td key={r} style={{ textAlign: "center", padding: "3px 6px", border: "0.5px solid #bbb" }}>
-                              {row[si].replace("Group ", "")}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-
-                  {rot.stations.map((st, si) => (
-                    <div key={si} style={{ marginBottom: 9, pageBreakInside: "avoid" }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 3 }}>
-                        {st.title.toUpperCase()}{st.film ? " 🎥" : ""} — {st.ruleText}
-                        {st.coachNames.length > 0 && <> · {st.coachNames.join(", ")}</>}
-                      </div>
-                      <div style={{ fontSize: 10, lineHeight: 1.7 }}>
-                        {st.rounds.map(rd => (
-                          <div key={rd.round}>
-                            Rd {rd.round} · <b>{rd.groupLabel.replace("Group ", "")}</b> —{" "}
-                            {/* Teams play each other, so "vs". Pairs and small
-                                groups are parallel, so a divider. Members
-                                within a pair join with "+" because a comma
-                                reads the same as the divider at a glance. */}
-                            {st.ruleText === "keep together"
-                              ? rd.parts[0].join(", ")
-                              : st.ruleText.startsWith("split into")
-                                ? rd.parts.map(part => part.join(", ")).join("  vs  ")
-                                : rd.parts.map(part => part.join(part.length <= 2 ? " + " : ", ")).join("   |   ")}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
           </div>
           </div>
 
