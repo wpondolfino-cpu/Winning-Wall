@@ -271,11 +271,26 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, ro
                 <div style={{ marginLeft: 10, marginBottom: 6 }}>
                   <button onClick={() => setOpenSplits(openSplits === d.id ? null : d.id)}
                     style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 11, cursor: "pointer", padding: "3px 0" }}>
-                    {openSplits === d.id ? "▾" : "▸"} Who’s on which side
+                    {openSplits === d.id ? "▾" : "▸"} Who’s on which team
                     {Object.keys(overrides[d.id] ?? {}).length > 0 && (
                       <span style={{ color: "var(--gold-text)" }}> · {Object.keys(overrides[d.id] ?? {}).length} set by hand</span>
                     )}
                   </button>
+                  {openSplits === d.id && mode === "rotating" && drills.some(o => o.id !== d.id && (rules[o.id]?.rule ?? "none") !== "none") && (
+                    <button
+                      title="Every other station that splits gets this station's rule and these exact teams"
+                      onClick={() => {
+                        const others = drills.filter(o => o.id !== d.id && (rules[o.id]?.rule ?? "none") !== "none");
+                        // Groups visit every station, so a group's teams here
+                        // are its teams there too (keyed by group).
+                        const mine = { ...(overrides[d.id] ?? {}) };
+                        setRules(p => ({ ...p, ...Object.fromEntries(others.map(o => [o.id, { rule: r.rule, n: r.n }])) }));
+                        setOverrides(p => ({ ...p, ...Object.fromEntries(others.map(o => [o.id, { ...mine }])) }));
+                      }}
+                      style={{ marginLeft: 10, background: "none", border: "1px solid var(--border)", borderRadius: 6, color: "var(--royal-light)", fontSize: 11, cursor: "pointer", padding: "2px 8px" }}>
+                      Use these teams at every station
+                    </button>
+                  )}
                   {openSplits === d.id && groupsHere.map((g, gi) => {
                     const staged = { split_rule: r.rule, split_n: r.n, split_overrides: overrides[d.id] ?? {} };
                     const { parts, overridden } = resolvedSplit(staged as any, gi, g);
@@ -308,9 +323,8 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, ro
                               }}
                               style={{ flex: 1, minWidth: 110, border: "1px dashed var(--border)", borderRadius: 6, padding: 5 }}>
                               <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 3 }}>
-                                {r.rule === "teams" ? `Team ${pi + 1}`
-                                  : r.rule === "size_exact" && pi === parts.length - 1 && parts[pi].length < r.n
-                                    ? "Waiting" : `Group ${pi + 1}`}
+                                {r.rule === "size_exact" && pi === parts.length - 1 && parts[pi].length < r.n
+                                  ? "Waiting" : `Team ${pi + 1}`}
                               </div>
                               {part.map(id => (
                                 <div key={id} draggable
