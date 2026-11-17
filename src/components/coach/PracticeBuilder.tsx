@@ -1575,6 +1575,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
               : effectiveAttendees
           }
           tryoutIds={isTryout ? tryoutIds : undefined}
+          rosters={rosters.map(r => ({ id: r.id, name: r.name }))}
+          tryoutTeams={Object.fromEntries(tryoutPool.map(t => [t.id, t.roster_ids ?? []]))}
+          tryoutProfile={Object.fromEntries(tryoutPool.filter(t => t.linked_profile_id).map(t => [t.id, t.linked_profile_id!]))}
           onClose={() => { setStationsTarget(null); void loadStationGroupFlags(blocks.map(b => b.id)); }}
           onChanged={() => { void refreshBlock(stationsTarget.segment.block_id); void loadStationGroupFlags(blocks.map(b => b.id)); }}
         />

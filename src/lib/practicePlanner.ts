@@ -2016,6 +2016,33 @@ export function generateGroupsByGrade<P extends { id: string; grade?: number | n
  * group gets its share of each class. Players with no grade stay on the
  * bench.
  */
+/**
+ * Groups already made elsewhere in this practice, to reuse in another
+ * block: each other block's rotation groups, or its fixed stations' crews.
+ * Labelled by start time ("3:30 PM block").
+ */
+export async function getOtherBlockGroups(practiceId: string, excludeBlockId: string): Promise<{ blockId: string; label: string; groups: string[][] }[]> {
+  const [practice, blocks] = await Promise.all([getPractice(practiceId), getPracticeBlocks(practiceId)]);
+  if (!practice) return [];
+  const timed = computeBlockTimes(practice.start_time, blocks).filter(b => b.id !== excludeBlockId);
+  const [rot, segs] = await Promise.all([
+    selectIn<RotationGroup>("block_rotation_groups", "*", "block_id", timed.map(b => b.id), q => q.order("group_index", { ascending: true })),
+    selectIn<BlockSegment>("block_segments", "*", "block_id", timed.map(b => b.id)),
+  ]);
+  const drills = await selectIn<SegmentDrill>("segment_drills", "*", "segment_id", segs.map(sg => sg.id), q => q.order("order_index", { ascending: true }));
+  const out: { blockId: string; label: string; groups: string[][] }[] = [];
+  for (const b of timed) {
+    let groups = rot.filter(r => r.block_id === b.id).map(r => r.member_ids).filter(g => g.length);
+    if (!groups.length) {
+      const segIds = new Set(segs.filter(sg => sg.block_id === b.id).map(sg => sg.id));
+      groups = drills.filter(d => segIds.has(d.segment_id))
+        .map(d => [...(d.station_member_ids ?? []), ...(d.station_tryout_member_ids ?? [])]).filter(g => g.length);
+    }
+    if (groups.length) out.push({ blockId: b.id, label: `${b.start} block`, groups });
+  }
+  return out;
+}
+
 export function generateGradeMixedGroups<P extends { id: string; grade?: number | null }>(players: P[], numGroups: number): { groups: string[][] } {
   const n = Math.max(1, numGroups);
   const groups: string[][] = Array.from({ length: n }, () => []);

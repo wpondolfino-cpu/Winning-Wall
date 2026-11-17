@@ -23,10 +23,13 @@ import {
   SegmentDrill, PracticeBlock, setStationMembers, clearStationMembers,
   getRotationGroups, setRotationGroups, setBlockStationMode, setDrillSplitRule,
   splitForStation, rotationSchedule, getPracticeDrillLibrary, resolvedSplit, setSplitOverride,
+  getOtherBlockGroups, getCurrentSeason,
 } from "../../lib/practicePlanner";
+import { getPlans, getSlots, getPositions } from "../../lib/teamDesigner";
+import SplitChooser, { SplitPlayer } from "./SplitChooser";
 import { inputStyle } from "../../lib/inputStyle";
 
-interface PlayerLite { id: string; name: string; }
+interface PlayerLite { id: string; name: string; grade?: number | null; home_roster_id?: string | null; }
 type Rule = "none" | "teams" | "size" | "size_exact";
 
 interface Props {
@@ -34,11 +37,16 @@ interface Props {
   drills: SegmentDrill[];
   attendees: PlayerLite[];
   tryoutIds?: Set<string>;
+  /** For "split by team": the program's teams, and a tryout kid's team tags. */
+  rosters?: { id: string; name: string }[];
+  tryoutTeams?: Record<string, string[]>;
+  /** A tryout kid's linked account, to find their Team Designer card. */
+  tryoutProfile?: Record<string, string>;
   onClose: () => void;
   onChanged: () => void;
 }
 
-export default function StationsEditor({ block, drills, attendees, tryoutIds, onClose, onChanged }: Props) {
+export default function StationsEditor({ block, drills, attendees, tryoutIds, rosters = [], tryoutTeams = {}, tryoutProfile = {}, onClose, onChanged }: Props) {
   const hasFixedAssignments = drills.some(d => (d.station_member_ids ?? []).length > 0);
   const [mode, setMode] = useState<"fixed" | "rotating">(
     block.station_mode === "fixed" && !hasFixedAssignments ? "rotating" : (block.station_mode ?? "rotating")
@@ -58,6 +66,36 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
   const [openSplits, setOpenSplits] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<Record<string, Record<string, string[][]>>>({});
   const [splitDrag, setSplitDrag] = useState<{ drillId: string; gi: number; playerId: string } | null>(null);
+
+  // "How do you want to split them?" -- open for this tab, or closed.
+  const [chooser, setChooser] = useState<"fixed" | "rotating" | null>(null);
+  const [positions, setPositions] = useState<{ id: string; name: string }[]>([]);
+  const [positionOf, setPositionOf] = useState<Record<string, string>>({});
+  const [sources, setSources] = useState<{ blockId: string; label: string; groups: string[][] }[]>([]);
+  useEffect(() => {
+    (async () => {
+      // Positions come from the newest Team Designer board for this season.
+      const season = await getCurrentSeason().catch(() => null);
+      const [pos, plans] = await Promise.all([getPositions().catch(() => []), getPlans(season?.id ?? null).catch(() => [])]);
+      setPositions(pos.map(p => ({ id: p.id, name: p.name })));
+      if (plans[0]) {
+        const slots = await getSlots(plans[0].id).catch(() => []);
+        const map: Record<string, string> = {};
+        slots.filter(sl => sl.zone === "lane" && sl.position_id).forEach(sl => {
+          if (sl.profile_id) map[sl.profile_id] = sl.position_id!;
+          if (sl.tryout_player_id) map[sl.tryout_player_id] = sl.position_id!;
+        });
+        setPositionOf(map);
+      }
+    })();
+    getOtherBlockGroups(block.practice_id, block.id).then(setSources).catch(() => setSources([]));
+  }, [block.id, block.practice_id]);
+
+  const splitPlayers: SplitPlayer[] = attendees.map(p => ({
+    id: p.id, name: p.name, grade: p.grade ?? null,
+    teamIds: p.home_roster_id ? [p.home_roster_id] : (tryoutTeams[p.id] ?? []),
+    positionId: positionOf[p.id] ?? (tryoutProfile[p.id] ? positionOf[tryoutProfile[p.id]] : undefined) ?? null,
+  }));
 
   useEffect(() => {
     const seed: Record<string, string[]> = {};
@@ -88,14 +126,6 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
   const placed = new Set(Object.values(assigned).flat());
   const unassigned = attendees.filter(p => !placed.has(p.id));
 
-  function splitEvenlyFixed() {
-    const shuffled = [...attendees].sort(() => Math.random() - 0.5);
-    const next: Record<string, string[]> = {};
-    drills.forEach(d => { next[d.id] = []; });
-    shuffled.forEach((p, i) => { next[drills[i % drills.length].id].push(p.id); });
-    setAssigned(next);
-  }
-
   function moveFixed(playerId: string, toDrillId: string | null) {
     setAssigned(prev => {
       const next: Record<string, string[]> = {};
@@ -108,13 +138,6 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
   /* ── rotating ──────────────────────────────────────────── */
   const inGroups = new Set(groups.flat());
   const ungrouped = attendees.filter(p => !inGroups.has(p.id));
-
-  function makeGroups(count: number) {
-    const shuffled = [...attendees].sort(() => Math.random() - 0.5);
-    const next: string[][] = Array.from({ length: count }, () => []);
-    shuffled.forEach((p, i) => next[i % count].push(p.id));
-    setGroups(next);
-  }
 
   function moveRot(playerId: string, toIndex: number | null) {
     setGroups(prev => {
@@ -340,9 +363,14 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
         {mode === "fixed" ? (
           <>
             <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-              <button onClick={splitEvenlyFixed} style={{ ...inputStyle, background: "var(--royal)", color: "#fff", border: "none", fontWeight: 600 }}>Split evenly</button>
+              <button onClick={() => setChooser(c => c === "fixed" ? null : "fixed")} style={{ ...inputStyle, background: "var(--royal)", color: "#fff", border: "none", fontWeight: 600 }}>Split evenly…</button>
               <button onClick={() => setAssigned(Object.fromEntries(drills.map(d => [d.id, []])))} style={inputStyle}>Clear</button>
             </div>
+            {chooser === "fixed" && (
+              <SplitChooser players={splitPlayers} targetNames={drills.map((d, i) => labelOf(d, i))} teams={rosters} positions={positions} sources={sources}
+                onCancel={() => setChooser(null)}
+                onApply={gs => { setAssigned(Object.fromEntries(drills.map((d, i) => [d.id, gs[i] ?? []]))); setChooser(null); }} />
+            )}
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(drills.length, 4)}, minmax(0,1fr))`, gap: 10, marginBottom: 14 }}>
               {drills.map((d, i) => (
                 <div key={d.id} {...dropOn(() => dragId && moveFixed(dragId, d.id))}
@@ -373,11 +401,16 @@ export default function StationsEditor({ block, drills, attendees, tryoutIds, on
               Rotation groups — one per station, so nobody is idle
             </div>
             <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
-              <button onClick={() => makeGroups(drills.length)} style={{ ...inputStyle, background: "var(--royal)", color: "#fff", border: "none", fontWeight: 600, padding: "7px 12px", fontSize: 12 }}>
-                Split into {drills.length} groups
+              <button onClick={() => setChooser(c => c === "rotating" ? null : "rotating")} style={{ ...inputStyle, background: "var(--royal)", color: "#fff", border: "none", fontWeight: 600, padding: "7px 12px", fontSize: 12 }}>
+                Split into {drills.length} groups…
               </button>
               <button onClick={() => setGroups([])} style={{ ...inputStyle, padding: "7px 11px", fontSize: 12 }}>Clear</button>
             </div>
+            {chooser === "rotating" && (
+              <SplitChooser players={splitPlayers} targetNames={drills.map((_, i) => `Group ${String.fromCharCode(65 + i)}`)} teams={rosters} positions={positions} sources={sources}
+                onCancel={() => setChooser(null)}
+                onApply={gs => { setGroups(gs); setChooser(null); }} />
+            )}
 
             {groups.length > 0 && (
               <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(groups.length, 4)}, minmax(0,1fr))`, gap: 8, marginBottom: 14 }}>
