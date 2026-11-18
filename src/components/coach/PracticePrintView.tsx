@@ -101,9 +101,12 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
   }, [practiceIds]);
 
   // "3:30 PM–4:30 PM", wrapping after the dash rather than spilling into the Drill column.
-  const timeRange = (b: { start: string; end: string; water_break?: boolean }) => (
-    <><span style={{ whiteSpace: "nowrap" }}>{b.start}–</span><span style={{ whiteSpace: "nowrap" }}>{b.end}{b.water_break ? " 💧" : ""}</span></>
-  );
+  // Same half of the day prints once: "3:51–4:13 PM".
+  const timeRange = (b: { start: string; end: string; water_break?: boolean }) => {
+    const sm = /^(.*)\s(AM|PM)$/.exec(b.start), em = /^(.*)\s(AM|PM)$/.exec(b.end);
+    const start = sm && em && sm[2] === em[2] ? sm[1] : b.start;
+    return <><span style={{ whiteSpace: "nowrap" }}>{start}–</span><span style={{ whiteSpace: "nowrap" }}>{b.end}{b.water_break ? " 💧" : ""}</span></>;
+  };
 
   // ── Shared bits for group cards ─────────────────────────────
   // Each name stays on one line ("Isaiah J." never splits).
@@ -153,11 +156,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
     const perStation = splitStations.length > 0 && !shared;
 
     const mins = Math.round(b.duration_minutes / Math.max(1, rot.grid.length));
-    const path = n > 1 ? ` (${Array.from({ length: n }, (_, i) => i + 1).join(" → ")} → 1)` : "";
     const waiting = rot.groups.slice(n).map(g => letterOf(g.label));
-    const waitText = waiting.length
-      ? ` · ${waiting.join(", ")} start${waiting.length === 1 ? "s" : ""} waiting, and after station ${n} you wait your turn`
-      : "";
     // Starting letters; a station with no group of its own in round 1 shows a dash.
     const seen = new Set<string>();
     const startAt = (rot.grid[0] ?? []).map(l => { if (seen.has(l)) return null; seen.add(l); return l; });
@@ -176,28 +175,32 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
       cardGrid(items.map(it => ({ key: it.letter, tag: it.letter, body: it.body })), 2);
     const isVs = (st: typeof rot.stations[number]) => st.ruleText.startsWith("split into");
 
-    // Units: the heading rides with station 1; each station keeps its
-    // teams; the group cards are a unit of their own.
+    // Units: each station keeps its teams; the group cards are a unit
+    // of their own. No heading row: the block's time sits on station 1
+    // and the minutes sit beside each station number.
     const units: { key: string; rows: ReactElement[] }[] = [];
-    const head = (
-      <tr key={`${bi}-head`} style={{ borderBottom: "1px solid #999", verticalAlign: "top" }}>
-        <td style={{ ...cell, fontWeight: 700 }}>{timeRange(b)}</td>
-        <td colSpan={4} style={{ ...cell, fontWeight: 700 }}>
-          Stations <span style={{ fontWeight: 400, color: "#555" }}>· {mins} min each, move to the next station{path}{waitText}</span>
-        </td>
-      </tr>
-    );
     rot.stations.forEach((st, si) => {
       const d = drills[si];
-      const out: ReactElement[] = si === 0 ? [head] : [];
+      const out: ReactElement[] = [];
       units.push({ key: `${bi}-st-${si}`, rows: out });
       out.push(
         <tr key={`${bi}-st-${si}`} style={{ borderBottom: "1px solid #ddd", verticalAlign: "top", background: shade }}>
-          <td style={{ ...cell, paddingLeft: 18, color: "#555" }}>{si + 1}</td>
           <td style={cell}>
-            {st.title}{st.film ? " 🎥" : ""}
-            {extraLabel(d?.label) && <div style={{ fontSize: 10.5, color: "#666" }}>{extraLabel(d?.label)}</div>}
-            {st.ruleText !== "keep together" && <div style={{ fontSize: 10.5, color: "#666" }}>{st.ruleText}</div>}
+            {si === 0 && <>
+              <div style={{ fontWeight: 700 }}>{timeRange(b)}</div>
+              <div style={{ fontSize: 10.5, color: "#555" }}>{mins} min each</div>
+            </>}
+          </td>
+          <td style={cell}>
+            {/* Station number in front of the drill, so all of them line up. */}
+            <div style={{ display: "flex", gap: 6 }}>
+            <span style={{ color: "#555", minWidth: 12, flexShrink: 0 }}>{si + 1}</span>
+            <div>
+              {st.title}{st.film ? " 🎥" : ""}
+              {extraLabel(d?.label) && <div style={{ fontSize: 10.5, color: "#666" }}>{extraLabel(d?.label)}</div>}
+              {st.ruleText !== "keep together" && <div style={{ fontSize: 10.5, color: "#666" }}>{st.ruleText}</div>}
+            </div>
+            </div>
           </td>
           <td style={{ ...cell, whiteSpace: "pre-wrap" }}>{d?.goal_text ?? "—"}</td>
           <td style={cell}>
@@ -218,13 +221,20 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
         );
       }
     });
-    if (rot.stations.length === 0) units.push({ key: `${bi}-head`, rows: [head] });
+    if (perStation && waiting.length) units[units.length - 1]?.rows.push(
+      <tr key={`${bi}-wait`} style={{ background: shade }}>
+        <td colSpan={5} style={{ padding: "0 8px 6px 18px", fontSize: 10, color: "#555" }}>
+          {waiting.join(", ")} start{waiting.length === 1 ? "s" : ""} waiting; after station {n}, wait your turn
+        </td>
+      </tr>
+    );
     if (!perStation) {
       const out: ReactElement[] = [];
       units.push({ key: `${bi}-groups`, rows: out });
-      const note = shared
-        ? `Teams ┃ same at ${splitStations.length === n ? "every station" : splitStations.map(st => st.title).join(" and ")}`
-        : null;
+      const note = [
+        shared ? `Teams ┃ same at ${splitStations.length === n ? "every station" : splitStations.map(st => st.title).join(" and ")}` : "",
+        waiting.length ? `${waiting.join(", ")} start${waiting.length === 1 ? "s" : ""} waiting; after station ${n}, wait your turn` : "",
+      ].filter(Boolean).join(" · ") || null;
       out.push(
         <tr key={`${bi}-groups`} style={{ borderBottom: "1.5px solid #999", background: shade }}>
           <td colSpan={5} style={{ padding: "4px 8px 7px 18px" }}>
