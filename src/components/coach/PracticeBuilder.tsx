@@ -1261,7 +1261,11 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                                 drill (stations) in the block. Every block is
                                 rotating by default, which used to hide the
                                 Groups button on single drills too. */}
-                            {((block.station_mode === "rotating" && (drillsBySeg[seg.id] ?? []).length > 1) || (d.split_rule && d.split_rule !== "none")) ? (
+                            {/* A drill with its own groups keeps the Groups
+                                button even with a team rule: the rule then
+                                means "teams in each group", set in that box. */}
+                            {((block.station_mode === "rotating" && (drillsBySeg[seg.id] ?? []).length > 1)
+                              || (d.split_rule && d.split_rule !== "none" && gCount === 0 && (d.station_member_ids ?? []).length + (d.station_tryout_member_ids ?? []).length > 0)) ? (
                               <span style={{ fontSize: 11, color: "var(--muted)" }}>
                                 {d.split_rule === "teams" ? `${d.split_n ?? 2} teams`
                                   : d.split_rule === "size" ? `groups of ${d.split_n ?? 2}`
@@ -1275,7 +1279,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                                   show — otherwise the row gives no hint that
                                   anyone is assigned here at all. */}
                               {gCount > 0
-                                ? `${gCount} group${gCount === 1 ? "" : "s"}`
+                                ? `${gCount} group${gCount === 1 ? "" : "s"}${d.split_rule === "size" ? ` · teams of ${d.split_n ?? 2}`
+                                    : d.split_rule === "size_exact" ? ` · teams of exactly ${d.split_n ?? 2}`
+                                    : d.split_rule === "teams" ? ` · ${d.split_n ?? 2} teams each` : ""}`
                                 : (d.station_member_ids ?? []).length + (d.station_tryout_member_ids ?? []).length > 0
                                   ? `${(d.station_member_ids ?? []).length + (d.station_tryout_member_ids ?? []).length} at station`
                                   : "+ Groups"}
