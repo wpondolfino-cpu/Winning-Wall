@@ -1993,7 +1993,9 @@ export function generateBalancedGroups<P extends { id: string; home_roster_id: s
   return { groups };
 }
 
-const GROUP_LABELS = ["Group A", "Group B", "Group C", "Group D", "Group E", "Group F", "Group G", "Group H"];
+// A–Z, then AA, AB… so a big practice never falls back to numbers.
+export const groupLetter = (i: number): string => i < 26 ? String.fromCharCode(65 + i) : groupLetter(Math.floor(i / 26) - 1) + String.fromCharCode(65 + (i % 26));
+const GROUP_LABELS = Array.from({ length: 52 }, (_, i) => `Group ${groupLetter(i)}`);
 
 const CLASS_NAMES: Record<number, string> = { 12: "Seniors", 11: "Juniors", 10: "Sophomores", 9: "Freshmen" };
 const knownGrade = (g: number | null | undefined) => (g != null && g >= 9 && g <= 12 ? g : null);
@@ -2648,7 +2650,7 @@ export async function getWinnableDrills(practiceId: string): Promise<WinnableDri
         let groups: { label: string; memberIds: string[] }[];
         if (rotating && rotGroups.length > 0) {
           groups = rotGroups.map((g, i) => ({
-            label: `Group ${String.fromCharCode(65 + i)}`,
+            label: `Group ${groupLetter(i)}`,
             memberIds: g.member_ids,
           }));
         } else {
@@ -2787,7 +2789,7 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
       const rotDrills = segs.length ? (drillsBySegId.get(segs[0].id) ?? []) : [];
       if (rotGroups.length > 0 && rotDrills.length > 0) {
         rotGroups.forEach(g => g.member_ids.forEach(id => allMemberIds.add(id)));
-        const letter = (i: number) => String.fromCharCode(65 + i);
+        const letter = groupLetter;
         const sched = rotationSchedule(rotGroups.length, rotDrills.length);
         rotation = {
           groups: rotGroups.map((g, i) => ({ label: `Group ${letter(i)}`, memberNames: g.member_ids as any })),
