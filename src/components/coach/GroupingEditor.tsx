@@ -291,14 +291,6 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
             <div style={{ fontSize: 12, color: "var(--muted)", paddingBottom: 8 }}>One group per grade: Seniors, Juniors, Sophomores, Freshmen.</div>
           ) : (<>
           <div>
-            <div style={fieldLabel}>Group size</div>
-            <input type="number" min={1}
-              value={groupSizeDraft ?? String(groupSize)}
-              onChange={e => setGroupSizeDraft(e.target.value)}
-              onBlur={e => { setGroupSize(Math.max(1, parseInt(e.target.value) || groupSize)); setGroupSizeDraft(null); }}
-              style={{ ...inputStyle, width: 60 }} />
-          </div>
-          <div>
             <div style={fieldLabel}># of groups</div>
             <input type="number" min={1}
               value={numGroupsDraft ?? String(numGroups)}
@@ -306,8 +298,17 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
               onBlur={e => { setNumGroups(Math.max(1, parseInt(e.target.value) || numGroups)); setNumGroupsDraft(null); }}
               style={{ ...inputStyle, width: 60 }} />
           </div>
+          <div>
+            <div style={fieldLabel}>Group size</div>
+            <input type="number" min={1}
+              value={groupSizeDraft ?? String(groupSize)}
+              onChange={e => setGroupSizeDraft(e.target.value)}
+              onBlur={e => { setGroupSize(Math.max(1, parseInt(e.target.value) || groupSize)); setGroupSizeDraft(null); }}
+              style={{ ...inputStyle, width: 60 }} />
+          </div>
           <div style={{ fontSize: 11, color: "var(--muted)", paddingBottom: 8 }}>
-            {groupSize}v{Array(numGroups).fill(groupSize).join("v")}
+            {/* One number per group: 3 groups of 15 reads "15v15v15". */}
+            {Array(numGroups).fill(groupSize).join("v")}
           </div>
           </>)}
           <button onClick={handleGenerate} disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.6 : 1, cursor: busy ? "wait" : "pointer" }}>{busy ? "Saving…" : "Generate"}</button>
