@@ -7,6 +7,8 @@ import { getSeasonMode } from "../lib/seasonMode";
 import { useLeaderboard } from "../hooks/useLeaderboard";
 import { Roster, getRosters } from "../lib/practicePlanner";
 import RosterManager from "./coach/RosterManager";
+import NicknameField from "./NicknameField";
+import { saveNickname } from "../lib/nicknames";
 import TeamDesigner from "./coach/TeamDesigner";
 import { gradYearFromGrade, gradeFromGradYear, gradeCategoryFromGradYear, loadAcademicYear } from "../lib/teamDesigner";
 
@@ -26,6 +28,11 @@ interface EditPlayer {
    *  doesn't make the team never needs a number. Deliberately not part of
    *  account creation. */
   jersey: number | null;
+  /** Blank = the automatic short form. Saved separately via set_nickname. */
+  nickname: string;
+  nickname_locked: boolean;
+  orig_nickname: string;
+  orig_locked: boolean;
 }
 
 interface EditScore {
@@ -306,7 +313,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   const [showAddCoach, setShowAddCoach]     = useState(false);
   const [inviteCoachEmail, setInviteCoachEmail] = useState("");
   const [showInviteCoach, setShowInviteCoach]   = useState(false);
-  const [editCoach, setEditCoach]               = useState<{id:string;name:string;role:string} | null>(null);
+  const [editCoach, setEditCoach]               = useState<{id:string;name:string;role:string;nickname:string;orig_nickname:string} | null>(null);
   const [editCoachSaving, setEditCoachSaving]   = useState(false);
   const [removingCoach, setRemovingCoach]       = useState<string | null>(null);
   const [viewingPlayer, setViewingPlayer] = useState<{id:string;name:string} | null>(null);
@@ -486,8 +493,11 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     setTakenJerseys(((taken ?? []) as any[]).map((r) => ({ id: r.id, jersey: r.jersey, roster: r.home_roster_id, name: r.name ?? "" })));
     // Fetch fresh rather than trusting the leaderboard row, which may not carry this field.
     const { data } = await supabase.from("profiles").select("home_roster_id, jersey").eq("id", p.id).single();
-    const { data: gy } = await supabase.from("profiles").select("graduation_year").eq("id", p.id).single();
+    const { data: gy } = await supabase.from("profiles").select("*").eq("id", p.id).single();
+    const nick = ((gy as any)?.nickname ?? "") as string;
+    const locked = !!(gy as any)?.nickname_locked;
     setEditPlayer({
+      nickname: nick, nickname_locked: locked, orig_nickname: nick, orig_locked: locked,
       id: p.id,
       name: p.name,
       grade_category: p.grade_category ?? GRADE_CATEGORIES[0],
@@ -525,6 +535,10 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
         home_roster_id: editPlayer.home_roster_id,
         jersey: editPlayer.home_roster_id ? editPlayer.jersey : null,
       }).eq("id", editPlayer.id);
+      if (editPlayer.nickname.trim() !== editPlayer.orig_nickname.trim() || editPlayer.nickname_locked !== editPlayer.orig_locked) {
+        const { error } = await saveNickname(editPlayer.id, editPlayer.nickname, editPlayer.nickname_locked);
+        if (error) throw new Error(error);
+      }
       setEditPlayer(null); refresh();
     } catch (e: any) { setEditError(e.message); }
     finally { setEditSaving(false); }
@@ -600,6 +614,10 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
       const { error } = await supabase.from("profiles").update({ name: editCoach.name, role: editCoach.role }).eq("id", editCoach.id);
       if (error) throw new Error(/platform admin/i.test(error.message) ? "Only the platform admin can add or remove head coaches."
         : /admin/i.test(error.message) ? "Only an admin can change a coach's role." : error.message);
+      if (editCoach.nickname.trim() !== editCoach.orig_nickname.trim()) {
+        const { error: nickErr } = await saveNickname(editCoach.id, editCoach.nickname);
+        if (nickErr) throw new Error(nickErr);
+      }
       setEditCoach(null); await loadCoaches();
     }
     catch(e: any) { alert("Error: " + e.message); }
@@ -625,7 +643,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
   }
 
   async function loadCoaches() {
-    const { data } = await supabase.from("profiles").select("id,name,role,avatar_url,profile_emails(email)").in("role", ["coach","admin"]).order("name");
+    const { data } = await supabase.from("profiles").select("*,profile_emails(email)").in("role", ["coach","admin"]).order("name");
     setCoaches(withEmail(data as any[]));
   }
 
@@ -921,7 +939,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{c.email} · <span style={{ color: c.role === "admin" ? "var(--gold-text)" : "var(--info-text)" }}>{c.role}</span></div>
                   </div>
                   <div style={{ display: "flex", gap: 5 }}>
-                    <button onClick={() => setEditCoach({ id: c.id, name: c.name, role: c.role })} style={{ background: "rgba(26,63,168,0.15)", border: "1px solid rgba(26,63,168,0.3)", color: "var(--info-text)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
+                    <button onClick={() => setEditCoach({ id: c.id, name: c.name, role: c.role, nickname: c.nickname ?? "", orig_nickname: c.nickname ?? "" })} style={{ background: "rgba(26,63,168,0.15)", border: "1px solid rgba(26,63,168,0.3)", color: "var(--info-text)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✏️ Edit</button>
                     <button onClick={() => removeCoach(c.id, c.name)} disabled={removingCoach === c.id} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.16)", color: "var(--muted)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🚫 Remove</button>
                     <button onClick={() => deleteCoach(c.id, c.name)} disabled={removingCoach === c.id} style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.3)", color: "var(--tx-ff3c3c)", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>🗑 Delete</button>
                   </div>
@@ -932,6 +950,7 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                       <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label><input value={editCoach?.name ?? ""} onChange={e => setEditCoach(prev => prev ? { ...prev, name: e.target.value } : null)} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }} /></div>
                       <div><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Role</label><select value={editCoach?.role ?? "coach"} onChange={e => setEditCoach(prev => prev ? { ...prev, role: e.target.value } : null)} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13 }}><option value="coach">Coach</option><option value="admin">Admin</option></select></div>
                     </div>
+                    <NicknameField fullName={editCoach?.name ?? ""} value={editCoach?.nickname ?? ""} onChange={v => setEditCoach(prev => prev ? { ...prev, nickname: v } : null)} />
                     <div style={{ display: "flex", gap: 8 }}>
                       <button onClick={saveCoachEdit} disabled={editCoachSaving} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{editCoachSaving ? "Saving…" : "Save"}</button>
                       <button onClick={() => setEditCoach(null)} style={{ background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 16px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" }}>Cancel</button>
@@ -970,6 +989,12 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
           <div style={{ background: "var(--surface)", borderRadius: 16, width: "min(480px, 96vw)", maxHeight: "90vh", overflowY: "auto", padding: 24 }} onClick={e => e.stopPropagation()}>
             <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", marginBottom: 16 }}>✏️ Edit Player</div>
             <div style={{ marginBottom: 12 }}><label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>Name</label><input value={editPlayer.name} onChange={e => setEditPlayer({ ...editPlayer, name: e.target.value })} style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontFamily: "inherit", fontSize: 14, boxSizing: "border-box" as const }} /></div>
+            <NicknameField
+              fullName={editPlayer.name}
+              value={editPlayer.nickname}
+              onChange={v => setEditPlayer({ ...editPlayer, nickname: v })}
+              lock={{ value: editPlayer.nickname_locked, onChange: v => setEditPlayer({ ...editPlayer, nickname_locked: v }) }}
+            />
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 11, color: "var(--muted)", display: "block", marginBottom: 4 }}>School year</label>
               <select

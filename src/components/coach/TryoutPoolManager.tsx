@@ -12,6 +12,7 @@
 // the notes that justified the decision. Deleting throws away exactly the
 // record a coach would want if a parent asks why.
 
+import { autoNickname, nicknameProblem } from "../../lib/nicknames";
 import { useState, useEffect } from "react";
 import {
   TryoutPlayer, getTryoutPlayers, addTryoutPlayer, addTryoutPlayersBulk,
@@ -262,6 +263,28 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
                               <option value="">Grade?</option>
                               {[9, 10, 11, 12].map(g => <option key={g} value={g}>{GRADE_LABEL[g]}</option>)}
                             </select>
+                          )}
+                          {/* Short name for practice plans. A linked kid uses
+                              the one on their account instead. */}
+                          {!acct && (
+                            <input
+                              key={`nick-${p.id}-${p.nickname ?? ""}`}
+                              defaultValue={p.nickname ?? ""}
+                              placeholder={autoNickname(p.name)}
+                              title="Nickname for practice plans. Blank uses the one shown in gray."
+                              maxLength={20}
+                              onBlur={async e => {
+                                const v = e.target.value.trim().replace(/\s+/g, " ");
+                                if (v === (p.nickname ?? "")) return;
+                                const problem = nicknameProblem(v);
+                                if (problem) { alert(problem); e.target.value = p.nickname ?? ""; return; }
+                                const { error } = await updateTryoutPlayer(p.id, { nickname: v || null });
+                                if (error) alert(/column/i.test(error) && /nickname/i.test(error) ? "Nicknames need SQL 212 run in Supabase first." : error);
+                                await load();
+                              }}
+                              onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                              style={{ width: 78, fontSize: 11, padding: "1px 6px", borderRadius: 5, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontFamily: "inherit" }}
+                            />
                           )}
                           {acct && (
                             <span title={`Linked to ${acct.name}'s account`} style={{ fontSize: 10.5, padding: "1px 6px", borderRadius: 5, border: "1px solid rgba(45,155,90,0.5)", color: "var(--green, #2d9b5a)", display: "inline-flex", alignItems: "center", gap: 4 }}>

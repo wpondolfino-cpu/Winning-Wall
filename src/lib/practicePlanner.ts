@@ -6,6 +6,7 @@
 
 import { supabase } from "./supabase";
 import { loadAcademicYear } from "./teamDesigner";
+import { shortLabels } from "./nicknames";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -528,6 +529,8 @@ export interface TryoutPlayer {
    */
   roster_ids: string[];
   linked_profile_id: string | null;
+  /** What practice plans print. Blank = automatic short form; a linked kid uses their account's. (SQL 212) */
+  nickname?: string | null;
   notes: string | null;
   status: "active" | "cut";
   created_at: string;
@@ -760,7 +763,7 @@ export async function addTryoutPlayersBulk(
   return { added: fresh.length, skipped: rows.length - fresh.length, linked: result.linked, suggestions: result.suggestions, error: null };
 }
 
-export async function updateTryoutPlayer(id: string, patch: Partial<Pick<TryoutPlayer, "name" | "jersey" | "grade" | "tryout_group" | "roster_ids" | "notes" | "status" | "linked_profile_id">>): Promise<{ error: string | null }> {
+export async function updateTryoutPlayer(id: string, patch: Partial<Pick<TryoutPlayer, "name" | "jersey" | "grade" | "tryout_group" | "roster_ids" | "notes" | "status" | "linked_profile_id" | "nickname">>): Promise<{ error: string | null }> {
   const { error } = await supabase.from("tryout_players").update(patch).eq("id", id);
   return { error: error?.message ?? null };
 }
@@ -2670,11 +2673,16 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
   const practice = await getPractice(practiceId);
   if (!practice) return null;
 
-  const [allRosters, allCoaches, blocks] = await Promise.all([
-    getRosters(true), getAssignableCoaches(), getPracticeBlocks(practiceId),
+  // Coaches print by short name ("Nick"), settled among the coaches so
+  // two Nicks become "Nick M." and "Nick R.". select("*") so a missing
+  // nickname column (before SQL 212) just means no nicknames.
+  const [allRosters, coachRes, blocks] = await Promise.all([
+    getRosters(true),
+    supabase.from("profiles").select("*").in("role", ["coach", "admin"]),
+    getPracticeBlocks(practiceId),
   ]);
   const rosterNameById = Object.fromEntries(allRosters.map(r => [r.id, r.name]));
-  const coachNameById = Object.fromEntries(allCoaches.map(c => [c.id, c.name]));
+  const coachNameById = shortLabels(((coachRes.data ?? []) as any[]).map(c => ({ id: c.id, name: c.name ?? "", nickname: c.nickname })));
 
   // Everything under the blocks in a few batched requests -- segments, then
   // drills, then their groups, rotation groups and drill titles together --
@@ -2804,11 +2812,23 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
 
   // Names for everyone in a group: player accounts, and tryout-pool kids
   // (who have no account, so they'd otherwise print as blanks).
+  // Players print by short name too ("Ben", "Chris J."), settled across
+  // everyone on this practice so a player reads the same all down the
+  // sheet. A pool kid linked to an account uses the account's nickname.
   const [memberProfiles, memberTryouts] = await Promise.all([
-    selectIn<any>("profiles", "id, name", "id", Array.from(allMemberIds)),
-    selectIn<any>("tryout_players", "id, name", "id", Array.from(allMemberIds)),
+    selectIn<any>("profiles", "*", "id", Array.from(allMemberIds)),
+    selectIn<any>("tryout_players", "*", "id", Array.from(allMemberIds)),
   ]);
-  const nameById = Object.fromEntries([...memberTryouts, ...memberProfiles].map((p: any) => [p.id, p.name]));
+  const linkedIds = memberTryouts.map((t: any) => t.linked_profile_id).filter((id: string | null) => id && !memberProfiles.some((p: any) => p.id === id));
+  const linkedProfiles = linkedIds.length ? await selectIn<any>("profiles", "*", "id", linkedIds) : [];
+  const nickByProfile = Object.fromEntries([...memberProfiles, ...linkedProfiles].map((p: any) => [p.id, p.nickname ?? null]));
+  const nameById = shortLabels([
+    ...memberTryouts.map((t: any) => ({
+      id: t.id, name: t.name ?? "",
+      nickname: t.nickname || (t.linked_profile_id ? nickByProfile[t.linked_profile_id] : null),
+    })),
+    ...memberProfiles.map((p: any) => ({ id: p.id, name: p.name ?? "", nickname: p.nickname })),
+  ]);
 
   blockPrintData.forEach(b => {
     if (!b.rotation) return;

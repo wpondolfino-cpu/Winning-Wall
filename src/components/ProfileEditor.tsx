@@ -1,9 +1,11 @@
 // src/components/ProfileEditor.tsx
 // Reusable profile editor — works for players, coaches, and admins
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Profile, updateProfileName, uploadAvatar, supabase } from "../lib/supabase";
 import { gradeFromGradYear } from "../lib/teamDesigner";
 import AvatarBuilder from "./AvatarBuilder";
+import NicknameField from "./NicknameField";
+import { saveNickname } from "../lib/nicknames";
 
 interface Props {
   profile: Profile;
@@ -18,6 +20,31 @@ export default function ProfileEditor({ profile, onUpdated }: Props) {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(profile.avatar_url ?? null);
   const [showAvatarBuilder, setShowAvatarBuilder] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Nickname: what practice plans show instead of the first name. Read
+  // fresh, since the profile passed in may have been loaded without it.
+  const [nick, setNick] = useState<string>((profile as any).nickname ?? "");
+  const [savedNick, setSavedNick] = useState<string>((profile as any).nickname ?? "");
+  const [nickLocked, setNickLocked] = useState<boolean>(!!(profile as any).nickname_locked);
+  const [savingNick, setSavingNick] = useState(false);
+  useEffect(() => {
+    supabase.from("profiles").select("*").eq("id", profile.id).single().then(({ data }) => {
+      if (!data) return;
+      setNick((data as any).nickname ?? ""); setSavedNick((data as any).nickname ?? "");
+      setNickLocked(!!(data as any).nickname_locked);
+    });
+  }, [profile.id]);
+  async function handleSaveNick() {
+    setSavingNick(true);
+    const { error } = await saveNickname(profile.id, nick);
+    setSavingNick(false);
+    if (error) { showToast("Error: " + error); return; }
+    const clean = nick.trim().replace(/\s+/g, " ");
+    setNick(clean); setSavedNick(clean);
+    onUpdated({ nickname: clean || null } as any);
+    showToast("✅ Nickname saved!");
+  }
+  const nickChanged = nick.trim() !== savedNick.trim();
 
   function showToast(msg: string) {
     setToast(msg);
@@ -285,6 +312,26 @@ export default function ProfileEditor({ profile, onUpdated }: Props) {
             {saving ? "Saving…" : "Save"}
           </button>
         </div>
+      </div>
+
+      {/* Nickname — a coach can lock it, and then it's read-only here. */}
+      <div style={{ marginTop: 14 }}>
+        <NicknameField
+          fullName={name || profile.name}
+          value={nick}
+          onChange={setNick}
+          lockedByCoach={nickLocked && profile.role === "player"}
+          label="NICKNAME (FOR PRACTICE PLANS)"
+        />
+        {!(nickLocked && profile.role === "player") && nickChanged && (
+          <button
+            onClick={handleSaveNick}
+            disabled={savingNick}
+            style={{ marginTop: -4, background: "var(--royal)", color: "#fff", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: savingNick ? "wait" : "pointer" }}
+          >
+            {savingNick ? "Saving…" : "Save nickname"}
+          </button>
+        )}
       </div>
 
       {/* Grade — read-only. It comes from the school year a coach sets and
