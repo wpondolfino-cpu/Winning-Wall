@@ -220,7 +220,7 @@ export default function PracticeOnePage({ practice: p, pageW, pageH, formatDate,
   // row of the block (each station or drill gets its own row so its notes
   // and coach line up with it).
   const timeCell = (b: PrintBlock, rows: number) => (
-    <td rowSpan={rows} style={{ ...cell, fontSize: "0.78em", fontWeight: 700, lineHeight: 1.25 }}>
+    <td rowSpan={rows} style={{ ...cell, fontSize: "0.78em", fontWeight: 700, lineHeight: 1.25, whiteSpace: "nowrap" }}>
       <span style={{ whiteSpace: "nowrap" }}>{shortRange(b.start, b.end)}</span>
       {b.rotation && <div style={{ fontWeight: 400, color: muted }}>{Math.round(b.duration_minutes / Math.max(1, b.rotation.grid.length))} min each</div>}
       {b.water_break && <div style={{ color: "#1f6fb2" }}>💧 Water</div>}
@@ -363,12 +363,14 @@ export default function PracticeOnePage({ practice: p, pageW, pageH, formatDate,
       </div>
 
       <div data-cols style={{ display: "grid", gridTemplateColumns: `${fit.split}% minmax(0, 1fr)`, gap: "0 1em", alignItems: "start" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", fontSize: "inherit" }}>
+        {/* Auto layout: Time and Coach shrink to exactly their widest
+            entry (whatever the font), Drill gets about a third, Notes the rest. */}
+        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "auto", fontSize: "inherit" }}>
           <colgroup>
-            <col style={{ width: "5.3em" }} />
+            <col style={{ width: "1%" }} />
             <col style={{ width: "36%" }} />
             <col />
-            <col style={{ width: "4.6em" }} />
+            <col style={{ width: "1%" }} />
           </colgroup>
           <thead>
             <tr>
