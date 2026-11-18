@@ -38,23 +38,60 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
   });
   useEffect(() => { try { localStorage.setItem(DESC_KEY, withDescriptions ? "on" : "off"); } catch { /* fine */ } }, [withDescriptions]);
 
-  // Which practices' schedules run past one page (measured in the preview).
+  // Where each practice's pages break, worked out in the preview.
+  //
+  // The schedule is built from "units" (a drill with its group cards, a
+  // station with its teams) that are never split across pages: when one
+  // won't fit on what's left of a page, it moves to the next page whole.
+  // A unit too tall for any page gets smaller type instead. The breaks
+  // found here are the ones used when printing, so the dashed lines in
+  // the preview show exactly where each page starts.
   const scheduleRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const inchRef = useRef<HTMLDivElement | null>(null);
-  const [overflowing, setOverflowing] = useState<string[]>([]);
+  const [layout, setLayout] = useState<Record<string, { breaks: { key: string; top: number }[] }>>({});
+  const [tight, setTight] = useState<Set<string>>(new Set());
   useLayoutEffect(() => {
     if (loading) return;
     const measure = () => {
       const pxPerIn = inchRef.current?.offsetWidth || 96;
-      const limit = PAGE_H_IN * pxPerIn;
-      setOverflowing(practices.filter(p => (scheduleRefs.current[p.id]?.scrollHeight ?? 0) > limit + 2).map(p => p.id));
+      // A letter page holds 10in inside its margins; keep a little slack
+      // so the printer never has to break earlier than we did.
+      const pageH = PAGE_H_IN * pxPerIn - 0.2 * pxPerIn;
+      const next: typeof layout = {};
+      const tooTall = new Set(tight);
+      practices.forEach(p => {
+        const box = scheduleRefs.current[p.id];
+        if (!box) return;
+        const boxTop = box.getBoundingClientRect().top;
+        const headH = (box.querySelector("thead") as HTMLElement | null)?.offsetHeight ?? 0;
+        const units = Array.from(box.querySelectorAll<HTMLElement>("tbody[data-unit]"));
+        const breaks: { key: string; top: number }[] = [];
+        let pageTop = 0;
+        let room = pageH;
+        units.forEach(u => {
+          const r = u.getBoundingClientRect();
+          const top = r.top - boxTop, bottom = r.bottom - boxTop;
+          const key = u.dataset.unit!;
+          // The column headings repeat at the top of every printed page.
+          if (r.height > pageH - headH) tooTall.add(key);
+          if (bottom - pageTop > room && top > pageTop + 1) {
+            breaks.push({ key, top });
+            pageTop = top;
+            room = pageH - headH;
+          }
+        });
+        next[p.id] = { breaks };
+      });
+      setLayout(next);
+      if (tooTall.size !== tight.size) setTight(tooTall);
     };
     measure();
     // Fonts can finish loading after the first measure and change heights.
     const t = setTimeout(measure, 400);
     return () => clearTimeout(t);
-  }, [loading, practices]);
-  const pageLinePx = PAGE_H_IN * (inchRef.current?.offsetWidth || 96);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, practices, tight, withDescriptions]);
+  const overflowing = practices.filter(p => (layout[p.id]?.breaks.length ?? 0) > 0).map(p => p.id);
 
   useEffect(() => {
     Promise.all(practiceIds.map(id => getPracticePrintData(id))).then(results => {
@@ -63,10 +100,15 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
     });
   }, [practiceIds]);
 
+  // "3:30 PM–4:30 PM", wrapping after the dash rather than spilling into the Drill column.
+  const timeRange = (b: { start: string; end: string; water_break?: boolean }) => (
+    <><span style={{ whiteSpace: "nowrap" }}>{b.start}–</span><span style={{ whiteSpace: "nowrap" }}>{b.end}{b.water_break ? " 💧" : ""}</span></>
+  );
+
   // ── Shared bits for group cards ─────────────────────────────
   // Each name stays on one line ("Isaiah J." never splits).
   const nameList = (names: string[]) => names.map((nm, i) => (
-    <span key={i} style={{ whiteSpace: "nowrap" }}>{nm}{i < names.length - 1 ? ", " : ""}</span>
+    <span key={i}><span style={{ whiteSpace: "nowrap" }}>{nm}{i < names.length - 1 ? "," : ""}</span>{i < names.length - 1 ? " " : ""}</span>
   ));
   // "Group C" -> "C"; an old "Group 9" -> its letter by position;
   // "At this station" -> no label; anything typed stays as typed.
@@ -83,7 +125,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
   const cardGrid = (items: { key: string; tag: string; sub?: string; body: ReactNode }[], across: number) => (
     <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(1, Math.min(across, items.length))}, minmax(0, 1fr))`, gap: 5 }}>
       {items.map(it => (
-        <div key={it.key} style={{ border: "0.5px solid #999", borderRadius: 5, padding: "3px 8px", background: "#fff", fontSize: 10.5, lineHeight: 1.45 }}>
+        <div key={it.key} className="gcard" style={{ border: "0.5px solid #999", borderRadius: 5, padding: "3px 8px", background: "#fff", fontSize: 10.5, lineHeight: 1.45 }}>
           {it.tag && <b>{it.tag}</b>}
           {it.sub && <span style={{ color: "#555" }}>{it.tag ? " · " : ""}{it.sub}</span>}
           {(it.tag || it.sub) && <>&nbsp;&nbsp;</>}
@@ -124,9 +166,9 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
     const cell = { padding: "5px 8px" } as const;
     const teamLine = (parts: string[][], vs: boolean) => parts.map((part, i) => (
       <span key={i}>
-        {i > 0 && (vs
-          ? <b style={{ margin: "0 6px", fontSize: 10.5 }}>vs</b>
-          : <b style={{ margin: "0 6px", fontSize: 13, fontWeight: 900 }}>┃</b>)}
+        {i > 0 && <>{" "}{vs
+          ? <b style={{ margin: "0 3px" }}>vs</b>
+          : <b style={{ margin: "0 3px", fontSize: "1.25em", fontWeight: 900 }}>┃</b>}{" "}</>}
         {nameList(part)}
       </span>
     ));
@@ -134,16 +176,21 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
       cardGrid(items.map(it => ({ key: it.letter, tag: it.letter, body: it.body })), 2);
     const isVs = (st: typeof rot.stations[number]) => st.ruleText.startsWith("split into");
 
-    const out: ReactElement[] = [
+    // Units: the heading rides with station 1; each station keeps its
+    // teams; the group cards are a unit of their own.
+    const units: { key: string; rows: ReactElement[] }[] = [];
+    const head = (
       <tr key={`${bi}-head`} style={{ borderBottom: "1px solid #999", verticalAlign: "top" }}>
-        <td style={{ ...cell, fontWeight: 700, whiteSpace: "nowrap" }}>{b.start}–{b.end}{b.water_break ? " 💧" : ""}</td>
+        <td style={{ ...cell, fontWeight: 700 }}>{timeRange(b)}</td>
         <td colSpan={4} style={{ ...cell, fontWeight: 700 }}>
           Stations <span style={{ fontWeight: 400, color: "#555" }}>· {mins} min each, move to the next station{path}{waitText}</span>
         </td>
-      </tr>,
-    ];
+      </tr>
+    );
     rot.stations.forEach((st, si) => {
       const d = drills[si];
+      const out: ReactElement[] = si === 0 ? [head] : [];
+      units.push({ key: `${bi}-st-${si}`, rows: out });
       out.push(
         <tr key={`${bi}-st-${si}`} style={{ borderBottom: "1px solid #ddd", verticalAlign: "top", background: shade }}>
           <td style={{ ...cell, paddingLeft: 18, color: "#555" }}>{si + 1}</td>
@@ -171,7 +218,10 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
         );
       }
     });
+    if (rot.stations.length === 0) units.push({ key: `${bi}-head`, rows: [head] });
     if (!perStation) {
+      const out: ReactElement[] = [];
+      units.push({ key: `${bi}-groups`, rows: out });
       const note = shared
         ? `Teams ┃ same at ${splitStations.length === n ? "every station" : splitStations.map(st => st.title).join(" and ")}`
         : null;
@@ -187,7 +237,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
         </tr>
       );
     }
-    return out;
+    return units;
   };
 
   // Drawn straight onto the page body (not inside the app) so that when
@@ -198,6 +248,9 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
       <style>{`
         @page { size: letter; margin: 0.5in; }
         .practice-print-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        /* A drill too tall for a page prints in smaller type. */
+        .practice-print-root tbody.tight td { font-size: 10.5px !important; }
+        .practice-print-root tbody.tight .gcard { font-size: 9px !important; }
         @media print {
           #root { display: none !important; }
           .practice-print-root { position: static !important; overflow: visible !important; inset: auto !important; height: auto !important; }
@@ -205,6 +258,9 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
           .practice-print-page { padding: 0 !important; margin: 0 !important; }
           /* Every page after the very first starts on a new sheet. */
           .practice-print-page.new-sheet { break-before: page; page-break-before: always; }
+          /* A drill never splits across pages; it starts the next page instead. */
+          .practice-print-root tbody.keep { break-inside: avoid; page-break-inside: avoid; }
+          .practice-print-root tbody.page-break { break-before: page; page-break-before: always; }
           body { background: #fff; }
         }
       `}</style>
@@ -228,7 +284,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
         <div className="no-print" style={{ maxWidth: `${PAGE_W_IN}in`, margin: "14px auto 0", padding: "10px 14px", borderRadius: 8, background: "#fff6dd", border: "1px solid #e8c25a", color: "#5a4300", fontSize: 13, lineHeight: 1.45 }}>
           ⚠ {overflowing.map(id => { const p = practices.find(x => x.id === id); return p ? formatDate(p.practice_date) : ""; }).join(", ")}{" "}
           {overflowing.length === 1 ? "runs" : "run"} past one page, so the drill descriptions won't land on the back of page 1 when printed two-sided.
-          The dashed line shows where page 1 ends. Shortening notes or splitting the practice will bring it back to one page.
+          The dashed line shows where page 2 starts; drills never split across pages. Shortening notes or splitting the practice will bring it back to one page.
         </div>
       )}
 
@@ -239,11 +295,11 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
           <div key={p.id}>
           <div className={`practice-print-page${pi > 0 ? " new-sheet" : ""}`} style={{ width: `${PAGE_W_IN}in`, maxWidth: "100%", margin: "0 auto", padding: "30px 0", color: "#111", fontFamily: "Georgia, serif" }}>
           <div ref={el => { scheduleRefs.current[p.id] = el; }} style={{ position: "relative" }}>
-            {overflowing.includes(p.id) && (
-              <div className="no-print" style={{ position: "absolute", left: -8, right: -8, top: pageLinePx, borderTop: "2px dashed #d9534f", zIndex: 2, pointerEvents: "none" }}>
-                <span style={{ position: "absolute", right: 0, top: 2, fontSize: 11, color: "#d9534f", background: "#fff", padding: "0 4px", fontFamily: "sans-serif" }}>page 1 ends here</span>
+            {(layout[p.id]?.breaks ?? []).map((br, i) => (
+              <div key={br.key} className="no-print" style={{ position: "absolute", left: -8, right: -8, top: br.top - 1, borderTop: "2px dashed #d9534f", zIndex: 2, pointerEvents: "none" }}>
+                <span style={{ position: "absolute", right: 0, top: -17, fontSize: 11, color: "#d9534f", background: "#fff", padding: "0 4px", fontFamily: "sans-serif" }}>page {i + 2} starts here</span>
               </div>
-            )}
+            ))}
             <div style={{ borderBottom: "3px solid #111", paddingBottom: 10, marginBottom: 16 }}>
               <div style={{ fontSize: 22, fontWeight: 700 }}>{formatDate(p.practice_date)}</div>
               <div style={{ fontSize: 14, color: "#444" }}>
@@ -251,19 +307,18 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
               </div>
             </div>
 
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, tableLayout: "fixed" }}>
               <thead>
                 <tr style={{ borderBottom: "2px solid #111", textAlign: "left" }}>
-                  <th style={{ padding: "6px 8px", width: "13%" }}>Time</th>
-                  <th style={{ padding: "6px 8px", width: "27%" }}>Drill</th>
-                  <th style={{ padding: "6px 8px", width: "43%" }}>Notes</th>
+                  <th style={{ padding: "6px 8px", width: "15%" }}>Time</th>
+                  <th style={{ padding: "6px 8px", width: "26%" }}>Drill</th>
+                  <th style={{ padding: "6px 8px", width: "42%" }}>Notes</th>
                   {/* Starting letters only; the groups print under each drill. */}
                   <th style={{ padding: "6px 4px", width: "5%" }}></th>
                   <th style={{ padding: "6px 8px", width: "12%" }}>Coach</th>
                 </tr>
               </thead>
-              <tbody>
-                {p.blocks.map((b, bi) => {
+                {p.blocks.flatMap((b, bi) => {
                   // A block can have multiple segments (team columns) and each
                   // segment can have multiple drills (stations) — flatten to rows,
                   // repeating the time only on the first row of the block.
@@ -274,8 +329,9 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                       <td colSpan={5} style={{ padding: "4px 8px", fontWeight: 700, color: "#1f6fb2" }}>💧 Water break</td>
                     </tr>
                   )] : [];
-                  if (b.rotation) return [...rotationRows(b, bi), ...waterRow];
-                  return [...rows.flatMap((row, ri) => {
+                  let units: { key: string; rows: ReactElement[] }[];
+                  if (b.rotation) units = rotationRows(b, bi);
+                  else units = rows.map((row, ri) => {
                     const gs = row.drill.groups.map((g, gi) => ({ ...g, tag: groupTag(g.label, gi) }));
                     const letters = gs.map(g => g.tag).filter(isLetter);
                     const letterCell = letters.length === 0 ? "" : letters.length === 1 ? letters[0] : `${letters[0]}–${letters[letters.length - 1]}`;
@@ -283,8 +339,8 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                     const line = last ? "1.5px solid #999" : "1px solid #ddd";
                     const out = [
                       <tr key={`${bi}-${ri}`} style={{ borderBottom: gs.length ? "none" : line, verticalAlign: "top" }}>
-                        <td style={{ padding: "6px 8px", fontWeight: 700, whiteSpace: "nowrap" }}>
-                          {ri === 0 ? <>{b.start}–{b.end}{b.water_break ? " 💧" : ""}</> : null}
+                        <td style={{ padding: "6px 8px", fontWeight: 700 }}>
+                          {ri === 0 ? timeRange(b) : null}
                         </td>
                         <td style={{ padding: "6px 8px" }}>
                           {row.drill.title}{row.drill.film ? " 🎥" : ""}
@@ -313,15 +369,21 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                         </td>
                       </tr>
                     );
-                    return out;
-                  }),
+                    return { key: `${bi}-${ri}`, rows: out };
+                  });
                   // 💧 after the block: a marker only, it takes no minutes.
-                  ...waterRow];
+                  // It rides with the block's last unit.
+                  if (waterRow.length && units.length) units[units.length - 1].rows.push(...waterRow);
+                  const breakKeys = new Set((layout[p.id]?.breaks ?? []).map(br => br.key));
+                  return units.map(u => (
+                    <tbody key={u.key} data-unit={u.key} className={`keep${breakKeys.has(u.key) ? " page-break" : ""}${tight.has(u.key) ? " tight" : ""}`}>
+                      {u.rows}
+                    </tbody>
+                  ));
                 })}
                 {p.blocks.length === 0 && (
-                  <tr><td colSpan={5} style={{ padding: "16px 8px", color: "#888" }}>No drills scheduled yet.</td></tr>
+                  <tbody><tr><td colSpan={5} style={{ padding: "16px 8px", color: "#888" }}>No drills scheduled yet.</td></tr></tbody>
                 )}
-              </tbody>
             </table>
 
           </div>
