@@ -2061,16 +2061,39 @@ export function generateGradeMixedGroups<P extends { id: string; grade?: number 
   return { groups };
 }
 
+/**
+ * Group writes for one drill run one at a time.
+ *
+ * Replacing a drill's groups is "delete them all, then insert the new
+ * ones". Two of those overlapping (a double-tapped Generate, or Generate
+ * while a saved set is still loading) interleave: the second delete
+ * lands after the first has inserted some groups, and both finish
+ * inserting, so groups show up twice. Queuing writes per drill stops that.
+ */
+const groupWrites = new Map<string, Promise<unknown>>();
+function serialGroupWrite<T>(segmentDrillId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = groupWrites.get(segmentDrillId) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(fn);
+  groupWrites.set(segmentDrillId, next);
+  next.finally(() => { if (groupWrites.get(segmentDrillId) === next) groupWrites.delete(segmentDrillId); }).catch(() => undefined);
+  return next;
+}
+
 /** Removes every group on a drill. Used before loading a saved arrangement, which replaces rather than appends. */
 export async function clearSegmentDrillGroups(segmentDrillId: string): Promise<{ error: string | null }> {
-  const { error } = await supabase.from("segment_drill_groups").delete().eq("segment_drill_id", segmentDrillId);
-  return { error: error?.message ?? null };
+  return serialGroupWrite(segmentDrillId, async () => {
+    const { error } = await supabase.from("segment_drill_groups").delete().eq("segment_drill_id", segmentDrillId);
+    return { error: error?.message ?? null };
+  });
 }
 
 // Replaces whatever groups currently exist on a segment_drill with a
 // freshly generated set. This is the "snapshot" moment — editing a
 // saved grouping later never touches what gets written here.
 export async function saveGeneratedGroups(segmentDrillId: string, groups: string[][], tryoutIds?: Set<string>, labels?: string[]): Promise<{ error: string | null }> {
+  return serialGroupWrite(segmentDrillId, () => saveGeneratedGroupsNow(segmentDrillId, groups, tryoutIds, labels));
+}
+async function saveGeneratedGroupsNow(segmentDrillId: string, groups: string[][], tryoutIds?: Set<string>, labels?: string[]): Promise<{ error: string | null }> {
   // Places and coaches stay put by position: Group A's hoop and coach are
   // still Group A's after regenerating.
   const { data: before } = await supabase.from("segment_drill_groups").select("order_index, location, coach_ids").eq("segment_drill_id", segmentDrillId);
