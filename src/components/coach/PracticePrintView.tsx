@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useLayoutEffect, useRef, type ReactNode, type ReactElement } from "react";
 import { createPortal } from "react-dom";
-import { getPracticePrintData, PrintPractice } from "../../lib/practicePlanner";
+import { groupLetter, getPracticePrintData, PrintPractice } from "../../lib/practicePlanner";
 
 interface Props {
   practiceIds: string[];
@@ -63,6 +63,36 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
     });
   }, [practiceIds]);
 
+  // ── Shared bits for group cards ─────────────────────────────
+  // Each name stays on one line ("Isaiah J." never splits).
+  const nameList = (names: string[]) => names.map((nm, i) => (
+    <span key={i} style={{ whiteSpace: "nowrap" }}>{nm}{i < names.length - 1 ? ", " : ""}</span>
+  ));
+  // "Group C" -> "C"; an old "Group 9" -> its letter by position;
+  // "At this station" -> no label; anything typed stays as typed.
+  const groupTag = (label: string, i: number) => {
+    const m = /^Group ([A-Z]{1,2})$/.exec(label);
+    if (m) return m[1];
+    if (/^Group \d+$/.test(label)) return groupLetter(i);
+    if (label === "At this station" || label === "Group") return "";
+    return label;
+  };
+  const isLetter = (t: string) => /^[A-Z]{1,2}$/.test(t);
+  // A drill's own label, minus "Station 4" (the row already says 4).
+  const extraLabel = (label: string | null | undefined) => label && !/^station\s*\d+$/i.test(label.trim()) ? label : null;
+  const cardGrid = (items: { key: string; tag: string; sub?: string; body: ReactNode }[], across: number) => (
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(1, Math.min(across, items.length))}, minmax(0, 1fr))`, gap: 5 }}>
+      {items.map(it => (
+        <div key={it.key} style={{ border: "0.5px solid #999", borderRadius: 5, padding: "3px 8px", background: "#fff", fontSize: 10.5, lineHeight: 1.45 }}>
+          {it.tag && <b>{it.tag}</b>}
+          {it.sub && <span style={{ color: "#555" }}>{it.tag ? " · " : ""}{it.sub}</span>}
+          {(it.tag || it.sub) && <>&nbsp;&nbsp;</>}
+          {it.body}
+        </div>
+      ))}
+    </div>
+  );
+
   // A rotating block, inside the schedule: one row per station with the
   // group that starts there, then who's in each group. Teams print once
   // with the groups when every station that splits makes the same teams;
@@ -97,18 +127,11 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
         {i > 0 && (vs
           ? <b style={{ margin: "0 6px", fontSize: 10.5 }}>vs</b>
           : <b style={{ margin: "0 6px", fontSize: 13, fontWeight: 900 }}>┃</b>)}
-        {part.join(", ")}
+        {nameList(part)}
       </span>
     ));
-    const cards = (items: { letter: string; body: ReactNode }[]) => (
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
-        {items.map(it => (
-          <div key={it.letter} style={{ border: "0.5px solid #999", borderRadius: 5, padding: "3px 8px", background: "#fff", fontSize: 10.5, lineHeight: 1.45 }}>
-            <b>{it.letter}</b>&nbsp;&nbsp;{it.body}
-          </div>
-        ))}
-      </div>
-    );
+    const cards = (items: { letter: string; body: ReactNode }[]) =>
+      cardGrid(items.map(it => ({ key: it.letter, tag: it.letter, body: it.body })), 2);
     const isVs = (st: typeof rot.stations[number]) => st.ruleText.startsWith("split into");
 
     const out: ReactElement[] = [
@@ -126,7 +149,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
           <td style={{ ...cell, paddingLeft: 18, color: "#555" }}>{si + 1}</td>
           <td style={cell}>
             {st.title}{st.film ? " 🎥" : ""}
-            {d?.label && <div style={{ fontSize: 10.5, color: "#666" }}>{d.label}</div>}
+            {extraLabel(d?.label) && <div style={{ fontSize: 10.5, color: "#666" }}>{extraLabel(d?.label)}</div>}
             {st.ruleText !== "keep together" && <div style={{ fontSize: 10.5, color: "#666" }}>{st.ruleText}</div>}
           </td>
           <td style={{ ...cell, whiteSpace: "pre-wrap" }}>{d?.goal_text ?? "—"}</td>
@@ -135,7 +158,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
               ? <span style={{ display: "inline-block", minWidth: 18, textAlign: "center", fontWeight: 700, border: "1px solid #333", borderRadius: 4, padding: "0 4px" }}>{startAt[si]}</span>
               : "—"}
           </td>
-          <td style={cell}>{st.coachNames.join(", ") || "—"}</td>
+          <td style={cell}>{st.coachNames.length ? nameList(st.coachNames) : "—"}</td>
         </tr>
       );
       if (perStation && st.ruleText !== "keep together") {
@@ -158,7 +181,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
             {note && <div style={{ fontSize: 10, color: "#555", marginBottom: 4 }}>{note}</div>}
             {cards(rot.groups.map(g => ({
               letter: letterOf(g.label),
-              body: shared ? teamLine(teamsFor(splitStations[0], g.label), isVs(splitStations[0])) : (g.memberNames.join(", ") || "(empty)"),
+              body: shared ? teamLine(teamsFor(splitStations[0], g.label), isVs(splitStations[0])) : (g.memberNames.length ? nameList(g.memberNames) : "(empty)"),
             })))}
           </td>
         </tr>
@@ -231,11 +254,12 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
               <thead>
                 <tr style={{ borderBottom: "2px solid #111", textAlign: "left" }}>
-                  <th style={{ padding: "6px 8px", width: "14%" }}>Time</th>
-                  <th style={{ padding: "6px 8px", width: "24%" }}>Drill</th>
-                  <th style={{ padding: "6px 8px", width: "26%" }}>Notes</th>
-                  <th style={{ padding: "6px 8px", width: "22%" }}>Group</th>
-                  <th style={{ padding: "6px 8px", width: "14%" }}>Coach</th>
+                  <th style={{ padding: "6px 8px", width: "13%" }}>Time</th>
+                  <th style={{ padding: "6px 8px", width: "27%" }}>Drill</th>
+                  <th style={{ padding: "6px 8px", width: "43%" }}>Notes</th>
+                  {/* Starting letters only; the groups print under each drill. */}
+                  <th style={{ padding: "6px 4px", width: "5%" }}></th>
+                  <th style={{ padding: "6px 8px", width: "12%" }}>Coach</th>
                 </tr>
               </thead>
               <tbody>
@@ -251,36 +275,46 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                     </tr>
                   )] : [];
                   if (b.rotation) return [...rotationRows(b, bi), ...waterRow];
-                  return [...rows.map((row, ri) => (
-                    <tr key={`${bi}-${ri}`} style={{ borderBottom: "1px solid #ddd", verticalAlign: "top" }}>
-                      {ri === 0 && (
-                        <td rowSpan={rows.length} style={{ padding: "6px 8px", fontWeight: 700, whiteSpace: "nowrap" }}>
-                          {b.start}–{b.end}{b.water_break ? " 💧" : ""}
+                  return [...rows.flatMap((row, ri) => {
+                    const gs = row.drill.groups.map((g, gi) => ({ ...g, tag: groupTag(g.label, gi) }));
+                    const letters = gs.map(g => g.tag).filter(isLetter);
+                    const letterCell = letters.length === 0 ? "" : letters.length === 1 ? letters[0] : `${letters[0]}–${letters[letters.length - 1]}`;
+                    const last = ri === rows.length - 1;
+                    const line = last ? "1.5px solid #999" : "1px solid #ddd";
+                    const out = [
+                      <tr key={`${bi}-${ri}`} style={{ borderBottom: gs.length ? "none" : line, verticalAlign: "top" }}>
+                        <td style={{ padding: "6px 8px", fontWeight: 700, whiteSpace: "nowrap" }}>
+                          {ri === 0 ? <>{b.start}–{b.end}{b.water_break ? " 💧" : ""}</> : null}
                         </td>
-                      )}
-                      <td style={{ padding: "6px 8px" }}>
-                        {row.drill.title}{row.drill.film ? " 🎥" : ""}
-                        {row.drill.label && <div style={{ fontSize: 10.5, color: "#666" }}>{row.drill.label}</div>}
-                        {row.seg.rosterName && <div style={{ fontSize: 10.5, color: "#666" }}>{row.seg.rosterName}</div>}
-                      </td>
-                      <td style={{ padding: "6px 8px", whiteSpace: "pre-wrap" }}>{row.drill.goal_text ?? "—"}</td>
-                      <td style={{ padding: "6px 8px" }}>
-                        {row.drill.groups.length === 0 ? "—" : row.drill.groups.map((g, gi) => (
-                          <div key={gi} style={{ marginBottom: 4 }}>
-                            <span style={{ fontWeight: 700 }}>
-                              {g.label}{g.place ? ` · ${g.place}` : ""}{g.coachNames?.length ? ` · Coach ${g.coachNames.join(" & ")}` : ""}:
-                            </span> {g.memberNames.join(", ") || "(empty)"}
-                          </div>
-                        ))}
-                      </td>
-                      <td style={{ padding: "6px 8px" }}>
-                        {/* Coaches by group when the groups have them ("Houle (A)"), otherwise the drill's. */}
-                        {row.drill.groups.some(g => g.coachNames?.length)
-                          ? row.drill.groups.filter(g => g.coachNames?.length).map(g => `${g.coachNames!.join(" & ")} (${g.label.replace(/^Group /, "")})`).join(", ")
-                          : row.drill.coachNames.join(", ") || "—"}
-                      </td>
-                    </tr>
-                  )),
+                        <td style={{ padding: "6px 8px" }}>
+                          {row.drill.title}{row.drill.film ? " 🎥" : ""}
+                          {extraLabel(row.drill.label) && <div style={{ fontSize: 10.5, color: "#666" }}>{extraLabel(row.drill.label)}</div>}
+                          {row.seg.rosterName && <div style={{ fontSize: 10.5, color: "#666" }}>{row.seg.rosterName}</div>}
+                        </td>
+                        <td style={{ padding: "6px 8px", whiteSpace: "pre-wrap" }}>{row.drill.goal_text ?? "—"}</td>
+                        <td style={{ padding: "6px 4px", color: "#555", whiteSpace: "nowrap" }}>{letterCell}</td>
+                        <td style={{ padding: "6px 8px" }}>
+                          {/* Coaches by group when the groups have them ("Houle (A)"), otherwise the drill's. */}
+                          {gs.some(g => g.coachNames?.length)
+                            ? gs.filter(g => g.coachNames?.length).map(g => `${g.coachNames!.join(" & ")}${g.tag ? ` (${g.tag})` : ""}`).join(", ")
+                            : row.drill.coachNames.length ? nameList(row.drill.coachNames) : "—"}
+                        </td>
+                      </tr>,
+                    ];
+                    if (gs.length) out.push(
+                      <tr key={`${bi}-${ri}-groups`} style={{ borderBottom: line }}>
+                        <td colSpan={5} style={{ padding: "0 8px 7px 18px" }}>
+                          {cardGrid(gs.map((g, gi) => ({
+                            key: String(gi),
+                            tag: g.tag,
+                            sub: [g.place, g.coachNames?.length ? `Coach ${g.coachNames.join(" & ")}` : ""].filter(Boolean).join(" · ") || undefined,
+                            body: g.memberNames.length ? nameList(g.memberNames) : "(empty)",
+                          })), 3)}
+                        </td>
+                      </tr>
+                    );
+                    return out;
+                  }),
                   // 💧 after the block: a marker only, it takes no minutes.
                   ...waterRow];
                 })}
