@@ -6,6 +6,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, type ReactNode, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { groupLetter, getPracticePrintData, PrintPractice } from "../../lib/practicePlanner";
+import PracticeOnePage from "./PracticeOnePage";
 
 interface Props {
   practiceIds: string[];
@@ -28,6 +29,18 @@ function formatClock(t: string) {
 const PAGE_W_IN = 7.5;
 const PAGE_H_IN = 10;
 const DESC_KEY = "ww.printDrillDescriptions";
+const LAYOUT_KEY = "ww.printLayout";
+
+// Three ways to print:
+//   onepage  schedule left, groups right, fitted to one sheet (default)
+//   inline   each drill's groups right under it; runs on to more pages
+//   schedule times, drills, notes and coaches only, no groups
+type PrintLayout = "onepage" | "inline" | "schedule";
+const LAYOUTS: { id: PrintLayout; label: string }[] = [
+  { id: "onepage", label: "One page" },
+  { id: "inline", label: "Groups with drills" },
+  { id: "schedule", label: "Schedule only" },
+];
 
 export default function PracticePrintView({ practiceIds, onClose }: Props) {
   const [practices, setPractices] = useState<PrintPractice[]>([]);
@@ -37,6 +50,17 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
     try { return localStorage.getItem(DESC_KEY) !== "off"; } catch { return true; }
   });
   useEffect(() => { try { localStorage.setItem(DESC_KEY, withDescriptions ? "on" : "off"); } catch { /* fine */ } }, [withDescriptions]);
+  const [printLayout, setPrintLayout] = useState<PrintLayout>(() => {
+    try { const v = localStorage.getItem(LAYOUT_KEY); return v === "inline" || v === "schedule" ? v : "onepage"; } catch { return "onepage"; }
+  });
+  useEffect(() => { try { localStorage.setItem(LAYOUT_KEY, printLayout); } catch { /* fine */ } }, [printLayout]);
+  const noGroups = printLayout === "schedule";
+  // One-page layout: which practices still don't fit at the smallest type.
+  const [onePageOver, setOnePageOver] = useState<Set<string>>(new Set());
+  const reportOnePage = (id: string, over: boolean) => setOnePageOver(prev => {
+    if (prev.has(id) === over) return prev;
+    const next = new Set(prev); if (over) next.add(id); else next.delete(id); return next;
+  });
 
   // Where each practice's pages break, worked out in the preview.
   //
@@ -90,8 +114,10 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
     const t = setTimeout(measure, 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, practices, tight, withDescriptions]);
-  const overflowing = practices.filter(p => (layout[p.id]?.breaks.length ?? 0) > 0).map(p => p.id);
+  }, [loading, practices, tight, withDescriptions, printLayout]);
+  const overflowing = printLayout === "onepage"
+    ? practices.filter(p => onePageOver.has(p.id)).map(p => p.id)
+    : practices.filter(p => (layout[p.id]?.breaks.length ?? 0) > 0).map(p => p.id);
 
   useEffect(() => {
     Promise.all(practiceIds.map(id => getPracticePrintData(id))).then(results => {
@@ -204,14 +230,14 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
           </td>
           <td style={{ ...cell, whiteSpace: "pre-wrap" }}>{d?.goal_text ?? "—"}</td>
           <td style={cell}>
-            {startAt[si]
+            {startAt[si] && !noGroups
               ? <span style={{ display: "inline-block", minWidth: 18, textAlign: "center", fontWeight: 700, border: "1px solid #333", borderRadius: 4, padding: "0 4px" }}>{startAt[si]}</span>
-              : "—"}
+              : noGroups ? "" : "—"}
           </td>
           <td style={cell}>{st.coachNames.length ? nameList(st.coachNames) : "—"}</td>
         </tr>
       );
-      if (perStation && st.ruleText !== "keep together") {
+      if (!noGroups && perStation && st.ruleText !== "keep together") {
         out.push(
           <tr key={`${bi}-tm-${si}`} style={{ borderBottom: "1px solid #ddd", background: shade }}>
             <td colSpan={5} style={{ padding: "1px 8px 7px 18px" }}>
@@ -221,14 +247,14 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
         );
       }
     });
-    if (perStation && waiting.length) units[units.length - 1]?.rows.push(
+    if (!noGroups && perStation && waiting.length) units[units.length - 1]?.rows.push(
       <tr key={`${bi}-wait`} style={{ background: shade }}>
         <td colSpan={5} style={{ padding: "0 8px 6px 18px", fontSize: 10, color: "#555" }}>
           {waiting.join(", ")} start{waiting.length === 1 ? "s" : ""} waiting; after station {n}, wait your turn
         </td>
       </tr>
     );
-    if (!perStation) {
+    if (!noGroups && !perStation) {
       const out: ReactElement[] = [];
       units.push({ key: `${bi}-groups`, rows: out });
       const note = [
@@ -278,6 +304,15 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
       <div className="no-print" style={{ position: "sticky", top: 0, background: "#f5f5f5", borderBottom: "1px solid #ddd", padding: "12px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 1 }}>
         <div style={{ fontWeight: 700, color: "#222" }}>Print Preview — {practiceIds.length} practice{practiceIds.length === 1 ? "" : "s"}</div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div role="radiogroup" aria-label="Layout" style={{ display: "flex", border: "1px solid #999", borderRadius: 8, overflow: "hidden" }}>
+            {LAYOUTS.map(l => (
+              <button key={l.id} role="radio" aria-checked={printLayout === l.id} onClick={() => setPrintLayout(l.id)}
+                style={{ border: "none", borderLeft: l.id === "onepage" ? "none" : "1px solid #999", padding: "7px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  background: printLayout === l.id ? "#1a3fa8" : "#fff", color: printLayout === l.id ? "#fff" : "#222" }}>
+                {l.label}
+              </button>
+            ))}
+          </div>
           <label style={{ fontSize: 13, color: "#333", display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
             <input type="checkbox" checked={withDescriptions} onChange={e => setWithDescriptions(e.target.checked)} />
             Print drill descriptions on the back
@@ -294,7 +329,9 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
         <div className="no-print" style={{ maxWidth: `${PAGE_W_IN}in`, margin: "14px auto 0", padding: "10px 14px", borderRadius: 8, background: "#fff6dd", border: "1px solid #e8c25a", color: "#5a4300", fontSize: 13, lineHeight: 1.45 }}>
           ⚠ {overflowing.map(id => { const p = practices.find(x => x.id === id); return p ? formatDate(p.practice_date) : ""; }).join(", ")}{" "}
           {overflowing.length === 1 ? "runs" : "run"} past one page, so the drill descriptions won't land on the back of page 1 when printed two-sided.
-          The dashed line shows where page 2 starts; drills never split across pages. Shortening notes or splitting the practice will bring it back to one page.
+          {printLayout === "onepage"
+            ? "It's already at the smallest type. Shortening notes, or switching to Groups with drills, will help."
+            : "The dashed line shows where page 2 starts; drills never split across pages. Shortening notes or splitting the practice will bring it back to one page."}
         </div>
       )}
 
@@ -304,6 +341,9 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
         practices.map((p, pi) => (
           <div key={p.id}>
           <div className={`practice-print-page${pi > 0 ? " new-sheet" : ""}`} style={{ width: `${PAGE_W_IN}in`, maxWidth: "100%", margin: "0 auto", padding: "30px 0", color: "#111", fontFamily: "Georgia, serif" }}>
+          {printLayout === "onepage" ? (
+            <PracticeOnePage practice={p} pageW={PAGE_W_IN} pageH={PAGE_H_IN} formatDate={formatDate} formatClock={formatClock} onOverflow={reportOnePage} />
+          ) : (
           <div ref={el => { scheduleRefs.current[p.id] = el; }} style={{ position: "relative" }}>
             {(layout[p.id]?.breaks ?? []).map((br, i) => (
               <div key={br.key} className="no-print" style={{ position: "absolute", left: -8, right: -8, top: br.top - 1, borderTop: "2px dashed #d9534f", zIndex: 2, pointerEvents: "none" }}>
@@ -348,7 +388,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                     const last = ri === rows.length - 1;
                     const line = last ? "1.5px solid #999" : "1px solid #ddd";
                     const out = [
-                      <tr key={`${bi}-${ri}`} style={{ borderBottom: gs.length ? "none" : line, verticalAlign: "top" }}>
+                      <tr key={`${bi}-${ri}`} style={{ borderBottom: gs.length && !noGroups ? "none" : line, verticalAlign: "top" }}>
                         <td style={{ padding: "6px 8px", fontWeight: 700 }}>
                           {ri === 0 ? timeRange(b) : null}
                         </td>
@@ -358,7 +398,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                           {row.seg.rosterName && <div style={{ fontSize: 10.5, color: "#666" }}>{row.seg.rosterName}</div>}
                         </td>
                         <td style={{ padding: "6px 8px", whiteSpace: "pre-wrap" }}>{row.drill.goal_text ?? "—"}</td>
-                        <td style={{ padding: "6px 4px", color: "#555", whiteSpace: "nowrap" }}>{letterCell}</td>
+                        <td style={{ padding: "6px 4px", color: "#555", whiteSpace: "nowrap" }}>{noGroups ? "" : letterCell}</td>
                         <td style={{ padding: "6px 8px" }}>
                           {/* Coaches by group when the groups have them ("Houle (A)"), otherwise the drill's. */}
                           {gs.some(g => g.coachNames?.length)
@@ -367,7 +407,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                         </td>
                       </tr>,
                     ];
-                    if (gs.length) out.push(
+                    if (gs.length && !noGroups) out.push(
                       <tr key={`${bi}-${ri}-groups`} style={{ borderBottom: line }}>
                         <td colSpan={5} style={{ padding: "0 8px 7px 18px" }}>
                           {cardGrid(gs.map((g, gi) => ({
@@ -397,6 +437,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
             </table>
 
           </div>
+          )}
           </div>
 
           {/* The back page: how each drill runs, for a coach who doesn't know it. */}
