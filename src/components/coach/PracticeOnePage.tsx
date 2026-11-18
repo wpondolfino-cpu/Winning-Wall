@@ -20,7 +20,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { groupLetter, type PrintPractice, type PrintBlock } from "../../lib/practicePlanner";
 
-const SPLITS = [46, 50, 54, 58, 62];
+const SPLITS = [52, 56, 60, 64, 68];
 // 10.5pt down to 8pt, in px (1pt = 4/3px): a light practice prints
 // bigger, a packed one shrinks until it fits.
 const FONTS = [14, 13.67, 13.33, 13, 12.67, 12.33, 12, 11.67, 11.33, 11, 10.67];
@@ -71,6 +71,8 @@ interface TeamsBox {
   kind: "teams";
   key: string;
   titles: string[];       // "3 v 3 Trail Chase"
+  nums: number[];         // station numbers, for "Stations 2, 3, 4 · teams"
+  stationCount: number;   // stations in the block, for "All stations · teams"
   times: string[];        // "4:18"
   alsoTimes: string[];    // other blocks using these same groups unsplit
   groups: { tag: string; teams: string[][] }[];
@@ -100,16 +102,18 @@ function buildBoxes(p: PrintPractice): Box[] {
       const split = rot.stations.filter(st => st.ruleText !== "keep together");
       const teamsFor = (st: Station, label: string) => st.rounds.find(rd => rd.groupLabel === label)?.parts ?? [];
       split.forEach(st => {
+        const num = rot.stations.indexOf(st) + 1;
         const teams = rot.groups.map(g => teamsFor(st, g.label));
         const key = "t" + teamsKey(teams);
         const found = boxes.find(bx => bx.key === key) as TeamsBox | undefined;
         if (found) {
           if (!found.titles.includes(st.title)) found.titles.push(st.title);
+          if (!found.nums.includes(num)) found.nums.push(num);
           if (!found.times.includes(time)) found.times.push(time);
           return;
         }
         boxes.push({
-          kind: "teams", key, titles: [st.title], times: [time], alsoTimes: [], membership,
+          kind: "teams", key, titles: [st.title], nums: [num], stationCount: rot.stations.length, times: [time], alsoTimes: [], membership,
           groups: rot.groups.map((g, i) => ({ tag: tags[i], teams: teams[i] })),
         });
       });
@@ -205,49 +209,75 @@ export default function PracticeOnePage({ practice: p, pageW, pageH, formatDate,
   const badge = (t: string) => (
     <span style={{ display: "inline-block", minWidth: "1.2em", textAlign: "center", fontWeight: 700, border: "1px solid #333", borderRadius: 3, padding: "0 0.2em", lineHeight: 1.2 }}>{t}</span>
   );
-  const coachTag = (list: string[]) => list.length ? <span style={sub}> · {names(list)}</span> : null;
+  const coachCell = (list: string[]) => list.length
+    ? list.map((c, i) => <div key={i} style={{ whiteSpace: "nowrap" }}>{c}</div>)
+    : <span style={{ color: "#999" }}>—</span>;
+  const notesCell = (t: string | null | undefined) => t
+    ? <div style={{ whiteSpace: "pre-wrap" }}>{t}</div>
+    : <span style={{ color: "#999" }}>—</span>;
 
-  const drillCell = (b: PrintBlock): ReactNode => {
+  // The block's time, small, so its column can be narrow. It spans every
+  // row of the block (each station or drill gets its own row so its notes
+  // and coach line up with it).
+  const timeCell = (b: PrintBlock, rows: number) => (
+    <td rowSpan={rows} style={{ ...cell, fontSize: "0.78em", fontWeight: 700, lineHeight: 1.25 }}>
+      <span style={{ whiteSpace: "nowrap" }}>{shortRange(b.start, b.end)}</span>
+      {b.rotation && <div style={{ fontWeight: 400, color: muted }}>{Math.round(b.duration_minutes / Math.max(1, b.rotation.grid.length))} min each</div>}
+      {b.water_break && <div style={{ color: "#1f6fb2" }}>💧 Water</div>}
+    </td>
+  );
+
+  const blockRows = (b: PrintBlock, bi: number): ReactNode[] => {
+    const shade = b.rotation ? "#f1f1f1" : undefined;
     if (b.rotation) {
       const rot = b.rotation;
       const drills = b.segments[0]?.drills ?? [];
       const seen = new Set<string>();
       const startAt = (rot.grid[0] ?? []).map(l => { if (seen.has(l)) return null; seen.add(l); return l; });
       const waiting = rot.groups.slice(rot.stations.length).map((g, i) => groupTag(g.label, rot.stations.length + i));
-      return (
-        <>
-          {rot.stations.map((st, si) => {
-            const d = drills[si];
-            return (
-              <div key={si} style={{ display: "grid", gridTemplateColumns: "1em minmax(0, 1fr) auto", gap: "0 0.4em", marginTop: si ? "0.3em" : 0 }}>
+      const n = rot.stations.length;
+      return rot.stations.map((st, si) => {
+        const d = drills[si];
+        return (
+          <tr key={`${bi}-${si}`} style={{ background: shade }}>
+            {si === 0 && timeCell(b, n)}
+            <td style={cell}>
+              <div style={{ display: "grid", gridTemplateColumns: "0.9em minmax(0, 1fr) auto", gap: "0 0.35em" }}>
                 <span style={{ color: muted }}>{si + 1}</span>
                 <div>
-                  <span style={{ fontWeight: 600 }}>{st.title}</span>{st.film ? " 🎥" : ""}{coachTag(st.coachNames)}
-                  {st.ruleText !== "keep together" && <span style={sub}> · {st.ruleText}</span>}
-                  {extraLabel(d?.label) && <div style={sub}>{extraLabel(d?.label)}</div>}
-                  {d?.goal_text && <div style={{ whiteSpace: "pre-wrap" }}>{d.goal_text}</div>}
+                  <span style={{ fontWeight: 700 }}>{st.title}</span>{st.film ? " 🎥" : ""}
+                  {(st.ruleText !== "keep together" || extraLabel(d?.label)) && (
+                    <div style={sub}>{[st.ruleText !== "keep together" ? st.ruleText : "", extraLabel(d?.label)].filter(Boolean).join(" · ")}</div>
+                  )}
+                  {si === n - 1 && waiting.length > 0 && <div style={sub}>{waiting.join(", ")} start{waiting.length === 1 ? "s" : ""} waiting; after station {n}, wait your turn</div>}
                 </div>
                 <div>{startAt[si] ? badge(startAt[si]!) : null}</div>
               </div>
-            );
-          })}
-          {waiting.length > 0 && <div style={{ ...sub, marginTop: "0.2em" }}>{waiting.join(", ")} start{waiting.length === 1 ? "s" : ""} waiting; after station {rot.stations.length}, wait your turn</div>}
-        </>
-      );
+            </td>
+            <td style={cell}>{notesCell(d?.goal_text)}</td>
+            <td style={cell}>{coachCell(st.coachNames)}</td>
+          </tr>
+        );
+      });
     }
     const all = b.segments.flatMap(seg => seg.drills.map(d => ({ seg, d })));
+    if (all.length === 0) return [<tr key={bi}>{timeCell(b, 1)}<td style={cell} colSpan={3}></td></tr>];
     return all.map(({ seg, d }, i) => {
-      const tags = d.groups.map((g, gi) => groupTag(g.label, gi));
-      const letters = tags.filter(isLetter);
+      const letters = d.groups.map((g, gi) => groupTag(g.label, gi)).filter(isLetter);
+      const groupNote = letters.length > 1 ? `groups ${letters[0]}–${letters[letters.length - 1]}`
+        : letters.length === 1 ? `group ${letters[0]}`
+        : d.groups.length ? `${d.groups.length} group${d.groups.length === 1 ? "" : "s"}` : "";
+      const subLine = [groupNote, extraLabel(d.label), seg.rosterName].filter(Boolean).join(" · ");
       return (
-        <div key={i} style={{ marginTop: i ? "0.35em" : 0 }}>
-          <span style={{ fontWeight: 600 }}>{d.title}</span>{d.film ? " 🎥" : ""}{coachTag(d.coachNames)}
-          {letters.length > 1 && <span style={sub}> · groups {letters[0]}–{letters[letters.length - 1]}</span>}
-          {letters.length === 1 && <span style={sub}> · group {letters[0]}</span>}
-          {letters.length === 0 && d.groups.length > 0 && <span style={sub}> · {d.groups.length} group{d.groups.length === 1 ? "" : "s"}</span>}
-          {(extraLabel(d.label) || seg.rosterName) && <div style={sub}>{[extraLabel(d.label), seg.rosterName].filter(Boolean).join(" · ")}</div>}
-          {d.goal_text && <div style={{ whiteSpace: "pre-wrap" }}>{d.goal_text}</div>}
-        </div>
+        <tr key={`${bi}-${i}`}>
+          {i === 0 && timeCell(b, all.length)}
+          <td style={cell}>
+            <span style={{ fontWeight: 700 }}>{d.title}</span>{d.film ? " 🎥" : ""}
+            {subLine && <div style={sub}>{subLine}</div>}
+          </td>
+          <td style={cell}>{notesCell(d.goal_text)}</td>
+          <td style={cell}>{coachCell(d.coachNames)}</td>
+        </tr>
       );
     });
   };
@@ -255,7 +285,7 @@ export default function PracticeOnePage({ practice: p, pageW, pageH, formatDate,
   const boxTitle = (bx: Box) => {
     // One drill: its name. Several stations sharing the same teams: "Station teams".
     const title = bx.kind === "teams"
-      ? (bx.titles.length === 1 ? `${bx.titles[0]} · teams` : "Station teams")
+      ? (bx.titles.length === 1 ? `${bx.nums[0]} · ${bx.titles[0]} · teams` : (bx.nums.length === bx.stationCount && bx.times.length === 1 ? "All stations · teams" : `Stations ${bx.nums.sort((x, y) => x - y).join(", ")} · teams`))
       : bx.titles.join(", ");
     const when = [bx.times.join(", "), bx.kind === "teams" && bx.alsoTimes.length ? `same groups as ${bx.alsoTimes.join(", ")}` : ""].filter(Boolean).join(" · ");
     return (
@@ -334,22 +364,23 @@ export default function PracticeOnePage({ practice: p, pageW, pageH, formatDate,
 
       <div data-cols style={{ display: "grid", gridTemplateColumns: `${fit.split}% minmax(0, 1fr)`, gap: "0 1em", alignItems: "start" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", fontSize: "inherit" }}>
-          <colgroup><col style={{ width: "7.3em" }} /><col /></colgroup>
+          <colgroup>
+            <col style={{ width: "5.3em" }} />
+            <col style={{ width: "36%" }} />
+            <col />
+            <col style={{ width: "4.6em" }} />
+          </colgroup>
           <thead>
-            <tr><th style={{ ...cell, textAlign: "left" }}>Time</th><th style={{ ...cell, textAlign: "left" }}>Drill</th></tr>
+            <tr>
+              <th style={{ ...cell, textAlign: "left", fontSize: "0.78em" }}>Time</th>
+              <th style={{ ...cell, textAlign: "left" }}>Drill</th>
+              <th style={{ ...cell, textAlign: "left" }}>Notes</th>
+              <th style={{ ...cell, textAlign: "left" }}>Coach</th>
+            </tr>
           </thead>
           <tbody>
-            {p.blocks.map((b, bi) => (
-              <tr key={bi} style={{ background: b.rotation ? "#f1f1f1" : undefined }}>
-                <td style={{ ...cell, fontWeight: 700 }}>
-                  <span style={{ whiteSpace: "nowrap" }}>{shortRange(b.start, b.end)}</span>
-                  {b.rotation && <div style={{ ...sub, fontWeight: 400 }}>{Math.round(b.duration_minutes / Math.max(1, b.rotation.grid.length))} min each</div>}
-                  {b.water_break && <div style={{ color: "#1f6fb2", fontWeight: 700, fontSize: "0.88em" }}>💧 Water</div>}
-                </td>
-                <td style={cell}>{drillCell(b)}</td>
-              </tr>
-            ))}
-            {p.blocks.length === 0 && <tr><td colSpan={2} style={{ ...cell, color: "#888" }}>No drills scheduled yet.</td></tr>}
+            {p.blocks.flatMap((b, bi) => blockRows(b, bi))}
+            {p.blocks.length === 0 && <tr><td colSpan={4} style={{ ...cell, color: "#888" }}>No drills scheduled yet.</td></tr>}
           </tbody>
         </table>
 
