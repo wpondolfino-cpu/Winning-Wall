@@ -97,19 +97,37 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
   const unavailableCount = [...assignedIds].filter(id => !attendees.some(p => p.id === id)).length;
   const nameOf = (id: string) => attendees.find(p => p.id === id)?.name ?? "Unknown";
 
+  // Generate / Clear are off while one is saving, so a double tap can't
+  // start a second save on top of the first.
+  const [busy, setBusy] = useState(false);
   async function handleGenerate() {
-    if (splitBy === "grade") {
-      const { groups: generated, labels } = generateGroupsByGrade(attendees);
-      await saveGeneratedGroups(drill.id, generated, tryoutIds, labels);
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (splitBy === "grade") {
+        const { groups: generated, labels } = generateGroupsByGrade(attendees);
+        await saveGeneratedGroups(drill.id, generated, tryoutIds, labels);
+      } else {
+        const { groups: generated } = splitBy === "gradeMix"
+          ? generateGradeMixedGroups(attendees, numGroups)
+          : generateBalancedGroups(attendees, groupSize, numGroups);
+        await saveGeneratedGroups(drill.id, generated, tryoutIds);
+        await updateSegmentDrill(drill.id, { group_size: groupSize, num_groups: numGroups });
+      }
       await load(); onChanged(); flashSaved();
-      return;
-    }
-    const { groups: generated } = splitBy === "gradeMix"
-      ? generateGradeMixedGroups(attendees, numGroups)
-      : generateBalancedGroups(attendees, groupSize, numGroups);
-    await saveGeneratedGroups(drill.id, generated, tryoutIds);
-    await updateSegmentDrill(drill.id, { group_size: groupSize, num_groups: numGroups });
-    await load(); onChanged(); flashSaved();
+    } finally { setBusy(false); }
+  }
+
+  /** Removes every group on this drill; everyone goes back to the bench. */
+  async function handleClear() {
+    if (busy || groups.length === 0) return;
+    if (!window.confirm("Clear all groups for this drill? Everyone goes back to the bench.")) return;
+    setBusy(true);
+    try {
+      const { error } = await clearSegmentDrillGroups(drill.id);
+      if (error) { setSaveMsg(error); return; }
+      await load(); onChanged(); flashSaved();
+    } finally { setBusy(false); }
   }
 
   /**
@@ -237,7 +255,10 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
             {groupSize}v{Array(numGroups).fill(groupSize).join("v")}
           </div>
           </>)}
-          <button onClick={handleGenerate} style={primaryBtn}>Generate</button>
+          <button onClick={handleGenerate} disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.6 : 1, cursor: busy ? "wait" : "pointer" }}>{busy ? "Saving…" : "Generate"}</button>
+          {groups.length > 0 && (
+            <button onClick={handleClear} disabled={busy} style={{ ...inputStyle, width: "auto", padding: "8px 14px", cursor: busy ? "wait" : "pointer" }}>Clear groups</button>
+          )}
           {/* Always shown, even with nothing saved yet -- a button that
               vanishes when the list is empty is how you end up saving a
               grouping and then being unable to find it. */}
