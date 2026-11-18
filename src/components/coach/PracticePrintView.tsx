@@ -414,8 +414,11 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                             key: String(gi),
                             tag: g.tag,
                             sub: [g.place, g.coachNames?.length ? `Coach ${g.coachNames.join(" & ")}` : ""].filter(Boolean).join(" · ") || undefined,
-                            body: g.memberNames.length ? nameList(g.memberNames) : "(empty)",
-                          })), 3)}
+                            // Teams inside the group: "Team 1 ┃ Team 2…" in one line.
+                            body: g.teams && g.teams.length > 1
+                              ? g.teams.map((t, ti) => <span key={ti}>{ti > 0 && <>{" "}<b style={{ margin: "0 3px", fontSize: "1.25em", fontWeight: 900 }}>┃</b>{" "}</>}{nameList(t)}</span>)
+                              : g.memberNames.length ? nameList(g.memberNames) : "(empty)",
+                          })), gs.some(g => g.teams && g.teams.length > 1) ? 1 : 3)}
                         </td>
                       </tr>
                     );

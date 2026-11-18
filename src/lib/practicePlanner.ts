@@ -1771,6 +1771,24 @@ export async function setSplitOverride(
   return { error: error?.message ?? null };
 }
 
+/** Drops every hand-made team split on a drill (new groups or a new rule make them stale). */
+export async function clearSplitOverrides(drillId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("segment_drills").update({ split_overrides: {} }).eq("id", drillId);
+  return { error: error?.message ?? null };
+}
+
+/**
+ * Teams inside one group of a drill's groups (the Groups box's "Teams in
+ * each group"). Members are put in a fixed order first, since group
+ * members come back from the database in no particular order and the
+ * split has to come out the same in the app and on the printout.
+ */
+export function teamsInGroup(
+  drill: Pick<SegmentDrill, "split_rule" | "split_n" | "split_overrides">, groupIndex: number, memberIds: string[]
+): string[][] {
+  return resolvedSplit(drill, groupIndex, [...memberIds].sort()).parts;
+}
+
 export async function setDrillSplitRule(
   drillId: string, rule: "none" | "teams" | "size" | "size_exact", n: number | null
 ): Promise<{ error: string | null }> {
@@ -2562,6 +2580,8 @@ export interface PrintDrillGroup {
   label: string; memberNames: string[];
   /** Where the group goes and who runs it (208), when set. */
   place?: string | null; coachNames?: string[];
+  /** Teams inside this group, when the drill splits each group (e.g. 4 v 4 at each hoop). */
+  teams?: string[][];
 }
 export interface PrintDrill {
   title: string; label: string | null; duration_minutes: number;
@@ -2773,17 +2793,21 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
         // so the sheet has to agree with it — otherwise old groups from
         // before the rule was set would quietly print instead.
         const ruled = d.split_rule && d.split_rule !== "none";
+        // Groups made in the Groups box that are split into teams there.
+        let teamsByGroup: string[][][] | null = null;
         if ((ruled || groups.length === 0) && stationMembers.length > 0) {
           // A fixed station can carry a split rule too, so the sheet shows
           // the sides rather than one undifferentiated list of eight.
           const { parts } = resolvedSplit(d, 0, stationMembers);
           groups = parts.map((members, i) => ({
             id: `station-${d.id}-${i}`, segment_drill_id: d.id, order_index: i,
-            group_label: parts.length === 1 ? "At this station"
-              : d.split_rule === "teams" ? `Team ${i + 1}` : `Group ${i + 1}`,
+            // A fixed station's split is teams at that hoop: "Team 1", "Team 2".
+            group_label: parts.length === 1 ? "At this station" : `Team ${i + 1}`,
             source_saved_grouping_id: null,
             member_ids: members,
           }));
+        } else if (ruled && groups.length > 0) {
+          teamsByGroup = groups.map((g, gi) => teamsInGroup(d, gi, g.member_ids));
         }
         groups.forEach(g => g.member_ids.forEach(id => allMemberIds.add(id)));
         drillPrintData.push({
@@ -2797,6 +2821,7 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
         });
         // stash raw groups temporarily on the drill for name-filling after batch lookup
         (drillPrintData[drillPrintData.length - 1] as any)._rawGroups = groups;
+        (drillPrintData[drillPrintData.length - 1] as any)._teams = teamsByGroup;
       }
       segPrintData.push({
         rosterName: seg.scope_type === "roster" && seg.roster_id ? (rosterNameById[seg.roster_id] ?? null) : null,
@@ -2865,12 +2890,16 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
 
   blockPrintData.forEach(b => b.segments.forEach(s => s.drills.forEach((d: any) => {
     const raw = d._rawGroups as SegmentDrillGroup[] | undefined;
-    if (raw) d.groups = raw.map(g => ({
+    const teams = d._teams as string[][][] | null | undefined;
+    if (raw) d.groups = raw.map((g, gi) => ({
       label: g.group_label ?? "Group", memberNames: g.member_ids.map(id => nameById[id]).filter(Boolean),
       place: g.location ?? null,
       coachNames: (g.coach_ids ?? []).map(id => coachNameById[id]).filter(Boolean) as string[],
+      ...(teams?.[gi] && teams[gi].length > 1
+        ? { teams: teams[gi].map(t => t.map(id => nameById[id]).filter(Boolean)) } : {}),
     }));
     delete d._rawGroups;
+    delete d._teams;
   })));
 
   // The back page: each drill once, in the order it first comes up, with

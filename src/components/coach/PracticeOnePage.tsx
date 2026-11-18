@@ -75,7 +75,7 @@ interface TeamsBox {
   stationCount: number;   // stations in the block, for "All stations · teams"
   times: string[];        // "4:18"
   alsoTimes: string[];    // other blocks using these same groups unsplit
-  groups: { tag: string; teams: string[][] }[];
+  groups: { tag: string; sub?: string; teams: string[][] }[];
   membership: string;
 }
 interface LinesBox {
@@ -124,16 +124,36 @@ function buildBoxes(p: PrintPractice): Box[] {
     }
     b.segments.forEach(seg => seg.drills.forEach(d => {
       if (!d.groups.length) return;
+      // Groups split into teams (e.g. 4 v 4 at each hoop): a teams box,
+      // one block per group headed by its place or letter.
+      if (d.groups.some(g => g.teams && g.teams.length > 1)) {
+        const t = extraLabel(d.label) ? `${d.title} · ${extraLabel(d.label)}` : d.title;
+        const teams = d.groups.map(g => g.teams && g.teams.length > 1 ? g.teams : [g.memberNames]);
+        const key = "g" + teamsKey(teams);
+        const found = boxes.find(bx => bx.key === key) as TeamsBox | undefined;
+        if (found) { if (!found.times.includes(time)) found.times.push(time); return; }
+        boxes.push({
+          kind: "teams", key, titles: [t], nums: [], stationCount: 0, times: [time], alsoTimes: [], membership: membershipKey(d.groups),
+          groups: d.groups.map((g, i) => ({
+            tag: g.place || groupTag(g.label, i) || groupLetter(i),
+            sub: [g.place ? groupTag(g.label, i) : "", g.coachNames?.length ? g.coachNames.join(" & ") : ""].filter(Boolean).join(" · ") || undefined,
+            teams: teams[i],
+          })),
+        });
+        return;
+      }
       const membership = membershipKey(d.groups);
       const key = "l" + membership;
       const found = boxes.find(bx => bx.key === key) as LinesBox | undefined;
       if (found) {
-        if (!found.titles.includes(d.title)) found.titles.push(d.title);
+        const t = extraLabel(d.label) ? `${d.title} · ${extraLabel(d.label)}` : d.title;
+        if (!found.titles.includes(t)) found.titles.push(t);
         if (!found.times.includes(time)) found.times.push(time);
         return;
       }
       boxes.push({
-        kind: "lines", key, titles: [d.title], times: [time], membership,
+        // "4 v 4 Shell · Hoop 1" when the drill runs at more than one spot.
+        kind: "lines", key, titles: [extraLabel(d.label) ? `${d.title} · ${extraLabel(d.label)}` : d.title], times: [time], membership,
         groups: d.groups.map((g, i) => ({
           tag: groupTag(g.label, i),
           names: g.memberNames,
@@ -266,6 +286,7 @@ export default function PracticeOnePage({ practice: p, pageW, pageH, formatDate,
       const letters = d.groups.map((g, gi) => groupTag(g.label, gi)).filter(isLetter);
       const groupNote = letters.length > 1 ? `groups ${letters[0]}–${letters[letters.length - 1]}`
         : letters.length === 1 ? `group ${letters[0]}`
+        : d.groups.length && d.groups.every(g => /^Team \d+$/.test(g.label)) ? `${d.groups.length} teams`
         : d.groups.length ? `${d.groups.length} group${d.groups.length === 1 ? "" : "s"}` : "";
       const subLine = [groupNote, extraLabel(d.label), seg.rosterName].filter(Boolean).join(" · ");
       return (
@@ -276,7 +297,9 @@ export default function PracticeOnePage({ practice: p, pageW, pageH, formatDate,
             {subLine && <div style={sub}>{subLine}</div>}
           </td>
           <td style={cell}>{notesCell(d.goal_text)}</td>
-          <td style={cell}>{coachCell(d.coachNames)}</td>
+          <td style={cell}>{coachCell(d.coachNames.length ? d.coachNames
+            // No drill coach: the groups' coaches, with where each one is.
+            : d.groups.flatMap((g, gi) => (g.coachNames ?? []).map(c => `${c} (${g.place || groupTag(g.label, gi) || gi + 1})`)))}</td>
         </tr>
       );
     });
@@ -285,7 +308,8 @@ export default function PracticeOnePage({ practice: p, pageW, pageH, formatDate,
   const boxTitle = (bx: Box) => {
     // One drill: its name. Several stations sharing the same teams: "Station teams".
     const title = bx.kind === "teams"
-      ? (bx.titles.length === 1 ? `${bx.nums[0]} · ${bx.titles[0]} · teams` : (bx.nums.length === bx.stationCount && bx.times.length === 1 ? "All stations · teams" : `Stations ${bx.nums.sort((x, y) => x - y).join(", ")} · teams`))
+      ? (bx.nums.length === 0 ? `${bx.titles[0]} · teams`
+        : bx.titles.length === 1 ? `${bx.nums[0]} · ${bx.titles[0]} · teams` : (bx.nums.length === bx.stationCount && bx.times.length === 1 ? "All stations · teams" : `Stations ${bx.nums.sort((x, y) => x - y).join(", ")} · teams`))
       : bx.titles.join(", ");
     const when = [bx.times.join(", "), bx.kind === "teams" && bx.alsoTimes.length ? `same groups as ${bx.alsoTimes.join(", ")}` : ""].filter(Boolean).join(" · ");
     return (
@@ -309,6 +333,7 @@ export default function PracticeOnePage({ practice: p, pageW, pageH, formatDate,
             <div key={gi} style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: "0 0.45em", marginBottom: "0.25em", breakInside: "avoid" }}>
               <b>{g.tag}</b>
               <div>
+                {g.sub && <div style={sub}>{g.sub}</div>}
                 {g.teams.map((team, ti) => (
                   <div key={ti} style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: "0 0.35em" }}>
                     <span style={{ color: muted }}>{ti + 1} ·</span>
@@ -325,7 +350,7 @@ export default function PracticeOnePage({ practice: p, pageW, pageH, formatDate,
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.45em 1.1em" }}>
         {bx.groups.map((g, gi) => (
           <div key={gi} style={{ display: "flex", gap: "0.4em", breakInside: "avoid" }}>
-            <b>{g.tag}</b>
+            <div><b style={{ whiteSpace: "nowrap" }}>{g.tag}</b>{g.sub && <div style={{ ...sub, whiteSpace: "nowrap" }}>{g.sub}</div>}</div>
             <div style={{ display: "flex", borderBottom: "0.5px solid #999" }}>
               {g.teams.map((team, ti) => (
                 <div key={ti} style={{ padding: ti ? "0 0.45em" : "0 0.45em 0 0", borderLeft: ti ? "1.5px solid #777" : "none" }}>

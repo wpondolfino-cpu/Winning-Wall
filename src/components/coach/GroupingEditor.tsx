@@ -14,6 +14,8 @@ import {
   getSavedGroupingArrangement, deleteSavedGrouping, clearSegmentDrillGroups,
   movePlayerBetweenGroups, removeGroupMember, addGroupMember, updateSegmentDrill,
   getCurrentSeason, splitGroupingsBySeason,
+  setDrillSplitRule, setSplitOverride, clearSplitOverrides, teamsInGroup,
+  updateGroupPlaceAndCoaches, getAssignableCoaches, type CoachLite,
 } from "../../lib/practicePlanner";
 
 interface PlayerLite { id: string; name: string; home_roster_id: string | null; grade?: number | null; }
@@ -72,6 +74,56 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
   const { current: thisSeasonGroupings, previous: earlierGroupings } = splitGroupingsBySeason<SavedGrouping>(savedGroupings, currentSeasonId);
   const visibleGroupings = showEarlier ? [...thisSeasonGroupings, ...earlierGroupings] : thisSeasonGroupings;
 
+  // Teams in each group: e.g. three groups at three hoops, each playing
+  // 4 v 4. The rule and any hand-made swaps live on the drill (the same
+  // fields a fixed station uses), applied to each group separately.
+  type TeamRule = "none" | "teams" | "size" | "size_exact";
+  const [teamRule, setTeamRule] = useState<TeamRule>((drill.split_rule as TeamRule) ?? "none");
+  const [teamN, setTeamN] = useState<number>(drill.split_n ?? 4);
+  const [teamNDraft, setTeamNDraft] = useState<string | null>(null);
+  const [overrides, setOverrides] = useState<Record<string, string[][]>>(drill.split_overrides ?? {});
+  const splitDrill = { split_rule: teamRule, split_n: teamN, split_overrides: overrides };
+  async function changeTeamRule(rule: TeamRule, n: number) {
+    setTeamRule(rule); setTeamN(n); setOverrides({});
+    await setDrillSplitRule(drill.id, rule, rule === "none" ? null : n);
+    await clearSplitOverrides(drill.id);
+    onChanged(); flashSaved();
+  }
+  const [dragTeam, setDragTeam] = useState<{ id: string; groupIndex: number; teamIndex: number } | null>(null);
+  /** Moves a player to another team in the same group (saved as that group's own split). */
+  async function moveToTeam(groupIndex: number, teamIndex: number) {
+    const drag = dragTeam; setDragTeam(null);
+    if (!drag || drag.groupIndex !== groupIndex || drag.teamIndex === teamIndex) return;
+    const g = groups[groupIndex];
+    const parts = teamsInGroup(splitDrill, groupIndex, g.member_ids).map(t => t.filter(id => id !== drag.id));
+    parts[teamIndex] = [...parts[teamIndex], drag.id];
+    setOverrides(prev => ({ ...prev, [String(groupIndex)]: parts }));
+    await setSplitOverride(drill.id, groupIndex, parts);
+    onChanged(); flashSaved();
+  }
+
+  // Coaches, for each group's coach pick.
+  const [coaches, setCoaches] = useState<CoachLite[]>([]);
+  useEffect(() => { getAssignableCoaches().then(setCoaches); }, []);
+  async function setPlace(g: SegmentDrillGroup, value: string) {
+    const v = value.trim() || null;
+    if ((g.location ?? null) === v) return;
+    setGroups(prev => prev.map(x => x.id === g.id ? { ...x, location: v } : x));
+    await updateGroupPlaceAndCoaches(g.id, { location: v });
+    onChanged(); flashSaved();
+  }
+  async function setCoach(g: SegmentDrillGroup, coachId: string) {
+    const ids = coachId ? [coachId] : [];
+    setGroups(prev => prev.map(x => x.id === g.id ? { ...x, coach_ids: ids } : x));
+    await updateGroupPlaceAndCoaches(g.id, { coach_ids: ids });
+    onChanged(); flashSaved();
+  }
+  /** Fills every empty place with "Hoop 1", "Hoop 2"… by position. */
+  async function nameHoops() {
+    for (let i = 0; i < groups.length; i++) if (!groups[i].location) await updateGroupPlaceAndCoaches(groups[i].id, { location: `Hoop ${i + 1}` });
+    await load(); onChanged(); flashSaved();
+  }
+
   // Names of the coaches set on groups (from the drill's Coach button).
   const [coachNames, setCoachNames] = useState<Record<string, string>>({});
   const load = useCallback(async () => {
@@ -114,6 +166,8 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
         await saveGeneratedGroups(drill.id, generated, tryoutIds);
         await updateSegmentDrill(drill.id, { group_size: groupSize, num_groups: numGroups });
       }
+      // New groups make any hand-made team swaps meaningless.
+      if (Object.keys(overrides).length) { await clearSplitOverrides(drill.id); setOverrides({}); }
       await load(); onChanged(); flashSaved();
     } finally { setBusy(false); }
   }
@@ -191,6 +245,7 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
   function handleDragStart(playerId: string, from: string | null) { setDragPlayer({ id: playerId, from }); }
 
   async function handleDrop(to: string | null) {
+    setDragTeam(null);
     if (!dragPlayer) return;
     const { id: playerId, from } = dragPlayer;
     if (from === to) { setDragPlayer(null); return; }
@@ -270,6 +325,24 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
           )}
         </div>
 
+        {/* Teams inside each group, e.g. three hoops each playing 4 v 4. */}
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+          <span style={{ ...fieldLabel, marginBottom: 0 }}>Teams in each group</span>
+          {([["none", "None"], ["size", "Groups of"], ["teams", "Split into"]] as const).map(([k, label]) => (
+            <button key={k} onClick={() => changeTeamRule(k, teamN)}
+              style={{ ...inputStyle, padding: "5px 11px", fontSize: 12, cursor: "pointer",
+                ...(teamRule === k ? { background: "var(--royal)", color: "#fff", border: "1px solid var(--royal)" } : {}) }}>{label}</button>
+          ))}
+          {teamRule !== "none" && (<>
+            <input type="number" min={1} value={teamNDraft ?? String(teamN)}
+              onChange={e => setTeamNDraft(e.target.value)}
+              onBlur={e => { const n = Math.max(1, parseInt(e.target.value) || teamN); setTeamNDraft(null); if (n !== teamN) changeTeamRule(teamRule, n); }}
+              onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              style={{ ...inputStyle, width: 52 }} />
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>{teamRule === "teams" ? "teams" : "players"} · drag a name to move it between teams</span>
+          </>)}
+        </div>
+
         {showPicker && (
           <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 12, marginBottom: 12, background: "var(--surface2)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -347,8 +420,13 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
           <div style={{ color: "var(--muted)", fontSize: 13, padding: "20px 0" }}>Loading…</div>
         ) : (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 14 }}>
-              {groups.map(g => {
+            {groups.length > 1 && groups.some(g => !g.location) && (
+              <button onClick={nameHoops} style={{ ...inputStyle, padding: "4px 10px", marginBottom: 8, cursor: "pointer" }}>
+                Name them Hoop 1–{groups.length}
+              </button>
+            )}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10, marginBottom: 14 }}>
+              {groups.map((g, gi) => {
                 const hasExcused = g.member_ids.some(id => excusedIds.has(id));
                 return (
                   <div key={g.id}
@@ -361,15 +439,42 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
                     }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: hasExcused ? "var(--gold-text)" : "var(--text)", marginBottom: 6 }}>
                       {hasExcused && "⚠ "}{g.group_label}
-                      {/* Set from the drill's Coach button. */}
-                      {(g.location || (g.coach_ids ?? []).length > 0) && (
-                        <span style={{ fontWeight: 500, color: "var(--muted)" }}>
-                          {g.location ? ` · ${g.location}` : ""}
-                          {(g.coach_ids ?? []).length ? ` · Coach ${(g.coach_ids ?? []).map(id => coachNames[id]).filter(Boolean).join(" & ")}` : ""}
-                        </span>
+                      {(g.coach_ids ?? []).length > 1 && (
+                        <span style={{ fontWeight: 500, color: "var(--muted)" }}> · Coaches {(g.coach_ids ?? []).map(id => coachNames[id]).filter(Boolean).join(" & ")}</span>
                       )}
                     </div>
-                    {g.member_ids.map(pid => {
+                    {/* Where this group goes and who runs it. */}
+                    <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                      <input key={`place-${g.id}-${g.location ?? ""}`} defaultValue={g.location ?? ""} placeholder={`Hoop ${gi + 1}`}
+                        onBlur={e => setPlace(g, e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                        style={{ ...inputStyle, flex: 1, minWidth: 0, padding: "4px 7px", fontSize: 11 }} />
+                      <select value={(g.coach_ids ?? [])[0] ?? ""} onChange={e => setCoach(g, e.target.value)}
+                        style={{ ...inputStyle, flex: 1, minWidth: 0, padding: "4px 5px", fontSize: 11 }}>
+                        <option value="">Coach</option>
+                        {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
+                    {teamRule !== "none" && g.member_ids.length > 0 ? (
+                      teamsInGroup(splitDrill, gi, g.member_ids).map((team, ti) => (
+                        <div key={ti}
+                          onDragOver={e => e.preventDefault()}
+                          onDrop={e => { if (dragTeam && dragTeam.groupIndex === gi) { e.stopPropagation(); moveToTeam(gi, ti); } }}
+                          style={{ borderTop: "1px solid var(--border)", paddingTop: 4, marginTop: 4 }}>
+                          <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 2 }}>Team {ti + 1}</div>
+                          {team.map(pid => (
+                            <div key={pid} draggable
+                              onDragStart={() => { handleDragStart(pid, g.id); setDragTeam({ id: pid, groupIndex: gi, teamIndex: ti }); }}
+                              onDragEnd={() => setDragTeam(null)}
+                              style={{ fontSize: 12, padding: "3px 6px", marginBottom: 2, borderRadius: 6, cursor: "grab",
+                                background: excusedIds.has(pid) ? "rgba(226,75,74,0.12)" : "var(--surface)",
+                                color: excusedIds.has(pid) ? "var(--tx-ff9b9b)" : "var(--text)" }}>
+                              {excusedIds.has(pid) ? "⚠ " : ""}{nameOf(pid)}
+                            </div>
+                          ))}
+                        </div>
+                      ))
+                    ) : g.member_ids.map(pid => {
                       const excused = excusedIds.has(pid);
                       return (
                         <div key={pid} draggable onDragStart={() => handleDragStart(pid, g.id)}
