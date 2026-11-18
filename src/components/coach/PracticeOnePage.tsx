@@ -20,7 +20,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { groupLetter, type PrintPractice, type PrintBlock } from "../../lib/practicePlanner";
 
-const SPLITS = [52, 56, 60, 64];
+const SPLITS = [46, 50, 54, 58, 62];
 // 10.5pt down to 8pt, in px (1pt = 4/3px): a light practice prints
 // bigger, a packed one shrinks until it fits.
 const FONTS = [14, 13.67, 13.33, 13, 12.67, 12.33, 12, 11.67, 11.33, 11, 10.67];
@@ -169,10 +169,14 @@ export default function PracticeOnePage({ practice: p, pageW, pageH, formatDate,
       const pxPerIn = inchRef.current?.offsetWidth || 96;
       const limit = pageH * pxPerIn - 0.15 * pxPerIn;
       const cols = page.querySelector<HTMLElement>("[data-cols]")!;
+      const right = page.querySelector<HTMLElement>("[data-right]")!;
+      // Height of the page at this size and split; a split where team
+      // columns spill past the right edge doesn't count as fitting.
       const try1 = (font: number, split: number) => {
         page.style.fontSize = `${font}px`;
         cols.style.gridTemplateColumns = `${split}% minmax(0, 1fr)`;
-        return page.getBoundingClientRect().height;
+        const h = page.getBoundingClientRect().height;
+        return right.scrollWidth > right.clientWidth + 1 ? h + 100000 : h;
       };
       let best = { split: SPLITS[1], font: FONTS[FONTS.length - 1], h: Infinity };
       outer: for (const font of FONTS) {
@@ -262,20 +266,42 @@ export default function PracticeOnePage({ practice: p, pageW, pageH, formatDate,
     );
   };
 
+  // Teams: small teams (4 or fewer) print as labeled columns, so groups
+  // can sit side by side; bigger teams print one line per team, which is
+  // much shorter than a tall column. Each group takes only the width it
+  // needs, so groups pair up whenever they fit.
   const teamsBody = (bx: TeamsBox) => {
-    // Each group is wide enough for its team columns at the longest name,
-    // so names never wrap: wide teams mean fewer groups per row.
-    const longest = Math.max(4, ...bx.groups.flatMap(g => g.teams.flat().map(n => n.length)));
-    const maxTeams = Math.max(1, ...bx.groups.map(g => g.teams.length));
-    const groupMin = maxTeams * (longest * 0.85 + 1);
+    const biggest = Math.max(0, ...bx.groups.flatMap(g => g.teams.map(t => t.length)));
+    if (biggest > 4) {
+      return (
+        <div>
+          {bx.groups.map((g, gi) => (
+            <div key={gi} style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: "0 0.45em", marginBottom: "0.25em", breakInside: "avoid" }}>
+              <b>{g.tag}</b>
+              <div>
+                {g.teams.map((team, ti) => (
+                  <div key={ti} style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: "0 0.35em" }}>
+                    <span style={{ color: muted }}>{ti + 1} ·</span>
+                    <span>{names(team)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
     return (
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${groupMin}ch), 1fr))`, gap: "0.35em 0.9em" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.45em 1.1em" }}>
         {bx.groups.map((g, gi) => (
-          <div key={gi}>
-            <div style={{ fontWeight: 700, borderBottom: "0.5px solid #999", marginBottom: 1 }}>{g.tag}</div>
-            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(1, g.teams.length)}, max-content)`, gap: "0 0.9em" }}>
+          <div key={gi} style={{ display: "flex", gap: "0.4em", breakInside: "avoid" }}>
+            <b>{g.tag}</b>
+            <div style={{ display: "flex", borderBottom: "0.5px solid #999" }}>
               {g.teams.map((team, ti) => (
-                <div key={ti}>{team.map((nm, ni) => <div key={ni} style={{ whiteSpace: "nowrap" }}>{nm}</div>)}</div>
+                <div key={ti} style={{ padding: ti ? "0 0.45em" : "0 0.45em 0 0", borderLeft: ti ? "1.5px solid #777" : "none" }}>
+                  <div style={{ color: muted, fontSize: "0.8em", borderBottom: "0.5px solid #bbb", marginBottom: 1, whiteSpace: "nowrap" }}>Team {ti + 1}</div>
+                  {team.map((nm, ni) => <div key={ni} style={{ whiteSpace: "nowrap" }}>{nm}</div>)}
+                </div>
               ))}
             </div>
           </div>
@@ -327,7 +353,7 @@ export default function PracticeOnePage({ practice: p, pageW, pageH, formatDate,
           </tbody>
         </table>
 
-        <div>
+        <div data-right style={{ minWidth: 0 }}>
           {boxes.map(bx => (
             <div key={bx.key} style={{ marginBottom: "0.8em", breakInside: "avoid" }}>
               {boxTitle(bx)}
