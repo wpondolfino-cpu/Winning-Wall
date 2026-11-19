@@ -14,7 +14,7 @@ import {
   getSavedGroupingArrangement, deleteSavedGrouping, clearSegmentDrillGroups,
   movePlayerBetweenGroups, removeGroupMember, addGroupMember, updateSegmentDrill,
   getCurrentSeason, splitGroupingsBySeason,
-  setDrillSplitRule, setSplitOverride, clearSplitOverrides, teamsInGroup,
+  setDrillSplitRule, setSplitOverride, clearSplitOverrides, setAllSplitOverrides, teamsInGroup,
   updateGroupPlaceAndCoaches, getAssignableCoaches, type CoachLite,
 } from "../../lib/practicePlanner";
 
@@ -83,10 +83,27 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
   const [teamNDraft, setTeamNDraft] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<Record<string, string[][]>>(drill.split_overrides ?? {});
   const splitDrill = { split_rule: teamRule, split_n: teamN, split_overrides: overrides };
+  // Teams are worked out once (after Generate, or when the rule changes)
+  // and saved for every group. After that, dragging only moves the player
+  // dragged; nobody else's team changes, and evening them out is the
+  // coach's call.
+  const groupsRef = useRef<SegmentDrillGroup[]>([]);
+  async function writeOverrides(next: Record<string, string[][]>) {
+    setOverrides(next);
+    await setAllSplitOverrides(drill.id, next);
+  }
+  function frozenTeams(gs: SegmentDrillGroup[], rule: TeamRule, n: number, keep: Record<string, string[][]>) {
+    const next: Record<string, string[][]> = {};
+    gs.forEach((g, gi) => {
+      next[String(gi)] = keep[String(gi)] ?? teamsInGroup({ split_rule: rule, split_n: n, split_overrides: {} }, gi, g.member_ids);
+    });
+    return next;
+  }
   async function changeTeamRule(rule: TeamRule, n: number) {
-    setTeamRule(rule); setTeamN(n); setOverrides({});
+    setTeamRule(rule); setTeamN(n);
     await setDrillSplitRule(drill.id, rule, rule === "none" ? null : n);
-    await clearSplitOverrides(drill.id);
+    if (rule === "none") { setOverrides({}); await clearSplitOverrides(drill.id); }
+    else await writeOverrides(frozenTeams(groupsRef.current, rule, n, {}));
     onChanged(); flashSaved();
   }
   const [dragTeam, setDragTeam] = useState<{ id: string; groupIndex: number; teamIndex: number } | null>(null);
@@ -97,8 +114,9 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     const g = groups[groupIndex];
     const parts = teamsInGroup(splitDrill, groupIndex, g.member_ids).map(t => t.filter(id => id !== drag.id));
     parts[teamIndex] = [...parts[teamIndex], drag.id];
-    setOverrides(prev => ({ ...prev, [String(groupIndex)]: parts }));
-    await setSplitOverride(drill.id, groupIndex, parts);
+    setDragPlayer(null);
+    setOverrides(prev => ({ ...prev, [String(groupIndex)]: parts.filter(t => t.length > 0) }));
+    await setSplitOverride(drill.id, groupIndex, parts.filter(t => t.length > 0));
     onChanged(); flashSaved();
   }
 
@@ -130,15 +148,26 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     setLoading(true);
     const gs = await getSegmentDrillGroups(drill.id);
     setGroups(gs);
+    groupsRef.current = gs;
     const ids = Array.from(new Set(gs.flatMap(g => g.coach_ids ?? [])));
     if (ids.length) {
       const { data } = await supabase.from("profiles").select("id, name").in("id", ids);
       setCoachNames(Object.fromEntries(((data ?? []) as any[]).map(p => [p.id, p.name])));
     }
     setLoading(false);
+    return gs;
   }, [drill.id]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load().then(gs => {
+      // Teams set before they were saved per group: save them as they
+      // look now, so the first drag doesn't reshuffle anyone.
+      if (teamRule !== "none" && gs.some((_, gi) => !overrides[String(gi)])) {
+        void writeOverrides(frozenTeams(gs, teamRule, teamN, overrides));
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load]);
 
   const assignedIds = new Set(groups.flatMap(g => g.member_ids));
   const bench = attendees.filter(p => !assignedIds.has(p.id));
@@ -166,9 +195,11 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
         await saveGeneratedGroups(drill.id, generated, tryoutIds);
         await updateSegmentDrill(drill.id, { group_size: groupSize, num_groups: numGroups });
       }
-      // New groups make any hand-made team swaps meaningless.
-      if (Object.keys(overrides).length) { await clearSplitOverrides(drill.id); setOverrides({}); }
-      await load(); onChanged(); flashSaved();
+      // New groups get fresh teams, worked out once and saved.
+      const gs = await load();
+      if (teamRule !== "none") await writeOverrides(frozenTeams(gs, teamRule, teamN, {}));
+      else if (Object.keys(overrides).length) { await clearSplitOverrides(drill.id); setOverrides({}); }
+      onChanged(); flashSaved();
     } finally { setBusy(false); }
   }
 
@@ -244,12 +275,32 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
 
   function handleDragStart(playerId: string, from: string | null) { setDragPlayer({ id: playerId, from }); }
 
-  async function handleDrop(to: string | null) {
+  /**
+   * Moves a player between groups (or to/from the bench). With teams on,
+   * only that player's team changes: they leave their old team and join
+   * the team they were dropped on (the last team if dropped elsewhere on
+   * the card). Everyone else stays put.
+   */
+  async function handleDrop(to: string | null, toTeam?: number) {
     setDragTeam(null);
     if (!dragPlayer) return;
     const { id: playerId, from } = dragPlayer;
     if (from === to) { setDragPlayer(null); return; }
     const isTryout = Boolean(tryoutIds?.has(playerId));
+    if (teamRule !== "none") {
+      const gs = groupsRef.current;
+      const next = frozenTeams(gs, teamRule, teamN, overrides);
+      const fi = from ? gs.findIndex(g => g.id === from) : -1;
+      const ti = to ? gs.findIndex(g => g.id === to) : -1;
+      if (fi >= 0) next[String(fi)] = next[String(fi)].map(t => t.filter(id => id !== playerId)).filter(t => t.length > 0);
+      if (ti >= 0) {
+        const parts = next[String(ti)].length ? next[String(ti)].map(t => [...t]) : [[]];
+        const k = toTeam != null && toTeam < parts.length ? toTeam : parts.length - 1;
+        parts[k].push(playerId);
+        next[String(ti)] = parts;
+      }
+      await writeOverrides(next);
+    }
     if (from) await removeGroupMember(from, playerId, isTryout);
     if (to) await addGroupMember(to, playerId, isTryout);
     setDragPlayer(null);
@@ -460,7 +511,11 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
                       teamsInGroup(splitDrill, gi, g.member_ids).map((team, ti) => (
                         <div key={ti}
                           onDragOver={e => e.preventDefault()}
-                          onDrop={e => { if (dragTeam && dragTeam.groupIndex === gi) { e.stopPropagation(); moveToTeam(gi, ti); } }}
+                          onDrop={e => {
+                            e.stopPropagation();
+                            if (dragTeam && dragTeam.groupIndex === gi) moveToTeam(gi, ti);
+                            else handleDrop(g.id, ti);
+                          }}
                           style={{ borderTop: "1px solid var(--border)", paddingTop: 4, marginTop: 4 }}>
                           <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 2 }}>Team {ti + 1}</div>
                           {team.map(pid => (
