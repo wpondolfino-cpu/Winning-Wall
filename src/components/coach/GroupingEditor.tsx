@@ -111,12 +111,24 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
   async function moveToTeam(groupIndex: number, teamIndex: number) {
     const drag = dragTeam; setDragTeam(null);
     if (!drag || drag.groupIndex !== groupIndex || drag.teamIndex === teamIndex) return;
+    if (teamIndex >= teamsInGroup(splitDrill, groupIndex, groups[groupIndex].member_ids).length
+      && teamsInGroup(splitDrill, groupIndex, groups[groupIndex].member_ids)[drag.teamIndex]?.length === 1) return; // already alone
     const g = groups[groupIndex];
     const parts = teamsInGroup(splitDrill, groupIndex, g.member_ids).map(t => t.filter(id => id !== drag.id));
-    parts[teamIndex] = [...parts[teamIndex], drag.id];
+    // Dropped on "+ New team": a team of one, to fill by dragging.
+    if (teamIndex >= parts.length) parts.push([drag.id]);
+    else parts[teamIndex] = [...parts[teamIndex], drag.id];
     setDragPlayer(null);
     setOverrides(prev => ({ ...prev, [String(groupIndex)]: parts.filter(t => t.length > 0) }));
     await setSplitOverride(drill.id, groupIndex, parts.filter(t => t.length > 0));
+    onChanged(); flashSaved();
+  }
+
+  /** Redoes the teams for one group only, by the current rule. */
+  async function resplitGroup(groupIndex: number) {
+    const g = groups[groupIndex];
+    const next = { ...overrides, [String(groupIndex)]: teamsInGroup({ split_rule: teamRule, split_n: teamN, split_overrides: {} }, groupIndex, g.member_ids) };
+    await writeOverrides(next);
     onChanged(); flashSaved();
   }
 
@@ -303,8 +315,8 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
       if (fi >= 0) next[String(fi)] = next[String(fi)].map(t => t.filter(id => id !== playerId)).filter(t => t.length > 0);
       if (ti >= 0) {
         const parts = next[String(ti)].length ? next[String(ti)].map(t => [...t]) : [[]];
-        const k = toTeam != null && toTeam < parts.length ? toTeam : parts.length - 1;
-        parts[k].push(playerId);
+        if (toTeam != null && toTeam >= parts.length && parts[0].length) parts.push([playerId]); // "+ New team"
+        else parts[toTeam != null && toTeam < parts.length ? toTeam : parts.length - 1].push(playerId);
         next[String(ti)] = parts;
       }
       setOverrides(next);
@@ -520,8 +532,8 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
                         {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
                     </div>
-                    {teamRule !== "none" && g.member_ids.length > 0 ? (
-                      teamsInGroup(splitDrill, gi, g.member_ids).map((team, ti) => (
+                    {teamRule !== "none" && g.member_ids.length > 0 ? (<>
+                      {teamsInGroup(splitDrill, gi, g.member_ids).map((team, ti) => (
                         <div key={ti}
                           onDragOver={e => e.preventDefault()}
                           onDrop={e => {
@@ -542,8 +554,28 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
                             </div>
                           ))}
                         </div>
-                      ))
-                    ) : g.member_ids.map(pid => {
+                      ))}
+                      {/* Drag a player here to start another team. */}
+                      {(() => {
+                        const count = teamsInGroup(splitDrill, gi, g.member_ids).length;
+                        return (
+                          <div
+                            onDragOver={e => e.preventDefault()}
+                            onDrop={e => {
+                              e.stopPropagation();
+                              if (dragTeam && dragTeam.groupIndex === gi) moveToTeam(gi, count);
+                              else handleDrop(g.id, count);
+                            }}
+                            style={{ marginTop: 6, border: "1px dashed var(--border)", borderRadius: 6, padding: "5px 6px", fontSize: 11, color: "var(--muted)", textAlign: "center" }}>
+                            + New team <span style={{ opacity: 0.8 }}>· drag a player here</span>
+                          </div>
+                        );
+                      })()}
+                      <button onClick={() => resplitGroup(gi)}
+                        style={{ marginTop: 6, background: "none", border: "none", padding: 0, fontSize: 11, color: "var(--royal)", cursor: "pointer", fontFamily: "inherit" }}>
+                        ↻ Re-split into {teamRule === "teams" ? `${teamN} teams` : `teams of ${teamN}`}
+                      </button>
+                    </>) : g.member_ids.map(pid => {
                       const excused = excusedIds.has(pid);
                       return (
                         <div key={pid} draggable onDragStart={() => handleDragStart(pid, g.id)}
