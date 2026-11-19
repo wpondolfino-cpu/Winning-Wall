@@ -1771,6 +1771,12 @@ export async function setSplitOverride(
   return { error: error?.message ?? null };
 }
 
+/** Saves every group's teams on a drill at once (keyed by group index). */
+export async function setAllSplitOverrides(drillId: string, overrides: Record<string, string[][]>): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("segment_drills").update({ split_overrides: overrides }).eq("id", drillId);
+  return { error: error?.message ?? null };
+}
+
 /** Drops every hand-made team split on a drill (new groups or a new rule make them stale). */
 export async function clearSplitOverrides(drillId: string): Promise<{ error: string | null }> {
   const { error } = await supabase.from("segment_drills").update({ split_overrides: {} }).eq("id", drillId);
