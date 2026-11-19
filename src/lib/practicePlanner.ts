@@ -2504,8 +2504,13 @@ export async function updatePracticeDrill(id: string, input: Partial<{
   linked_play_id: string | null; tags: string[]; is_competitive: boolean;
 }>): Promise<{ error: string | null }> {
   const { tags, ...rest } = input;
-  const { error } = await supabase.from("practice_drills_library").update({ ...rest, updated_at: new Date().toISOString() }).eq("id", id);
+  // .select() so a save that changed nothing is caught: when the database
+  // won't let this account edit the drill (e.g. it belongs to another
+  // program), the update quietly matches no rows instead of failing.
+  const { data, error } = await supabase.from("practice_drills_library")
+    .update({ ...rest, updated_at: new Date().toISOString() }).eq("id", id).select("id");
   if (error) return { error: error.message };
+  if (!data || data.length === 0) return { error: "The drill library didn't accept the change (this drill may belong to another program, or your account can't edit it)." };
   if (tags !== undefined) {
     await supabase.from("practice_drill_tag_links").delete().eq("drill_id", id);
     if (tags.length > 0) {
