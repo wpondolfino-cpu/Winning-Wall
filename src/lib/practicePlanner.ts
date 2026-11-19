@@ -1861,7 +1861,10 @@ export interface SavedGrouping {
   updated_at: string;
   /** The season it was saved in (migration 145). Null only if no season existed. */
   season_id?: string | null;
+  /** Teams inside each group, saved with it (SQL 213). teams[i] lines up with group i. */
+  team_split?: SavedTeamSplit | null;
 }
+export interface SavedTeamSplit { rule: "teams" | "size" | "size_exact"; n: number; teams: string[][][] }
 
 /**
  * Splits saved groupings into this season's and older ones. Null counts
@@ -1926,18 +1929,25 @@ export async function getSavedGroupingMembers(groupingId: string): Promise<strin
 
 /** Saves a whole arrangement -- the shape the group generator produces. Labels are index-aligned; leave them out and the UI derives Group 1, 2, 3. */
 export async function createSavedArrangement(
-  name: string, rosterId: string, groups: string[][], labels?: (string | null)[], tryoutIds?: Set<string>
-): Promise<{ id: string | null; error: string | null }> {
+  name: string, rosterId: string, groups: string[][], labels?: (string | null)[], tryoutIds?: Set<string>,
+  teamSplit?: SavedTeamSplit | null,
+): Promise<{ id: string | null; error: string | null; teamsSkipped?: boolean }> {
   const clean = groups.filter(g => g.length > 0);
   if (!clean.length) return { id: null, error: "Nothing to save." };
-  const { data, error } = await supabase.from("saved_groupings")
-    .insert({ name: name.trim(), roster_id: rosterId, group_labels: labels ?? null })
-    .select("id").single();
+  const base = { name: name.trim(), roster_id: rosterId, group_labels: labels ?? null };
+  let teamsSkipped = false;
+  let res = await supabase.from("saved_groupings").insert(teamSplit ? { ...base, team_split: teamSplit } : base).select("id").single();
+  // Before SQL 213 there's no team_split column: save the groups anyway.
+  if (res.error && teamSplit && /team_split/i.test(res.error.message)) {
+    teamsSkipped = true;
+    res = await supabase.from("saved_groupings").insert(base).select("id").single();
+  }
+  const { data, error } = res;
   if (error || !data) return { id: null, error: error?.message ?? "Could not save." };
   const rows = clean.flatMap((g, gi) => g.map(pid => memberRow({ grouping_id: data.id, group_index: gi }, pid, tryoutIds)));
   const { error: memberErr } = await supabase.from("saved_grouping_members").insert(rows);
   if (memberErr) return { id: data.id, error: memberErr.message };
-  return { id: data.id, error: null };
+  return { id: data.id, error: null, teamsSkipped };
 }
 
 export async function updateSavedArrangement(
