@@ -1936,7 +1936,9 @@ export async function createSavedArrangement(
   if (!clean.length) return { id: null, error: "Nothing to save." };
   const base = { name: name.trim(), roster_id: rosterId, group_labels: labels ?? null };
   let teamsSkipped = false;
-  let res = await supabase.from("saved_groupings").insert(teamSplit ? { ...base, team_split: teamSplit } : base).select("id").single();
+  // One row type for both shapes (Supabase's types reject a union here).
+  const row: Record<string, unknown> = teamSplit ? { ...base, team_split: teamSplit } : base;
+  let res = await supabase.from("saved_groupings").insert(row as any).select("id").single();
   // Before SQL 213 there's no team_split column: save the groups anyway.
   if (res.error && teamSplit && /team_split/i.test(res.error.message)) {
     teamsSkipped = true;
