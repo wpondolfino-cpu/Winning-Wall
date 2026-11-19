@@ -176,7 +176,12 @@ function buildBoxes(p: PrintPractice): Box[] {
     if (found) { if (!found.times.includes(u.time)) found.times.push(u.time); return; }
     boxes.push({ kind: "lines", key, titles: ["Station groups"], times: [u.time], membership: u.membership, groups: u.groups });
   });
-  return boxes;
+  // Schedule order: each box sits where it's first used, so the 3:51
+  // groups come before the 4:18 teams even though they were added last.
+  const blockAt = new Map<string, number>();
+  p.blocks.forEach((b, bi) => { const t = clockOnly(b.start); if (!blockAt.has(t)) blockAt.set(t, bi); });
+  const firstUse = (bx: Box) => Math.min(...[...bx.times, ...(bx.kind === "teams" ? bx.alsoTimes : [])].map(t => blockAt.get(t) ?? 999));
+  return boxes.map((bx, i) => ({ bx, i, at: firstUse(bx) })).sort((a, b) => a.at - b.at || a.i - b.i).map(x => x.bx);
 }
 
 export default function PracticeOnePage({ practice: p, pageW, pageH, formatDate, formatClock, onOverflow }: Props) {
