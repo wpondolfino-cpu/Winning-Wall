@@ -14,7 +14,7 @@ import {
   getSavedGroupingArrangement, deleteSavedGrouping, clearSegmentDrillGroups,
   movePlayerBetweenGroups, removeGroupMember, addGroupMember, updateSegmentDrill,
   getCurrentSeason, splitGroupingsBySeason,
-  setDrillSplitRule, setSplitOverride, clearSplitOverrides, setAllSplitOverrides, teamsInGroup,
+  setDrillSplitRule, clearSplitOverrides, setAllSplitOverrides, teamsInGroup,
   updateGroupPlaceAndCoaches, getAssignableCoaches, type CoachLite,
 } from "../../lib/practicePlanner";
 
@@ -88,8 +88,9 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
   // dragged; nobody else's team changes, and evening them out is the
   // coach's call.
   const groupsRef = useRef<SegmentDrillGroup[]>([]);
+  const overridesRef = useRef<Record<string, string[][]>>(drill.split_overrides ?? {});
   async function writeOverrides(next: Record<string, string[][]>) {
-    setOverrides(next);
+    setOverrides(next); overridesRef.current = next;
     await setAllSplitOverrides(drill.id, next);
   }
   function frozenTeams(gs: SegmentDrillGroup[], rule: TeamRule, n: number, keep: Record<string, string[][]>) {
@@ -119,15 +120,15 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     if (teamIndex >= parts.length) parts.push([drag.id]);
     else parts[teamIndex] = [...parts[teamIndex], drag.id];
     setDragPlayer(null);
-    setOverrides(prev => ({ ...prev, [String(groupIndex)]: parts.filter(t => t.length > 0) }));
-    await setSplitOverride(drill.id, groupIndex, parts.filter(t => t.length > 0));
+    const next = { ...overridesRef.current, [String(groupIndex)]: parts.filter(t => t.length > 0) };
+    await writeOverrides(next);
     onChanged(); flashSaved();
   }
 
   /** Redoes the teams for one group only, by the current rule. */
   async function resplitGroup(groupIndex: number) {
     const g = groups[groupIndex];
-    const next = { ...overrides, [String(groupIndex)]: teamsInGroup({ split_rule: teamRule, split_n: teamN, split_overrides: {} }, groupIndex, g.member_ids) };
+    const next = { ...overridesRef.current, [String(groupIndex)]: teamsInGroup({ split_rule: teamRule, split_n: teamN, split_overrides: {} }, groupIndex, g.member_ids) };
     await writeOverrides(next);
     onChanged(); flashSaved();
   }
@@ -161,7 +162,17 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
   const loadedOnce = useRef(false);
   const load = useCallback(async () => {
     if (!loadedOnce.current) setLoading(true);
-    const gs = await getSegmentDrillGroups(drill.id);
+    // The groups and the drill's saved teams, both fresh from the database.
+    // The drill handed in by the builder can be out of date (it was loaded
+    // when the builder opened), and teams worked out from an old copy are
+    // what put a moved player back in a different spot.
+    const [gs, fresh] = await Promise.all([
+      getSegmentDrillGroups(drill.id),
+      supabase.from("segment_drills").select("split_rule, split_n, split_overrides").eq("id", drill.id).maybeSingle(),
+    ]);
+    const f = (fresh.data ?? null) as { split_rule: TeamRule | null; split_n: number | null; split_overrides: Record<string, string[][]> | null } | null;
+    const ov = f?.split_overrides ?? {};
+    if (f) { setTeamRule(f.split_rule ?? "none"); if (f.split_n) setTeamN(f.split_n); setOverrides(ov); overridesRef.current = ov; }
     setGroups(gs);
     groupsRef.current = gs;
     const ids = Array.from(new Set(gs.flatMap(g => g.coach_ids ?? [])));
@@ -171,15 +182,15 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     }
     setLoading(false);
     loadedOnce.current = true;
-    return gs;
+    return { gs, rule: (f?.split_rule ?? "none") as TeamRule, n: f?.split_n ?? 4, ov };
   }, [drill.id]);
 
   useEffect(() => {
-    load().then(gs => {
+    load().then(({ gs, rule, n, ov }) => {
       // Teams set before they were saved per group: save them as they
       // look now, so the first drag doesn't reshuffle anyone.
-      if (teamRule !== "none" && gs.some((_, gi) => !overrides[String(gi)])) {
-        void writeOverrides(frozenTeams(gs, teamRule, teamN, overrides));
+      if (rule !== "none" && gs.some((_, gi) => !ov[String(gi)])) {
+        void writeOverrides(frozenTeams(gs, rule, n, ov));
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -212,7 +223,7 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
         await updateSegmentDrill(drill.id, { group_size: groupSize, num_groups: numGroups });
       }
       // New groups get fresh teams, worked out once and saved.
-      const gs = await load();
+      const { gs } = await load();
       if (teamRule !== "none") await writeOverrides(frozenTeams(gs, teamRule, teamN, {}));
       else if (Object.keys(overrides).length) { await clearSplitOverrides(drill.id); setOverrides({}); }
       onChanged(); flashSaved();
@@ -309,7 +320,7 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
       : g.id === to ? { ...g, member_ids: [...g.member_ids, playerId] } : g);
     if (teamRule !== "none") {
       const gs = groupsRef.current;
-      const next = frozenTeams(gs, teamRule, teamN, overrides);
+      const next = frozenTeams(gs, teamRule, teamN, overridesRef.current);
       const fi = from ? gs.findIndex(g => g.id === from) : -1;
       const ti = to ? gs.findIndex(g => g.id === to) : -1;
       if (fi >= 0) next[String(fi)] = next[String(fi)].map(t => t.filter(id => id !== playerId)).filter(t => t.length > 0);
@@ -319,7 +330,7 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
         else parts[toTeam != null && toTeam < parts.length ? toTeam : parts.length - 1].push(playerId);
         next[String(ti)] = parts;
       }
-      setOverrides(next);
+      setOverrides(next); overridesRef.current = next;
       setGroups(moved); groupsRef.current = moved;
       setDragPlayer(null);
       await setAllSplitOverrides(drill.id, next);
