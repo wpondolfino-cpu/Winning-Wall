@@ -144,8 +144,11 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
 
   // Names of the coaches set on groups (from the drill's Coach button).
   const [coachNames, setCoachNames] = useState<Record<string, string>>({});
+  // "Loading…" only the first time. After that, refreshes happen quietly
+  // behind what's on screen, so a drag doesn't blank the groups.
+  const loadedOnce = useRef(false);
   const load = useCallback(async () => {
-    setLoading(true);
+    if (!loadedOnce.current) setLoading(true);
     const gs = await getSegmentDrillGroups(drill.id);
     setGroups(gs);
     groupsRef.current = gs;
@@ -155,6 +158,7 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
       setCoachNames(Object.fromEntries(((data ?? []) as any[]).map(p => [p.id, p.name])));
     }
     setLoading(false);
+    loadedOnce.current = true;
     return gs;
   }, [drill.id]);
 
@@ -287,6 +291,10 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     const { id: playerId, from } = dragPlayer;
     if (from === to) { setDragPlayer(null); return; }
     const isTryout = Boolean(tryoutIds?.has(playerId));
+    // Show the move right away; the saves follow.
+    const moved = groupsRef.current.map(g =>
+      g.id === from ? { ...g, member_ids: g.member_ids.filter(id => id !== playerId) }
+      : g.id === to ? { ...g, member_ids: [...g.member_ids, playerId] } : g);
     if (teamRule !== "none") {
       const gs = groupsRef.current;
       const next = frozenTeams(gs, teamRule, teamN, overrides);
@@ -299,7 +307,12 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
         parts[k].push(playerId);
         next[String(ti)] = parts;
       }
-      await writeOverrides(next);
+      setOverrides(next);
+      setGroups(moved); groupsRef.current = moved;
+      setDragPlayer(null);
+      await setAllSplitOverrides(drill.id, next);
+    } else {
+      setGroups(moved); groupsRef.current = moved;
     }
     if (from) await removeGroupMember(from, playerId, isTryout);
     if (to) await addGroupMember(to, playerId, isTryout);
