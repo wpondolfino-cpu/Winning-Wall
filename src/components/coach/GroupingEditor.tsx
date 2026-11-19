@@ -259,7 +259,19 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     const { error } = await assignSavedArrangementToSegmentDrill(drill.id, grouping, 0, tryoutIds);
     if (error) { setSaveMsg(error); return; }
     setShowPicker(false);
-    await load(); onChanged(); flashSaved();
+    const { gs } = await load();
+    const ts = grouping.team_split;
+    if (ts && ts.teams?.length) {
+      // Saved with teams: bring back the rule and every group's teams.
+      setTeamRule(ts.rule); setTeamN(ts.n);
+      await setDrillSplitRule(drill.id, ts.rule, ts.n);
+      await writeOverrides(Object.fromEntries(gs.map((_, gi) => [String(gi), ts.teams[gi] ?? []]).filter(([, t]) => (t as string[][]).length)));
+    } else if (teamRule !== "none") {
+      // No saved teams: make fresh ones for these groups (the old teams
+      // belonged to the groups that were just replaced).
+      await writeOverrides(frozenTeams(gs, teamRule, teamN, {}));
+    }
+    onChanged(); flashSaved();
   }
 
   /** Loads a preview of each saved arrangement so the picker can show what's inside rather than just a name. */
@@ -293,10 +305,17 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     const payload = groups.filter(g => g.member_ids.length > 0).map(g => g.member_ids);
     if (!payload.length) { setSaveMsg("Nothing to save — build some groups first."); return; }
     const labels = groups.filter(g => g.member_ids.length > 0).map(g => g.group_label || null);
+    // The teams inside each group go with it, so loading it later brings
+    // back the whole thing.
+    const teamSplit = teamRule !== "none"
+      ? { rule: teamRule, n: teamN, teams: groups.map((g, gi) => ({ g, gi })).filter(x => x.g.member_ids.length > 0).map(({ g, gi }) => teamsInGroup(splitDrill, gi, g.member_ids)) }
+      : null;
     setSavingArrangement(true);
-    const { error } = await createSavedArrangement(name, rosterId, payload, labels, tryoutIds);
+    const { error, teamsSkipped } = await createSavedArrangement(name, rosterId, payload, labels, tryoutIds, teamSplit);
     setSavingArrangement(false);
-    setSaveMsg(error ?? `Saved "${name}" — ${payload.length} group${payload.length === 1 ? "" : "s"}. Find it under "Pick saved group".`);
+    setSaveMsg(error ?? (teamsSkipped
+      ? `Saved "${name}" — the groups, but not the teams. Run SQL 213 in Supabase so teams save too.`
+      : `Saved "${name}" — ${payload.length} group${payload.length === 1 ? "" : "s"}${teamSplit ? ", with their teams" : ""}. Find it under "Pick saved group".`));
     if (!error) { setNewArrangementName(""); setShowSaveBox(false); onChanged(); onGroupingsChanged?.(); }
   }
 
@@ -461,9 +480,17 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
                     {/* Names, not just a count -- "3s Week 1" and "3s Week 2"
                         are indistinguishable otherwise. */}
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, lineHeight: 1.6 }}>
+                      {g.team_split?.teams?.length ? (
+                        <div style={{ fontWeight: 600 }}>
+                          With teams: {g.team_split.rule === "teams" ? `${g.team_split.n} teams per group` : `teams of ${g.team_split.n}`}
+                        </div>
+                      ) : null}
                       {preview.length === 0 ? "…" : preview.map((ids, gi) => (
                         <div key={gi}>
-                          <strong>{labels?.[gi] || `Group ${gi + 1}`}:</strong> {ids.map(nameOf).join(", ")}
+                          <strong>{labels?.[gi] || `Group ${gi + 1}`}:</strong>{" "}
+                          {g.team_split?.teams?.[gi]?.length
+                            ? g.team_split.teams[gi].map(t => t.map(nameOf).join(", ")).join("  ┃  ")
+                            : ids.map(nameOf).join(", ")}
                         </div>
                       ))}
                     </div>
