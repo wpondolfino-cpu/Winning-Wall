@@ -933,20 +933,30 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     try {
       // Wait out a background save so the two can't race.
       if (inFlightRef.current) await inFlightRef.current;
-      const base = existingPlay ?? createdPlayRef.current;
-      if (base) {
-        await updatePlay(base.id, { title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
-        showToast("Saved");
-        onSaved?.({ ...base, title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
-      } else {
-        const created = await createPlay({ title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: isDrill ? null : categoryValue, kind: drill ? "drill" : undefined });
-        createdPlayRef.current = created;
-        if (drill) drill.onCreated(created); else await applyPickedPlaybooks(created.id);
-        showToast(drill ? "Diagram saved" : "Play saved");
-        onSaved?.(created);
-      }
-      lastSavedSigRef.current = signatureOf(latestRef.current);
-      setAutoStatus("saved");
+      // And hold background saves off until this one is done: an autosave
+      // that fired while a brand-new play was still being created would
+      // otherwise create it a second time.
+      const work = (async () => {
+        const base = existingPlay ?? createdPlayRef.current;
+        if (base) {
+          await updatePlay(base.id, { title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
+          showToast("Saved");
+          onSaved?.({ ...base, title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
+        } else {
+          const created = await createPlay({ title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: isDrill ? null : categoryValue, kind: drill ? "drill" : undefined });
+          createdPlayRef.current = created;
+          if (drill) drill.onCreated(created); else await applyPickedPlaybooks(created.id);
+          showToast(drill ? "Diagram saved" : "Play saved");
+          onSaved?.(created);
+        }
+        lastSavedSigRef.current = signatureOf(latestRef.current);
+        setAutoStatus("saved");
+      })();
+      inFlightRef.current = work.then(() => undefined, () => undefined).finally(() => {
+        inFlightRef.current = null;
+        if (pendingRef.current) { pendingRef.current = false; void saveNow(); }
+      });
+      await work;
     } catch (e: any) { showToast("Error: " + e.message); }
     finally { setSaving(false); }
   }

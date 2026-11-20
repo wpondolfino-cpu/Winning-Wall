@@ -1211,7 +1211,10 @@ export async function copyDrillToSegment(
   if (error || !newId) return { id: null, droppedFromGroups: 0, error: error ?? "Couldn't create the drill." };
 
   const groups = await getSegmentDrillGroups(sourceDrillId);
-  const dropped = await copyGroupsTo(newId, groups, keep);
+  const { dropped, placed } = await copyGroupsTo(newId, groups, keep);
+  // The teams inside each group come along too, the same as duplicating a practice.
+  const teams = carryTeams(src.split_overrides, placed, keep);
+  if (Object.keys(teams).length) await setAllSplitOverrides(newId, teams);
   return { id: newId, droppedFromGroups: dropped, error: null };
 }
 
@@ -1548,12 +1551,19 @@ export async function copyPracticeContents(
           // Named players only travel on a duplicate.
           station_member_ids: opts.withPeople ? (d.station_member_ids ?? []) : [],
           station_tryout_member_ids: opts.withPeople ? (d.station_tryout_member_ids ?? []) : [],
-          split_overrides: opts.withPeople ? (d.split_overrides ?? {}) : {},
+          split_overrides: {},
         } as any);
         if (!newDrillId || !opts.withPeople) continue;
 
         const groups = await getSegmentDrillGroups(d.id);
-        if (groups.length) await copyGroupsTo(newDrillId, groups);
+        // A station drill's teams belong to the block's rotation groups,
+        // which are copied as they are, so they come along unchanged.
+        if (!groups.length && Object.keys(d.split_overrides ?? {}).length) await setAllSplitOverrides(newDrillId, d.split_overrides);
+        if (groups.length) {
+          const { placed } = await copyGroupsTo(newDrillId, groups);
+          const teams = carryTeams(d.split_overrides, placed);
+          if (Object.keys(teams).length) await setAllSplitOverrides(newDrillId, teams);
+        }
       }
     }
   }
@@ -2135,7 +2145,10 @@ async function saveGeneratedGroupsNow(segmentDrillId: string, groups: string[][]
   const { data: before } = await supabase.from("segment_drill_groups").select("order_index, location, coach_ids").eq("segment_drill_id", segmentDrillId);
   const kept = new Map<number, { location: string | null; coach_ids: string[] }>(
     ((before ?? []) as any[]).map(g => [g.order_index, { location: g.location ?? null, coach_ids: g.coach_ids ?? [] }]));
-  await supabase.from("segment_drill_groups").delete().eq("segment_drill_id", segmentDrillId);
+  // Every write is checked: a failure partway used to leave groups missing
+  // players with nothing said.
+  const { error: delError } = await supabase.from("segment_drill_groups").delete().eq("segment_drill_id", segmentDrillId);
+  if (delError) return { error: delError.message };
   for (let i = 0; i < groups.length; i++) {
     const { data, error } = await supabase.from("segment_drill_groups")
       .insert({ segment_drill_id: segmentDrillId, group_label: labels?.[i] ?? GROUP_LABELS[i] ?? `Group ${i + 1}`, order_index: i,
@@ -2143,7 +2156,8 @@ async function saveGeneratedGroupsNow(segmentDrillId: string, groups: string[][]
       .select("id").single();
     if (error || !data?.id) return { error: error?.message ?? "Failed to create group" };
     if (groups[i].length > 0) {
-      await supabase.from("segment_drill_group_members").insert(groups[i].map(pid => memberRow({ group_id: data.id }, pid, tryoutIds)));
+      const { error: memError } = await supabase.from("segment_drill_group_members").insert(groups[i].map(pid => memberRow({ group_id: data.id }, pid, tryoutIds)));
+      if (memError) return { error: memError.message };
     }
   }
   return { error: null };
@@ -2171,8 +2185,9 @@ export async function assignSavedArrangementToSegmentDrill(
       .select("id").single();
     if (error || !data) return { error: error?.message ?? "Could not load grouping.", groupsAdded: gi };
     if (arrangement[gi].length) {
-      await supabase.from("segment_drill_group_members")
+      const { error: memError } = await supabase.from("segment_drill_group_members")
         .insert(arrangement[gi].map(pid => memberRow({ group_id: data.id }, pid, tryoutIds)));
+      if (memError) return { error: memError.message, groupsAdded: gi };
     }
   }
   return { error: null, groupsAdded: arrangement.length };
@@ -2215,9 +2230,12 @@ export interface SegmentDrillGroup {
  * row, which has no such column, so the copy failed and groups silently
  * didn't come along. Members go in their own table, like everywhere else.
  */
-async function copyGroupsTo(newDrillId: string, groups: SegmentDrillGroup[], keep?: (ids: string[]) => string[]): Promise<number> {
+async function copyGroupsTo(newDrillId: string, groups: SegmentDrillGroup[], keep?: (ids: string[]) => string[]): Promise<{ dropped: number; placed: Map<number, number> }> {
   let dropped = 0, order = 0;
-  for (const g of groups) {
+  // Old group position -> new one. Empty groups are skipped, so later
+  // groups move up, and the teams (kept by group position) have to follow.
+  const placed = new Map<number, number>();
+  for (const [oldIndex, g] of groups.entries()) {
     const members = keep ? keep(g.member_ids) : g.member_ids;
     dropped += g.member_ids.length - members.length;
     if (!members.length) continue;
@@ -2227,10 +2245,27 @@ async function copyGroupsTo(newDrillId: string, groups: SegmentDrillGroup[], kee
       ...(g.location ? { location: g.location } : {}), ...(g.coach_ids?.length ? { coach_ids: g.coach_ids } : {}),
     }).select("id").single();
     if (error || !data?.id) continue;
+    placed.set(oldIndex, order - 1);
     const tryouts = new Set(g.tryout_member_ids ?? []);
     await supabase.from("segment_drill_group_members").insert(members.map(pid => memberRow({ group_id: data.id }, pid, tryouts)));
   }
-  return dropped;
+  return { dropped, placed };
+}
+
+/**
+ * A drill's hand-arranged teams, moved onto copied groups: each group's
+ * teams follow the group to its new position, players who didn't come
+ * along are dropped, and empty teams go.
+ */
+function carryTeams(overrides: Record<string, string[][]> | null | undefined, placed: Map<number, number>, keep?: (ids: string[]) => string[]): Record<string, string[][]> {
+  const out: Record<string, string[][]> = {};
+  for (const [k, teams] of Object.entries(overrides ?? {})) {
+    const to = placed.get(Number(k));
+    if (to == null) continue;
+    const kept = teams.map(t => keep ? keep(t) : t).filter(t => t.length > 0);
+    if (kept.length) out[String(to)] = kept;
+  }
+  return out;
 }
 
 /** Sets a group's place and coaches (from the drill's Coach window). */

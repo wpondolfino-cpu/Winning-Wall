@@ -214,12 +214,14 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     try {
       if (splitBy === "grade") {
         const { groups: generated, labels } = generateGroupsByGrade(attendees);
-        await saveGeneratedGroups(drill.id, generated, tryoutIds, labels);
+        const { error } = await saveGeneratedGroups(drill.id, generated, tryoutIds, labels);
+        if (error) { setSaveMsg(`Groups didn't fully save (${error}). Tap Generate again.`); await load(); return; }
       } else {
         const { groups: generated } = splitBy === "gradeMix"
           ? generateGradeMixedGroups(attendees, numGroups)
           : generateBalancedGroups(attendees, groupSize, numGroups);
-        await saveGeneratedGroups(drill.id, generated, tryoutIds);
+        const { error } = await saveGeneratedGroups(drill.id, generated, tryoutIds);
+        if (error) { setSaveMsg(`Groups didn't fully save (${error}). Tap Generate again.`); await load(); return; }
         await updateSegmentDrill(drill.id, { group_size: groupSize, num_groups: numGroups });
       }
       // New groups get fresh teams, worked out once and saved.
@@ -238,6 +240,8 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
     try {
       const { error } = await clearSegmentDrillGroups(drill.id);
       if (error) { setSaveMsg(error); return; }
+      // The teams belonged to the groups that are gone.
+      if (Object.keys(overridesRef.current).length) { await clearSplitOverrides(drill.id); setOverrides({}); overridesRef.current = {}; }
       await load(); onChanged(); flashSaved();
     } finally { setBusy(false); }
   }
@@ -363,6 +367,12 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
   }
 
   async function handleQuickSwap(groupId: string, excusedPlayerId: string, replacementId: string) {
+    // With teams on, the replacement takes the excused player's spot on their team.
+    const gi = groupsRef.current.findIndex(g => g.id === groupId);
+    const teams = gi >= 0 ? overridesRef.current[String(gi)] : undefined;
+    if (teamRule !== "none" && teams?.some(t => t.includes(excusedPlayerId))) {
+      await writeOverrides({ ...overridesRef.current, [String(gi)]: teams.map(t => t.map(id => id === excusedPlayerId ? replacementId : id)) });
+    }
     await removeGroupMember(groupId, excusedPlayerId, Boolean(tryoutIds?.has(excusedPlayerId)));
     await addGroupMember(groupId, replacementId, Boolean(tryoutIds?.has(replacementId)));
     await load(); onChanged(); flashSaved();
