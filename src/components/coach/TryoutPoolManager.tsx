@@ -13,7 +13,7 @@
 // record a coach would want if a parent asks why.
 
 import { autoNickname, nicknameProblem } from "../../lib/nicknames";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   TryoutPlayer, getTryoutPlayers, addTryoutPlayer, addTryoutPlayersBulk,
   updateTryoutPlayer, deleteTryoutPlayer, clearTryoutPool, Roster,
@@ -83,16 +83,26 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
   }
 
   async function unlink(p: TryoutPlayer) {
+    patchLocal(p.id, { linked_profile_id: null });
     await updateTryoutPlayer(p.id, { linked_profile_id: null });
     setDismissed(d => new Set(d).add(p.id));
     await load(); onChanged?.();
   }
 
+  // "Loading…" only when the list first opens (or the season / show-cut
+  // switch changes). After a change to one player, the list refreshes
+  // quietly behind what's on screen instead of blanking out.
+  const shownFor = useRef<string | null>(null);
   async function load() {
-    setLoading(true);
+    const key = `${seasonId}|${showCut}`;
+    if (shownFor.current !== key) setLoading(true);
     setPlayers(await getTryoutPlayers(seasonId, showCut));
     setLoading(false);
+    shownFor.current = key;
   }
+  /** Shows a change to one player right away; the save and quiet refresh follow. */
+  const patchLocal = (id: string, patch: Partial<TryoutPlayer>) =>
+    setPlayers(list => list.map(x => x.id === id ? { ...x, ...patch } : x));
 
   async function handleAdd() {
     if (!newName.trim()) return;
@@ -117,11 +127,13 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
   }
 
   async function toggleCut(p: TryoutPlayer) {
+    patchLocal(p.id, { status: p.status === "cut" ? "active" : "cut" });
     await updateTryoutPlayer(p.id, { status: p.status === "cut" ? "active" : "cut" });
     await load(); onChanged?.();
   }
 
   async function saveNotes(id: string) {
+    patchLocal(id, { notes: notesDraft.trim() || null });
     await updateTryoutPlayer(id, { notes: notesDraft.trim() || null });
     setNotesFor(null); setNotesDraft("");
     await load();
@@ -258,7 +270,7 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
                             <span style={{ fontSize: 11, color: "var(--muted)" }}>{grade && GRADE_LABEL[grade] ? GRADE_LABEL[grade] : grade ? `Gr ${grade}` : ""}</span>
                           ) : (
                             <select value={p.grade ?? ""} title="Grade"
-                              onChange={async e => { const g = e.target.value ? parseInt(e.target.value, 10) : null; await updateTryoutPlayer(p.id, { grade: g }); await load(); onChanged?.(); }}
+                              onChange={async e => { const g = e.target.value ? parseInt(e.target.value, 10) : null; patchLocal(p.id, { grade: g }); await updateTryoutPlayer(p.id, { grade: g }); await load(); onChanged?.(); }}
                               style={{ fontSize: 11, padding: "1px 4px", borderRadius: 5, border: "1px solid var(--border)", background: "var(--surface2)", color: p.grade ? "var(--text)" : "var(--muted)", fontFamily: "inherit" }}>
                               <option value="">Grade?</option>
                               {[9, 10, 11, 12].map(g => <option key={g} value={g}>{GRADE_LABEL[g]}</option>)}
@@ -308,6 +320,7 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
                                 const next = on
                                   ? (p.roster_ids ?? []).filter(id => id !== r.id)
                                   : [...(p.roster_ids ?? []), r.id];
+                                patchLocal(p.id, { roster_ids: next });
                                 await updateTryoutPlayer(p.id, { roster_ids: next });
                                 await load(); onChanged?.();
                               }}
