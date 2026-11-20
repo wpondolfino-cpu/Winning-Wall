@@ -204,6 +204,26 @@ function joinsLine(f: PlayFrame, moverId: string, a: PlayAction): boolean {
   });
 }
 
+/**
+ * Drills: what each player is called — 1, 2, 3… or A, B, C… — by the order
+ * they first appear across the steps. Worked out from the players
+ * themselves, not their stored numbers, so nobody shares a mark and none is
+ * skipped (delete a player and the rest close up). A line left behind when
+ * its front player moves off keeps that player's mark: "the C line".
+ */
+export function drillMarks(frames: PlayFrame[]): Record<string, number> {
+  const order: string[] = [];
+  const seen = new Set<string>();
+  for (const f of frames) for (const p of f.players) {
+    const base = p.id ? p.id.split(LINE_STAY)[0] : "";
+    if (base && !seen.has(base)) { seen.add(base); order.push(base); }
+  }
+  const rank = new Map(order.map((id, i) => [id, i + 1]));
+  const out: Record<string, number> = {};
+  for (const f of frames) for (const p of f.players) if (p.id) out[p.id] = rank.get(p.id.split(LINE_STAY)[0]) ?? p.num;
+  return out;
+}
+
 /** The id of the line left behind when its front player moves off (drills). Fixed, so every re-step finds the same one. */
 const LINE_STAY = "~line";
 function lineStayId(id: string | undefined): string | undefined {
@@ -220,7 +240,6 @@ export function deriveNextFrame(prev: PlayFrame): PlayFrame {
   // The mover keeps their id, so a ball they hold or a pass to them follows
   // them; the line that stays gets a fixed id built from theirs, so
   // re-stepping finds the same line again.
-  let nextNum = prev.players.reduce((m, p) => Math.max(m, p.num || 0), 0) + 1;
   const stayingLines: PlayPlayer[] = [];
   const joiners = new Set<string>();
   const players: PlayPlayer[] = prev.players.map((p) => {
@@ -228,9 +247,9 @@ export function deriveNextFrame(prev: PlayFrame): PlayFrame {
     const sourced = seq[seq.length - 1];
     if (sourced?.type === "rotate" && p.id && joinsLine(prev, p.id, sourced)) joiners.add(p.id);
     if (sourced && p.line && p.line > 1) {
-      stayingLines.push({ ...p, id: lineStayId(p.id), num: nextNum++, letter: p.letter ?? defaultLetter(p.num), handoff: false });
+      stayingLines.push({ ...p, id: lineStayId(p.id), handoff: false });
       const { line: _l, lineDir: _d, ...solo } = p;
-      return { ...solo, letter: p.letter ?? defaultLetter(p.num), x: sourced.x2, y: sourced.y2, handoff: false };
+      return { ...solo, x: sourced.x2, y: sourced.y2, handoff: false };
     }
     const base = sourced ? { ...p, x: sourced.x2, y: sourced.y2 } : { ...p };
     return { ...base, handoff: false };

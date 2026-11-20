@@ -30,6 +30,8 @@ interface Props {
   onAddExtraBall?: (x: number, y: number) => void;
   /** "select" tool — drag an extra ball (dropping it on a player gives it to them). */
   onMoveExtraBall?: (index: number, x: number, y: number) => void;
+  /** Drills: each player's mark (1, 2, 3… / A, B, C…) by player id — see drillMarks. */
+  marks?: Record<string, number>;
   /** Drills: turn a line of players by dragging the back of it (degrees, snapped to 8 directions). */
   onSetLineDir?: (index: number, deg: number) => void;
   onAddPlayer?: (p: PlayPlayer) => void;
@@ -548,10 +550,12 @@ function LineStack({ p }: { p: PlayPlayer }) {
   );
 }
 
-function PlayerIcon({ p, avatarUrl, labels = "numbers" }: { p: PlayPlayer; avatarUrl?: string | null; labels?: PlayerLabels }) {
+function PlayerIcon({ p, avatarUrl, labels = "numbers", n }: { p: PlayPlayer; avatarUrl?: string | null; labels?: PlayerLabels; n?: number }) {
   const color = FACE_COLORS[(p.num - 1 + 5) % 5];
   // What's written on the player: their number (plays), their letter, or nothing.
-  const mark = labels === "numbers" ? String(p.num) : labels === "letters" ? (p.letter ?? defaultLetter(p.num)).slice(0, 2) : "";
+  // Drills pass n, the player's place in the drill, so marks never repeat or skip.
+  const num = n ?? p.num;
+  const mark = labels === "numbers" ? String(num) : labels === "letters" ? (p.letter ?? defaultLetter(num)).slice(0, 2) : "";
   if (avatarUrl) {
     const clipId = `pc-clip-${p.num}-${Math.round(p.x)}-${Math.round(p.y)}`;
     return (
@@ -596,7 +600,7 @@ export default function PlayCanvas({
   onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff, onSetActionCurve, onSetActionCurve2,
   onAddText, onMoveText, onEditText, onAddZone, onMoveZone, onAddCone, onMoveCone, onAddCoach, onMoveCoach, onAddShot, stampPreview,
   playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect, selfOverride = null, speed = 1, viewBox = null,
-  labels = "numbers", onAddExtraBall, onMoveExtraBall, onSetLineDir,
+  labels = "numbers", marks, onAddExtraBall, onMoveExtraBall, onSetLineDir,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
@@ -1076,10 +1080,11 @@ export default function PlayCanvas({
         const avatarUrl = isSelf ? selfOverride!.avatarUrl : rp?.avatar_url;
         return (
           <PlayerIcon
-            key={i}
+            key={p.id ?? i}
             p={p}
             avatarUrl={avatarUrl}
             labels={labels}
+            n={p.id ? marks?.[p.id] : undefined}
           />
         );
       })}

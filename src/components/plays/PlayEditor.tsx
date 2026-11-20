@@ -12,7 +12,7 @@ import {
   Play, PlayData, PlayFrame, PlayPlayer, PlayAction, ActionType, type PlayerLabels,
   CourtTemplate, COURT_TEMPLATES, COURT_TEMPLATE_LABELS,
   SavedAction, Formation, RosterPlayer, PlayShareTarget, templateCourt, convertFormationData,
-  emptyPlayData, createPlay, updatePlay, deletePlay, genPlayerId, deriveNextFrame,
+  emptyPlayData, createPlay, updatePlay, deletePlay, genPlayerId, deriveNextFrame, drillMarks,
   restepFrom, restepAffectedCount, carryForwardSignature,
   stepButtonText, STEP_LABEL_MAX, STEP_NOTE_MAX,
   getSavedActions, createSavedAction, deleteSavedAction,
@@ -159,6 +159,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     }));
   });
   const [frameIdx, setFrameIdx] = useState(0);
+  // Drills: players are marked 1, 2, 3… / A, B, C… by the order they first appear, so marks never repeat or skip.
+  const marks = isDrill ? drillMarks(frames) : undefined;
   const [tool, setTool] = useState<Tool>("player");
   const [isMobile] = useState(() => window.innerWidth < 768);
   const [showPreview3D, setShowPreview3D] = useState(false);
@@ -1228,7 +1230,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       {selPlayer && selected && labelMode === "letters" && (
         <label style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
           Letter
-          <input key={`letter-${selected.index}`} defaultValue={selPlayer.letter ?? ""} maxLength={2} placeholder={defaultLetter(selPlayer.num) || "S"}
+          <input key={`letter-${selected.index}`} defaultValue={selPlayer.letter ?? ""} maxLength={2} placeholder={defaultLetter((selPlayer.id && marks?.[selPlayer.id]) || selPlayer.num) || "S"}
             onFocus={pushHistory}
             onChange={(e) => setPlayerField(selected.index, { letter: e.target.value.toUpperCase().slice(0, 2) || undefined })}
             style={{ width: 40, fontSize: 13, padding: "3px 6px", borderRadius: 6, background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", textAlign: "center", textTransform: "uppercase" }} />
@@ -1316,7 +1318,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       return (
         <div>
           <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 12, marginBottom: 12 }}>
-            <PlayCanvas frame={frames[frames.length - 1]} courtTemplate={courtTemplate} roster={rosterMap} edit={false} labels={labelMode} />
+            <PlayCanvas frame={frames[frames.length - 1]} courtTemplate={courtTemplate} roster={rosterMap} edit={false} labels={labelMode} marks={marks} />
           </div>
           <p style={{ textAlign: "center", fontSize: 14, color: "var(--text)", marginBottom: 10 }}>Look good?</p>
           <div style={{ display: "flex", gap: 8 }}>
@@ -1512,7 +1514,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onAddText={addText} onMoveText={moveText} onEditText={editText} onAddZone={addZone} onMoveZone={moveZone}
             onAddCone={addCone} onMoveCone={moveCone} onAddCoach={addCoach} onMoveCoach={moveCoach} onAddShot={addShot}
             selected={selected} onSelect={setSelected} onAddDrawing={addDrawing}
-            labels={labelMode} onAddExtraBall={addExtraBall} onMoveExtraBall={moveExtraBall} onSetLineDir={isDrill ? setLineDir : undefined}
+            labels={labelMode} marks={marks} onAddExtraBall={addExtraBall} onMoveExtraBall={moveExtraBall} onSetLineDir={isDrill ? setLineDir : undefined}
             playSignal={playSignal} onPlayDone={handlePreviewBeatDone}
             stampPreview={activeStamp && stampPreviewPos ? computeStampGhost(activeStamp, stampPreviewPos.x, stampPreviewPos.y) : null}
           />
@@ -1776,6 +1778,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onSelect={setSelected}
             onAddDrawing={addDrawing}
             labels={labelMode}
+            marks={marks}
             onAddExtraBall={addExtraBall}
             onMoveExtraBall={moveExtraBall}
             onSetLineDir={isDrill ? setLineDir : undefined}
