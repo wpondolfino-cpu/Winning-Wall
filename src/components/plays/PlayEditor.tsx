@@ -42,6 +42,13 @@ interface Props {
   currentUserRole: "player" | "coach" | "admin";
   onSaved?: (play: Play) => void;
   onClose?: () => void;
+  /**
+   * Drawing a Drill Library drill's diagram: starts with the drill's name,
+   * saves as a drill diagram (kept out of the Plays list), skips the
+   * category and playbook pickers, and reports the new diagram the moment
+   * it's first saved so the drill can be linked to it.
+   */
+  drill?: { title: string; onCreated: (play: Play) => void };
 }
 
 type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | "ghost" | "seal" | "keep" | null;
@@ -79,10 +86,10 @@ const MORE_TOOLS: { tool: Tool; label: string; icon: string }[] = [
 
 function cloneFrames(frames: PlayFrame[]): PlayFrame[] { return JSON.parse(JSON.stringify(frames)); }
 
-export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onClose }: Props) {
+export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onClose, drill }: Props) {
   // While this screen is open, the header ? opens its help.
   useHelpTopic("playdesigner");
-  const [title, setTitle] = useState(existingPlay?.title ?? "");
+  const [title, setTitle] = useState(existingPlay?.title ?? drill?.title ?? "");
   const [tagsInput, setTagsInput] = useState((existingPlay?.tags ?? []).join(", "));
   const [allTags, setAllTags] = useState<string[]>([]);
   const [videoUrl, setVideoUrl] = useState(existingPlay?.video_url ?? "");
@@ -848,10 +855,10 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         showToast("Saved");
         onSaved?.({ ...base, title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
       } else {
-        const created = await createPlay({ title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
+        const created = await createPlay({ title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: drill ? null : categoryValue, kind: drill ? "drill" : undefined });
         createdPlayRef.current = created;
-        await applyPickedPlaybooks(created.id);
-        showToast("Play saved");
+        if (drill) drill.onCreated(created); else await applyPickedPlaybooks(created.id);
+        showToast(drill ? "Diagram saved" : "Play saved");
         onSaved?.(created);
       }
       lastSavedSigRef.current = signatureOf(latestRef.current);
@@ -905,9 +912,9 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         } else {
           createdPlayRef.current = await createPlay({
             title: vals.title.trim() || untitledRef.current, tags, court_template: vals.courtTemplate,
-            data: { frames: vals.frames }, video_url, category: categoryValue,
+            data: { frames: vals.frames }, video_url, category: drill ? null : categoryValue, kind: drill ? "drill" : undefined,
           });
-          await applyPickedPlaybooks(createdPlayRef.current.id);
+          if (drill) drill.onCreated(createdPlayRef.current); else await applyPickedPlaybooks(createdPlayRef.current.id);
         }
         lastSavedSigRef.current = sig;
         setAutoStatus("saved");
@@ -1152,14 +1159,14 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film — YouTube link"
               style={{ width: "100%", marginBottom: currentUserRole !== "player" ? 8 : 14, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
             <VideoUrlNote url={videoUrl} />
-            {currentUserRole !== "player" && (
+            {currentUserRole !== "player" && !drill && (
               <select value={category} onChange={(e) => setCategory(e.target.value)}
                 style={{ width: "100%", marginBottom: 14, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
                 <option value="">No category</option>
                 {playCategories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
               </select>
             )}
-            {playbookPicker}
+            {!drill && playbookPicker}
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => setMobileStage("draw")} style={{ flex: 1, padding: 10 }}>Cancel</button>
               <button onClick={handleSave} disabled={saving} className="coach-add-btn" style={{ flex: 1, justifyContent: "center" }}>
@@ -1434,14 +1441,14 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film — YouTube link, e.g. your team running this play"
           style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
         <VideoUrlNote url={videoUrl} />
-        {currentUserRole !== "player" && (
+        {currentUserRole !== "player" && !drill && (
           <select value={category} onChange={(e) => setCategory(e.target.value)}
             style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
             <option value="">No category</option>
             {playCategories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
           </select>
         )}
-        {playbookPicker}
+        {!drill && playbookPicker}
 
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: showMoreTools ? 6 : 8 }}>
           {PRIMARY_TOOLS.map(({ tool: t, label, icon }) => (
@@ -1602,7 +1609,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
         <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
           <button onClick={handleSave} disabled={saving} className="coach-add-btn">
-            {saving ? "Saving…" : "Save play"}
+            {saving ? "Saving…" : drill || existingPlay?.kind === "drill" ? "Save diagram" : "Save play"}
           </button>
           {currentUserRole === "player" && (
             <button onClick={() => setShowShare((v) => !v)} style={{ padding: "8px 14px" }}>Share with coach</button>

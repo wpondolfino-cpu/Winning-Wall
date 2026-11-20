@@ -1,6 +1,7 @@
 // src/components/PracticeSchedulePlayerView.tsx
 import { useState, useEffect } from "react";
 import { getCurrentPublishedPracticeForRoster, getPracticePrintData, PrintPractice } from "../lib/practicePlanner";
+import DrillDiagram from "./plays/DrillDiagram";
 
 interface Props {
   /** Show one specific practice. Omit to fall back to the roster's current published practice. */
@@ -12,6 +13,8 @@ function formatDate(d: string) {
   return new Date(d + "T00:00:00").toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 }
 function formatClock(t: string) {
+  // Block times arrive already written out ("3:15 PM").
+  if (/\s(AM|PM)$/.test(t)) return t;
   const [h, m] = t.split(":").map(Number);
   const ampm = h >= 12 ? "PM" : "AM";
   const h12 = h % 12 === 0 ? 12 : h % 12;
@@ -22,6 +25,8 @@ export default function PracticeSchedulePlayerView({ homeRosterId, practiceId }:
   const [practice, setPractice] = useState<PrintPractice | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  // Which drill's diagram is open ("block-segment-drill").
+  const [openDiagram, setOpenDiagram] = useState<string | null>(null);
 
   useEffect(() => {
     // With a practiceId it shows THAT practice — which is what tapping a
@@ -75,11 +80,28 @@ export default function PracticeSchedulePlayerView({ homeRosterId, practiceId }:
                     <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 12 }}> · {d.duration_minutes} min</span>
                   </div>
                   {d.goal_text && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2, whiteSpace: "pre-wrap" }}>{d.goal_text}</div>}
+                  {/* The drill's diagram: tap to open it, tap again to close. */}
+                  {d.diagram && (() => {
+                    const key = `${bi}-${si}-${di}`;
+                    const open = openDiagram === key;
+                    return (
+                      <div style={{ marginTop: 4 }}>
+                        <button onClick={() => setOpenDiagram(open ? null : key)}
+                          style={{ fontSize: 12, padding: "3px 10px", borderRadius: 6, border: "1px solid var(--border)", background: open ? "var(--surface2)" : "transparent", color: "var(--royal-light)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+                          {open ? "Hide diagram" : "View diagram"}
+                        </button>
+                        {open && <div style={{ marginTop: 6 }}><DrillDiagram play={d.diagram} /></div>}
+                      </div>
+                    );
+                  })()}
                   {d.groups.length > 0 && (
                     <div style={{ marginTop: 4 }}>
                       {d.groups.map((g, gi) => (
                         <div key={gi} style={{ fontSize: 11, color: "var(--muted)" }}>
-                          <b style={{ fontWeight: 600 }}>{g.label}{g.place ? ` · ${g.place}` : ""}{g.coachNames?.length ? ` · Coach ${g.coachNames.join(" & ")}` : ""}</b>: {g.memberNames.join(", ")}
+                          <b style={{ fontWeight: 600 }}>{g.label}{g.place ? ` · ${g.place}` : ""}{g.coachNames?.length ? ` · Coach ${g.coachNames.join(" & ")}` : ""}</b>
+                          {g.teams && g.teams.length > 1
+                            ? g.teams.map((t, ti) => <div key={ti} style={{ paddingLeft: 10 }}>Team {ti + 1}: {t.join(", ")}</div>)
+                            : <>: {g.memberNames.join(", ")}</>}
                         </div>
                       ))}
                     </div>

@@ -19,6 +19,9 @@ import AddToSharedLibrary from "../library/AddToSharedLibrary";
 import TagChipPicker from "./TagChipPicker";
 import WorkoutBuilder from "./WorkoutBuilder";
 import { supabase } from "../../lib/supabase";
+import { getDrillDiagrams, type Play } from "../../lib/plays";
+import DrillDiagram from "../plays/DrillDiagram";
+import PlayEditor from "../plays/PlayEditor";
 
 interface Props {
   canManage?: boolean;
@@ -53,6 +56,16 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
   const [playerDrills, setPlayerDrills] = useState<Workout[]>([]);
 
   const [viewDrill, setViewDrill]   = useState<PracticeDrillLibraryDrill | null>(null);
+  // Drill diagrams (drawn in the play designer), by diagram id.
+  const [diagrams, setDiagrams]     = useState<Record<string, Play>>({});
+  // Drawing or editing a drill's diagram: the designer takes the screen.
+  const [drawFor, setDrawFor]       = useState<{ drill: PracticeDrillLibraryDrill; play?: Play } | null>(null);
+  /** Shows a just-attached diagram on its drill without waiting for a reload. */
+  const attachDiagram = (drillId: string, play: Play) => {
+    setDiagrams(prev => ({ ...prev, [play.id]: play }));
+    setDrills(list => list.map(x => x.id === drillId ? { ...x, diagram_play_id: play.id } : x));
+    setViewDrill(v => v && v.id === drillId ? { ...v, diagram_play_id: play.id } : v);
+  };
   const [editDrill, setEditDrill]   = useState<Partial<PracticeDrillLibraryDrill> & { tags?: string[] } | null>(null);
   const [showNewCategory, setShowNewCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -68,6 +81,7 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
     setCategories(cats); setAllTags(tags);
     setDrills(lib.drills); setTagsByDrill(lib.tagsByDrill);
     setRecent(rec); setPlays(playList);
+    setDiagrams(await getDrillDiagrams([...lib.drills, ...rec].map(d => d.diagram_play_id ?? "")));
     setLoading(false);
   }, [categoryFilter, tagFilter, starredOnly, search]);
 
@@ -172,9 +186,14 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
     return (
       <div onClick={() => isPicker ? onPick!(d) : setViewDrill(d)}
         style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: 10, cursor: "pointer", display: "flex", gap: 10 }}>
-        <div style={{ width: 44, height: 44, borderRadius: 8, background: vid ? `url(https://img.youtube.com/vi/${vid}/default.jpg) center/cover` : "var(--surface2)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
-          {!vid && "🏀"}
-        </div>
+        {d.diagram_play_id && diagrams[d.diagram_play_id] ? (
+          // The drill's diagram, small.
+          <div style={{ width: 63, flexShrink: 0, alignSelf: "center" }}><DrillDiagram play={diagrams[d.diagram_play_id]} thumb /></div>
+        ) : (
+          <div style={{ width: 44, height: 44, borderRadius: 8, background: vid ? `url(https://img.youtube.com/vi/${vid}/default.jpg) center/cover` : "var(--surface2)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
+            {!vid && "🏀"}
+          </div>
+        )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.title}</div>
           <div style={{ fontSize: 10, color: "var(--muted)" }}>
@@ -317,6 +336,20 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
               <div style={{ fontSize: 17, fontWeight: 700 }}>{viewDrill.title}</div>
               <button onClick={() => setViewDrill(null)} style={smallBtn}>Close</button>
             </div>
+            {/* The drill's diagram, or a spot to draw one. */}
+            {viewDrill.diagram_play_id && diagrams[viewDrill.diagram_play_id] ? (
+              <div style={{ marginBottom: 10 }}>
+                <DrillDiagram play={diagrams[viewDrill.diagram_play_id]} />
+                {canManage && !isPicker && (
+                  <button onClick={() => setDrawFor({ drill: viewDrill, play: diagrams[viewDrill.diagram_play_id!] })} style={{ ...smallBtn, marginTop: 8 }}>Edit diagram</button>
+                )}
+              </div>
+            ) : canManage && !isPicker ? (
+              <button onClick={() => setDrawFor({ drill: viewDrill })}
+                style={{ width: "100%", padding: "22px 10px", marginBottom: 10, border: "1px dashed var(--border)", borderRadius: 8, background: "var(--surface2)", color: "var(--muted)", fontSize: 13, fontFamily: "inherit", cursor: "pointer" }}>
+                + Draw diagram
+              </button>
+            ) : null}
             {getYouTubeId(viewDrill.video_url) && (
               <div style={{ position: "relative", paddingBottom: "56.25%", height: 0, marginBottom: 10, borderRadius: 8, overflow: "hidden" }}>
                 <iframe src={`https://www.youtube.com/embed/${getYouTubeId(viewDrill.video_url)}?rel=0&modestbranding=1`} title={viewDrill.title}
@@ -417,6 +450,41 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
       </div>
     );
   }
+  // Drawing a drill's diagram: the designer takes the screen. The first
+  // save links the new diagram to the drill; closing brings you back to
+  // the drill with the diagram showing.
+  if (drawFor) {
+    const { drill, play } = drawFor;
+    const back = () => {
+      setDrawFor(null);
+      setViewDrill(v => v ?? drill);
+      // The designer saves its last changes as it closes; pick them up.
+      setTimeout(async () => {
+        const fresh = await supabase.from("practice_drills_library").select("*").eq("id", drill.id).maybeSingle();
+        const d = fresh.data as PracticeDrillLibraryDrill | null;
+        if (!d?.diagram_play_id) return;
+        const got = await getDrillDiagrams([d.diagram_play_id]);
+        if (got[d.diagram_play_id]) attachDiagram(d.id, got[d.diagram_play_id]);
+      }, 1200);
+    };
+    return (
+      <PlayEditor
+        existingPlay={play}
+        currentUserRole="coach"
+        drill={{
+          title: drill.title,
+          onCreated: async (created) => {
+            attachDiagram(drill.id, created);
+            const { error } = await updatePracticeDrill(drill.id, { diagram_play_id: created.id });
+            if (error) alert(/diagram_play_id/i.test(error) ? "Run SQL 214 in Supabase so diagrams can be attached to drills." : "Couldn't attach the diagram: " + error);
+          },
+        }}
+        onSaved={() => { /* stay in the designer; Close goes back */ }}
+        onClose={back}
+      />
+    );
+  }
+
   if (isPicker) {
     return (
       <div style={overlayStyle} onClick={onClose}>

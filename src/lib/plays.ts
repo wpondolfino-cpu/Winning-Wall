@@ -1242,8 +1242,21 @@ export interface Play {
   video_url: string | null;
   /** Coach/admin-organizational category (e.g. "BLOBs") — see lib/playCategories.ts. Null for plays created before this existed, or any player-authored play. */
   category: string | null;
+  /** "drill" = a drill's diagram, attached to a Drill Library drill (SQL 214). Missing/"play" = a play. */
+  kind?: "play" | "drill";
   created_at: string;
   updated_at: string;
+}
+
+/** A drill's diagram, not a play: kept out of the Plays list, playbooks and pickers. */
+export const isDrillDiagram = (p: { kind?: string | null }) => p.kind === "drill";
+
+/** Drill diagrams by id (the ones attached to Drill Library drills). */
+export async function getDrillDiagrams(ids: string[]): Promise<Record<string, Play>> {
+  const clean = [...new Set(ids.filter(Boolean))];
+  if (!clean.length) return {};
+  const { data } = await supabase.from("plays").select("*").in("id", clean);
+  return Object.fromEntries(((data ?? []) as Play[]).map(p => [p.id, p]));
 }
 
 export async function getMyPlays(): Promise<Play[]> {
@@ -1255,7 +1268,8 @@ export async function getMyPlays(): Promise<Play[]> {
     .eq("created_by", user.id)
     .order("updated_at", { ascending: false });
   if (error) throw error;
-  return data ?? [];
+  // Drill diagrams live in the Drill Library, not with the plays.
+  return ((data ?? []) as Play[]).filter(p => !isDrillDiagram(p));
 }
 
 /** Every distinct tag across whatever plays the current user can see (their own plus anything shared with them, same as everywhere else — this just relies on the existing RLS, no special scoping of its own). Used to power tag-autocomplete suggestions in the editor. */
@@ -1369,6 +1383,8 @@ export async function createPlay(play: {
   forked_from?: string | null;
   video_url?: string | null;
   category?: string | null;
+  /** "drill" for a Drill Library drill's diagram. */
+  kind?: "play" | "drill";
 }): Promise<Play> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
@@ -1383,7 +1399,9 @@ export async function createPlay(play: {
       forked_from: play.forked_from ?? null,
       video_url: play.video_url ?? null,
       category: play.category ?? null,
-    })
+      // Only sent for drill diagrams, so saving a play works before SQL 214.
+      ...(play.kind === "drill" ? { kind: "drill" } : {}),
+    } as any)
     .select()
     .single();
   if (error) throw error;

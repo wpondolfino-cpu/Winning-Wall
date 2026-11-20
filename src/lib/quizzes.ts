@@ -1271,7 +1271,7 @@ export async function getPlaysForPicker(quiz: Quiz): Promise<Play[]> {
     }
   }
   const { data: mine } = await supabase.from("plays").select("*").order("updated_at", { ascending: false });
-  ((mine ?? []) as Play[]).forEach(p => { if (!out.has(p.id)) out.set(p.id, p); });
+  ((mine ?? []) as Play[]).forEach(p => { if (!out.has(p.id) && p.kind !== "drill") out.set(p.id, p); });
   return [...out.values()].filter(p => (p.data?.frames?.length ?? 0) > 0);
 }
 

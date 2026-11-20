@@ -172,7 +172,8 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const { data } = await supabase.from("plays").select("*").neq("created_by", user.id).order("updated_at", { ascending: false });
-    const rows = (data ?? []) as Play[];
+    // Drill diagrams (readable by the whole program) belong in the Drill Library.
+    const rows = ((data ?? []) as Play[]).filter(p => p.kind !== "drill");
     const ids = [...new Set(rows.map((p: any) => p.created_by).filter(Boolean))] as string[];
     const { data: profs } = ids.length ? await supabase.from("profiles").select("id,name").in("id", ids) : { data: [] as any[] };
     const names = new Map(((profs ?? []) as any[]).map(p => [p.id, p.name as string]));

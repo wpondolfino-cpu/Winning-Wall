@@ -7,6 +7,7 @@ import { useState, useEffect, useLayoutEffect, useRef, type ReactNode, type Reac
 import { createPortal } from "react-dom";
 import { groupLetter, getPracticePrintData, PrintPractice } from "../../lib/practicePlanner";
 import PracticeOnePage from "./PracticeOnePage";
+import DrillDiagram from "../plays/DrillDiagram";
 
 interface Props {
   practiceIds: string[];
@@ -29,6 +30,7 @@ function formatClock(t: string) {
 const PAGE_W_IN = 7.5;
 const PAGE_H_IN = 10;
 const DESC_KEY = "ww.printDrillDescriptions";
+const BACK_KEY = "ww.printBackPage";
 const LAYOUT_KEY = "ww.printLayout";
 
 // Three ways to print:
@@ -46,10 +48,18 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
   const [practices, setPractices] = useState<PrintPractice[]>([]);
   const [loading, setLoading] = useState(true);
   // The back page of drill descriptions: on unless turned off (remembered).
-  const [withDescriptions, setWithDescriptions] = useState(() => {
-    try { return localStorage.getItem(DESC_KEY) !== "off"; } catch { return true; }
+  // What prints on the back: nothing, the drill descriptions, the drill
+  // diagrams, or both. Remembered; the old on/off setting carries over.
+  type BackPage = "none" | "desc" | "diagram" | "both";
+  const [backPage, setBackPage] = useState<BackPage>(() => {
+    try {
+      const v = localStorage.getItem(BACK_KEY);
+      if (v === "none" || v === "desc" || v === "diagram" || v === "both") return v;
+      return localStorage.getItem(DESC_KEY) === "off" ? "none" : "desc";
+    } catch { return "desc"; }
   });
-  useEffect(() => { try { localStorage.setItem(DESC_KEY, withDescriptions ? "on" : "off"); } catch { /* fine */ } }, [withDescriptions]);
+  useEffect(() => { try { localStorage.setItem(BACK_KEY, backPage); } catch { /* fine */ } }, [backPage]);
+  const withDescriptions = backPage !== "none";
   const [printLayout, setPrintLayout] = useState<PrintLayout>(() => {
     try { const v = localStorage.getItem(LAYOUT_KEY); return v === "inline" || v === "schedule" ? v : "onepage"; } catch { return "onepage"; }
   });
@@ -313,9 +323,15 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
               </button>
             ))}
           </div>
-          <label style={{ fontSize: 13, color: "#333", display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-            <input type="checkbox" checked={withDescriptions} onChange={e => setWithDescriptions(e.target.checked)} />
-            Print drill descriptions on the back
+          <label style={{ fontSize: 13, color: "#333", display: "flex", alignItems: "center", gap: 6 }}>
+            Back page
+            <select value={backPage} onChange={e => setBackPage(e.target.value as BackPage)}
+              style={{ fontSize: 13, padding: "6px 8px", borderRadius: 7, border: "1px solid #999", background: "#fff", color: "#222" }}>
+              <option value="none">None</option>
+              <option value="desc">Descriptions</option>
+              <option value="diagram">Diagrams</option>
+              <option value="both">Both</option>
+            </select>
           </label>
           <button onClick={() => window.print()} style={{ background: "#1a3fa8", color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", fontWeight: 600, cursor: "pointer" }}>Print / Save as PDF</button>
           <button onClick={onClose} style={{ background: "#fff", border: "1px solid #999", color: "#222", borderRadius: 8, padding: "8px 18px", fontWeight: 600, cursor: "pointer" }}>Close</button>
@@ -328,7 +344,7 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
       {!loading && withDescriptions && overflowing.length > 0 && (
         <div className="no-print" style={{ maxWidth: `${PAGE_W_IN}in`, margin: "14px auto 0", padding: "10px 14px", borderRadius: 8, background: "#fff6dd", border: "1px solid #e8c25a", color: "#5a4300", fontSize: 13, lineHeight: 1.45 }}>
           ⚠ {overflowing.map(id => { const p = practices.find(x => x.id === id); return p ? formatDate(p.practice_date) : ""; }).join(", ")}{" "}
-          {overflowing.length === 1 ? "runs" : "run"} past one page, so the drill descriptions won't land on the back of page 1 when printed two-sided.
+          {overflowing.length === 1 ? "runs" : "run"} past one page, so the back page won't land on the back of page 1 when printed two-sided.
           {printLayout === "onepage"
             ? "It's already at the smallest type. Shortening notes, or switching to Groups with drills, will help."
             : "The dashed line shows where page 2 starts; drills never split across pages. Shortening notes or splitting the practice will bring it back to one page."}
@@ -443,21 +459,38 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
           )}
           </div>
 
-          {/* The back page: how each drill runs, for a coach who doesn't know it. */}
+          {/* The back page: how each drill runs, for a coach who doesn't know
+              it — the descriptions, the diagrams, or both. */}
           {withDescriptions && p.drillDescriptions.length > 0 && (
             <div className="practice-print-page new-sheet" style={{ width: `${PAGE_W_IN}in`, maxWidth: "100%", margin: "0 auto", padding: "30px 0", color: "#111", fontFamily: "Georgia, serif", borderTop: "1px dashed #ccc" }}>
               <div style={{ borderBottom: "3px solid #111", paddingBottom: 10, marginBottom: 16 }}>
-                <div style={{ fontSize: 20, fontWeight: 700 }}>Drill descriptions</div>
+                <div style={{ fontSize: 20, fontWeight: 700 }}>{backPage === "desc" ? "Drill descriptions" : backPage === "diagram" ? "Drill diagrams" : "Drills"}</div>
                 <div style={{ fontSize: 13, color: "#444" }}>{formatDate(p.practice_date)} · in practice order</div>
               </div>
-              {p.drillDescriptions.map((d, i) => (
-                <div key={i} style={{ marginBottom: 14, pageBreakInside: "avoid" }}>
-                  <div style={{ fontSize: 14.5, fontWeight: 700 }}>
-                    {d.title}{d.film ? " 🎥" : ""}
-                    <span style={{ fontSize: 12, fontWeight: 400, color: "#666" }}> · {d.minutes} min</span>
-                  </div>
-                  <div style={{ fontSize: 12.5, lineHeight: 1.45, marginTop: 3, whiteSpace: "pre-wrap", color: d.description ? "#111" : "#999", fontStyle: d.description ? "normal" : "italic" }}>
-                    {d.description ?? "No description yet. Add one in the Drill Library."}
+              {backPage === "diagram" ? (
+                // Two across, so several fit; a drill without one is just its name.
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                  {p.drillDescriptions.map((d, i) => (
+                    <div key={i} style={{ breakInside: "avoid", pageBreakInside: "avoid" }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 4 }}>
+                        {d.title}{d.film ? " 🎥" : ""}<span style={{ fontSize: 11.5, fontWeight: 400, color: "#666" }}> · {d.minutes} min</span>
+                      </div>
+                      {d.diagram ? <DrillDiagram play={d.diagram} still /> : <div style={{ fontSize: 11.5, color: "#999", fontStyle: "italic" }}>No diagram</div>}
+                    </div>
+                  ))}
+                </div>
+              ) : p.drillDescriptions.map((d, i) => (
+                <div key={i} style={{ marginBottom: 14, pageBreakInside: "avoid", breakInside: "avoid",
+                  display: backPage === "both" && d.diagram ? "grid" : "block", gridTemplateColumns: "2.6in minmax(0, 1fr)", gap: 14 }}>
+                  {backPage === "both" && d.diagram && <div><DrillDiagram play={d.diagram} still /></div>}
+                  <div>
+                    <div style={{ fontSize: 14.5, fontWeight: 700 }}>
+                      {d.title}{d.film ? " 🎥" : ""}
+                      <span style={{ fontSize: 12, fontWeight: 400, color: "#666" }}> · {d.minutes} min</span>
+                    </div>
+                    <div style={{ fontSize: 12.5, lineHeight: 1.45, marginTop: 3, whiteSpace: "pre-wrap", color: d.description ? "#111" : "#999", fontStyle: d.description ? "normal" : "italic" }}>
+                      {d.description ?? "No description yet. Add one in the Drill Library."}
+                    </div>
                   </div>
                 </div>
               ))}

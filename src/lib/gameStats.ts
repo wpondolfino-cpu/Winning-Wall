@@ -362,8 +362,9 @@ export interface DrawnPlay {
 
 /** Plays tagged with a category (case-insensitively) that a coach drew in the Plays feature, so they can surface in the tracker without re-entering the name. RLS on `plays` only returns ones this user owns or was shared -- see note in GameTracker. */
 export async function fetchDrawnPlaysForCategory(category: PlayCallCategory): Promise<DrawnPlay[]> {
-  const { data } = await supabase.from("plays").select("id, title, tags");
-  return ((data as DrawnPlay[]) ?? []).filter((p) => p.tags.some((t) => t.toLowerCase() === category));
+  const { data } = await supabase.from("plays").select("*");
+  // Drill diagrams aren't play calls.
+  return ((data as (DrawnPlay & { kind?: string })[]) ?? []).filter((p) => p.kind !== "drill" && p.tags.some((t) => t.toLowerCase() === category));
 }
 
 /** Mirrors a drawn play into play_calls (once) so it can be referenced by possession.play_call_id and show up in effectiveness reports like any other play call. */

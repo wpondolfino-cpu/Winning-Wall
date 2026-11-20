@@ -2411,6 +2411,8 @@ export interface PracticeDrillLibraryDrill {
   /** Whether this drill has a winner — drives what the wins tool offers. */
   is_competitive: boolean;
   linked_play_id: string | null;
+  /** The drill's own diagram, drawn in the play designer (SQL 214). */
+  diagram_play_id?: string | null;
   is_starred: boolean;
   created_at: string;
 }
@@ -2502,6 +2504,7 @@ export async function updatePracticeDrill(id: string, input: Partial<{
   title: string; description: string | null; video_url: string | null; category_name: string | null;
   default_duration_minutes: number | null; default_group_size: number | null; default_num_groups: number | null;
   linked_play_id: string | null; tags: string[]; is_competitive: boolean;
+  diagram_play_id: string | null;
 }>): Promise<{ error: string | null }> {
   const { tags, ...rest } = input;
   // .select() so a save that changed nothing is caught: when the database
@@ -2551,9 +2554,11 @@ export async function getRecentlyUsedDrills(limit = 8): Promise<PracticeDrillLib
 }
 
 export async function getPlaysForLinking(): Promise<{ id: string; title: string }[]> {
-  const { data, error } = await supabase.from("plays").select("id,title").order("title", { ascending: true });
+  // "*" rather than naming kind, so this still works before SQL 214.
+  const { data, error } = await supabase.from("plays").select("*").order("title", { ascending: true });
   if (error) return [];
-  return data ?? [];
+  // Drill diagrams aren't plays to link to.
+  return ((data ?? []) as any[]).filter(p => p.kind !== "drill").map(p => ({ id: p.id, title: p.title }));
 }
 
 // ── Assignable coaches (for the multi-coach picker on a drill) ────
@@ -2611,6 +2616,8 @@ export interface PrintDrill {
   goal_text: string | null; coachNames: string[]; groups: PrintDrillGroup[];
   /** 🎥 Being filmed. */
   film?: boolean;
+  /** The drill's diagram from the Drill Library, if it has one. */
+  diagram?: import("./plays").Play | null;
 }
 export interface PrintSegment { rosterName: string | null; drills: PrintDrill[]; }
 /**
@@ -2647,7 +2654,7 @@ export interface PrintPractice {
    * coach who doesn't know how a drill runs. Outlines aren't drills yet,
    * so they're left off.
    */
-  drillDescriptions: { title: string; minutes: number; description: string | null; film: boolean }[];
+  drillDescriptions: { title: string; minutes: number; description: string | null; film: boolean; diagram?: import("./plays").Play | null }[];
 }
 
 /** "split into 2 teams" / "groups of 2" / "keep together", for the sheet. */
@@ -2763,8 +2770,13 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
     selectIn<any>("segment_drill_groups", "*", "segment_drill_id", allSegDrills.map(d => d.id), q => q.order("order_index", { ascending: true })),
     selectIn<RotationGroup>("block_rotation_groups", "*", "block_id", rotatingIds, q => q.order("group_index", { ascending: true })),
     // Only the titles of drills this practice uses, not the whole library.
-    selectIn<{ id: string; title: string; description: string | null }>("practice_drills_library", "id, title, description", "id", allSegDrills.map(d => d.drill_id).filter(Boolean) as string[]),
+    selectIn<{ id: string; title: string; description: string | null; diagram_play_id?: string | null }>("practice_drills_library", "*", "id", allSegDrills.map(d => d.drill_id).filter(Boolean) as string[]),
   ]);
+  // Each drill's diagram, for the back page and the player's view.
+  const diagramIds = titleRows.map(d => d.diagram_play_id).filter(Boolean) as string[];
+  const diagramRows = diagramIds.length ? await selectIn<any>("plays", "*", "id", diagramIds) : [];
+  const diagramById = Object.fromEntries(diagramRows.map((pl: any) => [pl.id, pl]));
+  const drillDiagramById = Object.fromEntries(titleRows.map(d => [d.id, d.diagram_play_id ? diagramById[d.diagram_play_id] ?? null : null]));
   const memberRows = await selectIn<any>("segment_drill_group_members", "group_id, player_id, tryout_player_id", "group_id", groupRows.map(g => g.id));
   const drillTitleById = Object.fromEntries(titleRows.map(d => [d.id, d.title]));
   const drillDescById = Object.fromEntries(titleRows.map(d => [d.id, d.description]));
@@ -2841,6 +2853,7 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
           coachNames: (d.coach_ids ?? []).map(id => coachNameById[id]).filter(Boolean) as string[],
           groups: groups.map(g => ({ label: g.group_label ?? "Group", memberNames: [] /* filled below */ })),
           film: !!d.film,
+          diagram: d.drill_id ? drillDiagramById[d.drill_id] ?? null : null,
         });
         // stash raw groups temporarily on the drill for name-filling after batch lookup
         (drillPrintData[drillPrintData.length - 1] as any)._rawGroups = groups;
@@ -2951,6 +2964,7 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
       minutes: descInfo.get(id)!.minutes,
       description: drillDescById[id]?.trim() || null,
       film: descInfo.get(id)!.film,
+      diagram: drillDiagramById[id] ?? null,
     })),
   };
 }
