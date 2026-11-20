@@ -3,7 +3,7 @@
 // or an in-context picker modal (pass onPick + onClose, used from
 // PracticeBuilder's "Add drill" button). Same underlying data either way.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { getYouTubeId } from "../../lib/youtube";
 import VideoUrlNote from "../shared/VideoUrlNote";
 import { renderRichText } from "../../lib/richtext";
@@ -19,7 +19,7 @@ import AddToSharedLibrary from "../library/AddToSharedLibrary";
 import TagChipPicker from "./TagChipPicker";
 import WorkoutBuilder from "./WorkoutBuilder";
 import { supabase } from "../../lib/supabase";
-import { getDrillDiagrams, type Play } from "../../lib/plays";
+import { getDrillDiagrams, deletePlay, type Play } from "../../lib/plays";
 import DrillDiagram from "../plays/DrillDiagram";
 import PlayEditor from "../plays/PlayEditor";
 
@@ -60,6 +60,10 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
   const [diagrams, setDiagrams]     = useState<Record<string, Play>>({});
   // Drawing or editing a drill's diagram: the designer takes the screen.
   const [drawFor, setDrawFor]       = useState<{ drill: PracticeDrillLibraryDrill; play?: Play } | null>(null);
+  // A new diagram not yet attached to its drill. If it still can't be
+  // attached when the designer closes, it's removed rather than left saved
+  // where nobody can ever see it.
+  const unattached = useRef<{ drillId: string; playId: string } | null>(null);
   /** Shows a just-attached diagram on its drill without waiting for a reload. */
   const attachDiagram = (drillId: string, play: Play) => {
     setDiagrams(prev => ({ ...prev, [play.id]: play }));
@@ -460,6 +464,16 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
       setViewDrill(v => v ?? drill);
       // The designer saves its last changes as it closes; pick them up.
       setTimeout(async () => {
+        const pending = unattached.current;
+        if (pending && pending.drillId === drill.id) {
+          unattached.current = null;
+          const { error } = await updatePracticeDrill(drill.id, { diagram_play_id: pending.playId });
+          if (error) {
+            try { await deletePlay(pending.playId); } catch { /* already gone */ }
+            alert("The diagram couldn't be attached to this drill, so it wasn't kept: " + error);
+            return;
+          }
+        }
         const fresh = await supabase.from("practice_drills_library").select("*").eq("id", drill.id).maybeSingle();
         const d = fresh.data as PracticeDrillLibraryDrill | null;
         if (!d?.diagram_play_id) return;
@@ -475,8 +489,11 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
           title: drill.title,
           onCreated: async (created) => {
             attachDiagram(drill.id, created);
+            unattached.current = { drillId: drill.id, playId: created.id };
             const { error } = await updatePracticeDrill(drill.id, { diagram_play_id: created.id });
-            if (error) alert(/diagram_play_id/i.test(error) ? "Run SQL 214 in Supabase so diagrams can be attached to drills." : "Couldn't attach the diagram: " + error);
+            if (!error) { unattached.current = null; return; }
+            // Tried once more as the designer closes.
+            alert(/diagram_play_id/i.test(error) ? "Run SQL 214 in Supabase so diagrams can be attached to drills." : "Couldn't attach the diagram yet: " + error);
           },
         }}
         onSaved={() => { /* stay in the designer; Close goes back */ }}

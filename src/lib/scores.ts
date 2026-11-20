@@ -190,27 +190,6 @@ export async function getMyPersonalBests(playerId: string): Promise<PersonalBest
   return data ?? [];
 }
 
-export async function upsertScore(score: Omit<Score, "id" | "points" | "logged_at">) {
-  const { data, error } = await supabase
-    .from("scores").upsert(score, { onConflict: "player_id,workout_id" }).select().single();
-  if (error) throw error;
-  return data as Score;
-}
-
-export async function awardChallengeWinBonus(playerId: string, challengeId: string): Promise<void> {
-  const { error } = await supabase.from("streak_bonuses").insert({
-    player_id:     playerId,
-    points:        1,
-    streak_length: 0,
-    awarded_at:    new Date().toISOString(),
-    reason:        "challenge_win",
-    challenge_id:  challengeId,
-  });
-  // 23505 = unique_violation — this challenge already paid out its bonus.
-  // That's expected on a double-click/retry, not a real error.
-  if (error && error.code !== "23505") throw error;
-}
-
 // ── Drill Library practice scoring ─────────────────────────────
 // For drills a player practices outside the currently-assigned group.
 // Rules:
