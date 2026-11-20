@@ -24,7 +24,8 @@ export const COURT_TEMPLATE_LABELS: Record<CourtTemplate, string> = {
 // across templates.
 
 /** "dho" is a dribble handoff: drawn from the player handing it off to the receiver. */
-export type ActionType = "move" | "pass" | "dribble" | "screen" | "shot" | "lob" | "dho";
+/** "rotate" is drills only: where a player goes after their rep (the back of a line, usually). It plays after everything else in the step. */
+export type ActionType = "move" | "pass" | "dribble" | "screen" | "shot" | "lob" | "dho" | "rotate";
 
 export interface PlayPoint { x: number; y: number; }
 
@@ -193,6 +194,16 @@ export function defaultLetter(num: number): string {
   return num >= 1 && num <= 26 ? String.fromCharCode(64 + num) : "";
 }
 
+/** Does a rotation end at a line (its front player or the back of it)? Then the player joins it. */
+function joinsLine(f: PlayFrame, moverId: string, a: PlayAction): boolean {
+  return f.players.some((p) => {
+    if (!p.line || p.line < 2 || p.id === moverId) return false;
+    const deg = p.lineDir ?? (p.y > 420 - 45 ? 270 : 90), r = (deg * Math.PI) / 180;
+    const tail = { x: p.x + Math.cos(r) * 22, y: p.y + Math.sin(r) * 22 };
+    return Math.hypot(p.x - a.x2, p.y - a.y2) < 28 || Math.hypot(tail.x - a.x2, tail.y - a.y2) < 28;
+  });
+}
+
 /** The id of the line left behind when its front player moves off (drills). Fixed, so every re-step finds the same one. */
 const LINE_STAY = "~line";
 function lineStayId(id: string | undefined): string | undefined {
@@ -211,9 +222,11 @@ export function deriveNextFrame(prev: PlayFrame): PlayFrame {
   // re-stepping finds the same line again.
   let nextNum = prev.players.reduce((m, p) => Math.max(m, p.num || 0), 0) + 1;
   const stayingLines: PlayPlayer[] = [];
+  const joiners = new Set<string>();
   const players: PlayPlayer[] = prev.players.map((p) => {
-    const seq = p.id ? playerActionSequence(prev, p.id).filter((a) => a.type === "move" || a.type === "dribble" || a.type === "screen") : [];
+    const seq = p.id ? playerActionSequence(prev, p.id).filter((a) => a.type === "move" || a.type === "dribble" || a.type === "screen" || a.type === "rotate") : [];
     const sourced = seq[seq.length - 1];
+    if (sourced?.type === "rotate" && p.id && joinsLine(prev, p.id, sourced)) joiners.add(p.id);
     if (sourced && p.line && p.line > 1) {
       stayingLines.push({ ...p, id: lineStayId(p.id), num: nextNum++, letter: p.letter ?? defaultLetter(p.num), handoff: false });
       const { line: _l, lineDir: _d, ...solo } = p;
@@ -302,6 +315,12 @@ export function deriveNextFrame(prev: PlayFrame): PlayFrame {
       return { id: b.id, x: h ? h.x : at.x, y: h ? h.y : at.y, holderId: holder };
     });
   }
+  // A player who rotated into a line is part of that line now — unless
+  // they're still holding a ball, in which case they just stand there.
+  if (joiners.size) {
+    const holding = new Set([next.ballHolderId, ...(next.extraBalls ?? []).map((b) => b.holderId)].filter(Boolean) as string[]);
+    next.players = next.players.filter((p) => !p.id || !joiners.has(p.id) || holding.has(p.id));
+  }
   return next;
 }
 
@@ -336,12 +355,12 @@ export function carryForwardSignature(frame: PlayFrame): string {
  * Entities are matched by id, so anyone added or removed on this step is
  * left exactly as they are.
  */
-function reanchorFrame(frame: PlayFrame, derived: PlayFrame): PlayFrame {
+function reanchorFrame(frame: PlayFrame, derived: PlayFrame, gone: Set<string> = new Set()): PlayFrame {
   const deltas = new Map<string, { dx: number; dy: number }>();
 
   const derivedPlayers = new Map(derived.players.filter((p) => p.id).map((p) => [p.id as string, p]));
   // A line left behind by an earlier step's cut that no longer happens goes away.
-  const kept = frame.players.filter((p) => !(p.id?.endsWith(LINE_STAY) && !derivedPlayers.has(p.id)));
+  const kept = frame.players.filter((p) => !(p.id?.endsWith(LINE_STAY) && !derivedPlayers.has(p.id)) && !(p.id && gone.has(p.id)));
   const players = kept.map((p) => {
     const to = p.id ? derivedPlayers.get(p.id) : undefined;
     if (!to) return p; // added on this step — leave it alone
@@ -414,7 +433,11 @@ export function restepFrom(frames: PlayFrame[], index: number): PlayFrame[] {
   if (index < 0 || index >= frames.length - 1) return frames;
   const out = frames.slice();
   for (let i = index; i < out.length - 1; i++) {
-    out[i + 1] = reanchorFrame(out[i + 1], deriveNextFrame(out[i]));
+    const derived = deriveNextFrame(out[i]);
+    // Players the earlier step no longer carries forward (they rotated into a line) leave the later one too.
+    const ids = new Set(derived.players.map((p) => p.id));
+    const gone = new Set(out[i].players.map((p) => p.id).filter((id): id is string => !!id && !ids.has(id)));
+    out[i + 1] = reanchorFrame(out[i + 1], derived, gone);
   }
   return out;
 }
@@ -526,6 +549,19 @@ function baseActionBounds(action: PlayAction, frame: PlayFrame): SliceBounds {
 
 /** When an action moves within the step (0-1), Holds included. */
 function actionBounds(action: PlayAction, frame: PlayFrame): SliceBounds {
+  // Drills: rotations happen after the rep. Everything else plays in the
+  // first part of the step exactly as it would on its own, then the
+  // rotations all go together at the end.
+  if (frame.actions.some((a) => a.type === "rotate")) {
+    if (action.type === "rotate") return { moveStart: ROTATE_START, moveEnd: 1 };
+    const rest: PlayFrame = { ...frame, actions: frame.actions.filter((a) => a.type !== "rotate") };
+    const b = actionBoundsCore(action, rest);
+    return { moveStart: b.moveStart * ROTATE_START, moveEnd: b.moveEnd * ROTATE_START };
+  }
+  return actionBoundsCore(action, frame);
+}
+const ROTATE_START = 0.6;
+function actionBoundsCore(action: PlayAction, frame: PlayFrame): SliceBounds {
   return holdPlan(frame)?.bounds.get(action) ?? baseActionBounds(action, frame);
 }
 

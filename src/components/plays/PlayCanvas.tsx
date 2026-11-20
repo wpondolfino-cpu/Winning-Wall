@@ -247,7 +247,7 @@ function endDirection(a: PlayAction) {
 }
 
 /** Tools that draw a line from a player. */
-const DRAW_TOOLS: string[] = ["move", "pass", "dribble", "screen", "ghost", "seal", "lob", "loop", "dho", "keep"];
+const DRAW_TOOLS: string[] = ["move", "pass", "dribble", "screen", "ghost", "seal", "lob", "loop", "dho", "keep", "rotate"];
 
 /** Below this length a Seal drag means "seal right here": no run, just the side. */
 const SEAL_IN_PLACE = 30;
@@ -308,6 +308,41 @@ function courtInk(bg: string): string {
 }
 
 /** An action's drawing, plus a gold "⏸ ½" tag at its start when it has a Hold. */
+/** Where a player goes after their rep (drills): a trail of small green arrows, each pointing the way they go — not solid like a cut, not dashed like a pass. */
+const ROTATE_GREEN = "#6FAE2F";
+function RotateLine({ a }: { a: PlayAction }) {
+  // Sample the path finely, then drop a chevron every ~16 units along it.
+  const at = (t: number) => {
+    const mt = 1 - t;
+    if (a.curve2 && a.curve) return {
+      x: mt * mt * mt * a.x1 + 3 * mt * mt * t * a.curve.x + 3 * mt * t * t * a.curve2.x + t * t * t * a.x2,
+      y: mt * mt * mt * a.y1 + 3 * mt * mt * t * a.curve.y + 3 * mt * t * t * a.curve2.y + t * t * t * a.y2 };
+    if (a.curve) return { x: mt * mt * a.x1 + 2 * mt * t * a.curve.x + t * t * a.x2, y: mt * mt * a.y1 + 2 * mt * t * a.curve.y + t * t * a.y2 };
+    return { x: a.x1 + (a.x2 - a.x1) * t, y: a.y1 + (a.y2 - a.y1) * t };
+  };
+  const pts = Array.from({ length: 121 }, (_, i) => at(i / 120));
+  const marks: { x: number; y: number; deg: number }[] = [];
+  let run = 0, next = 18;
+  for (let i = 1; i < pts.length; i++) {
+    const seg = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    run += seg;
+    if (run >= next) {
+      marks.push({ x: pts[i].x, y: pts[i].y, deg: (Math.atan2(pts[i].y - pts[i - 1].y, pts[i].x - pts[i - 1].x) * 180) / Math.PI });
+      next += 16;
+    }
+  }
+  return (
+    <g>
+      {/* An invisible fat stroke so the line is easy to grab and erase. */}
+      <path d={linePath(a)} fill="none" stroke="transparent" strokeWidth={10} />
+      {marks.map((m, i) => (
+        <path key={i} d="M -4 -5 L 3 0 L -4 5" transform={`translate(${m.x} ${m.y}) rotate(${m.deg})`}
+          fill="none" stroke={ROTATE_GREEN} strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
+      ))}
+    </g>
+  );
+}
+
 function ActionShape({ a }: { a: PlayAction }) {
   const shape = <ActionLine a={a} />;
   if (!a.hold) return shape;
@@ -327,6 +362,7 @@ function ActionShape({ a }: { a: PlayAction }) {
 }
 
 function ActionLine({ a }: { a: PlayAction }) {
+  if (a.type === "rotate") return <RotateLine a={a} />;
   if (a.type === "dho" && a.keep) {
     // Keep (fake handoff): the handoff line runs most of the way to the
     // receiver, then hooks round and comes back toward the giver, ending
@@ -621,7 +657,7 @@ export default function PlayCanvas({
       });
       if (cut >= 0) { onGhostMark(cut, p.x, p.y); return; }
     }
-    if (tool === "draw" || tool === "rotate") { setDrawPoints([p]); return; }
+    if (tool === "draw") { setDrawPoints([p]); return; }
     if (tool === "text") { onAddText?.(p.x, p.y); return; }
     if (tool === "handoff") {
       let closest = -1, closestDist = 20;
@@ -663,7 +699,7 @@ export default function PlayCanvas({
       }
       for (let i = 0; i < frame.actions.length; i++) {
         const a = frame.actions[i];
-        if ((a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen" || a.type === "lob" || a.type === "dho") && within(curveHandlePos(a), 11)) {
+        if ((a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen" || a.type === "lob" || a.type === "dho" || a.type === "rotate") && within(curveHandlePos(a), 11)) {
           setMoveDrag({ kind: "actionCurve", index: i }); setMovePos(p); return;
         }
       }
@@ -1136,7 +1172,7 @@ export default function PlayCanvas({
       })()}
 
       {edit && tool === "select" && displayFrame.actions.map((a, i) => {
-        const chp = (a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen" || a.type === "lob" || a.type === "dho") ? curveHandlePos(a) : null;
+        const chp = (a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen" || a.type === "lob" || a.type === "dho" || a.type === "rotate") ? curveHandlePos(a) : null;
         const chp2 = a.curve2 ? curveHandle2Pos(a) : null;
         return (
           <g key={i}>
@@ -1174,7 +1210,7 @@ export default function PlayCanvas({
           y = a.y1 + (endpoint.y - a.y1) * localT;
         }
         const isShot = a.type === "shot";
-        return <circle key={i} cx={x} cy={y} r={a.type === "pass" || a.type === "dho" ? 6 : isShot ? 7 : 9} fill={isShot ? "#EF9F27" : "#378ADD"} stroke={isShot ? "#854F0B" : undefined} strokeWidth={isShot ? 1.5 : 0} opacity={0.9} />;
+        return <circle key={i} cx={x} cy={y} r={a.type === "pass" || a.type === "dho" ? 6 : isShot ? 7 : 9} fill={isShot ? "#EF9F27" : a.type === "rotate" ? ROTATE_GREEN : "#378ADD"} stroke={isShot ? "#854F0B" : undefined} strokeWidth={isShot ? 1.5 : 0} opacity={0.9} />;
       })}
 
       {stampPreview && (
