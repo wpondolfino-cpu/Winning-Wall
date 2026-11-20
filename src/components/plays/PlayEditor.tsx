@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback, useRef, lazy, Suspense, type ComponentType, type CSSProperties } from "react";
 import { useHelpTopic } from "../../lib/help";
-import PlayCanvas, { CANVAS_W, CANVAS_H } from "./PlayCanvas";
+import PlayCanvas, { CANVAS_W, CANVAS_H, defaultLetter } from "./PlayCanvas";
 import { hoopPositions } from "./courtGeometry";
 import VideoUrlNote from "../shared/VideoUrlNote";
 import {
@@ -285,7 +285,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   // ── Extra balls (drills) ──
   /** The player a ball dropped here belongs to, if it's on one. */
   function playerAt(f: PlayFrame, x: number, y: number): string | null {
-    let best: string | null = null, bestD = 20;
+    let best: string | null = null, bestD = 26;
     for (const p of f.players) {
       const d = Math.hypot(p.x - x, p.y - y);
       if (p.id && d < bestD) { best = p.id; bestD = d; }
@@ -300,12 +300,18 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     pushHistory();
     updateFrame((f) => ({ ...f, extraBalls: (f.extraBalls ?? []).map((b, i) => i === idx ? { ...b, x, y, holderId: playerAt(f, x, y) } : b) }));
   }, [frames, frameIdx]);
+  /** Drills: point a line of players a new way (degrees, one of 8). */
+  function setLineDir(idx: number, deg: number) {
+    pushHistory();
+    setPlayerField(idx, { lineDir: deg });
+  }
   /** Drills: set a player's letter or line length. */
   function setPlayerField(idx: number, patch: Partial<PlayPlayer>) {
     updateFrame((f) => ({ ...f, players: f.players.map((p, i) => i === idx ? { ...p, ...patch } : p) }));
   }
   const addDefender = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, defenders: [...f.defenders, { x, y, id: genPlayerId() }] })); }, [frames, frameIdx]);
-  const setBall = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, ball: { x, y }, ballHolderId: null })); }, [frames, frameIdx]);
+  // In a drill, dropping the ball on a player puts it in their hands (like + Ball); plays keep placing it loose, as always.
+  const setBall = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, ball: { x, y }, ballHolderId: isDrill ? playerAt(f, x, y) : null })); }, [frames, frameIdx, isDrill]);
   const addAction = useCallback((a: PlayAction) => {
     pushHistory();
     if (a.type === "lob") {
@@ -1222,7 +1228,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       {selPlayer && selected && labelMode === "letters" && (
         <label style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
           Letter
-          <input key={`letter-${selected.index}`} defaultValue={selPlayer.letter ?? ""} maxLength={2} placeholder="S"
+          <input key={`letter-${selected.index}`} defaultValue={selPlayer.letter ?? ""} maxLength={2} placeholder={defaultLetter(selPlayer.num) || "S"}
             onFocus={pushHistory}
             onChange={(e) => setPlayerField(selected.index, { letter: e.target.value.toUpperCase().slice(0, 2) || undefined })}
             style={{ width: 40, fontSize: 13, padding: "3px 6px", borderRadius: 6, background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", textAlign: "center", textTransform: "uppercase" }} />
@@ -1237,6 +1243,21 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             {[2, 3, 4, 5, 6, 7, 8, 10, 12].map((n) => <option key={n} value={n}>×{n}</option>)}
           </select>
         </label>
+      )}
+      {selPlayer && selected && (selPlayer.line ?? 1) > 1 && (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          Faces
+          <span style={{ display: "inline-grid", gridTemplateColumns: "repeat(3, 22px)", gap: 2 }}>
+            {/* Which way the line trails behind the front player. The middle square is the player. */}
+            {[225, 270, 315, 180, -1, 0, 135, 90, 45].map((deg) => deg < 0
+              ? <span key="mid" style={{ width: 22, height: 22, display: "grid", placeItems: "center", fontSize: 10, color: "var(--muted)" }}>●</span>
+              : <button key={deg} type="button" onClick={() => setLineDir(selected.index, deg)} title="Line trails this way"
+                  style={{ width: 22, height: 22, padding: 0, fontSize: 12, lineHeight: 1, borderRadius: 4, border: "1px solid var(--border)",
+                    background: (selPlayer.lineDir ?? (selPlayer.y > CANVAS_H - 45 ? 270 : 90)) === deg ? "var(--royal)" : "var(--surface2)", color: "var(--text)", cursor: "pointer" }}>
+                  {({ 0: "→", 45: "↘", 90: "↓", 135: "↙", 180: "←", 225: "↖", 270: "↑", 315: "↗" } as Record<number, string>)[deg]}
+                </button>)}
+          </span>
+        </span>
       )}
     </div>
   );
@@ -1491,7 +1512,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onAddText={addText} onMoveText={moveText} onEditText={editText} onAddZone={addZone} onMoveZone={moveZone}
             onAddCone={addCone} onMoveCone={moveCone} onAddCoach={addCoach} onMoveCoach={moveCoach} onAddShot={addShot}
             selected={selected} onSelect={setSelected} onAddDrawing={addDrawing}
-            labels={labelMode} onAddExtraBall={addExtraBall} onMoveExtraBall={moveExtraBall}
+            labels={labelMode} onAddExtraBall={addExtraBall} onMoveExtraBall={moveExtraBall} onSetLineDir={isDrill ? setLineDir : undefined}
             playSignal={playSignal} onPlayDone={handlePreviewBeatDone}
             stampPreview={activeStamp && stampPreviewPos ? computeStampGhost(activeStamp, stampPreviewPos.x, stampPreviewPos.y) : null}
           />
@@ -1757,6 +1778,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             labels={labelMode}
             onAddExtraBall={addExtraBall}
             onMoveExtraBall={moveExtraBall}
+            onSetLineDir={isDrill ? setLineDir : undefined}
             playSignal={playSignal}
             onPlayDone={handlePreviewBeatDone}
             stampPreview={activeStamp && stampPreviewPos ? computeStampGhost(activeStamp, stampPreviewPos.x, stampPreviewPos.y) : null}

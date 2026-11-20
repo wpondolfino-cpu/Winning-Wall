@@ -29,6 +29,8 @@ interface Props {
   onAddExtraBall?: (x: number, y: number) => void;
   /** "select" tool — drag an extra ball (dropping it on a player gives it to them). */
   onMoveExtraBall?: (index: number, x: number, y: number) => void;
+  /** Drills: turn a line of players by dragging the back of it (degrees, snapped to 8 directions). */
+  onSetLineDir?: (index: number, deg: number) => void;
   onAddPlayer?: (p: PlayPlayer) => void;
   onAddDefender?: (x: number, y: number) => void;
   onSetBall?: (x: number, y: number) => void;
@@ -478,23 +480,46 @@ function distToAction(px: number, py: number, a: PlayAction) {
 const FACE_COLORS = ["#378ADD", "#639922", "#D85A30", "#D4537E", "#7F77DD"];
 
 /** A drill line: two faded players behind the front one, and its length. */
+/** Which way a line trails, in degrees: the coach's choice, else down (or up when the front player is on the baseline). */
+function lineAngle(p: PlayPlayer): number {
+  return p.lineDir ?? (p.y > CANVAS_H - 45 ? 270 : 90);
+}
+/** The back of a line — the handle the Move tool turns it by. */
+function lineTail(p: PlayPlayer): { x: number; y: number } {
+  const r = (lineAngle(p) * Math.PI) / 180;
+  return { x: p.x + Math.cos(r) * 22, y: p.y + Math.sin(r) * 22 };
+}
+/** Snap a drag to one of 8 directions. */
+function snapLineDir(p: { x: number; y: number }, to: { x: number; y: number }): number {
+  const a = (Math.atan2(to.y - p.y, to.x - p.x) * 180) / Math.PI;
+  return ((Math.round(a / 45) * 45) % 360 + 360) % 360;
+}
+
 function LineStack({ p }: { p: PlayPlayer }) {
   if (!p.line || p.line < 2) return null;
-  // The line trails behind the front player — downward normally, upward when they stand on the baseline so it stays on the court.
-  const d = p.y > CANVAS_H - 45 ? -1 : 1;
+  // The line trails behind the front player in its direction; the count sits just past the back of it.
+  const r = (lineAngle(p) * Math.PI) / 180, dx = Math.cos(r), dy = Math.sin(r);
+  const tx = p.x + dx * 22, ty = p.y + dy * 22;
+  const lx = tx + (dx > 0.3 ? 14 : dx < -0.3 ? -14 : 15);
+  const ly = ty + (dy > 0.3 ? 14 : dy < -0.3 ? -8 : 5);
   return (
     <g>
-      <circle cx={p.x} cy={p.y + 21 * d} r={11} fill="#E6F1FB" stroke="#185FA5" strokeWidth={1.5} opacity={0.35} />
-      <circle cx={p.x} cy={p.y + 11 * d} r={12} fill="#E6F1FB" stroke="#185FA5" strokeWidth={1.5} opacity={0.6} />
-      <text x={p.x + 15} y={d > 0 ? p.y + 30 : p.y - 22} fontSize={13} fontWeight={700} fill="var(--court-ink)">×{p.line}</text>
+      <circle cx={tx} cy={ty} r={11} fill="#E6F1FB" stroke="#185FA5" strokeWidth={1.5} opacity={0.35} />
+      <circle cx={p.x + dx * 11} cy={p.y + dy * 11} r={12} fill="#E6F1FB" stroke="#185FA5" strokeWidth={1.5} opacity={0.6} />
+      <text x={lx} y={ly} textAnchor={dx < -0.3 ? "end" : "start"} fontSize={13} fontWeight={700} fill="var(--court-ink)">×{p.line}</text>
     </g>
   );
+}
+
+/** A player's letter when the coach hasn't typed one: player 1 is A, 2 is B, and so on. */
+export function defaultLetter(num: number): string {
+  return num >= 1 && num <= 26 ? String.fromCharCode(64 + num) : "";
 }
 
 function PlayerIcon({ p, avatarUrl, labels = "numbers" }: { p: PlayPlayer; avatarUrl?: string | null; labels?: PlayerLabels }) {
   const color = FACE_COLORS[(p.num - 1 + 5) % 5];
   // What's written on the player: their number (plays), their letter, or nothing.
-  const mark = labels === "numbers" ? String(p.num) : labels === "letters" ? (p.letter ?? "").slice(0, 2) : "";
+  const mark = labels === "numbers" ? String(p.num) : labels === "letters" ? (p.letter ?? defaultLetter(p.num)).slice(0, 2) : "";
   if (avatarUrl) {
     const clipId = `pc-clip-${p.num}-${Math.round(p.x)}-${Math.round(p.y)}`;
     return (
@@ -539,7 +564,7 @@ export default function PlayCanvas({
   onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff, onSetActionCurve, onSetActionCurve2,
   onAddText, onMoveText, onEditText, onAddZone, onMoveZone, onAddCone, onMoveCone, onAddCoach, onMoveCoach, onAddShot, stampPreview,
   playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect, selfOverride = null, speed = 1, viewBox = null,
-  labels = "numbers", onAddExtraBall, onMoveExtraBall,
+  labels = "numbers", onAddExtraBall, onMoveExtraBall, onSetLineDir,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
@@ -551,6 +576,7 @@ export default function PlayCanvas({
   const nextNum = (frame.players.length % 5) + 1;
 
   type MoveDrag =
+    | { kind: "lineDir"; index: number }
     | { kind: "player" | "defender" | "text" | "cone" | "coach"; index: number }
     | { kind: "zone"; index: number; offsetX: number; offsetY: number }
     | { kind: "ball" }
@@ -623,6 +649,11 @@ export default function PlayCanvas({
     }
     if (tool === "select") {
       const within = (a: { x: number; y: number }, r: number) => Math.hypot(a.x - p.x, a.y - p.y) < r;
+      // The back of a line turns it — checked first, but never where it overlaps the front player.
+      if (onSetLineDir) for (let i = 0; i < frame.players.length; i++) {
+        const pl = frame.players[i];
+        if (pl.line && pl.line > 1 && within(lineTail(pl), 10) && !within(pl, 13)) { setMoveDrag({ kind: "lineDir", index: i }); setMovePos(p); return; }
+      }
       for (let i = 0; i < frame.players.length; i++) {
         if (within(frame.players[i], 16)) { setMoveDrag({ kind: "player", index: i }); setMovePos(p); return; }
       }
@@ -708,7 +739,8 @@ export default function PlayCanvas({
     }
     if (moveDrag) {
       const p = pointFromEvent(e);
-      if (moveDrag.kind === "player") { onMovePlayer?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "player", index: moveDrag.index }); }
+      if (moveDrag.kind === "lineDir") { const pl = frame.players[moveDrag.index]; if (pl) onSetLineDir?.(moveDrag.index, snapLineDir(pl, p)); onSelect?.({ kind: "player", index: moveDrag.index }); }
+      else if (moveDrag.kind === "player") { onMovePlayer?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "player", index: moveDrag.index }); }
       else if (moveDrag.kind === "defender") { onMoveDefender?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "defender", index: moveDrag.index }); }
       else if (moveDrag.kind === "ball") { onMoveBall?.(p.x, p.y); onSelect?.({ kind: "ball", index: 0 }); }
       else if (moveDrag.kind === "extraball") { onMoveExtraBall?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "extraball", index: moveDrag.index }); }
@@ -887,7 +919,9 @@ export default function PlayCanvas({
   // once, on mouseup, via the onMove* callbacks.
   let displayFrame = frame;
   if (moveDrag && movePos) {
-    if (moveDrag.kind === "player") {
+    if (moveDrag.kind === "lineDir") {
+      displayFrame = { ...frame, players: frame.players.map((p, i) => i === moveDrag.index ? { ...p, lineDir: snapLineDir(p, movePos) } : p) };
+    } else if (moveDrag.kind === "player") {
       displayFrame = { ...frame, players: frame.players.map((p, i) => i === moveDrag.index ? { ...p, x: movePos.x, y: movePos.y } : p) };
     } else if (moveDrag.kind === "defender") {
       displayFrame = { ...frame, defenders: frame.defenders.map((d, i) => i === moveDrag.index ? { x: movePos.x, y: movePos.y } : d) };

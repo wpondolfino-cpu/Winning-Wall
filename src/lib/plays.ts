@@ -178,6 +178,16 @@ export function ballChainSequence(frame: PlayFrame, action: PlayAction): PlayAct
  *
  * Returns a frame with no actions on it — positions and possession only.
  */
+/** The player a loose ball is sitting right next to (drills), if any — close enough that a coach clearly meant "they have it". */
+function nearestPlayerId(f: PlayFrame, at: { x: number; y: number }, within = 26): string | null {
+  let best: string | null = null, bestD = within;
+  for (const p of f.players) {
+    const d = Math.hypot(p.x - at.x, p.y - at.y);
+    if (p.id && d < bestD) { best = p.id; bestD = d; }
+  }
+  return best;
+}
+
 export function deriveNextFrame(prev: PlayFrame): PlayFrame {
   // Cuts/dribbles/screens carry their player forward to the action's
   // endpoint; everyone else keeps their prior spot. Handoff markers clear
@@ -194,12 +204,18 @@ export function deriveNextFrame(prev: PlayFrame): PlayFrame {
   // handoff marker wins, then whoever a pass targeted, then a continuing
   // dribbler, then whoever already held it.
   let ballHolderId: string | null = prev.ballHolderId ?? null;
-  // With extra balls (drills), what an extra ball's holder does moves THAT
-  // ball, not the main one. Without them, every action counts, as always.
-  const extraHolders = new Set((prev.extraBalls ?? []).map((b) => b.holderId).filter(Boolean) as string[]);
+  // With extra balls (drills), each ball belongs to the player holding it —
+  // or, if it was dropped loose, the player it sits right next to — and what
+  // that player does moves THAT ball, not the main one. The main ball only
+  // follows its own holder's actions (or, if it has none, anyone not holding
+  // another ball). Without extra balls, every action counts, as always.
+  const extraOwner = (b: ExtraBall) => b.holderId ?? nearestPlayerId(prev, b);
+  const mainHolder = prev.extraBalls?.length ? (prev.ballHolderId ?? (prev.ball ? nearestPlayerId(prev, prev.ball) : null)) : prev.ballHolderId ?? null;
+  const extraHolders = new Set((prev.extraBalls ?? []).map(extraOwner).filter(Boolean) as string[]);
   const mainActions = extraHolders.size
-    ? prev.actions.filter((a) => !a.sourcePlayerId || !extraHolders.has(a.sourcePlayerId) || a.sourcePlayerId === prev.ballHolderId)
+    ? prev.actions.filter((a) => !a.sourcePlayerId || !extraHolders.has(a.sourcePlayerId) || a.sourcePlayerId === mainHolder)
     : prev.actions;
+  if (extraHolders.size && mainHolder) ballHolderId = mainHolder;
   const tookShot = mainActions.some((a) => a.type === "shot" || a.type === "lob");
   if (tookShot) {
     ballHolderId = null;
@@ -247,7 +263,7 @@ export function deriveNextFrame(prev: PlayFrame): PlayFrame {
   if (prev.coachMarkers?.length) next.coachMarkers = prev.coachMarkers.map((c) => ({ ...c }));
   if (prev.extraBalls?.length) {
     next.extraBalls = prev.extraBalls.map((b) => {
-      let holder = b.holderId ?? null;
+      let holder = extraOwner(b);
       let at = { x: b.x, y: b.y };
       if (holder) {
         const mine = prev.actions.filter((a) => a.sourcePlayerId === holder);
@@ -1146,6 +1162,8 @@ export interface PlayPlayer {
   letter?: string;
   /** Drill diagrams: this player is the front of a line this many long (drawn as a short stack with "x4"). */
   line?: number;
+  /** Drills: which way the line trails behind the front player, in degrees (0 = right, 90 = down/behind, 180 = left, 270 = up). Unset = straight down, or up on the baseline. */
+  lineDir?: number;
 }
 
 export interface PlayDefender {
