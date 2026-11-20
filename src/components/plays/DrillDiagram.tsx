@@ -36,7 +36,7 @@ export default function DrillDiagram({ play, still = false, thumb = false }: Pro
     // plays, so it reads on paper and doesn't burn ink.
     return (
       <div style={{ pointerEvents: "none", borderRadius: thumb ? 5 : 8, overflow: "hidden", ...(still ? { ["--silver" as any]: "#555" } : {}) }}>
-        <PlayCanvas frame={frames[0]} courtTemplate={play.court_template} edit={false} {...(still ? { courtBg: "#f3e4c8" } : {})} />
+        <PlayCanvas frame={frames[0]} courtTemplate={play.court_template} edit={false} labels={play.data?.labels ?? "numbers"} {...(still ? { courtBg: "#f3e4c8" } : {})} />
       </div>
     );
   }
@@ -44,7 +44,7 @@ export default function DrillDiagram({ play, still = false, thumb = false }: Pro
   return (
     <div>
       <div style={{ borderRadius: 8, overflow: "hidden" }}>
-        <PlayCanvas frame={frame} courtTemplate={play.court_template} edit={false} playSignal={signal} onPlayDone={done} />
+        <PlayCanvas frame={frame} courtTemplate={play.court_template} edit={false} labels={play.data?.labels ?? "numbers"} playSignal={signal} onPlayDone={done} />
       </div>
       {frames.length > 1 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>

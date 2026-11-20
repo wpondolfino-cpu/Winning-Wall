@@ -194,7 +194,13 @@ export function deriveNextFrame(prev: PlayFrame): PlayFrame {
   // handoff marker wins, then whoever a pass targeted, then a continuing
   // dribbler, then whoever already held it.
   let ballHolderId: string | null = prev.ballHolderId ?? null;
-  const tookShot = prev.actions.some((a) => a.type === "shot" || a.type === "lob");
+  // With extra balls (drills), what an extra ball's holder does moves THAT
+  // ball, not the main one. Without them, every action counts, as always.
+  const extraHolders = new Set((prev.extraBalls ?? []).map((b) => b.holderId).filter(Boolean) as string[]);
+  const mainActions = extraHolders.size
+    ? prev.actions.filter((a) => !a.sourcePlayerId || !extraHolders.has(a.sourcePlayerId) || a.sourcePlayerId === prev.ballHolderId)
+    : prev.actions;
+  const tookShot = mainActions.some((a) => a.type === "shot" || a.type === "lob");
   if (tookShot) {
     ballHolderId = null;
   } else {
@@ -204,11 +210,11 @@ export function deriveNextFrame(prev: PlayFrame): PlayFrame {
     } else {
       // A handoff action gives the ball to its receiver, the same as a pass.
       // (A keep never gives it up: the giver still has it.)
-      const passTarget = [...prev.actions].reverse().find((a) => (a.type === "pass" || (a.type === "dho" && !a.keep)) && a.targetPlayerId);
+      const passTarget = [...mainActions].reverse().find((a) => (a.type === "pass" || (a.type === "dho" && !a.keep)) && a.targetPlayerId);
       if (passTarget?.targetPlayerId) {
         ballHolderId = passTarget.targetPlayerId;
       } else {
-        const dribbler = [...prev.actions].reverse().find((a) => a.type === "dribble" && a.sourcePlayerId);
+        const dribbler = [...mainActions].reverse().find((a) => a.type === "dribble" && a.sourcePlayerId);
         if (dribbler?.sourcePlayerId) ballHolderId = dribbler.sourcePlayerId;
       }
     }
@@ -216,7 +222,7 @@ export function deriveNextFrame(prev: PlayFrame): PlayFrame {
 
   let ball = prev.ball ? { ...prev.ball } : null;
   if (tookShot) {
-    const shotAction = [...prev.actions].reverse().find((a) => a.type === "shot" || a.type === "lob");
+    const shotAction = [...mainActions].reverse().find((a) => a.type === "shot" || a.type === "lob");
     if (shotAction) ball = { x: shotAction.x2, y: shotAction.y2 };
   } else if (ballHolderId) {
     const holder = players.find((p) => p.id === ballHolderId);
@@ -233,7 +239,29 @@ export function deriveNextFrame(prev: PlayFrame): PlayFrame {
     return sourced ? { ...d, x: sourced.x2, y: sourced.y2 } : { ...d };
   });
 
-  return { players, defenders, ball, ballHolderId, actions: [] };
+  const next: PlayFrame = { players, defenders, ball, ballHolderId, actions: [] };
+
+  // Drill extras carry forward: cones and coach spots stay put, and each
+  // extra ball follows its holder (or their pass / handoff / shot).
+  if (prev.cones?.length) next.cones = prev.cones.map((c) => ({ ...c }));
+  if (prev.coachMarkers?.length) next.coachMarkers = prev.coachMarkers.map((c) => ({ ...c }));
+  if (prev.extraBalls?.length) {
+    next.extraBalls = prev.extraBalls.map((b) => {
+      let holder = b.holderId ?? null;
+      let at = { x: b.x, y: b.y };
+      if (holder) {
+        const mine = prev.actions.filter((a) => a.sourcePlayerId === holder);
+        const shot = [...mine].reverse().find((a) => a.type === "shot" || a.type === "lob");
+        const pass = [...mine].reverse().find((a) => (a.type === "pass" || (a.type === "dho" && !a.keep)) && a.targetPlayerId);
+        if (shot) { holder = null; at = { x: shot.x2, y: shot.y2 }; }
+        else if (pass?.targetPlayerId) holder = pass.targetPlayerId;
+      }
+      const h = holder ? players.find((p) => p.id === holder) : undefined;
+      if (holder && !h) holder = null;
+      return { id: b.id, x: h ? h.x : at.x, y: h ? h.y : at.y, holderId: holder };
+    });
+  }
+  return next;
 }
 
 /**
@@ -249,6 +277,7 @@ export function carryForwardSignature(frame: PlayFrame): string {
     d: derived.defenders.map((d) => [d.id ?? "", Math.round(d.x * 100), Math.round(d.y * 100)]),
     b: derived.ball ? [Math.round(derived.ball.x * 100), Math.round(derived.ball.y * 100)] : null,
     h: derived.ballHolderId ?? null,
+    ...(derived.extraBalls?.length ? { e: derived.extraBalls.map((b) => [b.id, b.holderId ?? "", Math.round(b.x * 100), Math.round(b.y * 100)]) } : {}),
   });
 }
 
@@ -315,7 +344,12 @@ function reanchorFrame(frame: PlayFrame, derived: PlayFrame): PlayFrame {
     return moved;
   });
 
-  return { ...frame, players, defenders, actions, ball: derived.ball, ballHolderId: derived.ballHolderId };
+  // Extra balls the earlier step carries in take their new holder and spot;
+  // any added on this step stay as they are.
+  const derivedExtras = new Map((derived.extraBalls ?? []).map((b) => [b.id, b]));
+  const extraBalls = frame.extraBalls?.map((b) => derivedExtras.get(b.id) ?? b);
+
+  return { ...frame, players, defenders, actions, ball: derived.ball, ballHolderId: derived.ballHolderId, ...(extraBalls ? { extraBalls } : {}) };
 }
 
 /**
@@ -1081,7 +1115,20 @@ export function genPlayerId(): string {
 /** A freehand-drawn stroke — a raw list of points, for annotations that don't fit the straight-line action types. */
 export interface PlayDrawing {
   points: PlayPoint[];
+  /** "rotate": a drill's "go to the back of this line" arrow -- gray, dashed, with an arrowhead. It's an instruction, never animated. Missing = a plain freehand stroke. */
+  kind?: "rotate";
 }
+
+/**
+ * A drill's extra ball (drill diagrams only -- plays have the one ball).
+ * On a player (holderId), it moves with them and goes where their pass,
+ * handoff or shot sends it, step to step. Otherwise it sits where it is
+ * (a ball on the floor, a rack at the elbow).
+ */
+export interface ExtraBall { id: string; x: number; y: number; holderId?: string | null; }
+
+/** How players are marked: numbers (plays), plain dots, or a letter per player (drills: S, P, R). */
+export type PlayerLabels = "numbers" | "none" | "letters";
 
 export interface PlayPlayer {
   /** Stable identity across every step of this play — set once when first placed, never regenerated. This is what lets a step's cut/pass endpoint carry a player's position (and ball possession) forward automatically. Optional for backward compatibility with plays saved before this existed. */
@@ -1095,6 +1142,10 @@ export interface PlayPlayer {
   handoff?: boolean;
   /** Only ever set in a quiz question's snapshot, never by the designer: the player the question is about, drawn in gold. */
   quizFocus?: boolean;
+  /** Drill diagrams with letters on: this player's letter (1-2 characters, e.g. "S"). */
+  letter?: string;
+  /** Drill diagrams: this player is the front of a line this many long (drawn as a short stack with "x4"). */
+  line?: number;
 }
 
 export interface PlayDefender {
@@ -1136,6 +1187,8 @@ export interface PlayFrame {
   cones?: PlayPoint[];
   /** Coach position markers ("C" in a circle) — shows where the coach stands for a drill, distinct from cones. Optional for backward compatibility. */
   coachMarkers?: PlayPoint[];
+  /** Drill diagrams: balls besides the main one. */
+  extraBalls?: ExtraBall[];
 }
 
 /**
@@ -1221,6 +1274,8 @@ export function stepButtonText(frame: PlayFrame | undefined, index: number): str
 
 export interface PlayData {
   frames: PlayFrame[];
+  /** How players are marked (drill diagrams). Missing = numbers, as plays always are. */
+  labels?: PlayerLabels;
 }
 
 export function emptyPlayData(): PlayData {
@@ -1581,9 +1636,14 @@ export interface Formation {
   id: string;
   created_by: string;
   name: string;
-  side: "offense" | "defense" | "blob" | "slob";
-  /** Positions only, same shape regardless of side -- offense/blob/slob store players, defense stores defenders. */
-  data: { players?: PlayPlayer[]; defenders?: PlayDefender[] };
+  /** "drill": a drill setup, used only by the drill designer (SQL 215). */
+  side: "offense" | "defense" | "blob" | "slob" | "drill";
+  /** Positions only, same shape regardless of side -- offense/blob/slob store players, defense stores defenders. A drill setup stores the whole court layout (players, balls, cones, coaches, zones, labels). */
+  data: {
+    players?: PlayPlayer[]; defenders?: PlayDefender[];
+    ball?: PlayPoint | null; ballHolderId?: string | null; extraBalls?: ExtraBall[];
+    cones?: PlayPoint[]; coachMarkers?: PlayPoint[]; zones?: PlayZone[]; texts?: PlayText[];
+  };
   /**
    * The court the positions are laid out on (migration 202). Blank on
    * templates made before it: those were laid out on a half court.

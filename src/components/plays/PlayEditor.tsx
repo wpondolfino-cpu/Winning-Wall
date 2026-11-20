@@ -3,13 +3,13 @@
 // players drawing up their own plays — same component, access is governed
 // by RLS on the plays table, not by role checks here).
 
-import { useState, useEffect, useCallback, useRef, lazy, Suspense, type ComponentType } from "react";
+import { useState, useEffect, useCallback, useRef, lazy, Suspense, type ComponentType, type CSSProperties } from "react";
 import { useHelpTopic } from "../../lib/help";
 import PlayCanvas, { CANVAS_W, CANVAS_H } from "./PlayCanvas";
 import { hoopPositions } from "./courtGeometry";
 import VideoUrlNote from "../shared/VideoUrlNote";
 import {
-  Play, PlayData, PlayFrame, PlayPlayer, PlayAction, ActionType,
+  Play, PlayData, PlayFrame, PlayPlayer, PlayAction, ActionType, type PlayerLabels,
   CourtTemplate, COURT_TEMPLATES, COURT_TEMPLATE_LABELS,
   SavedAction, Formation, RosterPlayer, PlayShareTarget, templateCourt, convertFormationData,
   emptyPlayData, createPlay, updatePlay, deletePlay, genPlayerId, deriveNextFrame,
@@ -51,7 +51,7 @@ interface Props {
   drill?: { title: string; onCreated: (play: Play) => void };
 }
 
-type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | "ghost" | "seal" | "keep" | null;
+type Tool = "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | "ghost" | "seal" | "keep" | "line" | "extraball" | "rotate" | null;
 
 const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "select", label: "Move", icon: "✥" },
@@ -72,10 +72,44 @@ const PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
   { tool: "lob", label: "Lob", icon: "🙌" },
   { tool: "loop", label: "Loop", icon: "↻" },
   { tool: "text", label: "Text", icon: "T" },
-  { tool: "cone", label: "Cone", icon: "▲" },
-  { tool: "coach", label: "Coach", icon: "C" },
+  // Cone and Coach are drill tools; plays drawn with them still show them.
   { tool: "defender", label: "Defender", icon: "✕" },
   { tool: "erase", label: "Erase", icon: "⌫" },
+];
+
+// ── The drill designer's tools ─────────────────────────────────
+// What drills use all the time up front; the play-specific moves
+// (ghost, seal, handoff, keep, lob, loop) behind "More tools".
+const DRILL_PRIMARY_TOOLS: { tool: Tool; label: string; icon: string }[] = [
+  { tool: "select", label: "Move", icon: "✥" },
+  { tool: "player", label: "Player", icon: "⬤" },
+  // A player at the front of a line, drawn as a short stack with "x4".
+  { tool: "line", label: "Line", icon: "⋮" },
+  { tool: "defender", label: "Defender", icon: "✕" },
+  { tool: "ball", label: "Ball", icon: "🏀" },
+  // More balls: on a player they're theirs, on the floor they sit there.
+  { tool: "extraball", label: "+ Ball", icon: "" },
+  { tool: "move", label: "Cut", icon: "→" },
+  { tool: "pass", label: "Pass", icon: "┄" },
+  { tool: "dribble", label: "Dribble", icon: "〜" },
+  { tool: "screen", label: "Screen", icon: "⊥" },
+  { tool: "shot", label: "Shot", icon: "🥅" },
+  // Where players go after their rep -- an instruction, never animated.
+  { tool: "rotate", label: "Rotate to", icon: "↺" },
+  { tool: "cone", label: "Cone", icon: "▲" },
+  { tool: "coach", label: "Coach", icon: "C" },
+  { tool: "text", label: "Text", icon: "T" },
+  { tool: "erase", label: "Erase", icon: "⌫" },
+];
+const DRILL_MORE_TOOLS: { tool: Tool; label: string; icon: string }[] = [
+  { tool: "ghost", label: "Ghost", icon: "👻" },
+  { tool: "seal", label: "Seal", icon: "◖" },
+  { tool: "dho", label: "Handoff", icon: "⇄" },
+  { tool: "keep", label: "Keep", icon: "↩" },
+  { tool: "lob", label: "Lob", icon: "🙌" },
+  { tool: "loop", label: "Loop", icon: "↻" },
+  { tool: "draw", label: "Draw", icon: "✎" },
+  { tool: "zone", label: "Zone shading", icon: "▦" },
 ];
 // Used less often — tucked behind "More tools" instead of permanently
 // taking up space in the main row.
@@ -90,6 +124,11 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   // While this screen is open, the header ? opens its help.
   useHelpTopic("playdesigner");
   const [title, setTitle] = useState(existingPlay?.title ?? drill?.title ?? "");
+  // A drill's diagram: drill tools, no numbers by default, extra balls,
+  // drill setups instead of play sets, no 3D.
+  const isDrill = !!drill || existingPlay?.kind === "drill";
+  const [labelMode, setLabelMode] = useState<PlayerLabels>(existingPlay?.data?.labels ?? (isDrill ? "none" : "numbers"));
+  const [lineSize, setLineSize] = useState(4);
   const [tagsInput, setTagsInput] = useState((existingPlay?.tags ?? []).join(", "));
   const [allTags, setAllTags] = useState<string[]>([]);
   const [videoUrl, setVideoUrl] = useState(existingPlay?.video_url ?? "");
@@ -125,7 +164,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const [showPreview3D, setShowPreview3D] = useState(false);
   const [mobileStage, setMobileStage] = useState<"draw" | "confirm" | "naming">("draw");
   const [showMoreTools, setShowMoreTools] = useState(false);
-  const [selected, setSelected] = useState<{ kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone" | "coach"; index: number } | null>(null);
+  const [selected, setSelected] = useState<{ kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone" | "coach" | "extraball"; index: number } | null>(null);
   const [history, setHistory] = useState<PlayFrame[][]>([]);
   const [future, setFuture] = useState<PlayFrame[][]>([]);
   const [saving, setSaving] = useState(false);
@@ -154,7 +193,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       getPlayCategories().then(setPlayCategories).catch(console.error);
       getPlaybooks().then(setPlaybooks).catch(console.error);
       if (existingPlay) getPlaybookIdsForPlay(existingPlay.id).then((ids) => setInBooks(new Set(ids))).catch(console.error);
-      if (!existingPlay) getFormations().then(setFormations).catch(console.error);
+      if (!existingPlay || isDrill) getFormations().then(setFormations).catch(console.error);
     }
   }, [currentUserRole]);
 
@@ -236,7 +275,35 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     setFrames(next);
   }
 
-  const addPlayer = useCallback((p: PlayPlayer) => { pushHistory(); updateFrame((f) => ({ ...f, players: [...f.players, p] })); }, [frames, frameIdx]);
+  const addPlayer = useCallback((p: PlayPlayer) => {
+    pushHistory();
+    // The Line tool places the front of a line.
+    const placed = tool === "line" ? { ...p, line: lineSize } : p;
+    updateFrame((f) => ({ ...f, players: [...f.players, placed] }));
+  }, [frames, frameIdx, tool, lineSize]);
+
+  // ── Extra balls (drills) ──
+  /** The player a ball dropped here belongs to, if it's on one. */
+  function playerAt(f: PlayFrame, x: number, y: number): string | null {
+    let best: string | null = null, bestD = 20;
+    for (const p of f.players) {
+      const d = Math.hypot(p.x - x, p.y - y);
+      if (p.id && d < bestD) { best = p.id; bestD = d; }
+    }
+    return best;
+  }
+  const addExtraBall = useCallback((x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, extraBalls: [...(f.extraBalls ?? []), { id: genPlayerId(), x, y, holderId: playerAt(f, x, y) }] }));
+  }, [frames, frameIdx]);
+  const moveExtraBall = useCallback((idx: number, x: number, y: number) => {
+    pushHistory();
+    updateFrame((f) => ({ ...f, extraBalls: (f.extraBalls ?? []).map((b, i) => i === idx ? { ...b, x, y, holderId: playerAt(f, x, y) } : b) }));
+  }, [frames, frameIdx]);
+  /** Drills: set a player's letter or line length. */
+  function setPlayerField(idx: number, patch: Partial<PlayPlayer>) {
+    updateFrame((f) => ({ ...f, players: f.players.map((p, i) => i === idx ? { ...p, ...patch } : p) }));
+  }
   const addDefender = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, defenders: [...f.defenders, { x, y, id: genPlayerId() }] })); }, [frames, frameIdx]);
   const setBall = useCallback((x: number, y: number) => { pushHistory(); updateFrame((f) => ({ ...f, ball: { x, y }, ballHolderId: null })); }, [frames, frameIdx]);
   const addAction = useCallback((a: PlayAction) => {
@@ -266,8 +333,10 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   }, [frames, frameIdx, courtTemplate]);
   const addDrawing = useCallback((points: { x: number; y: number }[]) => {
     pushHistory();
-    updateFrame((f) => ({ ...f, drawings: [...(f.drawings ?? []), { points }] }));
-  }, [frames, frameIdx]);
+    // The Rotate to tool draws the same stroke, marked as a rotation arrow.
+    const d = tool === "rotate" ? { points, kind: "rotate" as const } : { points };
+    updateFrame((f) => ({ ...f, drawings: [...(f.drawings ?? []), d] }));
+  }, [frames, frameIdx, tool]);
   const toggleHandoff = useCallback((idx: number) => {
     pushHistory();
     updateFrame((f) => ({ ...f, players: f.players.map((p, i) => i === idx ? { ...p, handoff: !p.handoff } : p) }));
@@ -399,6 +468,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     else if (selected.kind === "zone") updateFrame((f) => ({ ...f, zones: (f.zones ?? []).filter((_, i) => i !== selected.index) }));
     else if (selected.kind === "cone") updateFrame((f) => ({ ...f, cones: (f.cones ?? []).filter((_, i) => i !== selected.index) }));
     else if (selected.kind === "coach") updateFrame((f) => ({ ...f, coachMarkers: (f.coachMarkers ?? []).filter((_, i) => i !== selected.index) }));
+    else if (selected.kind === "extraball") updateFrame((f) => ({ ...f, extraBalls: (f.extraBalls ?? []).filter((_, i) => i !== selected.index) }));
     setSelected(null);
   }
 
@@ -458,6 +528,12 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       texts: (f.texts ?? []).filter((t) => !near(t, 20)),
       zones: (f.zones ?? []).filter((z) => !(x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h)),
       cones: (f.cones ?? []).filter((c) => !near(c, 16)),
+      coachMarkers: (f.coachMarkers ?? []).filter((c) => !near(c, 16)),
+      // An extra ball is erased where it's drawn (on its holder, a little off-centre).
+      extraBalls: (f.extraBalls ?? []).filter((b) => {
+        const h = b.holderId ? f.players.find((p) => p.id === b.holderId) : undefined;
+        return !near(h ? { x: h.x + 10, y: h.y + 10 } : b, 11);
+      }),
     }));
   }
 
@@ -628,7 +704,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   }
 
   async function saveCurrentFrameAsFormation(side: Formation["side"]) {
-    const examples: Record<Formation["side"], string> = { offense: "Horns", defense: "2-3 zone", blob: "Box", slob: "Stack" };
+    const examples: Record<Formation["side"], string> = { offense: "Horns", defense: "2-3 zone", blob: "Box", slob: "Stack", drill: "3-line layups" };
     const name = window.prompt(`Name this ${side} template (e.g. "${examples[side]}")`);
     if (!name) return;
     const data = side === "defense" ? { defenders: frame.defenders } : { players: frame.players };
@@ -842,7 +918,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   async function handleSave() {
     if (!title.trim()) { showToast("Give the play a title first"); return; }
     setSaving(true);
-    const data: PlayData = { frames };
+    const data: PlayData = isDrill ? { frames, labels: labelMode } : { frames };
     const tags = tagsInput.split(",").map((t) => t.trim()).filter(Boolean);
     const video_url = videoUrl.trim() || null;
     const categoryValue = currentUserRole === "player" ? (existingPlay?.category ?? null) : (category || null);
@@ -855,7 +931,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         showToast("Saved");
         onSaved?.({ ...base, title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: categoryValue });
       } else {
-        const created = await createPlay({ title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: drill ? null : categoryValue, kind: drill ? "drill" : undefined });
+        const created = await createPlay({ title: title.trim(), tags, court_template: courtTemplate, data, video_url, category: isDrill ? null : categoryValue, kind: drill ? "drill" : undefined });
         createdPlayRef.current = created;
         if (drill) drill.onCreated(created); else await applyPickedPlaybooks(created.id);
         showToast(drill ? "Diagram saved" : "Play saved");
@@ -869,9 +945,9 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
   // The latest values, readable from saves that run after a render or
   // as the editor unmounts.
-  const latestRef = useRef({ frames, title, tagsInput, courtTemplate, videoUrl, category, existingPlay, currentUserRole });
+  const latestRef = useRef({ frames, title, tagsInput, courtTemplate, videoUrl, category, existingPlay, currentUserRole, labelMode });
   useEffect(() => {
-    latestRef.current = { frames, title, tagsInput, courtTemplate, videoUrl, category, existingPlay, currentUserRole };
+    latestRef.current = { frames, title, tagsInput, courtTemplate, videoUrl, category, existingPlay, currentUserRole, labelMode };
   }); // no dependency array -- refreshes after every render, so whichever values were on screen right before the component unmounts are what the cleanup below actually sees.
 
   // ── Save as you go ──────────────────────────────────────────
@@ -890,7 +966,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   const [autoStatus, setAutoStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   function signatureOf(vals: typeof latestRef.current): string {
-    return JSON.stringify([vals.frames, vals.title.trim(), vals.tagsInput, vals.courtTemplate, vals.videoUrl.trim(), vals.category]);
+    return JSON.stringify([vals.frames, vals.title.trim(), vals.tagsInput, vals.courtTemplate, vals.videoUrl.trim(), vals.category, vals.labelMode]);
   }
 
   async function saveNow(): Promise<void> {
@@ -908,11 +984,11 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       setAutoStatus("saving");
       try {
         if (base) {
-          await updatePlay(base.id, { title: vals.title.trim() || base.title, tags, court_template: vals.courtTemplate, data: { frames: vals.frames }, video_url, category: categoryValue });
+          await updatePlay(base.id, { title: vals.title.trim() || base.title, tags, court_template: vals.courtTemplate, data: isDrill ? { frames: vals.frames, labels: vals.labelMode } : { frames: vals.frames }, video_url, category: categoryValue });
         } else {
           createdPlayRef.current = await createPlay({
             title: vals.title.trim() || untitledRef.current, tags, court_template: vals.courtTemplate,
-            data: { frames: vals.frames }, video_url, category: drill ? null : categoryValue, kind: drill ? "drill" : undefined,
+            data: isDrill ? { frames: vals.frames, labels: vals.labelMode } : { frames: vals.frames }, video_url, category: isDrill ? null : categoryValue, kind: drill ? "drill" : undefined,
           });
           if (drill) drill.onCreated(createdPlayRef.current); else await applyPickedPlaybooks(createdPlayRef.current.id);
         }
@@ -934,13 +1010,13 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   useEffect(() => {
     if (firstSigRef.current) {
       firstSigRef.current = false;
-      lastSavedSigRef.current = signatureOf({ frames, title, tagsInput, courtTemplate, videoUrl, category, existingPlay, currentUserRole });
+      lastSavedSigRef.current = signatureOf({ frames, title, tagsInput, courtTemplate, videoUrl, category, existingPlay, currentUserRole, labelMode });
       return;
     }
     const t = window.setTimeout(() => { void saveNow(); }, 2500);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [frames, title, tagsInput, courtTemplate, videoUrl, category]);
+  }, [frames, title, tagsInput, courtTemplate, videoUrl, category, labelMode]);
 
   // The page being hidden is the last reliable moment on a phone.
   useEffect(() => {
@@ -1119,6 +1195,98 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     setTagsInput([...finished, tag].join(", ") + ", ");
   }
 
+  // ── Drill designer extras ───────────────────────────────────
+  const selPlayer = selected?.kind === "player" ? frame.players[selected.index] : undefined;
+  const segBtn = (on: boolean): CSSProperties => ({
+    padding: "4px 10px", fontSize: 12, border: "none", cursor: "pointer", fontFamily: "inherit",
+    background: on ? "var(--royal)" : "var(--surface2)", color: on ? "#fff" : "var(--text)",
+  });
+  const drillControls = !isDrill ? null : (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8, fontSize: 12, color: "var(--muted)" }}>
+      Players show
+      <span style={{ display: "inline-flex", border: "1px solid var(--border)", borderRadius: 7, overflow: "hidden" }}>
+        {(["none", "numbers", "letters"] as const).map((m) => (
+          <button key={m} onClick={() => setLabelMode(m)} style={segBtn(labelMode === m)}>{m === "none" ? "None" : m === "numbers" ? "Numbers" : "Letters"}</button>
+        ))}
+      </span>
+      {tool === "line" && (
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          Line size
+          <select value={lineSize} onChange={(e) => setLineSize(Number(e.target.value))}
+            style={{ fontSize: 12, padding: "3px 6px", borderRadius: 6, background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }}>
+            {[2, 3, 4, 5, 6, 7, 8, 10, 12].map((n) => <option key={n} value={n}>×{n}</option>)}
+          </select>
+        </label>
+      )}
+      {/* The selected player's letter and line length. */}
+      {selPlayer && selected && labelMode === "letters" && (
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          Letter
+          <input key={`letter-${selected.index}`} defaultValue={selPlayer.letter ?? ""} maxLength={2} placeholder="S"
+            onFocus={pushHistory}
+            onChange={(e) => setPlayerField(selected.index, { letter: e.target.value.toUpperCase().slice(0, 2) || undefined })}
+            style={{ width: 40, fontSize: 13, padding: "3px 6px", borderRadius: 6, background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)", textAlign: "center", textTransform: "uppercase" }} />
+        </label>
+      )}
+      {selPlayer && selected && (
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          Line
+          <select value={selPlayer.line ?? 1} onChange={(e) => { pushHistory(); const n = Number(e.target.value); setPlayerField(selected.index, { line: n > 1 ? n : undefined }); }}
+            style={{ fontSize: 12, padding: "3px 6px", borderRadius: 6, background: "var(--surface2)", color: "var(--text)", border: "1px solid var(--border)" }}>
+            <option value={1}>Just them</option>
+            {[2, 3, 4, 5, 6, 7, 8, 10, 12].map((n) => <option key={n} value={n}>×{n}</option>)}
+          </select>
+        </label>
+      )}
+    </div>
+  );
+
+  /** A saved drill layout ("3-line layups"): players, balls, cones, coaches, zones, labels. */
+  async function saveDrillSetup() {
+    const name = window.prompt('Name this drill setup (e.g. "3-line layups")');
+    if (!name?.trim()) return;
+    const data: Formation["data"] = {
+      players: frame.players, defenders: frame.defenders, ball: frame.ball, ballHolderId: frame.ballHolderId ?? null,
+      extraBalls: frame.extraBalls ?? [], cones: frame.cones ?? [], coachMarkers: frame.coachMarkers ?? [],
+      zones: frame.zones ?? [], texts: frame.texts ?? [],
+    };
+    try {
+      const saved = await createFormation(name.trim(), "drill", data, courtTemplate);
+      setFormations((f) => [saved, ...f]);
+      showToast(`Saved "${name.trim()}"`);
+    } catch (e: any) {
+      showToast(/side_check|check constraint/i.test(e.message ?? "") ? "Run SQL 215 in Supabase so drill setups can be saved." : "Error: " + e.message);
+    }
+  }
+  function applyDrillSetup(f: Formation) {
+    const busy = frame.players.length || frame.actions.length || (frame.cones ?? []).length || frame.defenders.length;
+    if (busy && !window.confirm(`Replace what's on this step with "${f.name}"?`)) return;
+    pushHistory();
+    const d = f.data;
+    if (f.court_template && f.court_template !== courtTemplate) setCourtTemplate(f.court_template);
+    updateFrame((fr) => ({
+      ...fr,
+      players: (d.players ?? []).map((p) => ({ ...p })), defenders: (d.defenders ?? []).map((x) => ({ ...x })),
+      ball: d.ball ?? null, ballHolderId: d.ballHolderId ?? null, extraBalls: d.extraBalls ?? [],
+      cones: d.cones ?? [], coachMarkers: d.coachMarkers ?? [], zones: d.zones ?? [], texts: d.texts ?? [],
+      actions: [],
+    }));
+  }
+  const drillSetups = formations.filter((f) => f.side === "drill");
+  const drillSetupsPanel = !isDrill || currentUserRole === "player" ? null : (
+    <div style={{ marginBottom: 16 }}>
+      <h3 style={{ fontSize: 14, marginBottom: 8 }}>Drill setups</h3>
+      {drillSetups.map((f) => (
+        <div key={f.id} style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+          <button onClick={() => applyDrillSetup(f)} style={{ flex: 1, textAlign: "left", padding: "6px 8px", fontSize: 13 }}>▦ {f.name}</button>
+          <button onClick={() => { if (window.confirm(`Delete the setup "${f.name}"?`)) handleDeleteFormation(f.id); }} style={{ padding: "6px 8px", fontSize: 12 }}>✕</button>
+        </div>
+      ))}
+      {drillSetups.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>None yet. Lay out a drill, then save it to start the next one from it.</p>}
+      <button onClick={saveDrillSetup} style={{ width: "100%", padding: "6px 8px", fontSize: 13, marginTop: 4 }}>+ Save this setup</button>
+    </div>
+  );
+
   // --- Mobile layout: reorganized toolbar, court moved up front, and a
   // combined preview -> confirm -> name/tags -> save flow instead of an
   // always-visible title field. Desktop below is untouched. ---
@@ -1127,7 +1295,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       return (
         <div>
           <div style={{ background: "var(--surface2)", borderRadius: 12, padding: 12, marginBottom: 12 }}>
-            <PlayCanvas frame={frames[frames.length - 1]} courtTemplate={courtTemplate} roster={rosterMap} edit={false} />
+            <PlayCanvas frame={frames[frames.length - 1]} courtTemplate={courtTemplate} roster={rosterMap} edit={false} labels={labelMode} />
           </div>
           <p style={{ textAlign: "center", fontSize: 14, color: "var(--text)", marginBottom: 10 }}>Look good?</p>
           <div style={{ display: "flex", gap: 8 }}>
@@ -1159,14 +1327,14 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film — YouTube link"
               style={{ width: "100%", marginBottom: currentUserRole !== "player" ? 8 : 14, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
             <VideoUrlNote url={videoUrl} />
-            {currentUserRole !== "player" && !drill && (
+            {currentUserRole !== "player" && !isDrill && (
               <select value={category} onChange={(e) => setCategory(e.target.value)}
                 style={{ width: "100%", marginBottom: 14, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
                 <option value="">No category</option>
                 {playCategories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
               </select>
             )}
-            {!drill && playbookPicker}
+            {!isDrill && playbookPicker}
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => setMobileStage("draw")} style={{ flex: 1, padding: 10 }}>Cancel</button>
               <button onClick={handleSave} disabled={saving} className="coach-add-btn" style={{ flex: 1, justifyContent: "center" }}>
@@ -1176,7 +1344,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             {toast && <p style={{ fontSize: 13, color: "var(--gold)", marginTop: 10, textAlign: "center" }}>{toast}</p>}
             {showTemplatePicker && (
               <TemplatePickerModal
-                formations={formations}
+                formations={formations.filter((f) => f.side !== "drill")}
                 canDelete={currentUserRole === "admin"}
                 onPick={applyFormation}
                 onDelete={handleDeleteFormation}
@@ -1207,9 +1375,21 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           {COURT_TEMPLATES.map((c) => <option key={c} value={c}>{COURT_TEMPLATE_LABELS[c]}</option>)}
         </select>
         {holdControl}
+        {drillControls}
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 4, marginBottom: 6 }}>
-          {[
+          {(isDrill ? [
+            // Drills on a phone: the everyday drill tools up front.
+            { tool: "select" as Tool, label: "Move", icon: "✥" },
+            { tool: "player" as Tool, label: "Player", icon: "⬤" },
+            { tool: "line" as Tool, label: "Line", icon: "⋮" },
+            { tool: "ball" as Tool, label: "Ball", icon: "🏀" },
+            { tool: "extraball" as Tool, label: "+ Ball", icon: "" },
+            { tool: "move" as Tool, label: "Cut", icon: "→" },
+            { tool: "pass" as Tool, label: "Pass", icon: "┄" },
+            { tool: "dribble" as Tool, label: "Dribble", icon: "〜" },
+            { tool: "rotate" as Tool, label: "Rotate", icon: "↺" },
+          ] : [
             { tool: "select" as Tool, label: "Move", icon: "✥" },
             { tool: "player" as Tool, label: "Player", icon: "⬤" },
             { tool: "ball" as Tool, label: "Ball", icon: "🏀" },
@@ -1219,7 +1399,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             { tool: "screen" as Tool, label: "Screen", icon: "⊥" },
             { tool: "ghost" as Tool, label: "Ghost", icon: "👻" },
             { tool: "seal" as Tool, label: "Seal", icon: "◖" },
-          ].map(({ tool: t, label, icon }) => (
+          ]).map(({ tool: t, label, icon }) => (
             <button key={label} onClick={() => { setTool(t); setStampAction(null); }}
               style={{ padding: "6px 2px", fontSize: 10, border: tool === t ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: tool === t ? "rgba(240,192,64,0.12)" : "var(--surface2)", color: "var(--text)" }}>
               {icon} {label}
@@ -1241,10 +1421,14 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         </button>
         {showMoreTools && (
           <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8, padding: 8, background: "var(--surface2)", borderRadius: 8 }}>
-            <button onClick={() => { setTool("cone"); setStampAction(null); setShowMoreTools(false); }}
-              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "cone" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>▲ Cone</button>
-            <button onClick={() => { setTool("coach"); setStampAction(null); setShowMoreTools(false); }}
-              style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "coach" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>Ⓒ Coach</button>
+            {/* Drill-only on a phone: cones, coaches, screens and labels. */}
+            {isDrill && ([
+              ["cone", "▲ Cone"], ["coach", "Ⓒ Coach"], ["screen", "⊥ Screen"], ["text", "T Text"],
+              ["ghost", "👻 Ghost"], ["seal", "◖ Seal"], ["keep", "↩ Keep"],
+            ] as [Tool, string][]).map(([t, label]) => (
+              <button key={String(t)} onClick={() => { setTool(t); setStampAction(null); setShowMoreTools(false); }}
+                style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === t ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>{label}</button>
+            ))}
             <button onClick={() => { setTool("loop"); setStampAction(null); setShowMoreTools(false); }}
               style={{ textAlign: "left", padding: "6px 8px", fontSize: 12, border: tool === "loop" ? "1.5px solid var(--gold)" : "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", color: "var(--text)" }}>↻ Loop</button>
             <button onClick={() => { setTool("defender"); setStampAction(null); setShowMoreTools(false); }}
@@ -1307,6 +1491,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             onAddText={addText} onMoveText={moveText} onEditText={editText} onAddZone={addZone} onMoveZone={moveZone}
             onAddCone={addCone} onMoveCone={moveCone} onAddCoach={addCoach} onMoveCoach={moveCoach} onAddShot={addShot}
             selected={selected} onSelect={setSelected} onAddDrawing={addDrawing}
+            labels={labelMode} onAddExtraBall={addExtraBall} onMoveExtraBall={moveExtraBall}
             playSignal={playSignal} onPlayDone={handlePreviewBeatDone}
             stampPreview={activeStamp && stampPreviewPos ? computeStampGhost(activeStamp, stampPreviewPos.x, stampPreviewPos.y) : null}
           />
@@ -1347,14 +1532,17 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         </div>
         {renderStepDetails()}
 
-        <button onClick={() => setShowPreview3D(true)} style={{ width: "100%", padding: "8px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface2)", color: "var(--text)", marginBottom: 8 }}>
-          🧊 Watch live
-        </button>
+        {!isDrill && (
+          <button onClick={() => setShowPreview3D(true)} style={{ width: "100%", padding: "8px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface2)", color: "var(--text)", marginBottom: 8 }}>
+            🧊 Watch live
+          </button>
+        )}
         <button onClick={previewAllBeats} className="coach-add-btn" style={{ width: "100%", justifyContent: "center", marginBottom: 16 }}>
           ▶ Preview & save
         </button>
 
-        {!existingPlay && currentUserRole !== "player" && (
+        {isDrill && <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>{drillSetupsPanel}</div>}
+        {!isDrill && !existingPlay && currentUserRole !== "player" && (
           <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginBottom: 12 }}>
             <h3 style={{ fontSize: 13, margin: "0 0 8px", color: "var(--text)" }}>Templates</h3>
             <button onClick={() => setShowTemplatePicker(true)} className="coach-add-btn" style={{ width: "100%", justifyContent: "center", marginBottom: 6 }}>
@@ -1384,6 +1572,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           {savedActions.length === 0 && <p style={{ fontSize: 12, color: "var(--muted)" }}>None yet.</p>}
           <button onClick={saveCurrentFrameAsAction} style={{ width: "100%", padding: "6px 8px", fontSize: 12, marginTop: 4 }}>+ Save current step as action</button>
 
+          {!isDrill && <>
           <h3 style={{ fontSize: 13, margin: "16px 0 8px", color: "var(--text)" }}>Link players to roster</h3>
           {frame.players.map((p, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
@@ -1396,11 +1585,12 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             </div>
           ))}
           {frame.players.length === 0 && <p style={{ fontSize: 12, color: "var(--muted)" }}>Place players on the court to link them.</p>}
+          </>}
 
           <div style={{ display: "flex", gap: 12, marginTop: 16, fontSize: 12, flexWrap: "wrap" }}>
             {currentUserRole === "player" && <button onClick={() => setShowShare((v) => !v)} style={{ padding: "6px 10px" }}>Share with coach</button>}
             {onClose && <button onClick={handleClose} style={{ padding: "6px 10px" }}>Close</button>}
-            {existingPlay && <button onClick={handleDelete} style={{ padding: "6px 10px", color: "#ff7b7b" }}>🗑 Delete play</button>}
+            {existingPlay && <button onClick={handleDelete} style={{ padding: "6px 10px", color: "#ff7b7b" }}>🗑 {isDrill ? "Delete diagram" : "Delete play"}</button>}
           </div>
           {showShare && (
             <div style={{ marginTop: 8, padding: 10, background: "var(--surface2)", borderRadius: 8 }}>
@@ -1441,17 +1631,17 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film — YouTube link, e.g. your team running this play"
           style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
         <VideoUrlNote url={videoUrl} />
-        {currentUserRole !== "player" && !drill && (
+        {currentUserRole !== "player" && !isDrill && (
           <select value={category} onChange={(e) => setCategory(e.target.value)}
             style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
             <option value="">No category</option>
             {playCategories.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
           </select>
         )}
-        {!drill && playbookPicker}
+        {!isDrill && playbookPicker}
 
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: showMoreTools ? 6 : 8 }}>
-          {PRIMARY_TOOLS.map(({ tool: t, label, icon }) => (
+          {(isDrill ? DRILL_PRIMARY_TOOLS : PRIMARY_TOOLS).map(({ tool: t, label, icon }) => (
             <button key={label} onClick={() => { setTool(t); setStampAction(null); }}
               style={{ padding: "6px 10px", fontSize: 13, border: tool === t ? "2px solid var(--gold)" : "1px solid var(--border)", borderRadius: "8px", background: tool === t ? "rgba(240,192,64,0.12)" : "transparent" }}>
               {t === "shot" ? <img className="shot-icon" src="/shot-icon.png" alt="" style={{ width: 14, height: 14, verticalAlign: -2, marginRight: 4 }} /> : icon + " "}
@@ -1467,7 +1657,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
         {showMoreTools && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, padding: "8px 8px", background: "var(--surface2)", borderRadius: 8 }}>
-            {MORE_TOOLS.map(({ tool: t, label, icon }) => (
+            {(isDrill ? DRILL_MORE_TOOLS : MORE_TOOLS).map(({ tool: t, label, icon }) => (
               <button key={label} onClick={() => { setTool(t); setStampAction(null); setShowMoreTools(false); }}
                 style={{ padding: "6px 10px", fontSize: 13, border: tool === t ? "2px solid var(--gold)" : "1px solid var(--border)", borderRadius: "8px", background: tool === t ? "rgba(240,192,64,0.12)" : "var(--surface)" }}>
                 {icon} {label}
@@ -1479,6 +1669,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         )}
 
         {holdControl}
+        {drillControls}
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
           <button onClick={undo} disabled={!history.length} style={{ padding: "6px 10px" }}>↩ Undo</button>
           <button onClick={redo} disabled={!future.length} style={{ padding: "6px 10px" }}>↪ Redo</button>
@@ -1486,7 +1677,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           {selected && selected.kind === "player" && <button onClick={duplicateSelectedPlayer} style={{ padding: "6px 10px" }}>⧉ Duplicate player</button>}
           <button onClick={() => setPlaySignal((s) => s + 1)} className="coach-add-btn">▶ Play frame</button>
           {frames.length > 1 && <button onClick={previewAllBeats} style={{ padding: "6px 10px" }}>▶▶ Preview full play</button>}
-          <button onClick={() => setShowPreview3D(true)} style={{ padding: "6px 10px" }}>🧊 Watch live</button>
+          {!isDrill && <button onClick={() => setShowPreview3D(true)} style={{ padding: "6px 10px" }}>🧊 Watch live</button>}
         </div>
 
         {stampAction && (
@@ -1563,6 +1754,9 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             selected={selected}
             onSelect={setSelected}
             onAddDrawing={addDrawing}
+            labels={labelMode}
+            onAddExtraBall={addExtraBall}
+            onMoveExtraBall={moveExtraBall}
             playSignal={playSignal}
             onPlayDone={handlePreviewBeatDone}
             stampPreview={activeStamp && stampPreviewPos ? computeStampGhost(activeStamp, stampPreviewPos.x, stampPreviewPos.y) : null}
@@ -1603,7 +1797,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           <button onClick={addFrame} style={{ padding: "6px 10px" }}>+ Add step</button>
           <button onClick={duplicateFrame} style={{ padding: "6px 10px" }}>⧉ Duplicate step</button>
           {frames.length > 1 && <button onClick={() => deleteFrame(frameIdx)} style={{ padding: "6px 10px" }}>Delete step</button>}
-          <span style={{ fontSize: 12, color: "var(--muted)" }}>A play can be several sequential steps — e.g. "screen sets" then "cut".</span>
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>{isDrill ? "A drill can be several steps — e.g. \"pass and follow\" then \"rotate to the next line\"." : "A play can be several sequential steps — e.g. \"screen sets\" then \"cut\"."}</span>
         </div>
         <div style={{ marginTop: 10 }}>{renderStepDetails()}</div>
 
@@ -1615,7 +1809,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             <button onClick={() => setShowShare((v) => !v)} style={{ padding: "8px 14px" }}>Share with coach</button>
           )}
           {onClose && <button onClick={handleClose} style={{ padding: "8px 14px" }}>Close</button>}
-          {existingPlay && <button onClick={handleDelete} style={{ padding: "8px 14px", color: "#ff7b7b" }}>🗑 Delete play</button>}
+          {existingPlay && <button onClick={handleDelete} style={{ padding: "8px 14px", color: "#ff7b7b" }}>🗑 {isDrill ? "Delete diagram" : "Delete play"}</button>}
         </div>
 
         {showShare && (
@@ -1630,7 +1824,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         {toast && <p style={{ fontSize: 13, color: "var(--gold)", marginTop: 8 }}>{toast}</p>}
         {showTemplatePicker && (
           <TemplatePickerModal
-            formations={formations}
+            formations={formations.filter((f) => f.side !== "drill")}
             canDelete={currentUserRole === "admin"}
             onPick={applyFormation}
             onDelete={handleDeleteFormation}
@@ -1651,7 +1845,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
       </div>
 
       <div>
-        {!existingPlay && currentUserRole !== "player" && (
+        {drillSetupsPanel}
+        {!isDrill && !existingPlay && currentUserRole !== "player" && (
           <div style={{ marginBottom: 16 }}>
             <h3 style={{ fontSize: 14, marginBottom: 8 }}>Templates</h3>
             <button onClick={() => setShowTemplatePicker(true)} className="coach-add-btn" style={{ width: "100%", justifyContent: "center", marginBottom: 6 }}>
@@ -1684,6 +1879,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           + Save current step as action
         </button>
 
+        {!isDrill && <>
         <h3 style={{ fontSize: 14, margin: "16px 0 8px" }}>Link players to roster</h3>
         {frame.players.map((p, i) => (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
@@ -1696,6 +1892,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           </div>
         ))}
         {frame.players.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>Place players on the court to link them.</p>}
+        </>}
       </div>
     </div>
   );

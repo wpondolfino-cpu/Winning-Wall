@@ -7,7 +7,7 @@
 // actions and forked plays stay valid if the template changes later.
 
 import { useRef, useState, useEffect, type MouseEvent as ReactMouseEvent } from "react";
-import type { CourtTemplate, PlayFrame, PlayPlayer, PlayAction, ActionType, PlayText, PlayZone, PlayPoint } from "../../lib/plays";
+import type { CourtTemplate, PlayFrame, PlayPlayer, PlayAction, ActionType, PlayText, PlayZone, PlayPoint, PlayerLabels, ExtraBall } from "../../lib/plays";
 import type { RosterPlayer } from "../../lib/plays";
 import { resolvePassEndpoint, localActionProgress, pathProgress, playerActionSequence, stepTimingUnits, keepHookTip } from "../../lib/plays";
 import { genPlayerId } from "../../lib/plays";
@@ -22,7 +22,13 @@ interface Props {
   roster?: Record<string, RosterPlayer>;
   /** When true, clicks/drags on the court edit the frame via the callbacks below. */
   edit?: boolean;
-  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | "ghost" | "seal" | "keep" | null;
+  tool?: "player" | "defender" | "ball" | ActionType | "erase" | "select" | "draw" | "handoff" | "text" | "zone" | "cone" | "coach" | "shot" | "loop" | "ghost" | "seal" | "keep" | "line" | "extraball" | "rotate" | null;
+  /** How players are marked: numbers (default, plays), plain dots, or each player's letter (drills). */
+  labels?: PlayerLabels;
+  /** Drills, "+ Ball" tool — click to add an extra ball (on a player, it's theirs). */
+  onAddExtraBall?: (x: number, y: number) => void;
+  /** "select" tool — drag an extra ball (dropping it on a player gives it to them). */
+  onMoveExtraBall?: (index: number, x: number, y: number) => void;
   onAddPlayer?: (p: PlayPlayer) => void;
   onAddDefender?: (x: number, y: number) => void;
   onSetBall?: (x: number, y: number) => void;
@@ -70,8 +76,8 @@ interface Props {
   /** Override the court's background fill — used by PlayPrintView for a lighter, ink-friendly tone. */
   courtBg?: string;
   /** "select" tool — the currently selected element, highlighted, and what Delete/Backspace acts on. */
-  selected?: { kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone" | "coach"; index: number } | null;
-  onSelect?: (sel: { kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone" | "coach"; index: number } | null) => void;
+  selected?: { kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone" | "coach" | "extraball"; index: number } | null;
+  onSelect?: (sel: { kind: "player" | "defender" | "ball" | "action" | "text" | "zone" | "cone" | "coach" | "extraball"; index: number } | null) => void;
   /** Viewer-only, local override — renders this one player (by stable id) with the viewer's own avatar, regardless of what's actually linked in the play data. Never persisted or saved. */
   selfOverride?: { playerId: string; avatarUrl: string | null } | null;
   /**
@@ -158,13 +164,20 @@ function courtBackground(template: CourtTemplate) {
 
 /** The ball's effective position — follows its holder (by id) when one is set, otherwise its own stored x/y. Shared by rendering and hit-testing so a click always lands where the ball is actually drawn.
  * ballHolderId only ever gets computed when advancing into a NEW frame based on the previous one's actions — drawing a dribble doesn't retroactively set it on that same frame, so falls back to a dribble action's own source player when ballHolderId isn't set yet (e.g. the very first step of a play, before ever clicking "Add step"). */
-function getBallPos(f: PlayFrame): { x: number; y: number } | null {
+function getBallPos(f: PlayFrame, offset = false): { x: number; y: number } | null {
   const holderId = f.ballHolderId ?? f.actions.find((a) => a.type === "dribble" && a.sourcePlayerId)?.sourcePlayerId ?? null;
   if (holderId) {
     const holder = f.players.find((p) => p.id === holderId);
-    if (holder) return { x: holder.x, y: holder.y };
+    // Drills showing letters (or nothing) hold the ball off-centre like the extra balls, so a letter isn't covered. Plays keep it centred.
+    if (holder) return offset ? { x: holder.x + 10, y: holder.y + 10 } : { x: holder.x, y: holder.y };
   }
   return f.ball;
+}
+
+/** Where an extra ball is drawn: on its holder (a little off-centre, so their mark still shows), otherwise its own spot. */
+function extraBallPos(f: PlayFrame, b: ExtraBall): { x: number; y: number; held: boolean } {
+  const h = b.holderId ? f.players.find((p) => p.id === b.holderId) : undefined;
+  return h ? { x: h.x + 10, y: h.y + 10, held: true } : { x: b.x, y: b.y, held: false };
 }
 
 function pointsToPath(points: { x: number; y: number }[]) {
@@ -464,8 +477,24 @@ function distToAction(px: number, py: number, a: PlayAction) {
 
 const FACE_COLORS = ["#378ADD", "#639922", "#D85A30", "#D4537E", "#7F77DD"];
 
-function PlayerIcon({ p, avatarUrl }: { p: PlayPlayer; avatarUrl?: string | null }) {
+/** A drill line: two faded players behind the front one, and its length. */
+function LineStack({ p }: { p: PlayPlayer }) {
+  if (!p.line || p.line < 2) return null;
+  // The line trails behind the front player — downward normally, upward when they stand on the baseline so it stays on the court.
+  const d = p.y > CANVAS_H - 45 ? -1 : 1;
+  return (
+    <g>
+      <circle cx={p.x} cy={p.y + 21 * d} r={11} fill="#E6F1FB" stroke="#185FA5" strokeWidth={1.5} opacity={0.35} />
+      <circle cx={p.x} cy={p.y + 11 * d} r={12} fill="#E6F1FB" stroke="#185FA5" strokeWidth={1.5} opacity={0.6} />
+      <text x={p.x + 15} y={d > 0 ? p.y + 30 : p.y - 22} fontSize={13} fontWeight={700} fill="var(--court-ink)">×{p.line}</text>
+    </g>
+  );
+}
+
+function PlayerIcon({ p, avatarUrl, labels = "numbers" }: { p: PlayPlayer; avatarUrl?: string | null; labels?: PlayerLabels }) {
   const color = FACE_COLORS[(p.num - 1 + 5) % 5];
+  // What's written on the player: their number (plays), their letter, or nothing.
+  const mark = labels === "numbers" ? String(p.num) : labels === "letters" ? (p.letter ?? "").slice(0, 2) : "";
   if (avatarUrl) {
     const clipId = `pc-clip-${p.num}-${Math.round(p.x)}-${Math.round(p.y)}`;
     return (
@@ -473,8 +502,10 @@ function PlayerIcon({ p, avatarUrl }: { p: PlayPlayer; avatarUrl?: string | null
         <defs><clipPath id={clipId}><circle cx={p.x} cy={p.y} r={14} /></clipPath></defs>
         <circle cx={p.x} cy={p.y} r={15} fill="var(--surface)" stroke={color} strokeWidth={2} />
         <image href={avatarUrl} x={p.x - 14} y={p.y - 14} width={28} height={28} clipPath={`url(#${clipId})`} />
-        <circle cx={p.x + 10} cy={p.y + 10} r={7} fill="var(--surface)" stroke={color} strokeWidth={1.5} />
-        <text x={p.x + 10} y={p.y + 13} textAnchor="middle" fontSize={9} fontWeight={500} fill={color}>{p.num}</text>
+        {mark && <>
+          <circle cx={p.x + 10} cy={p.y + 10} r={7} fill="var(--surface)" stroke={color} strokeWidth={1.5} />
+          <text x={p.x + 10} y={p.y + 13} textAnchor="middle" fontSize={9} fontWeight={500} fill={color}>{mark}</text>
+        </>}
         {p.handoff && (
           <g>
             <circle cx={p.x - 10} cy={p.y - 10} r={7} fill="var(--surface)" stroke="var(--gold)" strokeWidth={1.5} />
@@ -491,7 +522,7 @@ function PlayerIcon({ p, avatarUrl }: { p: PlayPlayer; avatarUrl?: string | null
       <circle cx={p.x} cy={p.y} r={13} fill={focus ? "#F0C040" : "#E6F1FB"} stroke={focus ? "#8A6A12" : "#185FA5"} strokeWidth={2} />
       {/* Numbers fill the circle (bold, ~19 units; two digits a bit
           smaller) so they read on a phone without the circles growing. */}
-      <text x={p.x} y={p.y} dy="0.35em" textAnchor="middle" fontSize={String(p.num).length > 1 ? 15 : 19} fontWeight={800} fill={focus ? "#2A2008" : "#0C447C"}>{p.num}</text>
+      {mark && <text x={p.x} y={p.y} dy="0.35em" textAnchor="middle" fontSize={mark.length > 1 ? 15 : 19} fontWeight={800} fill={focus ? "#2A2008" : "#0C447C"}>{mark}</text>}
       {p.handoff && (
         <g>
           <circle cx={p.x - 10} cy={p.y - 10} r={7} fill="var(--surface)" stroke="var(--gold)" strokeWidth={1.5} />
@@ -508,6 +539,7 @@ export default function PlayCanvas({
   onMovePlayer, onMoveDefender, onMoveBall, onMoveActionPoint, onMoveActionWhole, onAddDrawing, onToggleHandoff, onSetActionCurve, onSetActionCurve2,
   onAddText, onMoveText, onEditText, onAddZone, onMoveZone, onAddCone, onMoveCone, onAddCoach, onMoveCoach, onAddShot, stampPreview,
   playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect, selfOverride = null, speed = 1, viewBox = null,
+  labels = "numbers", onAddExtraBall, onMoveExtraBall,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
@@ -522,6 +554,7 @@ export default function PlayCanvas({
     | { kind: "player" | "defender" | "text" | "cone" | "coach"; index: number }
     | { kind: "zone"; index: number; offsetX: number; offsetY: number }
     | { kind: "ball" }
+    | { kind: "extraball"; index: number }
     | { kind: "actionStart" | "actionEnd"; index: number }
     | { kind: "actionCurve"; index: number }
     | { kind: "actionCurve2"; index: number }
@@ -546,7 +579,9 @@ export default function PlayCanvas({
     e.preventDefault();
     try { window.getSelection()?.removeAllRanges(); } catch { /* nothing selected */ }
     const p = pointFromEvent(e);
-    if (tool === "player") { onAddPlayer?.({ id: genPlayerId(), num: nextNum, x: p.x, y: p.y }); return; }
+    // "line" places a player too; the editor makes them the front of a line.
+    if (tool === "player" || tool === "line") { onAddPlayer?.({ id: genPlayerId(), num: nextNum, x: p.x, y: p.y }); return; }
+    if (tool === "extraball") { onAddExtraBall?.(p.x, p.y); return; }
     if (tool === "defender") { onAddDefender?.(p.x, p.y); return; }
     if (tool === "ball") { onSetBall?.(p.x, p.y); return; }
     if (tool === "erase") { onErase?.(p.x, p.y); return; }
@@ -564,7 +599,7 @@ export default function PlayCanvas({
       });
       if (cut >= 0) { onGhostMark(cut, p.x, p.y); return; }
     }
-    if (tool === "draw") { setDrawPoints([p]); return; }
+    if (tool === "draw" || tool === "rotate") { setDrawPoints([p]); return; }
     if (tool === "text") { onAddText?.(p.x, p.y); return; }
     if (tool === "handoff") {
       let closest = -1, closestDist = 20;
@@ -594,8 +629,11 @@ export default function PlayCanvas({
       for (let i = 0; i < frame.defenders.length; i++) {
         if (within(frame.defenders[i], 16)) { setMoveDrag({ kind: "defender", index: i }); setMovePos(p); return; }
       }
-      const ballHit = getBallPos(frame);
+      const ballHit = getBallPos(frame, labels !== "numbers");
       if (ballHit && within(ballHit, 12)) { setMoveDrag({ kind: "ball" }); setMovePos(p); return; }
+      for (let i = 0; i < (frame.extraBalls ?? []).length; i++) {
+        if (within(extraBallPos(frame, frame.extraBalls![i]), 11)) { setMoveDrag({ kind: "extraball", index: i }); setMovePos(p); return; }
+      }
       for (let i = 0; i < frame.actions.length; i++) {
         const a = frame.actions[i];
         if ((a.type === "move" || a.type === "pass" || a.type === "dribble" || a.type === "screen" || a.type === "lob" || a.type === "dho") && within(curveHandlePos(a), 11)) {
@@ -673,6 +711,7 @@ export default function PlayCanvas({
       if (moveDrag.kind === "player") { onMovePlayer?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "player", index: moveDrag.index }); }
       else if (moveDrag.kind === "defender") { onMoveDefender?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "defender", index: moveDrag.index }); }
       else if (moveDrag.kind === "ball") { onMoveBall?.(p.x, p.y); onSelect?.({ kind: "ball", index: 0 }); }
+      else if (moveDrag.kind === "extraball") { onMoveExtraBall?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "extraball", index: moveDrag.index }); }
       else if (moveDrag.kind === "actionStart") { onMoveActionPoint?.(moveDrag.index, "start", p.x, p.y); onSelect?.({ kind: "action", index: moveDrag.index }); }
       else if (moveDrag.kind === "actionEnd") { onMoveActionPoint?.(moveDrag.index, "end", p.x, p.y); onSelect?.({ kind: "action", index: moveDrag.index }); }
       else if (moveDrag.kind === "actionCurve") { onSetActionCurve?.(moveDrag.index, p.x, p.y); onSelect?.({ kind: "action", index: moveDrag.index }); }
@@ -854,6 +893,8 @@ export default function PlayCanvas({
       displayFrame = { ...frame, defenders: frame.defenders.map((d, i) => i === moveDrag.index ? { x: movePos.x, y: movePos.y } : d) };
     } else if (moveDrag.kind === "ball") {
       displayFrame = { ...frame, ball: { x: movePos.x, y: movePos.y } };
+    } else if (moveDrag.kind === "extraball") {
+      displayFrame = { ...frame, extraBalls: (frame.extraBalls ?? []).map((b, i) => i === moveDrag.index ? { ...b, x: movePos.x, y: movePos.y, holderId: null } : b) };
     } else if (moveDrag.kind === "actionStart") {
       displayFrame = { ...frame, actions: frame.actions.map((a, i) => i === moveDrag.index ? { ...a, x1: movePos.x, y1: movePos.y } : a) };
     } else if (moveDrag.kind === "actionEnd") {
@@ -884,7 +925,7 @@ export default function PlayCanvas({
 
   // The ball follows whoever currently holds it (even mid-drag), instead of
   // its own stored position — dragging the ball-carrier brings the ball along.
-  const ballPos = getBallPos(displayFrame);
+  const ballPos = getBallPos(displayFrame, labels !== "numbers");
 
   return (
     <svg
@@ -902,6 +943,9 @@ export default function PlayCanvas({
         </marker>
         <marker id="pc-arrow-pass" markerWidth={8} markerHeight={8} refX={6} refY={4} orient="auto">
           <path d="M0,0 L8,4 L0,8 Z" fill="#185FA5" />
+        </marker>
+        <marker id="pc-arrow-rotate" markerWidth={8} markerHeight={8} refX={6} refY={4} orient="auto">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#9aa3b2" />
         </marker>
       </defs>
       {courtBackground(courtTemplate)}
@@ -947,13 +991,19 @@ export default function PlayCanvas({
         );
       })}
 
-      {(displayFrame.drawings ?? []).map((d, i) => (
+      {(displayFrame.drawings ?? []).map((d, i) => d.kind === "rotate" ? (
+        // "Rotate to": where players go after their rep. Gray and dashed so
+        // it never reads as part of the action.
+        <path key={i} d={pointsToPath(d.points)} fill="none" stroke="#9aa3b2" strokeWidth={2} strokeDasharray="5 6" strokeLinecap="round" strokeLinejoin="round" markerEnd="url(#pc-arrow-rotate)" />
+      ) : (
         <path key={i} d={pointsToPath(d.points)} fill="none" stroke="var(--gold)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
       ))}
-      {drawPoints && drawPoints.length > 1 && (
-        <path d={pointsToPath(drawPoints)} fill="none" stroke="var(--gold)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
+      {drawPoints && drawPoints.length > 1 && (tool === "rotate"
+        ? <path d={pointsToPath(drawPoints)} fill="none" stroke="#9aa3b2" strokeWidth={2} strokeDasharray="5 6" strokeLinecap="round" strokeLinejoin="round" opacity={0.8} />
+        : <path d={pointsToPath(drawPoints)} fill="none" stroke="var(--gold)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
       )}
 
+      {displayFrame.players.map((p, i) => <LineStack key={"line-" + i} p={p} />)}
       {displayFrame.players.map((p, i) => {
         const isSelf = !!(selfOverride && p.id === selfOverride.playerId);
         const rp = p.profile_id ? roster[p.profile_id] : undefined;
@@ -963,6 +1013,7 @@ export default function PlayCanvas({
             key={i}
             p={p}
             avatarUrl={avatarUrl}
+            labels={labels}
           />
         );
       })}
@@ -1009,6 +1060,14 @@ export default function PlayCanvas({
       {ballPos && (
         <circle cx={ballPos.x} cy={ballPos.y} r={8} fill="#EF9F27" stroke="#854F0B" strokeWidth={1.5} />
       )}
+      {(displayFrame.extraBalls ?? []).map((b, i) => {
+        const at = extraBallPos(displayFrame, b);
+        return <circle key={"xb-" + i} cx={at.x} cy={at.y} r={at.held ? 7 : 8} fill="#EF9F27" stroke="#854F0B" strokeWidth={1.5} />;
+      })}
+      {selected && selected.kind === "extraball" && (displayFrame.extraBalls ?? [])[selected.index] && (() => {
+        const at = extraBallPos(displayFrame, (displayFrame.extraBalls ?? [])[selected.index]);
+        return <circle cx={at.x} cy={at.y} r={13} fill="none" stroke="var(--gold)" strokeWidth={2} strokeDasharray="4,3" />;
+      })()}
 
       {(displayFrame.texts ?? []).map((t, i) => {
         const w = Math.max(24, t.text.length * 6.2 + 10);
