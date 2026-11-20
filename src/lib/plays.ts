@@ -188,16 +188,41 @@ function nearestPlayerId(f: PlayFrame, at: { x: number; y: number }, within = 26
   return best;
 }
 
+/** A player's letter when the coach hasn't typed one: player 1 is A, 2 is B, and so on. */
+export function defaultLetter(num: number): string {
+  return num >= 1 && num <= 26 ? String.fromCharCode(64 + num) : "";
+}
+
+/** The id of the line left behind when its front player moves off (drills). Fixed, so every re-step finds the same one. */
+const LINE_STAY = "~line";
+function lineStayId(id: string | undefined): string | undefined {
+  return id ? id + LINE_STAY : undefined;
+}
+
 export function deriveNextFrame(prev: PlayFrame): PlayFrame {
   // Cuts/dribbles/screens carry their player forward to the action's
   // endpoint; everyone else keeps their prior spot. Handoff markers clear
   // each step since they mark a one-time moment, not a persistent state.
-  const players = prev.players.map((p) => {
+  // Drills: when the front of a line moves, only that player goes. The line
+  // stays where it was (same count, same direction, same letter) with the
+  // next player stepping up; the one who left is on their own from here.
+  // The mover keeps their id, so a ball they hold or a pass to them follows
+  // them; the line that stays gets a fixed id built from theirs, so
+  // re-stepping finds the same line again.
+  let nextNum = prev.players.reduce((m, p) => Math.max(m, p.num || 0), 0) + 1;
+  const stayingLines: PlayPlayer[] = [];
+  const players: PlayPlayer[] = prev.players.map((p) => {
     const seq = p.id ? playerActionSequence(prev, p.id).filter((a) => a.type === "move" || a.type === "dribble" || a.type === "screen") : [];
     const sourced = seq[seq.length - 1];
+    if (sourced && p.line && p.line > 1) {
+      stayingLines.push({ ...p, id: lineStayId(p.id), num: nextNum++, letter: p.letter ?? defaultLetter(p.num), handoff: false });
+      const { line: _l, lineDir: _d, ...solo } = p;
+      return { ...solo, letter: p.letter ?? defaultLetter(p.num), x: sourced.x2, y: sourced.y2, handoff: false };
+    }
     const base = sourced ? { ...p, x: sourced.x2, y: sourced.y2 } : { ...p };
     return { ...base, handoff: false };
   });
+  players.push(...stayingLines);
 
   // Ball possession carries forward: a shot ends possession outright
   // (nobody's holding a ball that just went up), otherwise an explicit
@@ -315,15 +340,22 @@ function reanchorFrame(frame: PlayFrame, derived: PlayFrame): PlayFrame {
   const deltas = new Map<string, { dx: number; dy: number }>();
 
   const derivedPlayers = new Map(derived.players.filter((p) => p.id).map((p) => [p.id as string, p]));
-  const players = frame.players.map((p) => {
+  // A line left behind by an earlier step's cut that no longer happens goes away.
+  const kept = frame.players.filter((p) => !(p.id?.endsWith(LINE_STAY) && !derivedPlayers.has(p.id)));
+  const players = kept.map((p) => {
     const to = p.id ? derivedPlayers.get(p.id) : undefined;
     if (!to) return p; // added on this step — leave it alone
     const dx = to.x - p.x, dy = to.y - p.y;
     if (dx || dy) deltas.set(p.id as string, { dx, dy });
     // Keep this step's own handoff marker: it belongs to this beat, not
-    // to the carry-forward.
-    return { ...p, x: to.x, y: to.y };
+    // to the carry-forward. Whether they're the front of a line follows the
+    // earlier step (a cut from a line leaves them on their own).
+    const lineFields = (p.line ?? 0) > 1 || (to.line ?? 0) > 1 ? { line: to.line, lineDir: to.lineDir } : {};
+    return { ...p, x: to.x, y: to.y, ...lineFields };
   });
+  // A line an earlier step's cut now leaves behind joins this step too.
+  const have = new Set(players.map((p) => p.id));
+  for (const d of derived.players) if (d.id?.endsWith(LINE_STAY) && !have.has(d.id)) players.push({ ...d });
 
   const derivedDefenders = new Map(derived.defenders.filter((d) => d.id).map((d) => [d.id as string, d]));
   const defenders = frame.defenders.map((d) => {

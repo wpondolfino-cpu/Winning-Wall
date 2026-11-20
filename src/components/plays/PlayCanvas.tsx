@@ -10,7 +10,8 @@ import { useRef, useState, useEffect, type MouseEvent as ReactMouseEvent } from 
 import type { CourtTemplate, PlayFrame, PlayPlayer, PlayAction, ActionType, PlayText, PlayZone, PlayPoint, PlayerLabels, ExtraBall } from "../../lib/plays";
 import type { RosterPlayer } from "../../lib/plays";
 import { resolvePassEndpoint, localActionProgress, pathProgress, playerActionSequence, stepTimingUnits, keepHookTip } from "../../lib/plays";
-import { genPlayerId } from "../../lib/plays";
+import { genPlayerId, defaultLetter } from "../../lib/plays";
+export { defaultLetter };
 
 export const CANVAS_W = 600;
 export const CANVAS_H = 420;
@@ -509,11 +510,6 @@ function LineStack({ p }: { p: PlayPlayer }) {
       <text x={lx} y={ly} textAnchor={dx < -0.3 ? "end" : "start"} fontSize={13} fontWeight={700} fill="var(--court-ink)">×{p.line}</text>
     </g>
   );
-}
-
-/** A player's letter when the coach hasn't typed one: player 1 is A, 2 is B, and so on. */
-export function defaultLetter(num: number): string {
-  return num >= 1 && num <= 26 ? String.fromCharCode(64 + num) : "";
 }
 
 function PlayerIcon({ p, avatarUrl, labels = "numbers" }: { p: PlayPlayer; avatarUrl?: string | null; labels?: PlayerLabels }) {
