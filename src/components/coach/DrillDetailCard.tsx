@@ -7,7 +7,8 @@
 // Used by the Drill Library and the practice designer, so the card looks and
 // works the same in both. Drawing or editing the diagram opens the drill
 // designer over the whole screen; the first save links the new diagram to
-// the drill, and closing comes back to this card with the diagram showing.
+// the drill, and Save diagram (or Close) comes back to this card with the
+// diagram showing.
 
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { getYouTubeId } from "../../lib/youtube";
@@ -80,7 +81,7 @@ export default function DrillDetailCard({ drill, diagram, canManage, onClose, on
               alert(/diagram_play_id/i.test(error) ? "Run SQL 214 in Supabase so diagrams can be attached to drills." : "Couldn't attach the diagram yet: " + error);
             },
           }}
-          onSaved={() => { /* stay in the designer; Close goes back */ }}
+          onSaved={back /* Save diagram saves and closes, back to the card */}
           onClose={back}
         />
       </div>
