@@ -602,6 +602,9 @@ export default function PlayCanvas({
   playSignal, onPlayDone, courtBg = "#3a2a17", selected = null, onSelect, selfOverride = null, speed = 1, viewBox = null,
   labels = "numbers", marks, onAddExtraBall, onMoveExtraBall, onSetLineDir,
 }: Props) {
+  // Drills hold the ball at the player's side so their number or letter stays
+  // readable; plays keep it centred on the player, as always. (Only drills pass marks.)
+  const ballBeside = !!marks || labels !== "numbers";
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [dragCurrent, setDragCurrent] = useState<{ x: number; y: number } | null>(null);
@@ -696,7 +699,7 @@ export default function PlayCanvas({
       for (let i = 0; i < frame.defenders.length; i++) {
         if (within(frame.defenders[i], 16)) { setMoveDrag({ kind: "defender", index: i }); setMovePos(p); return; }
       }
-      const ballHit = getBallPos(frame, labels !== "numbers");
+      const ballHit = getBallPos(frame, ballBeside);
       if (ballHit && within(ballHit, 12)) { setMoveDrag({ kind: "ball" }); setMovePos(p); return; }
       for (let i = 0; i < (frame.extraBalls ?? []).length; i++) {
         if (within(extraBallPos(frame, frame.extraBalls![i]), 11)) { setMoveDrag({ kind: "extraball", index: i }); setMovePos(p); return; }
@@ -995,7 +998,7 @@ export default function PlayCanvas({
 
   // The ball follows whoever currently holds it (even mid-drag), instead of
   // its own stored position — dragging the ball-carrier brings the ball along.
-  const ballPos = getBallPos(displayFrame, labels !== "numbers");
+  const ballPos = getBallPos(displayFrame, ballBeside);
 
   return (
     <svg
