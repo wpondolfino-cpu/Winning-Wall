@@ -211,10 +211,23 @@ function joinsLine(f: PlayFrame, moverId: string, a: PlayAction): boolean {
  * skipped (delete a player and the rest close up). A line left behind when
  * its front player moves off keeps that player's mark: "the C line".
  */
+export function coachesAsPlayers(frames: PlayFrame[]): PlayFrame[] {
+  // Drills drawn before coaches could do what players do kept them as
+  // markers on the side. Bring them in as coach players: each one is in the
+  // same place in the list on every step, so its place makes its id.
+  if (!frames.some((f) => f.coachMarkers?.length)) return frames;
+  return frames.map((f) => ({
+    ...f,
+    players: [...f.players, ...(f.coachMarkers ?? []).map((c, i) => ({ id: `coach-${i}`, num: 0, x: c.x, y: c.y, coach: true }))],
+    coachMarkers: [],
+  }));
+}
+
 export function drillMarks(frames: PlayFrame[]): Record<string, number> {
   const order: string[] = [];
   const seen = new Set<string>();
   for (const f of frames) for (const p of f.players) {
+    if (p.coach) continue;
     const base = p.id ? p.id.split(LINE_STAY)[0] : "";
     if (base && !seen.has(base)) { seen.add(base); order.push(base); }
   }
@@ -1247,6 +1260,8 @@ export interface PlayPlayer {
   quizFocus?: boolean;
   /** Drill diagrams with letters on: this player's letter (1-2 characters, e.g. "S"). */
   letter?: string;
+  /** Drills: a coach on the floor, drawn as a "C". A coach is a player in every other way — passes, catches, cuts, dribbles, screens, shoots, rotates, holds a ball, even stands at the front of a line — but isn't counted in the 1, 2, 3… / A, B, C… marks. */
+  coach?: boolean;
   /** Drill diagrams: this player is the front of a line this many long (drawn as a short stack with "x4"). */
   line?: number;
   /** Drills: which way the line trails behind the front player, in degrees (0 = right, 90 = down/behind, 180 = left, 270 = up). Unset = straight down, or up on the baseline. */

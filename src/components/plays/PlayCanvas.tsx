@@ -551,6 +551,19 @@ function LineStack({ p }: { p: PlayPlayer }) {
 }
 
 function PlayerIcon({ p, avatarUrl, labels = "numbers", n }: { p: PlayPlayer; avatarUrl?: string | null; labels?: PlayerLabels; n?: number }) {
+  // A coach (drills) is a player in everything but looks: always a "C".
+  if (p.coach) return (
+    <g>
+      <circle cx={p.x} cy={p.y} r={13} fill="#2f4a7a" stroke="#1a2c4c" strokeWidth={1.5} />
+      <text x={p.x} y={p.y + 1} textAnchor="middle" dominantBaseline="middle" fontSize={14} fontWeight={700} fill="#fff">C</text>
+      {p.handoff && (
+        <g>
+          <circle cx={p.x - 10} cy={p.y - 10} r={7} fill="var(--surface)" stroke="var(--gold)" strokeWidth={1.5} />
+          <text x={p.x - 10} y={p.y - 7} textAnchor="middle" fontSize={12} fontWeight={700} fill="var(--gold)">*</text>
+        </g>
+      )}
+    </g>
+  );
   const color = FACE_COLORS[(p.num - 1 + 5) % 5];
   // What's written on the player: their number (plays), their letter, or nothing.
   // Drills pass n, the player's place in the drill, so marks never repeat or skip.

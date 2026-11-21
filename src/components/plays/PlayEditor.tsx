@@ -12,7 +12,7 @@ import {
   Play, PlayData, PlayFrame, PlayPlayer, PlayAction, ActionType, type PlayerLabels,
   CourtTemplate, COURT_TEMPLATES, COURT_TEMPLATE_LABELS,
   SavedAction, Formation, RosterPlayer, PlayShareTarget, templateCourt, convertFormationData,
-  emptyPlayData, createPlay, updatePlay, deletePlay, genPlayerId, deriveNextFrame, drillMarks,
+  emptyPlayData, createPlay, updatePlay, deletePlay, genPlayerId, deriveNextFrame, drillMarks, coachesAsPlayers,
   restepFrom, restepAffectedCount, carryForwardSignature,
   stepButtonText, STEP_LABEL_MAX, STEP_NOTE_MAX,
   getSavedActions, createSavedAction, deleteSavedAction,
@@ -153,7 +153,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     // Same for defenders: a Cut or Loop only moves a defender when it's
     // linked to their id, so one without an id could never move. Keyed by
     // position so the same defender gets the same id in every step.
-    return initial.map((f) => ({
+    // Drills: coaches placed before they could act like players come in as coach players.
+    return (isDrill ? coachesAsPlayers(initial) : initial).map((f) => ({
       ...f,
       players: f.players.map((p, i) => (p.id ? p : { ...p, id: `legacy-${i}` })),
       defenders: (f.defenders ?? []).map((d, i) => (d.id ? d : { ...d, id: `legacy-def-${i}` })),
@@ -434,6 +435,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
 
   function addCoach(x: number, y: number) {
     pushHistory();
+    // Drills: a coach is a player who shows a "C", so they can pass, catch, cut… like anyone.
+    if (isDrill) { updateFrame((f) => ({ ...f, players: [...f.players, { id: genPlayerId(), num: 0, x, y, coach: true }] })); return; }
     updateFrame((f) => ({ ...f, coachMarkers: [...(f.coachMarkers ?? []), { x, y }] }));
   }
   const moveCoach = useCallback((idx: number, x: number, y: number) => {
@@ -1238,7 +1241,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
         </label>
       )}
       {/* The selected player's letter and line length. */}
-      {selPlayer && selected && labelMode === "letters" && (
+      {selPlayer && selected && labelMode === "letters" && !selPlayer.coach && (
         <label style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
           Letter
           <input key={`letter-${selected.index}`} defaultValue={selPlayer.letter ?? ""} maxLength={2} placeholder={defaultLetter((selPlayer.id && marks?.[selPlayer.id]) || selPlayer.num) || "S"}
