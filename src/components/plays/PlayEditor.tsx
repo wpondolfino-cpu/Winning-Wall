@@ -127,7 +127,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   // A drill's diagram: drill tools, no numbers by default, extra balls,
   // drill setups instead of play sets, no 3D.
   const isDrill = !!drill || existingPlay?.kind === "drill";
-  const [labelMode, setLabelMode] = useState<PlayerLabels>(existingPlay?.data?.labels ?? (isDrill ? "none" : "numbers"));
+  // New drills start with no marks; a diagram saved before marks were a choice showed numbers, so it keeps them.
+  const [labelMode, setLabelMode] = useState<PlayerLabels>(existingPlay ? (existingPlay.data?.labels ?? "numbers") : (isDrill ? "none" : "numbers"));
   const [lineSize, setLineSize] = useState(4);
   const [tagsInput, setTagsInput] = useState((existingPlay?.tags ?? []).join(", "));
   const [allTags, setAllTags] = useState<string[]>([]);

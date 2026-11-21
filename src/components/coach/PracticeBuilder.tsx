@@ -22,6 +22,8 @@ import CopyDrillPicker from "./CopyDrillPicker";
 import SaveTemplateModal from "./SaveTemplateModal";
 import TryoutPoolManager from "./TryoutPoolManager";
 import PracticeDrillLibrary from "./PracticeDrillLibrary";
+import DrillDetailCard from "./DrillDetailCard";
+import { getDrillDiagrams, type Play } from "../../lib/plays";
 import PracticePrintView from "./PracticePrintView";
 import PracticeCoverList from "../quizzes/PracticeCoverList";
 import NotesBox from "./NotesBox";
@@ -115,6 +117,9 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
   const [showPrint, setShowPrint] = useState(false);
   const [drillsById, setDrillsById] = useState<Record<string, PracticeDrillLibraryDrill>>({});
   const [editingDrillDetails, setEditingDrillDetails] = useState<{ drill: SegmentDrill; block: PracticeBlock } | null>(null);
+  // Tapping a drill's name opens its card -- the same one as the Drill Library.
+  const [cardFor, setCardFor] = useState<{ drill: SegmentDrill; block: PracticeBlock } | null>(null);
+  const [cardDiagram, setCardDiagram] = useState<Play | null>(null);
   const [coachPickerTarget, setCoachPickerTarget] = useState<{ drill: SegmentDrill; block: PracticeBlock } | null>(null);
   const [coachSelection, setCoachSelection] = useState<Set<string>>(new Set());
   const [detailsLabel, setDetailsLabel] = useState("");
@@ -576,6 +581,17 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
     } catch (e: any) {
       alert("Couldn't save the new order: " + e.message);
       setDrillsBySeg(prev => ({ ...prev, [segmentId]: current }));
+    }
+  }
+
+  function openDrillCard(drill: SegmentDrill, block: PracticeBlock) {
+    const lib = drill.drill_id ? drillsById[drill.drill_id] : null;
+    if (!lib) return;
+    setCardDiagram(null);
+    setCardFor({ drill, block });
+    if (lib.diagram_play_id) {
+      const id = lib.diagram_play_id;
+      getDrillDiagrams([id]).then(got => setCardDiagram(got[id] ?? null)).catch(console.error);
     }
   }
 
@@ -1181,7 +1197,10 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                                 </span>
                               )}
                               {d.drill_id ? (
-                                <span style={{ fontSize: 13, fontWeight: 600 }}>{drillsById[d.drill_id]?.title ?? "Loading…"}</span>
+                                <span role="button" tabIndex={0} title="Open this drill"
+                                  onClick={() => openDrillCard(d, block)}
+                                  onKeyDown={e => { if (e.key === "Enter") openDrillCard(d, block); }}
+                                  style={{ fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{drillsById[d.drill_id]?.title ?? "Loading…"}</span>
                               ) : (
                                 // An outline: just its words, made to stand out. Tap to pick the drill.
                                 <span role="button" tabIndex={0} title="Outline: tap to pick the drill for it"
@@ -1377,6 +1396,20 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
             )}
           </div>
         </>
+      )}
+
+      {cardFor && cardFor.drill.drill_id && drillsById[cardFor.drill.drill_id] && (
+        <DrillDetailCard
+          drill={drillsById[cardFor.drill.drill_id]}
+          diagram={cardDiagram}
+          canManage
+          onClose={() => setCardFor(null)}
+          onDiagramChanged={(drillId, play) => {
+            setCardDiagram(play);
+            setDrillsById(prev => prev[drillId] ? { ...prev, [drillId]: { ...prev[drillId], diagram_play_id: play.id } } : prev);
+          }}
+          actions={<button onClick={() => { const { drill, block } = cardFor; setCardFor(null); openDrillDetails(drill, block); }} style={smallBtn}>Edit</button>}
+        />
       )}
 
       {editingDrillDetails && (
