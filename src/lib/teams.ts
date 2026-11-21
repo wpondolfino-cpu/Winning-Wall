@@ -122,7 +122,3 @@ export async function endTeamCompetition(
     playerCount: playerList.length,
   };
 }
-
-export async function toggleTeamCompetition(active: boolean): Promise<void> {
-  await supabase.from("team_competitions").update({ is_active: active }).eq("is_active", !active);
-}

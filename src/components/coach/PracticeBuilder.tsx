@@ -12,23 +12,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useHelpTopic } from "../../lib/help";
 import { supabase } from "../../lib/supabase";
-import {
-  Roster, PracticeWeek, Practice, PracticeBlock, BlockSegment, SegmentDrill,
-  AttendanceOverride, SavedGrouping, getRosters, getPracticeWeeks, createPracticeWeek,
-  suggestNextWeekName, getPractice, createPractice, updatePractice,
-  setPracticeStatus, deletePractice, duplicatePractice, getPracticeBlocks,
-  getPracticeTemplates, PracticeTemplate,
-  createBlock, updateBlock, deleteBlock, reorderBlocks, getSegments,
-  createSegment, deleteSegment, getSegmentDrills, createSegmentDrill,
-  updateSegmentDrill, deleteSegmentDrill, autoSplitSegmentDrillDurations, reorderSegmentDrills,
-  getAttendanceOverrides, setAttendanceOverride, clearAttendanceOverride, setAbsenceExcused,
-  computeEffectiveAttendees, computeBlockTimes, totalDurationMinutes,
-  formatDuration, columnTotals, getSavedGroupings, getAssignableCoaches, CoachLite, getGroupCountsForDrills,
-  TryoutPlayer, getTryoutPlayers, getTryoutAttendance, setTryoutAttendance, getCurrentSeason,
-  savePracticeAsTemplate, applyTemplateToPractice,
-  deletePracticeTemplate, renamePracticeTemplate,
-  updatePracticeDrill, createPracticeDrillCategory, getSegmentDrillGroups, updateGroupPlaceAndCoaches, getPracticeDrillCategories, PracticeDrillCategory, getPlaysForLinking, getPracticeDrillTags,
-} from "../../lib/practicePlanner";
+import { Roster, PracticeWeek, Practice, PracticeBlock, BlockSegment, SegmentDrill, AttendanceOverride, SavedGrouping, getRosters, getPracticeWeeks, createPracticeWeek, suggestNextWeekName, getPractice, createPractice, updatePractice, setPracticeStatus, deletePractice, duplicatePractice, getPracticeBlocks, getPracticeTemplates, PracticeTemplate, createBlock, updateBlock, deleteBlock, reorderBlocks, getSegments, createSegment, deleteSegment, getSegmentDrills, createSegmentDrill, updateSegmentDrill, deleteSegmentDrill, autoSplitSegmentDrillDurations, reorderSegmentDrills, getAttendanceOverrides, setAttendanceOverride, clearAttendanceOverride, setAbsenceExcused, computeEffectiveAttendees, computeBlockTimes, totalDurationMinutes, formatDuration, columnTotals, getSavedGroupings, getAssignableCoaches, CoachLite, getGroupCountsForDrills, TryoutPlayer, getTryoutPlayers, getTryoutAttendance, getCurrentSeason, savePracticeAsTemplate, applyTemplateToPractice, deletePracticeTemplate, renamePracticeTemplate, updatePracticeDrill, createPracticeDrillCategory, getSegmentDrillGroups, updateGroupPlaceAndCoaches, getPracticeDrillCategories, PracticeDrillCategory, getPlaysForLinking, getPracticeDrillTags } from "../../lib/practicePlanner";
 import VideoUrlNote from "../shared/VideoUrlNote";
 import TagChipPicker from "./TagChipPicker";
 import { gradeFromGradYear } from "../../lib/teamDesigner";
@@ -352,7 +336,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
     if (!practice) return;
     const nextDate = prompt("Date for the duplicated practice (YYYY-MM-DD):", practice.practice_date);
     if (!nextDate) return;
-    const { id, error } = await duplicatePractice(practice.id, nextDate);
+    const { error } = await duplicatePractice(practice.id, nextDate);
     if (error) { alert("Couldn't duplicate: " + error); return; }
     onSaved();
     alert("Duplicated. Open it from the week list to keep editing the copy.");

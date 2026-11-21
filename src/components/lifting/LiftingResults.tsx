@@ -1,7 +1,6 @@
 // src/components/lifting/LiftingResults.tsx
 import { useState, useEffect } from "react";
 import { LiftingProgram, LiftingDay, DayExercise, getBestSet, calcVolume, getAllLogsForProgram } from "./lifting";
-import { supabase } from "../../lib/supabase";
 
 interface Props {
   program: LiftingProgram;

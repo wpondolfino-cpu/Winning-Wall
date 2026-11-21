@@ -1,6 +1,6 @@
 // src/components/lifting/ProgramComplete.tsx
 import { useState, useEffect } from "react";
-import { LiftingProgram, LiftingDay, DayExercise, BankExercise, ProgramStats, getProgramStats, getLogsForExercises } from "./lifting";
+import { LiftingProgram, LiftingDay, DayExercise, BankExercise, ProgramStats, getProgramStats } from "./lifting";
 import { supabase } from "../../lib/supabase";
 
 interface Props {
@@ -71,8 +71,6 @@ export default function ProgramComplete({ program, days, dayExercises, playerId 
           const allLogs = logs ?? [];
 
           // Find pre-test date range (Day 0 = program start date)
-          const startDate = program.start_date ? new Date(program.start_date) : null;
-          const endDate = startDate ? new Date(startDate.getTime() + 71 * 86400000) : null;
 
           // Pre-test = first log of each exercise near start
           // Post-test = last log of each exercise near end

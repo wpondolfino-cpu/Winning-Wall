@@ -841,13 +841,6 @@ export async function createPracticeWeek(
   return { id: data?.id ?? null, error: error?.message ?? null };
 }
 
-/** How many practices are in a week — what the delete prompt reports. */
-export async function countPracticesInWeek(weekId: string): Promise<number> {
-  const { count } = await supabase
-    .from("practices").select("id", { count: "exact", head: true }).eq("week_id", weekId);
-  return count ?? 0;
-}
-
 /** Move every practice in one week to another. */
 export async function movePracticesToWeek(fromWeekId: string, toWeekId: string): Promise<{ error: string | null }> {
   const { error } = await supabase
@@ -1112,12 +1105,6 @@ export async function getPracticesInWeeks(weekIds: string[]): Promise<Record<str
   const rows = await selectIn<Practice>("practices", "*", "week_id", weekIds, q => q.order("practice_date", { ascending: true }));
   for (const p of rows) if (p.week_id && out[p.week_id]) out[p.week_id].push(p);
   return out;
-}
-
-export async function getPracticesInWeek(weekId: string): Promise<Practice[]> {
-  const { data, error } = await supabase.from("practices").select("*").eq("week_id", weekId).order("practice_date", { ascending: true });
-  if (error) { console.error("Failed to load practices:", error); return []; }
-  return data ?? [];
 }
 
 // Clones a whole practice — blocks, segments, and drills — into a new
@@ -1962,22 +1949,6 @@ export async function createSavedArrangement(
   return { id: data.id, error: null, teamsSkipped };
 }
 
-export async function updateSavedArrangement(
-  groupingId: string, groups: string[][], labels?: (string | null)[], tryoutIds?: Set<string>
-): Promise<{ error: string | null }> {
-  await supabase.from("saved_grouping_members").delete().eq("grouping_id", groupingId);
-  const clean = groups.filter(g => g.length > 0);
-  if (clean.length) {
-    const rows = clean.flatMap((g, gi) => g.map(pid => memberRow({ grouping_id: groupingId, group_index: gi }, pid, tryoutIds)));
-    const { error } = await supabase.from("saved_grouping_members").insert(rows);
-    if (error) return { error: error.message };
-  }
-  await supabase.from("saved_groupings")
-    .update({ group_labels: labels ?? null, updated_at: new Date().toISOString() })
-    .eq("id", groupingId);
-  return { error: null };
-}
-
 export async function createSavedGrouping(name: string, rosterId: string, memberIds: string[]): Promise<{ id: string | null; error: string | null }> {
   const { data: { user } } = await supabase.auth.getUser();
   const { data, error } = await supabase.from("saved_groupings")
@@ -2191,18 +2162,6 @@ export async function assignSavedArrangementToSegmentDrill(
     }
   }
   return { error: null, groupsAdded: arrangement.length };
-}
-
-export async function assignSavedGroupingToSegmentDrill(segmentDrillId: string, grouping: SavedGrouping, orderIndex: number, tryoutIds?: Set<string>): Promise<{ error: string | null }> {
-  const memberIds = await getSavedGroupingMembers(grouping.id);
-  const { data, error } = await supabase.from("segment_drill_groups")
-    .insert({ segment_drill_id: segmentDrillId, group_label: grouping.name, source_saved_grouping_id: grouping.id, order_index: orderIndex })
-    .select("id").single();
-  if (error || !data?.id) return { error: error?.message ?? "Failed to assign grouping" };
-  if (memberIds.length > 0) {
-    await supabase.from("segment_drill_group_members").insert(memberIds.map(pid => memberRow({ group_id: data.id }, pid, tryoutIds)));
-  }
-  return { error: null };
 }
 
 export interface SegmentDrillGroup {

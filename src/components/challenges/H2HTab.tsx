@@ -1,7 +1,6 @@
 // src/components/H2HTab.tsx
 import { useState, useEffect, useCallback } from "react";
 import { supabase, Score, Workout, getXpPerks } from "../../lib/supabase";
-import { useLeaderboard } from "../../hooks/useLeaderboard";
 
 interface Props {
   currentUserId: string;
@@ -102,7 +101,6 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
   const [submittingResponse, setSubmittingResponse] = useState(false);
   const [toast, setToast]                     = useState("");
   const [xpPerks, setXpPerks]                 = useState<any[]>([]);
-  const { leaderboard } = useLeaderboard();
 
   const activeWorkouts = getH2HEligibleWorkouts(workouts);
   const challengesThreshold = xpPerks.length > 0
@@ -115,7 +113,6 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
     const { data } = await supabase.rpc("challenge_opponents");
     setOpponentList((data ?? []) as any[]);
   }, []);
-  const selectedOpponentInfo = opponents.find(o => o.id === selectedOpponent);
 
   // Expiry (5 days unanswered) runs in the daily job now, for everyone.
 
@@ -221,7 +218,6 @@ export default function H2HTab({ currentUserId, currentUserName, workouts, mySco
     loadChallenges();
     loadOpponents();
   }
-
 
   // A rematch goes through the same steps as a new challenge: see the
   // score that would be sent, or do the drill again. It never quietly

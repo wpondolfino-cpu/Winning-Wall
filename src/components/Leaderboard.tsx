@@ -61,7 +61,6 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
   const [snapshots, setSnapshots]       = useState<Snapshot[]>([]);
   const [expandedSnap, setExpandedSnap] = useState<string | null>(null);
   const [savingSnap, setSavingSnap]     = useState(false);
-  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
 
   // The running competition, or none (paused). With none, the Current
   // tab shows a "no competition" state and the period queries are skipped.
@@ -252,7 +251,7 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
 
   // ── Groups for drill subtabs ──
   const groups = Array.from(new Set(workouts.map(w => w.group_name).filter(Boolean))) as string[];
-  const activeGroup = selectedGroup ?? (groups[0] ?? null);
+  const activeGroup = groups[0] ?? null;
   const visibleWorkouts = activeGroup ? workouts.filter(w => w.group_name === activeGroup) : workouts.filter(w => !w.group_name);
 
   /**
@@ -306,26 +305,6 @@ export default function Leaderboard({ currentUserId, canManage = false }: Props)
     return rows.map(r => ({ ...r, tied: (counts.get(r.rawScore) ?? 0) > 1 }));
   }
 
-  function getWorkoutBoard(workoutId: string) {
-    const workout = workouts.find(w => w.id === workoutId);
-    const wScores = allScores.filter(s => s.workout_id === workoutId);
-    const gf = gradeTab === ALL ? wScores : wScores.filter(s => profiles.find(p => p.id === s.player_id)?.grade_category === gradeTab);
-    return markTied(gf.map(s => {
-      const p = profiles.find(pr => pr.id === s.player_id);
-      const raw = s.self_points > 0 ? s.self_points : (s.made + s.reps);
-      const display = s.sprint_secs > 0 && s.made === 0 && s.reps === 0 ? formatDuration(s.sprint_secs) : raw.toString();
-      return { playerId: s.player_id, name: p?.name ?? "Unknown", rawScore: s.sprint_secs > 0 && s.made === 0 ? -s.sprint_secs : raw, display, points: s.points ?? 0, tiebreak: (s as any).tiebreak_value ?? null };
-    })).sort(boardComparator(workout)).map((r, i) => {
-      let pts = r.points;
-      if (workout?.scoring_type === "competitive") {
-        if (i === 0) pts = workout.first_place_pts ?? 5;
-        else if (i === 1) pts = workout.second_place_pts ?? 3;
-        else if (i === 2) pts = workout.third_place_pts ?? 1;
-        else pts = 0;
-      }
-      return { ...r, points: pts, rank: i + 1, tiebreakLabel: r.tied ? tiebreakLabel(workout, r.tiebreak) : null };
-    });
-  }
 
   function getPeriodWorkoutBoard(workoutId: string) {
     const workout = workouts.find(w => w.id === workoutId);

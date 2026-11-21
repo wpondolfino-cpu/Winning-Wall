@@ -56,17 +56,6 @@ export interface ScheduleWeek {
   items: ScheduleItem[];
 }
 
-export interface ScheduleEvent {
-  id: string;
-  week_id: string | null;
-  season_id: string | null;
-  event_date: string;
-  start_time: string | null;
-  title: string;
-  location: string | null;
-  roster_ids: string[];
-}
-
 // ── Reading ───────────────────────────────────────────────────
 
 /**

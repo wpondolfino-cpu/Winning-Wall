@@ -16,7 +16,7 @@
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { supabase } from "../../lib/supabase";
-import { resolveWeek } from "../../lib/schedule";
+
 import NumberField from "../game-stats/NumberField";
 import { getRosters } from "../../lib/practicePlanner";
 import { createGame, finishGame, isGameFinal, computeFinalScore, syncQueue, listSeasons, GAME_STRUCTURES, buildGameFormat, structuresForGameType, defaultStructureForGameType, GAME_TYPES, GAME_GROUPS, gameTypesForGroup, type Game, type GameType, type GameGroup, type PeriodFormat, type Possession } from "../../lib/gameStats";
@@ -529,7 +529,6 @@ const actionBtn: React.CSSProperties = {
   color: "var(--text)",
   cursor: "pointer",
 };
-
 
 const newGameField: CSSProperties = {
   padding: "8px 10px",

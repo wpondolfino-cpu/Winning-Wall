@@ -315,16 +315,6 @@ export function estimateDuration(dayExercises: DayExercise[]): number {
 }
 
 
-export function getYouTubeEmbedUrl(url?: string): string | null {
-  if (!url) return null;
-  const id = getYouTubeId(url);
-  if (!id) return null;
-  const isShort = url.includes("/shorts/");
-  return isShort
-    ? `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`
-    : `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`;
-}
-
 // ── Program completion stats ──────────────────────────────────
 
 export interface ProgramStats {

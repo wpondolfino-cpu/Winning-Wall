@@ -80,7 +80,6 @@ export default function PerkTutorial({ playerId, currentXp, perks, onTutorialSee
   const [queue, setQueue]       = useState<PerkTutorialData[]>([]);
   const [current, setCurrent]   = useState<PerkTutorialData | null>(null);
   const [dismissing, setDismissing] = useState(false);
-  const [step, setStep]         = useState(0); // for body text pagination
 
   useEffect(() => {
     if (!playerId || perks.length === 0) return;
@@ -91,7 +90,6 @@ export default function PerkTutorial({ playerId, currentXp, perks, onTutorialSee
   useEffect(() => {
     if (!current && queue.length > 0) {
       setCurrent(queue[0]);
-      setStep(0);
       setQueue(q => q.slice(1));
     }
   }, [queue, current]);

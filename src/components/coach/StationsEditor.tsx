@@ -19,12 +19,7 @@
 // are rather than leaving it to be discovered.
 
 import { useState, useEffect } from "react";
-import {
-  SegmentDrill, PracticeBlock, setStationMembers, clearStationMembers,
-  getRotationGroups, setRotationGroups, setBlockStationMode, setDrillSplitRule,
-  splitForStation, rotationSchedule, getPracticeDrillLibrary, resolvedSplit, setSplitOverride,
-  getOtherBlockGroups, getCurrentSeason,
-} from "../../lib/practicePlanner";
+import { SegmentDrill, PracticeBlock, setStationMembers, clearStationMembers, getRotationGroups, setRotationGroups, setBlockStationMode, setDrillSplitRule, rotationSchedule, getPracticeDrillLibrary, resolvedSplit, setSplitOverride, getOtherBlockGroups, getCurrentSeason } from "../../lib/practicePlanner";
 import { getPlans, getSlots, getPositions } from "../../lib/teamDesigner";
 import SplitChooser, { SplitPlayer } from "./SplitChooser";
 import { inputStyle } from "../../lib/inputStyle";

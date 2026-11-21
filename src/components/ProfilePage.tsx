@@ -15,13 +15,10 @@ interface Props {
   xpEnabled?: boolean;
 }
 
-const TIER_NAMES = ["Rookie", "Challenger", "Varsity", "Elite", "Legend"];
-
 export default function ProfilePage({ profile, onUpdated, myScores, workouts, xpEnabled = true }: Props) {
   const [xp, setXp]             = useState(0);
   const [perks, setPerks]       = useState<XpPerk[]>([]);
   const [allBadges, setAllBadges] = useState<Badge[]>([]);
-  const [champCount, setChampCount] = useState(0);
   const [showDeactivate, setShowDeactivate] = useState(false);
   const [deactivateConfirmed, setDeactivateConfirmed] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
@@ -57,11 +54,10 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
   }, [profile.id]);
 
   async function loadAll() {
-    const [xpVal, perksVal, badges, champ, chalWon, shieldUsed, boostUsed, xpWorkout, xpSent, xpDone] = await Promise.all([
+    const [xpVal, perksVal, badges, chalWon, shieldUsed, boostUsed, xpWorkout, xpSent, xpDone] = await Promise.all([
       getPlayerXp(profile.id),
       getXpPerks(),
       getActiveBadges(),
-      supabase.from("biweekly_champions").select("id", { count: "exact", head: true }).eq("player_id", profile.id),
       supabase.from("challenges").select("id", { count: "exact", head: true }).eq("winner_id", profile.id).eq("status", "completed"),
       hasPerkUsedThisPeriod(profile.id, "streak_shield"),
       hasPerkUsedThisPeriod(profile.id, "score_boost"),
@@ -83,7 +79,6 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
     setXp(xpVal);
     setPerks(perksVal);
     setAllBadges(badges);
-    setChampCount(champ.count ?? 0);
     setChallengesWon(chalWon.count ?? 0);
     setStreakShieldUsed(shieldUsed);
     setScoreBoostUsed(boostUsed);
@@ -131,14 +126,12 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
     setUsingBoost(false);
   }
 
-  const { tier, perk: currentPerk, nextPerk, avatarOutline } = getPlayerTier(xp, perks);
-  const tierName = TIER_NAMES[tier] ?? "Legend";
+  const { tier, nextPerk, avatarOutline } = getPlayerTier(xp, perks);
   const nextXp   = nextPerk?.xp_required ?? null;
   const xpToNext = nextXp ? nextXp - xp : 0;
   const xpPct    = nextXp ? Math.min(100, Math.round((xp / nextXp) * 100)) : 100;
 
   const totalPoints   = myScores.reduce((s: number, sc: any) => s + (sc.points ?? 0), 0);
-  const activeWorkouts = workouts.filter((w: any) => w.is_active !== false);
   const stats: PlayerStats = {
     totalWorkouts: myScores.length,
     totalPoints,
@@ -151,7 +144,6 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
     teamWins: 0,
   };
   const earned    = allBadges.filter(b => checkBadge(b, stats));
-  const notEarned = allBadges.filter(b => !checkBadge(b, stats));
 
   const initials = profile.name.split(" ").map(n => n[0]).join("").slice(0,2).toUpperCase();
 

@@ -7,7 +7,7 @@
 // actions and forked plays stay valid if the template changes later.
 
 import { useRef, useState, useEffect, type MouseEvent as ReactMouseEvent } from "react";
-import type { CourtTemplate, PlayFrame, PlayPlayer, PlayAction, ActionType, PlayText, PlayZone, PlayPoint, PlayerLabels, ExtraBall } from "../../lib/plays";
+import type { CourtTemplate, PlayFrame, PlayPlayer, PlayAction, ActionType, PlayPoint, PlayerLabels, ExtraBall } from "../../lib/plays";
 import type { RosterPlayer } from "../../lib/plays";
 import { resolvePassEndpoint, localActionProgress, pathProgress, playerActionSequence, stepTimingUnits, keepHookTip } from "../../lib/plays";
 import { genPlayerId, defaultLetter } from "../../lib/plays";

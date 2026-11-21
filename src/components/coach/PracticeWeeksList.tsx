@@ -7,14 +7,7 @@
 
 import { time12 } from "../../lib/scheduleImport";
 import { useState, useEffect, useCallback, useRef } from "react";
-import {
-  PracticeWeek, Practice, RosterWithCount, Season, getPracticeWeeks, getPracticesInWeeks,
-  getPracticeAttentionCounts, suggestNextWeekName, renamePracticeWeek,
-  deletePracticeWeek, deletePractice, movePracticesToWeek, getRosters, getSeasons, getCurrentSeason,
-  getTryoutPlayers, clearTryoutPool,
-  getPracticeTemplates, deletePracticeTemplate, createEmptyTemplate, PracticeTemplate,
-  practiceToExportPayload, importPracticeFromExportPayload, PRACTICE_EXPORT_SCHEMA_VERSION,
-} from "../../lib/practicePlanner";
+import { PracticeWeek, Practice, RosterWithCount, Season, getPracticeWeeks, getPracticesInWeeks, getPracticeAttentionCounts, renamePracticeWeek, deletePracticeWeek, deletePractice, movePracticesToWeek, getRosters, getSeasons, getCurrentSeason, getTryoutPlayers, clearTryoutPool, getPracticeTemplates, deletePracticeTemplate, createEmptyTemplate, PracticeTemplate, practiceToExportPayload, importPracticeFromExportPayload, PRACTICE_EXPORT_SCHEMA_VERSION } from "../../lib/practicePlanner";
 import { embedJsonInPdf, extractJsonFromPdf, drawTextDocument } from "../../lib/pdfDataExport";
 import { inputStyle } from "../../lib/inputStyle";
 import PracticeBuilder from "./PracticeBuilder";

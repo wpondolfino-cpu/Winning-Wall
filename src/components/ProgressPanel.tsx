@@ -1,7 +1,7 @@
 // src/components/ProgressPanel.tsx
 import { useState, useEffect } from "react";
 import { supabase, Profile, Score, Workout, ScoreAttempt, getMyAttempts, getMyPersonalBests, PersonalBest } from "../lib/supabase";
-import { Badge, getActiveBadges, checkBadge, PlayerStats } from "../lib/badges";
+
 import { useLeaderboard } from "../hooks/useLeaderboard";
 
 interface Props {
@@ -174,27 +174,24 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
   const [overrideScores, setOverrideScores]     = useState<Score[] | null>(null);
   const [overrideLoading, setOverrideLoading]   = useState(!!overrideUserId);
   const [view, setView]             = useState<"bests" | "history" | "calendar" | "chart">("bests");
-  const [allBadges, setAllBadges]   = useState<Badge[]>([]);
   const [champCount, setChampCount] = useState(0);
-  const [teamWinsCount, setTeamWinsCount] = useState(0);
-  const [myStreak, setMyStreak] = useState(0);
   const { leaderboard }             = useLeaderboard();
 
   useEffect(() => {
     loadAttempts();
     loadPersonalBests();
-    loadBadges();
     loadChampCount();
-    loadTeamWins();
-    loadStreak();
     if (overrideUserId) loadOverrideData();
   }, [overrideUserId]);
 
-  async function loadStreak() {
+  async function loadChampCount() {
     const uid = overrideUserId ?? (await supabase.auth.getUser()).data.user?.id;
     if (!uid) return;
-    const { data } = await supabase.from("streaks").select("current_streak").eq("player_id", uid).single();
-    setMyStreak(data?.current_streak ?? 0);
+    const { count } = await supabase
+      .from("biweekly_champions")
+      .select("id", { count: "exact", head: true })
+      .eq("player_id", uid);
+    setChampCount(count ?? 0);
   }
 
   async function loadPersonalBests() {
@@ -228,45 +225,6 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
     }
   }
 
-  async function loadBadges() { setAllBadges(await getActiveBadges()); }
-
-  async function loadTeamWins() {
-    const uid = overrideUserId ?? (await supabase.auth.getUser()).data.user?.id;
-    if (!uid) return;
-    const { data: comps } = await supabase.from("team_competitions")
-      .select("id,winning_team_id")
-      .not("winning_team_id","is",null);
-    if (!comps || comps.length === 0) return;
-    const compIds = comps.map((c: any) => c.id);
-    const { data: myTeams } = await supabase.from("teams")
-      .select("id,competition_id")
-      .in("competition_id", compIds);
-    const { data: myProfile } = await supabase.from("profiles")
-      .select("team_id").eq("id", uid).single();
-    if (!myProfile?.team_id || !myTeams) return;
-    const myTeamIds = new Set((myTeams as any[]).filter(t => {
-      const profs = myTeams.filter((mt: any) => mt.id === myProfile.team_id);
-      return profs.length > 0;
-    }).map((t: any) => t.id));
-    myTeamIds.add(myProfile.team_id);
-    let wins = 0;
-    for (const comp of comps) {
-      const teamsInComp = (myTeams as any[]).filter(t => t.competition_id === comp.id);
-      const myTeamInComp = teamsInComp.find(t => myTeamIds.has(t.id));
-      if (myTeamInComp && myTeamInComp.id === comp.winning_team_id) wins++;
-    }
-    setTeamWinsCount(wins);
-  }
-
-  async function loadChampCount() {
-    const uid = overrideUserId ?? (await supabase.auth.getUser()).data.user?.id;
-    if (!uid) return;
-    const { count } = await supabase
-      .from("biweekly_champions")
-      .select("id", { count: "exact", head: true })
-      .eq("player_id", uid);
-    setChampCount(count ?? 0);
-  }
 
   async function loadAttempts() {
     if (overrideUserId) return;
@@ -295,8 +253,6 @@ export default function ProgressPanel({ profile, myScores, workouts, overrideUse
   }
 
   const totalPoints   = effectiveScores.reduce((sum, s) => sum + (s.points ?? 0), 0);
-  const activeWorkouts = (workouts ?? []).filter(w => w.is_active !== false);
-  const completedCount = effectiveScores.length;
 
   const myEntry = leaderboard.find(e => e.id === effectiveProfile?.id);
   const myRank  = myEntry?.rank ?? null;

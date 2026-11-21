@@ -709,11 +709,6 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
     setPlayerScores(ps => ps.map(s => s.id === sc.id ? { ...s, [field]: val } : s));
   }
 
-  function setScoreValue(sc: EditScore, val: number): EditScore {
-    if (sc.scoring_type === "self_reported" || sc.scoring_type === "flat") return { ...sc, self_points: val };
-    if (sc.reps > 0 && sc.made === 0) return { ...sc, reps: val };
-    return { ...sc, made: val };
-  }
 
   function getScoringLabel(sc: EditScore): string {
     if (sc.scoring_type === "flat") return "✅ Flat";
@@ -823,8 +818,8 @@ export default function PlayersPanel({ allScores, workouts }: Props) {
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{p.email && <span style={{ color: "var(--info-text)" }}>{p.email}</span>}{p.grade_category && <span> · {p.grade_category}</span>}</div>
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => handleApprove(p.id, "player")} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "var(--success-text)", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✅ Approve</button>
-                    <button onClick={() => handleReject(p.id, p.name)} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "var(--danger-text)", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✕ Reject</button>
+                    <button onClick={() => handleApprove(p.id, "player")} disabled={approving === p.id} style={{ background: "rgba(40,180,80,0.15)", border: "1px solid rgba(40,180,80,0.3)", color: "var(--success-text)", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✅ Approve</button>
+                    <button onClick={() => handleReject(p.id, p.name)} disabled={approving === p.id} style={{ background: "rgba(255,107,107,0.1)", border: "1px solid rgba(255,107,107,0.3)", color: "var(--danger-text)", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>✕ Reject</button>
                   </div>
                 </div>
               ))}

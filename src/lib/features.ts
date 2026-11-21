@@ -37,10 +37,6 @@ const TAB_FEATURE: Record<string, FeatureKey> = {
   quizzes: "quizzes",
 };
 
-export function featureOfTab(tab: string): FeatureKey | null {
-  return TAB_FEATURE[tab] ?? null;
-}
-
 /** Feature keys switched off for a program. */
 export async function loadFeaturesOff(programId: string | null | undefined): Promise<Set<FeatureKey>> {
   if (!programId) return new Set();

@@ -1,12 +1,11 @@
 // src/components/AdminPanel.tsx
 import { useState, useEffect } from "react";
-import { supabase, approveUser, rejectUser, withEmail, Profile, TEAM_CATEGORIES, TEAM_COLORS, saveTeamCompetition, endTeamCompetition, getActiveTeamCompetition, TeamCompetition, getTeams, Team, getXpPerks, XpPerk } from "../lib/supabase";
-import { useLeaderboard } from "../hooks/useLeaderboard";
+import { supabase, Profile, TEAM_CATEGORIES, TEAM_COLORS, saveTeamCompetition, endTeamCompetition, getActiveTeamCompetition, TeamCompetition, getTeams, Team, getXpPerks, XpPerk } from "../lib/supabase";
+
 import ClassClash from "./challenges/ClassClash";
 
 interface Props {
 }
-
 
 interface Badge { id?: string; icon: string; name: string; description: string; trigger_type: "workouts"|"points"|"streak"|"champion"|"top_score"|"challenges_won"|"team_wins"; trigger_value: number; is_active: boolean; }
 const TRIGGER_LABELS: Record<string,string> = { workouts:"Workouts logged", points:"Total points earned", streak:"Day logging streak", champion:"Won a competition", top_score:"Scored #1 on any drill", challenges_won:"Challenges won", team_wins:"Team competition wins" };
@@ -24,25 +23,7 @@ const EMOJI_GROUPS = [
 const inputStyle = { width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontFamily: "inherit", fontSize: 13, boxSizing: "border-box" as const };
 
 export default function AdminPanel({}: Props) {
-  const { leaderboard, loading: lbLoading, refresh: refreshLb } = useLeaderboard();
-  const [loadingCoaches, setLoadingCoaches] = useState(true);
-
-  // ── shared add form ──
-  const [addEmail, setAddEmail]   = useState("");
-  const [addPass, setAddPass]     = useState("");
-
-  // ── shared invite ──
-  const [inviteSending, setInviteSending] = useState(false);
-
-  // ── edit person ──
-  const [editSaving, setEditSaving]   = useState(false);
-  const [editError, setEditError]     = useState("");
-  const [removing, setRemoving]       = useState<string | null>(null);
   const [toast, setToast]             = useState("");
-  const [pendingCoaches, setPendingCoaches] = useState<any[]>([]);
-  const [approvingCoach, setApprovingCoach] = useState<string | null>(null);
-  const [resetRequests, setResetRequests] = useState<any[]>([]);
-  const [resettingPw, setResettingPw] = useState<string | null>(null);
   const [adminTab, setAdminTab]     = useState<"badges"|"xp"|"teams"|"clash">("badges");
   const [myUserId, setMyUserId]     = useState<string>("");
   useEffect(() => { supabase.auth.getUser().then(({ data }) => setMyUserId(data.user?.id ?? "")); }, []);
@@ -88,8 +69,6 @@ export default function AdminPanel({}: Props) {
   }
 
   useEffect(() => {
-    loadPendingCoaches();
-    loadResetRequests();
     loadTeamData();
     loadBadges();
     loadXpSettings();
@@ -134,25 +113,6 @@ export default function AdminPanel({}: Props) {
     setCompHistory(prev => prev.filter(c => c.id !== compId));
     setCompTeamDetails(prev => { const n = {...prev}; delete n[compId]; return n; });
     showToast("Competition deleted.");
-  }
-
-  async function loadCompDetails(compId: string) {
-    if (compTeamDetails[compId]) { setExpandedComp(expandedComp === compId ? null : compId); return; }
-    const { data: teams } = await supabase.from("teams").select("*").eq("competition_id", compId);
-    if (!teams) return;
-    const teamsWithPlayers = await Promise.all(teams.map(async (team: any) => {
-      const { data: players } = await supabase.from("profiles")
-        .select("id,name,grade_category").eq("team_id", team.id);
-      // Get each player's leaderboard points
-      const playerIds = (players ?? []).map((p: any) => p.id);
-      const { data: lb } = await supabase.from("leaderboard").select("id,total_points").in("id", playerIds);
-      const ptMap: Record<string,number> = {};
-      (lb ?? []).forEach((e: any) => { ptMap[e.id] = e.total_points ?? 0; });
-      const teamScore = (players ?? []).reduce((s: number, p: any) => s + (ptMap[p.id] ?? 0), 0);
-      return { ...team, players: players ?? [], ptMap, teamScore };
-    }));
-    setCompTeamDetails(prev => ({ ...prev, [compId]: teamsWithPlayers }));
-    setExpandedComp(expandedComp === compId ? null : compId);
   }
 
   async function loadBadges() {
@@ -256,8 +216,6 @@ export default function AdminPanel({}: Props) {
     if (!players) return;
 
     // Split by grade
-    const upper = players.filter((p:any) => p.grade_category?.includes("11") || p.grade_category?.includes("12") || p.grade_category?.includes("Upper"));
-    const lower = players.filter((p:any) => !upper.includes(p));
 
     // Shuffle both groups
     const shuffle = (arr: any[]) => [...arr].sort(() => Math.random() - 0.5);
@@ -306,56 +264,6 @@ export default function AdminPanel({}: Props) {
     } catch (e: any) { showToast("Error: " + e.message); }
     finally { setTeamTogglingOff(false); }
   }
-
-  async function loadResetRequests() {
-    const { data } = await supabase
-      .from("password_reset_requests")
-      .select("*")
-      .eq("status", "pending")
-      .order("created_at", { ascending: true });
-    setResetRequests(data ?? []);
-  }
-
-  // Password resets live in Players & Coaches (the reset-password edge
-  // function). The old reset here set everyone to one shared password and
-  // was no longer wired to any button, so it's gone.
-
-  async function handleDismissRequest(id: string) {
-    await supabase.from("password_reset_requests")
-      .update({ status: "dismissed" })
-      .eq("id", id);
-    await loadResetRequests();
-  }
-
-  async function loadPendingCoaches() {
-    const { data } = await supabase.from("profiles")
-      .select("id,name,role,created_at,profile_emails(email)")
-      .eq("role", "pending_coach")
-      .order("created_at", { ascending: true });
-    setPendingCoaches(withEmail(data as any[]));
-  }
-
-  async function handleApproveCoach(id: string) {
-    setApprovingCoach(id);
-    try {
-      await approveUser(id, "coach");
-      await loadPendingCoaches();
-      showToast("Coach approved! 🏀");
-    } catch (e: any) { showToast("Error: " + e.message); }
-    finally { setApprovingCoach(null); }
-  }
-
-  async function handleRejectCoach(id: string, name: string) {
-    if (!window.confirm(`Reject coach request from "${name}"? This deletes their account.`)) return;
-    setApprovingCoach(id);
-    try {
-      await rejectUser(id);
-      await loadPendingCoaches();
-      showToast("Request rejected.");
-    } catch (e: any) { showToast("Error: " + e.message); }
-    finally { setApprovingCoach(null); }
-  }
-
 
 
 
@@ -778,7 +686,6 @@ export default function AdminPanel({}: Props) {
                 {compHistory.map(comp => {
                   const details = compTeamDetails[comp.id];
                   const isExpanded = expandedComp === comp.id;
-                  const winner = details ? [...details].sort((a,b) => b.teamScore - a.teamScore)[0] : null;
                   return (
                     <div key={comp.id} style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
                       <div onClick={() => setExpandedComp(isExpanded ? null : comp.id)} style={{ padding: "12px 16px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}>

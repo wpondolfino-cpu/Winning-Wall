@@ -43,9 +43,6 @@ export const DEFAULT_SECTIONS: { key: string; group: SectionGroup; label: string
   { key: "specials_eog", group: "specials", label: "End of game" },
 ];
 
-/** @deprecated The seed, not the set — read a sheet's own sections instead. */
-export const GAMEDAY_SECTIONS = DEFAULT_SECTIONS;
-
 export interface GameDaySectionRow {
   id: string;
   sheet_id: string;

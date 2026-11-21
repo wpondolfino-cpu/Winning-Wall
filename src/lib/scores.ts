@@ -4,7 +4,7 @@
 // browser sends what the player did and gets back what happened.
 // Four scoring types: competitive, multi_spot, flat, self_reported.
 
-import { supabase, Score, ScoreAttempt, PersonalBest, XP_PER_ATTEMPT } from "./supabase";
+import { supabase, Score, ScoreAttempt, PersonalBest } from "./supabase";
 import { getLeaderboard } from "./leaderboard";
 
 // ── Raw score calculation ─────────────────────────────────────

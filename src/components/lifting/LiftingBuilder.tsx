@@ -1,6 +1,6 @@
 // src/components/lifting/LiftingBuilder.tsx v2
 import { useState, useEffect, useRef } from "react";
-import { LiftingProgram, LiftingDay, DayExercise, BankExercise, MuscleGroup, saveProgram, saveDays, saveDayExercises, getAssignedPlayers, saveAssignments } from "./lifting";
+import { LiftingProgram, LiftingDay, DayExercise, BankExercise, saveProgram, saveDays, saveDayExercises, getAssignedPlayers, saveAssignments } from "./lifting";
 import ExercisePicker from "./ExercisePicker";
 import { supabase } from "../../lib/supabase";
 
@@ -179,7 +179,6 @@ export default function LiftingBuilder({ playerId, editProgram, editDays, editDa
   const [assignedPlayers, setAssignedPlayers] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [bank, setBank] = useState<BankExercise[]>([]);
   const [nextSuperset, setNextSuperset] = useState(1);
   const [mobile, setMobile] = useState(isMobile());
   const dragItem = useRef<{ dayIdx: number; exIdx: number } | null>(null);

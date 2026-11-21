@@ -134,7 +134,6 @@ export default function ReportBuilder({ season, userId, initial, onSaved }: Prop
   }
 
   async function confirmSave() {
-    const groupLabel = GAME_GROUPS.find((g) => g.value === gameGroup)?.label ?? "Games";
     const isWholeSeason = selectedIds.length === pool.length;
     const label = savingLabel?.trim() || `${gameLabel} · ${CATEGORY_LABEL[category]}${sectionLabel ? ` · ${sectionLabel}` : ""}`;
     const { error } = await saveReport({

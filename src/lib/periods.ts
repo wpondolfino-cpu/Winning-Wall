@@ -102,16 +102,6 @@ export function useCompetition(): State {
 
 // ── Old names, now nullable ─────────────────────────────────
 
-/** Start of the running competition, or null when none is running. */
-export function currentPeriodStart(): Date | null {
-  return state.current ? new Date(state.current.starts_at) : null;
-}
-
-/** End of the running competition (the midnight after its last day), or null. */
-export function currentPeriodEnd(): Date | null {
-  return state.current ? new Date(state.current.ends_at) : null;
-}
-
 /**
  * The key perk uses are recorded under: the running competition's start
  * date. Perks reset with each competition, whatever its length, and can't

@@ -1,7 +1,7 @@
 // src/lib/leaderboard.ts
 // Leaderboard queries and competition crowning
 
-import { supabase, LeaderboardEntry, BiweeklyChampion } from "./supabase";
+import { supabase, LeaderboardEntry } from "./supabase";
 import type { Competition } from "./periods";
 import { getPracticeWinStandings, PracticeWinStanding } from "./practiceWins";
 import { getCurrentSeason } from "./records";
@@ -63,13 +63,6 @@ export async function getOverallBreakdown(playerId: string): Promise<OverallBrea
   const { data, error } = await supabase.rpc("overall_breakdown", { p_player: playerId });
   if (error) { console.error("Overall breakdown failed:", error); return []; }
   return ((data ?? []) as any[]).map(r => ({ ...r, points: Number(r.points) }));
-}
-
-export async function getBiweeklyChampions(): Promise<BiweeklyChampion[]> {
-  const { data, error } = await supabase
-    .from("biweekly_champions").select("*").order("crowned_at", { ascending: false });
-  if (error) throw error;
-  return data ?? [];
 }
 
 // Standings for one competition: each player's best result per drill

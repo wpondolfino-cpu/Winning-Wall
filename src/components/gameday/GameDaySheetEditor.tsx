@@ -1,11 +1,6 @@
 // src/components/gameday/GameDaySheetEditor.tsx
 import { useState, useEffect, useCallback, useRef } from "react";
-import {
-  GameDaySheet, GameDayCall, GameDaySection, SECTION_GROUPS, SectionGroup,
-  GameDaySectionRow, getSections, seedSections, addSection, updateSection, deleteSection,
-  getGameDaySheet, getGameDayCalls, createGameDayCall, updateGameDayCall, deleteGameDayCall, deleteGameDayCalls, reorderGameDayCalls,
-  bulkCreateGameDayCalls,
-} from "../../lib/gameDaySheets";
+import { GameDaySheet, GameDayCall, GameDaySection, SectionGroup, GameDaySectionRow, getSections, seedSections, addSection, updateSection, deleteSection, getGameDaySheet, getGameDayCalls, createGameDayCall, updateGameDayCall, deleteGameDayCall, deleteGameDayCalls, reorderGameDayCalls, bulkCreateGameDayCalls } from "../../lib/gameDaySheets";
 import { getMyPlays, Play } from "../../lib/plays";
 import { inputStyle } from "../../lib/inputStyle";
 import GameDaySheetPrintView from "./GameDaySheetPrintView";

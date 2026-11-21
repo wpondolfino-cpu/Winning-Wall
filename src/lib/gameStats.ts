@@ -50,9 +50,6 @@ export type TurnoverType = "live" | "dead" | "charge";
 // leaves play_call_id free for whatever set the break flows into.
 export type PlayCallCategory = "set" | "motion" | "blob" | "slob" | "zone" | "press_type";
 
-/** Half-court structures that have a play list behind them. "unscripted" deliberately doesn't -- it skips the play-call step. */
-export const HALF_COURT_PLAY_CATEGORIES: HalfCourtType[] = ["set", "motion", "zone"];
-
 /** Seeded on first use so the press picker isn't empty on day one. Editable and extendable like any other play call. */
 export const DEFAULT_PRESS_TYPES = ["Trap", "2-2-1", "2-1-2", "1-2-1-1", "1-2-2"];
 
@@ -1715,24 +1712,6 @@ export function computeHalfCourtStructure(possessions: Possession[]) {
     vsMan: lookSplitRow(looks.filter((r) => r.look.half_court_type !== "zone"), "vs man"),
     vsZone: lookSplitRow(of("zone"), "vs zone"),
   };
-}
-
-/** Non-possession free throws, broken out by why they happened. An end-of-game trip that got rebounded isn't here -- it converted into a real possession, which is the point. */
-export function computeAwardedFts(possessions: Possession[]) {
-  const rows = possessions.filter((p) => p.possession_type === "non_possession_ft");
-  const forTeam = (team: Team) => {
-    const own = rows.filter((p) => p.team === team);
-    const by = (t: FtAwardType) => own.filter((p) => p.ft_award_type === t).length;
-    return {
-      total: own.length,
-      points: own.reduce((s, p) => s + p.points, 0),
-      attempts: own.reduce((s, p) => s + (p.ft_attempts ?? 0), 0),
-      eog: by("eog"),
-      technical: by("technical"),
-      flagrant: by("flagrant"),
-    };
-  };
-  return { us: forTeam("us"), opponent: forTeam("opponent") };
 }
 
 export type PaintGroupKey = "neither" | "paint_only" | "both_only" | "paint_and_both" | "all";

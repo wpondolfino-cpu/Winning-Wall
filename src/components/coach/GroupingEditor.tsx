@@ -8,15 +8,7 @@
 
 import { supabase } from "../../lib/supabase";
 import { useState, useEffect, useCallback, useRef } from "react";
-import {
-  SavedGrouping, SegmentDrillGroup, SegmentDrill, getSegmentDrillGroups,
-  generateBalancedGroups, generateGroupsByGrade, generateGradeMixedGroups, saveGeneratedGroups, assignSavedArrangementToSegmentDrill, createSavedArrangement,
-  getSavedGroupingArrangement, deleteSavedGrouping, clearSegmentDrillGroups,
-  movePlayerBetweenGroups, removeGroupMember, addGroupMember, updateSegmentDrill,
-  getCurrentSeason, splitGroupingsBySeason,
-  setDrillSplitRule, clearSplitOverrides, setAllSplitOverrides, teamsInGroup,
-  updateGroupPlaceAndCoaches, getAssignableCoaches, type CoachLite,
-} from "../../lib/practicePlanner";
+import { SavedGrouping, SegmentDrillGroup, SegmentDrill, getSegmentDrillGroups, generateBalancedGroups, generateGroupsByGrade, generateGradeMixedGroups, saveGeneratedGroups, assignSavedArrangementToSegmentDrill, createSavedArrangement, getSavedGroupingArrangement, deleteSavedGrouping, clearSegmentDrillGroups, removeGroupMember, addGroupMember, updateSegmentDrill, getCurrentSeason, splitGroupingsBySeason, setDrillSplitRule, clearSplitOverrides, setAllSplitOverrides, teamsInGroup, updateGroupPlaceAndCoaches, getAssignableCoaches, type CoachLite } from "../../lib/practicePlanner";
 
 interface PlayerLite { id: string; name: string; home_roster_id: string | null; grade?: number | null; }
 

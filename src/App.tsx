@@ -3,7 +3,7 @@ import type { ReactNode, ChangeEvent } from "react";
 import { useAuth } from "./hooks/useAuth";
 import { useWorkouts } from "./hooks/useWorkouts";
 import { getMyScores, getAllScores, signOut, Score, Profile, getPlayerXp, getXpPerks, checkUnseenPerks, loadPeriodAnchor, supabase } from "./lib/supabase";
-import { loadSeasonMode, effectiveModeFor, SeasonMode } from "./lib/seasonMode";
+import { loadSeasonMode, effectiveModeFor } from "./lib/seasonMode";
 import ProfileEditor from "./components/ProfileEditor";
 import AvatarOnboardingPrompt from "./components/AvatarOnboardingPrompt";
 import ProfilePage from "./components/ProfilePage";
@@ -307,14 +307,12 @@ export default function App() {
   useEffect(() => { if (playerTab !== "workouts" && playerTab !== "library") setReturnToLibrary(false); }, [playerTab]);
 
   useEffect(() => { loadPeriodAnchor().catch(console.error); }, []);
-  const [seasonMode, setSeasonMode] = useState<SeasonMode>("offseason");
   // A player's landing page depends on season mode, which loads after the
   // app starts -- landing waits for this so an in-season player doesn't
   // open on Workouts just because the mode hadn't arrived yet.
   const [seasonModeReady, setSeasonModeReady] = useState(false);
   useEffect(() => {
     loadSeasonMode()
-      .then(setSeasonMode)
       .catch(console.error)
       .finally(() => setSeasonModeReady(true));
   }, []);

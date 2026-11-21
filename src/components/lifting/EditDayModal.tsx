@@ -1,7 +1,7 @@
 // src/components/lifting/EditDayModal.tsx
 // Edit a single day's exercises without opening the full builder
 import { useState, useEffect } from "react";
-import { LiftingDay, DayExercise, BankExercise, saveDayExercises, getExercisesForDays } from "./lifting";
+import { LiftingDay, BankExercise, saveDayExercises, getExercisesForDays } from "./lifting";
 import ExercisePicker from "./ExercisePicker";
 import { supabase } from "../../lib/supabase";
 
