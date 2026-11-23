@@ -180,9 +180,26 @@ function getBallPos(f: PlayFrame, offset = false): { x: number; y: number } | nu
 }
 
 /** Where an extra ball is drawn: on its holder (a little off-centre, so their mark still shows), otherwise its own spot. */
+// Where a held ball sits: the first at the player's lower right, then
+// lower left, upper right, upper left — so a player holding two balls shows
+// two. A line spreads its balls down the line instead (below).
+const HELD_SPOTS = [[10, 10], [-10, 10], [10, -10], [-10, -10]];
 function extraBallPos(f: PlayFrame, b: ExtraBall): { x: number; y: number; held: boolean } {
   const h = b.holderId ? f.players.find((p) => p.id === b.holderId) : undefined;
-  return h ? { x: h.x + 10, y: h.y + 10, held: true } : { x: b.x, y: b.y, held: false };
+  if (!h) return { x: b.x, y: b.y, held: false };
+  // The main ball takes the first spot if this player has it too.
+  const before = (f.ballHolderId === b.holderId && f.ball ? 1 : 0)
+    + (f.extraBalls ?? []).slice(0, (f.extraBalls ?? []).indexOf(b)).filter((x) => x.holderId === b.holderId).length;
+  // A line holding several balls: they go down the line, one per player —
+  // the front player's, then the back of the line, then the middle — each
+  // at its player's side, like kids in line each holding a ball.
+  if (h.line && h.line > 1) {
+    const along = [0, 22, 11][before % 3];
+    const r = (lineAngle(h) * Math.PI) / 180;
+    return { x: h.x + Math.cos(r) * along + 10, y: h.y + Math.sin(r) * along + 10, held: true };
+  }
+  const [dx, dy] = HELD_SPOTS[before % HELD_SPOTS.length];
+  return { x: h.x + dx, y: h.y + dy, held: true };
 }
 
 function pointsToPath(points: { x: number; y: number }[]) {
