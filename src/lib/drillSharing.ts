@@ -30,6 +30,11 @@ export async function getSendTargets(): Promise<SendTarget[]> {
 export async function sendDrill(drillId: string, programIds: string[]): Promise<number> {
   const { data, error } = await supabase.rpc("drill_send", { p_drill: drillId, p_programs: programIds });
   if (error) fail(error, "Couldn't send it.");
+  // Tell their coaches. The server checks the send and writes the message
+  // itself; if push isn't set up for them, the drill still waits in their library.
+  try {
+    await supabase.functions.invoke("send-push", { body: { drillSent: { drillId, programIds } } });
+  } catch (e) { console.error("Push notification failed to send:", e); }
   return (data ?? 0) as number;
 }
 
