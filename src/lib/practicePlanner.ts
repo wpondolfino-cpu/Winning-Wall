@@ -726,7 +726,7 @@ export async function linkPoolToAccounts(
     const free = accounts.filter(a => !taken.has(a.id));
     const { exact, close } = matchAccount(p.name, free);
     if (exact) {
-      const { error } = await updateTryoutPlayer(p.id, { linked_profile_id: exact.id });
+      const { error } = await linkTryoutPlayer(p.id, exact);
       if (!error) { taken.add(exact.id); linked++; }
     } else if (close.length) {
       suggestions.push({ tryoutId: p.id, name: p.name, candidates: close });
@@ -762,6 +762,32 @@ export async function addTryoutPlayersBulk(
   // Accounts already linked to someone in the pool can't be linked twice.
   const result = await linkPoolToAccounts([...existing.filter(p => p.linked_profile_id), ...((data ?? []) as TryoutPlayer[])], accounts);
   return { added: fresh.length, skipped: rows.length - fresh.length, linked: result.linked, suggestions: result.suggestions, error: null };
+}
+
+/**
+ * Link a pool name to a player's account. The pool entry takes the
+ * account's name ("Federico Cavallini" becomes "Freddy Cavallini") and drops
+ * its own nickname, so the account's nickname is used everywhere.
+ */
+export async function linkTryoutPlayer(id: string, account: PlayerAccountLite): Promise<{ error: string | null }> {
+  return updateTryoutPlayer(id, { linked_profile_id: account.id, name: account.name, nickname: null });
+}
+
+/**
+ * Linked pool entries whose account has been renamed since (or that were
+ * linked before names followed the account) catch up to the account's name.
+ * Returns how many changed.
+ */
+export async function syncLinkedTryoutNames(pool: TryoutPlayer[], accounts: PlayerAccountLite[]): Promise<number> {
+  const byId = new Map(accounts.map(a => [a.id, a]));
+  let n = 0;
+  for (const p of pool) {
+    const acct = p.linked_profile_id ? byId.get(p.linked_profile_id) : undefined;
+    if (!acct || (acct.name === p.name && !p.nickname)) continue;
+    const { error } = await updateTryoutPlayer(p.id, { name: acct.name, nickname: null });
+    if (!error) n++;
+  }
+  return n;
 }
 
 export async function updateTryoutPlayer(id: string, patch: Partial<Pick<TryoutPlayer, "name" | "jersey" | "grade" | "tryout_group" | "roster_ids" | "notes" | "status" | "linked_profile_id" | "nickname">>): Promise<{ error: string | null }> {
@@ -2909,10 +2935,13 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
   const linkedProfiles = linkedIds.length ? await selectIn<any>("profiles", "*", "id", linkedIds) : [];
   const nickByProfile = Object.fromEntries([...memberProfiles, ...linkedProfiles].map((p: any) => [p.id, p.nickname ?? null]));
   const nameById = shortLabels([
-    ...memberTryouts.map((t: any) => ({
-      id: t.id, name: t.name ?? "",
-      nickname: t.nickname || (t.linked_profile_id ? nickByProfile[t.linked_profile_id] : null),
-    })),
+    ...memberTryouts.map((t: any) => {
+      // A pool kid linked to an account prints as that account: its name and nickname.
+      const acct = t.linked_profile_id ? [...memberProfiles, ...linkedProfiles].find((p: any) => p.id === t.linked_profile_id) : null;
+      return acct
+        ? { id: t.id, name: acct.name ?? t.name ?? "", nickname: acct.nickname ?? null }
+        : { id: t.id, name: t.name ?? "", nickname: t.nickname || null };
+    }),
     ...memberProfiles.map((p: any) => ({ id: p.id, name: p.name ?? "", nickname: p.nickname })),
   ]);
 
