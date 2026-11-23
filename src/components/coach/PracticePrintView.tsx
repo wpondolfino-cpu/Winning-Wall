@@ -475,14 +475,18 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
                       <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 4 }}>
                         {d.title}{d.film ? " 🎥" : ""}<span style={{ fontSize: 11.5, fontWeight: 400, color: "#666" }}> · {d.minutes} min</span>
                       </div>
-                      {d.diagram ? <DrillDiagram play={d.diagram} still /> : <div style={{ fontSize: 11.5, color: "#999", fontStyle: "italic" }}>No diagram</div>}
+                      {d.diagram ? <DrillDiagram play={d.diagram} still /> : !d.play && <div style={{ fontSize: 11.5, color: "#999", fontStyle: "italic" }}>No diagram</div>}
+                      {d.play && <PrintedPlay play={d.play} gap={!!d.diagram} />}
                     </div>
                   ))}
                 </div>
               ) : p.drillDescriptions.map((d, i) => (
                 <div key={i} style={{ marginBottom: 14, pageBreakInside: "avoid", breakInside: "avoid",
-                  display: backPage === "both" && d.diagram ? "grid" : "block", gridTemplateColumns: "2.6in minmax(0, 1fr)", gap: 14 }}>
-                  {backPage === "both" && d.diagram && <div><DrillDiagram play={d.diagram} still /></div>}
+                  display: backPage === "both" && (d.diagram || d.play) ? "grid" : "block", gridTemplateColumns: "2.6in minmax(0, 1fr)", gap: 14 }}>
+                  {backPage === "both" && (d.diagram || d.play) && <div>
+                    {d.diagram && <DrillDiagram play={d.diagram} still />}
+                    {d.play && <PrintedPlay play={d.play} gap={!!d.diagram} />}
+                  </div>}
                   <div>
                     <div style={{ fontSize: 14.5, fontWeight: 700 }}>
                       {d.title}{d.film ? " 🎥" : ""}
@@ -501,5 +505,15 @@ export default function PracticePrintView({ practiceIds, onClose }: Props) {
       )}
     </div>,
     document.body
+  );
+}
+
+/** The play linked to a drill, printed under (or instead of) the drill's diagram: first step, with its name. */
+function PrintedPlay({ play, gap }: { play: import("../../lib/plays").Play; gap: boolean }) {
+  return (
+    <div style={{ marginTop: gap ? 8 : 0 }}>
+      <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 3 }}>🏀 Play: {play.title}</div>
+      <DrillDiagram play={play} still />
+    </div>
   );
 }

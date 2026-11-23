@@ -80,17 +80,20 @@ export default function PracticeSchedulePlayerView({ homeRosterId, practiceId }:
                     <span style={{ color: "var(--muted)", fontWeight: 400, fontSize: 12 }}> · {d.duration_minutes} min</span>
                   </div>
                   {d.goal_text && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2, whiteSpace: "pre-wrap" }}>{d.goal_text}</div>}
-                  {/* The drill's diagram: tap to open it, tap again to close. */}
-                  {d.diagram && (() => {
+                  {/* The drill's diagram and the play linked to it: tap to open one, tap again to close. */}
+                  {(d.diagram || d.play) && (() => {
                     const key = `${bi}-${si}-${di}`;
-                    const open = openDiagram === key;
+                    const diagramOpen = openDiagram === key + ":d";
+                    const playOpen = openDiagram === key + ":p";
+                    const btn = (on: boolean) => ({ fontSize: 12, padding: "3px 10px", borderRadius: 6, border: "1px solid var(--border)", background: on ? "var(--surface2)" : "transparent", color: "var(--royal-light)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 } as const);
                     return (
                       <div style={{ marginTop: 4 }}>
-                        <button onClick={() => setOpenDiagram(open ? null : key)}
-                          style={{ fontSize: 12, padding: "3px 10px", borderRadius: 6, border: "1px solid var(--border)", background: open ? "var(--surface2)" : "transparent", color: "var(--royal-light)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
-                          {open ? "Hide diagram" : "View diagram"}
-                        </button>
-                        {open && <div style={{ marginTop: 6 }}><DrillDiagram play={d.diagram} /></div>}
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {d.diagram && <button onClick={() => setOpenDiagram(diagramOpen ? null : key + ":d")} style={btn(diagramOpen)}>{diagramOpen ? "Hide diagram" : "View diagram"}</button>}
+                          {d.play && <button onClick={() => setOpenDiagram(playOpen ? null : key + ":p")} style={btn(playOpen)}>{playOpen ? "Hide play" : `🏀 View play: ${d.play.title}`}</button>}
+                        </div>
+                        {diagramOpen && d.diagram && <div style={{ marginTop: 6 }}><DrillDiagram play={d.diagram} /></div>}
+                        {playOpen && d.play && <div style={{ marginTop: 6 }}><DrillDiagram play={d.play} /></div>}
                       </div>
                     );
                   })()}

@@ -10,12 +10,12 @@
 // the drill, and Save diagram (or Close) comes back to this card with the
 // diagram showing.
 
-import { useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { getYouTubeId } from "../../lib/youtube";
 import { renderRichText } from "../../lib/richtext";
 import { supabase } from "../../lib/supabase";
 import { updatePracticeDrill, type PracticeDrillLibraryDrill } from "../../lib/practicePlanner";
-import { getDrillDiagrams, deletePlay, type Play } from "../../lib/plays";
+import { getDrillDiagrams, getDrillLinkedPlays, deletePlay, type Play } from "../../lib/plays";
 import DrillDiagram from "../plays/DrillDiagram";
 import PlayEditor from "../plays/PlayEditor";
 
@@ -42,6 +42,16 @@ export default function DrillDetailCard({ drill, diagram, canManage, onClose, on
   // attached when the designer closes, it's removed rather than left saved
   // where nobody can ever see it.
   const unattached = useRef<string | null>(null);
+  // The play linked to this drill (Blob 1 for "Intro to Blob 1"): watchable here, edited in Plays.
+  const [linkedPlay, setLinkedPlay] = useState<Play | null>(null);
+  const [showPlay, setShowPlay] = useState(false);
+  useEffect(() => {
+    let on = true;
+    setLinkedPlay(null); setShowPlay(false);
+    // With no diagram of its own, the drill opens on its play.
+    if (drill.linked_play_id) getDrillLinkedPlays([drill.id]).then(got => { if (on) { setLinkedPlay(got[drill.id] ?? null); setShowPlay(!drill.diagram_play_id); } });
+    return () => { on = false; };
+  }, [drill.id, drill.linked_play_id]);
 
   if (drawing) {
     const back = () => {
@@ -96,8 +106,20 @@ export default function DrillDetailCard({ drill, diagram, canManage, onClose, on
           <div style={{ fontSize: 17, fontWeight: 700 }}>{drill.title}</div>
           <button onClick={onClose} style={smallBtn}>Close</button>
         </div>
-        {/* The drill's diagram, or a spot to draw one. */}
-        {drill.diagram_play_id && diagram ? (
+        {/* With a linked play: tabs, or just the play when there's no diagram. */}
+        {linkedPlay && (drill.diagram_play_id && diagram || canManage) && (
+          <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+            <button onClick={() => setShowPlay(false)} style={tab(!showPlay)}>Drill diagram</button>
+            <button onClick={() => setShowPlay(true)} style={tab(showPlay)}>🏀 Play: {linkedPlay.title}</button>
+          </div>
+        )}
+        {linkedPlay && (showPlay || !(drill.diagram_play_id && diagram) && !canManage) ? (
+          <div style={{ marginBottom: 10 }}>
+            {!(drill.diagram_play_id && diagram) && !canManage && <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>🏀 Play: {linkedPlay.title}</div>}
+            <DrillDiagram play={linkedPlay} />
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Watch only — the play is changed in Plays by the coach who drew it.</div>
+          </div>
+        ) : drill.diagram_play_id && diagram ? (
           <div style={{ marginBottom: 10 }}>
             <DrillDiagram play={diagram} />
             {canManage && (
@@ -128,6 +150,10 @@ export default function DrillDetailCard({ drill, diagram, canManage, onClose, on
 
 const overlayStyle: CSSProperties = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 };
 const modalStyle: CSSProperties = { background: "var(--surface)", borderRadius: 16, width: "min(560px, 96vw)", maxHeight: "90vh", overflowY: "auto", padding: 20 };
+const tab = (on: boolean): CSSProperties => ({
+  background: on ? "var(--royal)" : "var(--surface2)", border: "1px solid " + (on ? "var(--royal)" : "var(--border)"),
+  color: on ? "#fff" : "var(--text)", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
+});
 const smallBtn: CSSProperties = {
   background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 6,
   padding: "5px 10px", fontSize: 11, fontFamily: "inherit", cursor: "pointer",

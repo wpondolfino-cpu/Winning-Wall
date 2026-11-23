@@ -1427,6 +1427,20 @@ export interface Play {
 export const isDrillDiagram = (p: { kind?: string | null }) => p.kind === "drill";
 
 /** Drill diagrams by id (the ones attached to Drill Library drills). */
+/**
+ * The plays linked to drills, by drill id — read-only, for anyone in the
+ * drill's program (SQL 217), so a linked play can be watched on the drill
+ * card, in a published practice and on the printout. Until 217 is run this
+ * comes back empty and the drill just shows its own diagram.
+ */
+export async function getDrillLinkedPlays(drillIds: string[]): Promise<Record<string, Play>> {
+  const ids = [...new Set(drillIds.filter(Boolean))];
+  if (!ids.length) return {};
+  const { data, error } = await supabase.rpc("drill_linked_plays", { p_drills: ids });
+  if (error) { console.warn("drill_linked_plays:", error.message); return {}; }
+  return (data ?? {}) as Record<string, Play>;
+}
+
 export async function getDrillDiagrams(ids: string[]): Promise<Record<string, Play>> {
   const clean = [...new Set(ids.filter(Boolean))];
   if (!clean.length) return {};

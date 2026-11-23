@@ -1,5 +1,5 @@
 // src/components/plays/DrillDiagram.tsx
-// A drill's diagram, read-only: the court drawing from the play designer,
+// A drill's diagram (or the play linked to a drill), read-only: the court drawing from the play designer,
 // with step buttons and "Play steps" when the drill has more than one
 // step. Used in the Drill Library, the player's practice schedule and the
 // printout (static, first step only).
@@ -19,7 +19,8 @@ interface Props {
 
 export default function DrillDiagram({ play, still = false, thumb = false }: Props) {
   const frames = play.data?.frames ?? [];
-  const marks = drillMarks(frames);
+  // Drills are marked 1, 2, 3… / A, B, C… by order; a linked play keeps its real numbers.
+  const marks = play.kind === "drill" ? drillMarks(frames) : undefined;
   const [idx, setIdx] = useState(0);
   const [signal, setSignal] = useState(0);
   if (!frames.length) return null;

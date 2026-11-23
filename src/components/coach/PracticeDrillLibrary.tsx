@@ -339,9 +339,6 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
                 viewDrill.default_group_size && viewDrill.default_num_groups ? `${viewDrill.default_group_size}v${Array(viewDrill.default_num_groups).fill(viewDrill.default_group_size).join("v")}` : null]
                 .filter(Boolean).join(" · ")}
             </div>
-            {viewDrill.linked_play_id && plays.find(p => p.id === viewDrill.linked_play_id) && (
-              <div style={{ fontSize: 12, color: "var(--gold-text)", marginBottom: 10 }}>🏀 Linked play: {plays.find(p => p.id === viewDrill.linked_play_id)?.title}</div>
-            )}
           </>}
           actions={<>
             {isPicker && <button onClick={() => onPick!(viewDrill)} style={primaryBtn}>Add to practice</button>}
