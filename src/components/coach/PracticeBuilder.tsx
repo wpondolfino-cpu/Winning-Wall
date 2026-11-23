@@ -1403,6 +1403,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
           drill={drillsById[cardFor.drill.drill_id]}
           diagram={cardDiagram}
           canManage
+          canSend
           onClose={() => setCardFor(null)}
           onDiagramChanged={(drillId, play) => {
             setCardDiagram(play);

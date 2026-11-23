@@ -17,6 +17,7 @@ import { supabase } from "../../lib/supabase";
 import { updatePracticeDrill, type PracticeDrillLibraryDrill } from "../../lib/practicePlanner";
 import { getDrillDiagrams, getDrillLinkedPlays, deletePlay, type Play } from "../../lib/plays";
 import DrillDiagram from "../plays/DrillDiagram";
+import { getSendTargets, sendDrill, getShareCode, getShareStatus, revokeShareCode, shareLink, type SendTarget, type ShareCode } from "../../lib/drillSharing";
 import PlayEditor from "../plays/PlayEditor";
 
 interface Props {
@@ -32,11 +33,14 @@ interface Props {
   details?: ReactNode;
   /** The buttons along the bottom. */
   actions?: ReactNode;
+  /** Show "Send to another team" (coaches on the drill's own team). */
+  canSend?: boolean;
   /** Anything below the buttons. */
   footer?: ReactNode;
 }
 
-export default function DrillDetailCard({ drill, diagram, canManage, onClose, onDiagramChanged, details, actions, footer }: Props) {
+export default function DrillDetailCard({ drill, diagram, canManage, onClose, onDiagramChanged, details, actions, canSend = false, footer }: Props) {
+  const [sending, setSending] = useState(false);
   const [drawing, setDrawing] = useState<{ play?: Play } | null>(null);
   // A new diagram not yet attached to its drill. If it still can't be
   // attached when the designer closes, it's removed rather than left saved
@@ -141,9 +145,89 @@ export default function DrillDetailCard({ drill, diagram, canManage, onClose, on
         )}
         {drill.description && <div style={{ fontSize: 13, color: "var(--text)", marginBottom: 10 }} dangerouslySetInnerHTML={{ __html: renderRichText(drill.description) }} />}
         {details}
-        {actions && <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{actions}</div>}
+        {(actions || canSend) && <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {actions}
+          {canSend && <button onClick={() => setSending(v => !v)} style={smallBtn}>📨 Send to another team</button>}
+        </div>}
+        {sending && <SendPanel drillId={drill.id} title={drill.title} />}
         {footer}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Send this drill: tick teams at your school, or get a share code for a
+ * coach at another school. They get their own copy (diagram, linked play
+ * and all); yours never changes.
+ */
+function SendPanel({ drillId, title }: { drillId: string; title: string }) {
+  const [targets, setTargets] = useState<SendTarget[] | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [code, setCode] = useState<ShareCode | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    getSendTargets().then(setTargets);
+    getShareStatus(drillId).then(setCode);
+  }, [drillId]);
+
+  async function run(fn: () => Promise<void>) {
+    setBusy(true); setErr(null); setNote(null);
+    try { await fn(); } catch (e: any) { setErr(e?.message ?? "Couldn't do that."); }
+    finally { setBusy(false); }
+  }
+  const send = () => run(async () => {
+    const ids = [...picked];
+    await sendDrill(drillId, ids);
+    const names = (targets ?? []).filter(t => picked.has(t.id)).map(t => t.name).join(" and ");
+    setNote(`Sent to ${names}. Their coaches will see it at the top of their Drill Library.`);
+    setPicked(new Set());
+  });
+  const makeCode = () => run(async () => setCode(await getShareCode(drillId)));
+  const stopCode = () => run(async () => { await revokeShareCode(drillId); setCode(null); setNote("Code turned off. Anyone who already added the drill keeps their copy."); });
+  const copy = async (text: string, what: string) => {
+    try { await navigator.clipboard.writeText(text); setNote(`${what} copied.`); } catch { setNote(text); }
+  };
+
+  const box: CSSProperties = { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: 12, marginTop: 10 };
+  return (
+    <div style={box}>
+      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Send "{title}"</div>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Teams at your school</div>
+      {targets === null ? <div style={{ fontSize: 12, color: "var(--muted)" }}>Loading…</div>
+        : targets.length === 0 ? <div style={{ fontSize: 12, color: "var(--muted)" }}>No other teams at your school are on Winning Wall yet.</div>
+        : <>
+          {targets.map(t => (
+            <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, padding: "3px 0", cursor: "pointer" }}>
+              <input type="checkbox" checked={picked.has(t.id)}
+                onChange={e => setPicked(prev => { const n = new Set(prev); if (e.target.checked) n.add(t.id); else n.delete(t.id); return n; })} />
+              {t.name}
+            </label>
+          ))}
+          <button onClick={send} disabled={busy || picked.size === 0} style={{ ...smallBtn, marginTop: 6, opacity: picked.size ? 1 : 0.5 }}>Send</button>
+        </>}
+      <div style={{ borderTop: "1px solid var(--border)", margin: "12px 0 8px" }} />
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>A coach at another school</div>
+      {code ? (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: 2 }}>{code.code}</span>
+            <button onClick={() => copy(code.code, "Code")} style={smallBtn}>Copy code</button>
+            <button onClick={() => copy(shareLink(code.code), "Link")} style={smallBtn}>Copy link</button>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
+            Good until {new Date(code.expires_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}. Anyone with the code can add a copy of this drill until then.{" "}
+            <button onClick={stopCode} disabled={busy} style={{ ...smallBtn, padding: "2px 8px" }}>Turn off now</button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={makeCode} disabled={busy} style={smallBtn}>Get a share code</button>
+      )}
+      {note && <div style={{ fontSize: 12, color: "var(--success-text)", marginTop: 8, wordBreak: "break-all" }}>{note}</div>}
+      {err && <div style={{ fontSize: 12, color: "var(--danger-text, #f08)", marginTop: 8 }}>{err}</div>}
     </div>
   );
 }

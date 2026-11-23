@@ -21,6 +21,7 @@ import { supabase } from "../../lib/supabase";
 import { getDrillDiagrams, type Play } from "../../lib/plays";
 import DrillDiagram from "../plays/DrillDiagram";
 import DrillDetailCard from "./DrillDetailCard";
+import DrillInbox from "./DrillInbox";
 
 interface Props {
   canManage?: boolean;
@@ -231,6 +232,7 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
       )}
 
       {!isPicker && canManage && <NewInSharedLibrary kinds={["team_drill"]} onAdded={load} />}
+      {!isPicker && canManage && <DrillInbox onAdded={load} />}
 
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search drills…" style={{ ...inputStyle, width: "100%", marginBottom: 10, boxSizing: "border-box" }} />
 
@@ -331,6 +333,7 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
           drill={viewDrill}
           diagram={viewDrill.diagram_play_id ? diagrams[viewDrill.diagram_play_id] ?? null : null}
           canManage={canManage && !isPicker}
+          canSend={canManage && !isPicker}
           onClose={() => setViewDrill(null)}
           onDiagramChanged={attachDiagram}
           details={<>
