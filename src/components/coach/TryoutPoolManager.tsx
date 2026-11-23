@@ -18,6 +18,7 @@ import {
   TryoutPlayer, getTryoutPlayers, addTryoutPlayer, addTryoutPlayersBulk,
   updateTryoutPlayer, deleteTryoutPlayer, clearTryoutPool, Roster,
   PlayerAccountLite, LinkSuggestion, getPlayerAccounts, linkPoolToAccounts,
+  linkTryoutPlayer, syncLinkedTryoutNames,
 } from "../../lib/practicePlanner";
 import { gradeFromGradYear } from "../../lib/teamDesigner";
 
@@ -52,10 +53,46 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
   const [suggestions, setSuggestions] = useState<LinkSuggestion[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [linking, setLinking] = useState(false);
+  // ✎ on a row: rename it, or link / unlink its account.
+  const [editFor, setEditFor] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState("");
+  const [acctSearch, setAcctSearch] = useState("");
 
   useEffect(() => { load(); }, [seasonId, showCut]);
   useEffect(() => { getPlayerAccounts().then(setAccounts); }, []);
   const accountById = new Map(accounts.map(a => [a.id, a]));
+  // Linked kids go by their account's name: catch up any that don't yet.
+  const synced = useRef(false);
+  useEffect(() => {
+    if (synced.current || !accounts.length || !players.length) return;
+    synced.current = true;
+    syncLinkedTryoutNames(players, accounts).then(n => { if (n) { load(); onChanged?.(); } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accounts, players]);
+
+  function openEdit(p: TryoutPlayer) {
+    if (editFor === p.id) { setEditFor(null); return; }
+    setEditFor(p.id); setNameDraft(p.name); setAcctSearch("");
+  }
+  async function saveName(p: TryoutPlayer) {
+    const v = nameDraft.trim().replace(/\s+/g, " ");
+    if (!v || v === p.name) { setEditFor(null); return; }
+    const clash = players.find(x => x.id !== p.id && x.name.toLowerCase() === v.toLowerCase());
+    if (clash && !window.confirm(`${v} is already in the pool. Rename anyway?`)) return;
+    patchLocal(p.id, { name: v });
+    setEditFor(null);
+    const { error } = await updateTryoutPlayer(p.id, { name: v });
+    if (error) setMsg(error);
+    await load(); onChanged?.();
+  }
+  async function linkTo(p: TryoutPlayer, a: PlayerAccountLite) {
+    patchLocal(p.id, { linked_profile_id: a.id, name: a.name, nickname: null });
+    setEditFor(null);
+    const { error } = await linkTryoutPlayer(p.id, a);
+    if (error) setMsg(error);
+    setSuggestions(list => list.filter(x => x.tryoutId !== p.id).map(x => ({ ...x, candidates: x.candidates.filter(c => c.id !== a.id) })).filter(x => x.candidates.length));
+    await load(); onChanged?.();
+  }
 
   /** Exact name matches link on their own; close ones come back to ask about. */
   async function findAccounts(silent = false) {
@@ -72,7 +109,9 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
   }
 
   async function confirmLink(tryoutId: string, accountId: string | null) {
-    if (accountId) await updateTryoutPlayer(tryoutId, { linked_profile_id: accountId });
+    const acct = accountId ? accountById.get(accountId) : undefined;
+    if (acct) await linkTryoutPlayer(tryoutId, acct);
+    else if (accountId) await updateTryoutPlayer(tryoutId, { linked_profile_id: accountId });
     else setDismissed(d => new Set(d).add(tryoutId));
     setSuggestions(list => list
       .filter(x => x.tryoutId !== tryoutId)
@@ -265,7 +304,7 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
                       const grade = acct ? gradeFromGradYear(acct.graduation_year) : p.grade;
                       return (
                         <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 14, textDecoration: p.status === "cut" ? "line-through" : "none" }}>{p.name}</span>
+                          <span style={{ fontSize: 14, textDecoration: p.status === "cut" ? "line-through" : "none" }}>{acct?.name ?? p.name}</span>
                           {acct ? (
                             <span style={{ fontSize: 11, color: "var(--muted)" }}>{grade && GRADE_LABEL[grade] ? GRADE_LABEL[grade] : grade ? `Gr ${grade}` : ""}</span>
                           ) : (
@@ -300,8 +339,7 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
                           )}
                           {acct && (
                             <span title={`Linked to ${acct.name}'s account`} style={{ fontSize: 10.5, padding: "1px 6px", borderRadius: 5, border: "1px solid rgba(45,155,90,0.5)", color: "var(--green, #2d9b5a)", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                              ✓ account{acct.name.toLowerCase() !== p.name.toLowerCase() ? `: ${acct.name}` : ""}
-                              <button onClick={() => unlink(p)} title="Unlink" style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, fontSize: 11 }}>×</button>
+                              ✓ account
                             </span>
                           )}
                         </div>
@@ -340,6 +378,7 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
                       </div>
                     )}
                   </div>
+                  <button onClick={() => openEdit(p)} style={{ ...btn, padding: "4px 9px" }} title="Rename, or link to their account">✎</button>
                   <button
                     onClick={() => { setNotesFor(notesFor === p.id ? null : p.id); setNotesDraft(p.notes ?? ""); }}
                     style={{ ...btn, padding: "4px 9px" }}
@@ -352,6 +391,47 @@ export default function TryoutPoolManager({ seasonId, onClose, onChanged, defaul
                   </button>
                   <button onClick={() => handleDelete(p)} style={{ ...btn, padding: "4px 9px", color: "var(--muted)" }}>✕</button>
                 </div>
+                {editFor === p.id && (() => {
+                  const acct = p.linked_profile_id ? accountById.get(p.linked_profile_id) : undefined;
+                  if (p.linked_profile_id) return (
+                    <div style={{ marginTop: 6, padding: 10, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", fontSize: 12.5 }}>
+                      Linked to <b>{acct?.name ?? "a player account"}</b>. Their name, grade and nickname come from the account.
+                      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                        <button onClick={() => { setEditFor(null); unlink(p); }} style={{ ...btn, padding: "4px 10px" }}>Unlink account</button>
+                        <button onClick={() => setEditFor(null)} style={{ ...btn, padding: "4px 10px" }}>Done</button>
+                      </div>
+                    </div>
+                  );
+                  // Accounts not already linked to someone else in the pool.
+                  const taken = new Set(players.filter(x => x.id !== p.id).map(x => x.linked_profile_id).filter(Boolean) as string[]);
+                  const q = acctSearch.trim().toLowerCase();
+                  const matches = q ? accounts.filter(a => !taken.has(a.id) && a.name.toLowerCase().includes(q)).slice(0, 6) : [];
+                  return (
+                    <div style={{ marginTop: 6, padding: 10, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface2)", display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <span style={{ fontSize: 12, color: "var(--muted)", width: 44 }}>Name</span>
+                        <input value={nameDraft} onChange={e => setNameDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveName(p); }}
+                          style={{ ...input, flex: 1, minWidth: 0 }} />
+                        <button onClick={() => saveName(p)} style={{ ...primary, padding: "5px 10px" }}>Save</button>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <span style={{ fontSize: 12, color: "var(--muted)", width: 44 }}>Account</span>
+                        <input value={acctSearch} onChange={e => setAcctSearch(e.target.value)} placeholder="Search player accounts…"
+                          style={{ ...input, flex: 1, minWidth: 0 }} />
+                      </div>
+                      {q && (matches.length ? matches.map(a => {
+                        const g = gradeFromGradYear(a.graduation_year);
+                        return (
+                          <button key={a.id} onClick={() => linkTo(p, a)}
+                            style={{ ...btn, textAlign: "left", padding: "6px 10px" }}>
+                            Link to <b>{a.name}</b>{g && GRADE_LABEL[g] ? ` · ${GRADE_LABEL[g]}` : ""}
+                          </button>
+                        );
+                      }) : <div style={{ fontSize: 12, color: "var(--muted)" }}>No player account matches "{acctSearch.trim()}".</div>)}
+                      <div style={{ fontSize: 11, color: "var(--muted)" }}>Linking uses the account's name, grade and nickname.</div>
+                    </div>
+                  );
+                })()}
                 {notesFor === p.id && (
                   <div style={{ marginTop: 6 }}>
                     <textarea
