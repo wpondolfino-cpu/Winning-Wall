@@ -10,8 +10,15 @@
 //       No sign-in needed -- these come from the login screen. The message
 //       is fixed; the server finds the coaches and sends it to them.
 //   * { title, message, playerIds }
-//       Any signed-in user (a challenge notifies its opponent, etc.).
-//       Reaches every device signed into those accounts.
+//       Any signed-in user (a challenge notifies its opponent, etc.), but
+//       only people on a team the sender is on: anyone else in the list is
+//       dropped, so nobody can push to another school's players or coaches.
+//       The platform admin can reach anyone.
+//   * { drillSent: { drillId, programIds } }
+//       After a coach sends a drill to other teams at their school (SQL
+//       218): the server checks the send really happened (this sender, this
+//       drill, those teams, the last 10 minutes) and tells those teams'
+//       coaches. The wording is fixed.
 //   * { title, message, allPlayers: true }
 //       Coaches of the program you're in (or the platform admin). Reaches
 //       every active member of THAT program only (migration 186) --
@@ -79,6 +86,8 @@ interface SendPushBody {
   role?: string;
   /** new_signup: the team code typed at signup, so only that program's coaches hear about it. */
   joinCode?: string;
+  /** A drill was just sent to these teams at the sender's school: tell their coaches. */
+  drillSent?: { drillId?: string; programIds?: string[] };
 }
 
 /** A name typed on the login screen: plain text, short. */
@@ -148,6 +157,29 @@ serve(async (req) => {
     const { data: { user } } = token ? await admin.auth.getUser(token) : { data: { user: null } };
     if (!user) return reply({ error: "Sign in to send notifications." }, 401);
 
+    if (body.drillSent) {
+      // ── A drill sent to other teams: fixed text, checked against the send ──
+      const drillId = typeof body.drillSent.drillId === "string" ? body.drillSent.drillId : "";
+      const wanted = (body.drillSent.programIds ?? []).filter((x) => typeof x === "string").slice(0, 50);
+      if (!drillId || !wanted.length) return reply({ error: "drillId and programIds are required" }, 400);
+      const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const { data: sends } = await admin.from("drill_sends").select("to_program, from_program")
+        .eq("drill_id", drillId).eq("from_user", user.id).in("to_program", wanted).gte("created_at", since);
+      const teams = [...new Set<string>((sends ?? []).map((r: any) => r.to_program))];
+      if (!teams.length) return reply({ error: "No matching send." }, 403);
+      const [{ data: drill }, { data: from }] = await Promise.all([
+        admin.from("practice_drills_library").select("title").eq("id", drillId).maybeSingle(),
+        admin.from("programs").select("name").eq("id", (sends as any[])[0].from_program).maybeSingle(),
+      ]);
+      const { data: staff } = await admin.from("program_members").select("user_id")
+        .in("program_id", teams).eq("status", "active").in("role", ["head_coach", "coach"]).eq("is_test", false);
+      playerIds = [...new Set<string>((staff ?? []).map((m: any) => m.user_id))].filter((id) => id !== user.id);
+      if (!playerIds.length) return reply({ sent: false, reason: "no coaches on those teams yet" });
+      title = `📨 New drill from ${from?.name ?? "another team"}`;
+      message = `"${drill?.title ?? "A drill"}" was sent to your team. Add it from your Drill Library.`;
+      body.url = "/?tab=practicelibrary";
+    } else {
+
     if (!body.title || !body.message) return reply({ error: "title and message are required" }, 400);
     title = String(body.title).slice(0, 120);
     message = String(body.message).slice(0, 500);
@@ -183,6 +215,20 @@ serve(async (req) => {
     } else {
       playerIds = (body.playerIds ?? []).filter((id) => typeof id === "string").slice(0, 500);
       if (!playerIds.length) return reply({ error: "Provide playerIds or set allPlayers: true" }, 400);
+      // Only people on a team the sender is on (players reach teammates and
+      // their coaches; coaches reach their own people). Anyone else is dropped.
+      if (!isPlatformAdmin) {
+        const { data: mine } = await admin.from("program_members").select("program_id")
+          .eq("user_id", user.id).eq("status", "active");
+        const myTeams = [...new Set<string>((mine ?? []).map((m: any) => m.program_id))];
+        const { data: theirs } = myTeams.length
+          ? await admin.from("program_members").select("user_id").in("program_id", myTeams).in("user_id", playerIds).eq("status", "active")
+          : { data: [] };
+        const allowed = new Set<string>((theirs ?? []).map((m: any) => m.user_id));
+        playerIds = playerIds.filter((id) => allowed.has(id));
+        if (!playerIds.length) return reply({ error: "You can only notify people on your own team." }, 403);
+      }
+    }
     }
   }
 
