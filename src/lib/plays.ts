@@ -286,8 +286,35 @@ export function deriveNextFrame(prev: PlayFrame): PlayFrame {
     ? prev.actions.filter((a) => !a.sourcePlayerId || !extraHolders.has(a.sourcePlayerId) || a.sourcePlayerId === mainHolder)
     : prev.actions;
   if (extraHolders.size && mainHolder) ballHolderId = mainHolder;
-  const tookShot = mainActions.some((a) => a.type === "shot" || a.type === "lob");
-  if (tookShot) {
+
+  // Drills with more than one ball: a player holding several gives them out
+  // in the order their passes / handoffs / shots were drawn — the first one
+  // takes the first ball they hold (the main ball, if they have it), the
+  // next takes the next. So one line with two balls can feed two people in
+  // the same step. A ball nobody's action takes stays with its holder.
+  const hasExtras = !!prev.extraBalls?.length;
+  const givenBy = new Map<string, PlayAction>(); // "main" or an extra ball's id -> the action that sends it
+  if (hasExtras) {
+    const held = new Map<string, string[]>();
+    if (mainHolder) held.set(mainHolder, ["main"]);
+    for (const b of prev.extraBalls ?? []) {
+      const o = extraOwner(b);
+      if (o) held.set(o, [...(held.get(o) ?? []), b.id]);
+    }
+    for (const [pid, balls] of held) {
+      const gives = playerActionSequence(prev, pid).filter((a) =>
+        a.type === "shot" || a.type === "lob" || ((a.type === "pass" || (a.type === "dho" && !a.keep)) && !!a.targetPlayerId));
+      balls.forEach((k, i) => { if (gives[i]) givenBy.set(k, gives[i]); });
+    }
+  }
+  const mainGive = hasExtras && mainHolder ? givenBy.get("main") : undefined;
+  const tookShot = hasExtras && mainHolder
+    ? mainGive?.type === "shot" || mainGive?.type === "lob"
+    : mainActions.some((a) => a.type === "shot" || a.type === "lob");
+  if (hasExtras && mainHolder && !tookShot) {
+    // The main ball goes where its own pass sends it, or stays put.
+    ballHolderId = mainGive?.targetPlayerId ?? mainHolder;
+  } else if (tookShot) {
     ballHolderId = null;
   } else {
     const handoffPlayer = prev.players.find((p) => p.handoff);
@@ -308,7 +335,7 @@ export function deriveNextFrame(prev: PlayFrame): PlayFrame {
 
   let ball = prev.ball ? { ...prev.ball } : null;
   if (tookShot) {
-    const shotAction = [...mainActions].reverse().find((a) => a.type === "shot" || a.type === "lob");
+    const shotAction = mainGive ?? [...mainActions].reverse().find((a) => a.type === "shot" || a.type === "lob");
     if (shotAction) ball = { x: shotAction.x2, y: shotAction.y2 };
   } else if (ballHolderId) {
     const holder = players.find((p) => p.id === ballHolderId);
@@ -336,11 +363,9 @@ export function deriveNextFrame(prev: PlayFrame): PlayFrame {
       let holder = extraOwner(b);
       let at = { x: b.x, y: b.y };
       if (holder) {
-        const mine = prev.actions.filter((a) => a.sourcePlayerId === holder);
-        const shot = [...mine].reverse().find((a) => a.type === "shot" || a.type === "lob");
-        const pass = [...mine].reverse().find((a) => (a.type === "pass" || (a.type === "dho" && !a.keep)) && a.targetPlayerId);
-        if (shot) { holder = null; at = { x: shot.x2, y: shot.y2 }; }
-        else if (pass?.targetPlayerId) holder = pass.targetPlayerId;
+        const give = givenBy.get(b.id);
+        if (give && (give.type === "shot" || give.type === "lob")) { holder = null; at = { x: give.x2, y: give.y2 }; }
+        else if (give?.targetPlayerId) holder = give.targetPlayerId;
       }
       const h = holder ? players.find((p) => p.id === holder) : undefined;
       if (holder && !h) holder = null;
