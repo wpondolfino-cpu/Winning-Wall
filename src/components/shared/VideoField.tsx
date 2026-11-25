@@ -43,7 +43,7 @@ export default function VideoField({ value, onChange, style, placeholder = "YouT
   const startBad = Number.isNaN(start);
   const endBad = Number.isNaN(end);
   const order = !startBad && !endBad && start != null && end != null && end <= start;
-  const problem = startBad || endBad ? "Type times as minutes:seconds, like 2:50."
+  const problem = startBad || endBad ? "Use colons: 2:50, or 1:12:26 for hours (72:26 works too)."
     : order ? "Stop at has to be after Start at." : null;
 
   function emit(nextLink: string, s: number | null, e: number | null) {
@@ -83,16 +83,16 @@ export default function VideoField({ value, onChange, style, placeholder = "YouT
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
           <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
             Start at
-            <input value={startText} onChange={e => changeTime("start", e.target.value)} placeholder="0:00" inputMode="numeric" aria-label="Start at (minutes:seconds)"
+            <input value={startText} onChange={e => changeTime("start", e.target.value)} placeholder="0:00" inputMode="numeric" aria-label="Start at (minutes:seconds, or hours:minutes:seconds)"
               style={{ ...timeBox, borderColor: startBad ? "var(--danger-text, #ff8a8a)" : "var(--border)" }} />
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
             Stop at
-            <input value={endText} onChange={e => changeTime("end", e.target.value)} placeholder="optional" inputMode="numeric" aria-label="Stop at (minutes:seconds)"
+            <input value={endText} onChange={e => changeTime("end", e.target.value)} placeholder="optional" inputMode="numeric" aria-label="Stop at (minutes:seconds, or hours:minutes:seconds)"
               style={{ ...timeBox, borderColor: endBad || order ? "var(--danger-text, #ff8a8a)" : "var(--border)" }} />
           </label>
           <span style={{ fontSize: 11, color: problem ? "var(--danger-text, #ff8a8a)" : "var(--muted)" }}>
-            {problem ?? "minutes:seconds · blank plays from the start"}
+            {problem ?? "2:50 or 1:12:26 (hours) · blank plays from the start"}
           </span>
         </div>
       )}
