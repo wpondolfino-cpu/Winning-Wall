@@ -99,9 +99,23 @@ Deno.serve(async (req) => {
       const { data: gen, error: genErr } = await admin.auth.admin.generateLink({
         type: "invite", email, options: { data: meta, redirectTo: APP_URL },
       });
-      if (genErr || !gen?.user) throw genErr ?? new Error("Couldn't create the invite.");
-      userId = gen.user.id;
-      link = gen.properties?.action_link;
+      if (!genErr && gen?.user) {
+        userId = gen.user.id;
+        link = gen.properties?.action_link;
+      } else if (/already|registered|exists/i.test(genErr?.message ?? "")) {
+        // They were invited before but never finished signing up, so an
+        // invite can't be made again. A one-time sign-in link does the same
+        // job: it signs them in and they set their password.
+        const { data: again, error: againErr } = await admin.auth.admin.generateLink({
+          type: "magiclink", email, options: { redirectTo: APP_URL },
+        });
+        if (againErr || !again?.user) throw againErr ?? new Error("Couldn't make a sign-in link for that email.");
+        userId = again.user.id;
+        link = again.properties?.action_link;
+        emailed = false;
+      } else {
+        throw genErr ?? new Error("Couldn't create the invite.");
+      }
     }
 
     await makeHeadCoach(userId!, meta.name, emailed ? "Invited head coach (email sent)" : "Invited head coach (link)");
