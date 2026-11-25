@@ -304,11 +304,28 @@ export default function PracticeWeeksList(props: Props) {
     );
   }
 
+  // Previous / next practice in the designer: the practices this list is
+  // showing (same season, same team tab), in date then start-time order.
+  const practiceSequence = rows
+    .filter(({ week }) => week.season_id === selectedSeasonId)
+    .flatMap(({ practices }) => practices.filter(p => activeTeamId !== null && p.roster_ids.includes(activeTeamId)))
+    .sort((a, b) => (a.practice_date + a.start_time).localeCompare(b.practice_date + b.start_time));
+  const seqIndex = openPracticeId ? practiceSequence.findIndex(p => p.id === openPracticeId) : -1;
+  const navLabel = (p: Practice) => new Date(p.practice_date + "T00:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  const practiceNav = seqIndex >= 0 && !creatingNew ? {
+    prev: seqIndex > 0 ? { id: practiceSequence[seqIndex - 1].id, label: navLabel(practiceSequence[seqIndex - 1]) } : undefined,
+    next: seqIndex < practiceSequence.length - 1 ? { id: practiceSequence[seqIndex + 1].id, label: navLabel(practiceSequence[seqIndex + 1]) } : undefined,
+    position: `Practice ${seqIndex + 1} of ${practiceSequence.length}`,
+    // Changes save as you make them, so moving on is like Close then open.
+    onGo: (id: string) => { setOpenPracticeId(id); load(); window.scrollTo({ top: 0 }); },
+  } : undefined;
+
   if (openPracticeId || creatingNew) {
     return (
       <PracticeBuilder
         key={startTemplate?.id ?? openPracticeId ?? "new"}
         practiceId={openPracticeId ?? undefined}
+        nav={practiceNav}
         startFromTemplate={creatingNew ? startTemplate : null}
         // Changes save as you make them (date, time, teams, week...), so the
         // list is reloaded on the way out to show them.
