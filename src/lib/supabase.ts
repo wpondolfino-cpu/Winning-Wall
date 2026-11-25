@@ -10,6 +10,10 @@ const SUPABASE_ANON_KEY = (import.meta as any).env.VITE_SUPABASE_ANON_KEY as str
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   realtime: { params: { eventsPerSecond: 10 } },
+  // Sign-in links (invites, password resets, one-time links) are handled in
+  // useAuth, which switches to the link's account even when someone else is
+  // signed in on this browser, and explains an expired link.
+  auth: { detectSessionInUrl: false },
 });
 
 // ── Creating someone else's account ───────────────────────────

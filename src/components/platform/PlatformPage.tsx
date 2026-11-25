@@ -16,6 +16,7 @@ import {
   PlatformSchool, PlatformProgram, PersonMatch, PlatformHome, OrgKind, loadPlatform, loadHome, searchPeople, setHeadCoach,
   newJoinCode, createProgram, createSchool, createTrainer, updateProgram, updateSchool, uploadLogo, inviteLink,
   saveOrgNotes, programLog, postToPrograms, inviteHeadCoach, setupSteps, InviteResult,
+  listHeadCoachInvites, revokeHeadCoachInvite, HeadCoachInviteLink,
 } from "../../lib/platform";
 import MessageInbox, { ProgramOption } from "../messages/MessageInbox";
 import DownloadProgramDataButton from "../DownloadProgramDataButton";
@@ -343,6 +344,25 @@ function ProgramCard({ p, org, onManage }: { p: PlatformProgram; org: PlatformSc
 }
 
 // ── One program's settings ────────────────────────────────────
+/** Copy / Open to check it / Turn off, for one head-coach invite link. */
+function InviteLinkButtons({ link, id, copied, onCopied, onTurnOff, busy, showLink }: {
+  link: string; id?: string; copied: boolean; onCopied: () => void; onTurnOff: (id: string) => void; busy: boolean; showLink?: boolean;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", flex: showLink ? "1 1 100%" : undefined }}>
+      {showLink && <input readOnly value={link} aria-label="Invite link" onFocus={e => e.currentTarget.select()} style={{ ...input, flex: "1 1 240px", width: "auto", fontSize: 12 }} />}
+      <button style={{ ...ghost, height: 38 }} onClick={async () => {
+        try { await navigator.clipboard.writeText(link); onCopied(); } catch { window.prompt("Copy this invite link:", link); }
+      }}>{copied ? "Copied!" : "Copy link"}</button>
+      {/* Safe: opening it only shows the welcome page. It won't sign you out or use the link up. */}
+      <a href={link} target="_blank" rel="noopener noreferrer" style={{ ...ghost, height: 38, display: "inline-flex", alignItems: "center", textDecoration: "none", boxSizing: "border-box" }}>Open to check it</a>
+      {id && <button style={{ ...danger, height: 38 }} disabled={busy} onClick={() => {
+        if (window.confirm("Turn this invite link off? Anyone who opens it will see that it isn't active anymore.")) onTurnOff(id);
+      }}>Turn off</button>}
+    </div>
+  );
+}
+
 function ProgramManage({ org, program: p, onBack, onChanged }: {
   org: PlatformSchool; program: PlatformProgram; onBack: () => void; onChanged: () => void;
 }) {
@@ -359,10 +379,13 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
   const [invName, setInvName] = useState("");
   const [invLinkOnly, setInvLinkOnly] = useState(false);
   const [invResult, setInvResult] = useState<InviteResult | null>(null);
-  const [linkCopied, setLinkCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState<string | null>(null);
+  const [invLinks, setInvLinks] = useState<HeadCoachInviteLink[] | null>(null);
+  const loadInvLinks = () => { listHeadCoachInvites(p.id).then(setInvLinks).catch(() => setInvLinks([])); };
   const steps = setupSteps(p, org);
   const setupDone = steps.every(s => s.done);
 
+  useEffect(() => { setInvLinks(null); setInvResult(null); loadInvLinks(); }, [p.id]);
   useEffect(() => { programLog(p.id).then(setLog).catch(() => setLog([])); }, [p.id, p.features_off.join(), p.is_active, p.join_code, p.head_coaches.length]);
   useEffect(() => {
     if (q.trim().length < 2) { setMatches([]); return; }
@@ -451,13 +474,14 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
                 <label style={label}>Email<input type="email" value={invEmail} onChange={e => setInvEmail(e.target.value)} placeholder="coach@school.org" style={input} /></label>
               </div>
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--muted-2)", cursor: "pointer" }}>
-                <input type="checkbox" checked={invLinkOnly} onChange={e => setInvLinkOnly(e.target.checked)} /> Just give me a link to send them myself (no email)
+                <input type="checkbox" checked={invLinkOnly} onChange={e => setInvLinkOnly(e.target.checked)} /> Just give me a link to send them myself (no email). Opening it doesn't use it up, so you can check it first.
               </label>
               <button style={{ ...btn, alignSelf: "flex-start" }} disabled={busy || !invEmail.trim()}
                 onClick={() => run(async () => {
-                  setInvResult(null); setLinkCopied(false);
+                  setInvResult(null); setLinkCopied(null);
                   const r = await inviteHeadCoach(p.id, invEmail.trim(), invName.trim(), invLinkOnly);
                   setInvResult(r); setInvEmail(""); setInvName("");
+                  if (r.link) loadInvLinks();
                 }, "Done.")}>{busy ? "Working…" : invLinkOnly ? "Make invite link" : "Send invite"}</button>
               {/* Problems show right here too, not just at the top of the page where they're out of sight. */}
               {err && <div role="alert" style={{ fontSize: 13, color: "var(--danger-text-2)" }}>Couldn't make the invite: {err}</div>}
@@ -467,15 +491,34 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
                   {invResult.status === "invited" && invResult.emailed && <span style={{ color: "var(--success-text)" }}>Invite emailed to {invResult.name}. They'll set a password and land as head coach of {p.name}.</span>}
                   {invResult.status === "invited" && !invResult.emailed && invResult.link && (
                     <>
-                      <span>{invLinkOnly ? "Here's the invite link." : "Supabase couldn't send the email, so here's the invite link instead."} Send it to {invResult.name} by text or email; it works once and they'll set their own password.</span>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <input readOnly value={invResult.link} aria-label="Invite link" onFocus={e => e.currentTarget.select()} style={{ ...input, flex: "1 1 240px", width: "auto", fontSize: 12 }} />
-                        <button style={ghost} onClick={async () => {
-                          try { await navigator.clipboard.writeText(invResult.link!); setLinkCopied(true); } catch { window.prompt("Copy this invite link:", invResult.link!); }
-                        }}>{linkCopied ? "Copied!" : "Copy link"}</button>
-                      </div>
+                      <span>{invLinkOnly ? "Here's the invite link." : "Supabase couldn't send the email, so here's an invite link instead."} Send it to {invResult.name} by text or email. Opening it only shows a welcome page; nothing happens until they set a password. Good for 7 days, used once.</span>
+                      {(() => { const live = invLinks?.find(i => i.id === invResult.invite_id); return live && live.status !== "open"
+                        ? <span style={{ color: "var(--amber-text)" }}>This link is turned off.</span>
+                        : <InviteLinkButtons link={invResult.link!} id={invResult.invite_id} copied={linkCopied === invResult.link} onCopied={() => setLinkCopied(invResult.link!)}
+                            busy={busy} onTurnOff={id => run(async () => { await revokeHeadCoachInvite(id); loadInvLinks(); }, "Invite link turned off.")} showLink />; })()}
                     </>
                   )}
+                </div>
+              )}
+              {invLinks && invLinks.filter(i => i.id !== invResult?.invite_id).length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid var(--border, rgba(176,184,200,0.15))", paddingTop: 10 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--tx-c8cfde)" }}>Invite links (last 30 days)</span>
+                  {invLinks.filter(i => i.id !== invResult?.invite_id).map(i => (
+                    <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 13 }}>
+                      <span style={{ display: "flex", flexDirection: "column", gap: 2, flex: "1 1 180px", minWidth: 0 }}>
+                        <span style={{ fontWeight: 600 }}>{i.name || i.email}</span>
+                        <span style={{ fontSize: 12, color: i.status === "open" ? "var(--muted-2)" : i.status === "used" ? "var(--success-text)" : "var(--amber-text)" }}>
+                          {i.status === "open" ? `Waiting · good until ${new Date(i.expires_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+                            : i.status === "used" ? `Accepted ${new Date(i.accepted_at!).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+                            : i.status === "expired" ? "Ran out" : "Turned off"}
+                        </span>
+                      </span>
+                      {i.status === "open" && i.link && (
+                        <InviteLinkButtons link={i.link} id={i.id} copied={linkCopied === i.link} onCopied={() => setLinkCopied(i.link)}
+                          busy={busy} onTurnOff={id => run(async () => { await revokeHeadCoachInvite(id); loadInvLinks(); }, "Invite link turned off.")} />
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

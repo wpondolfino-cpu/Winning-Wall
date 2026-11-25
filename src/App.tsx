@@ -21,6 +21,8 @@ import PlayersPanel from "./components/PlayersPanel";
 import AdminPanel from "./components/AdminPanel";
 import AdminSettings from "./components/AdminSettings";
 import InstallPrompt from "./components/InstallPrompt";
+import HeadCoachInvite from "./components/HeadCoachInvite";
+import { readInviteToken } from "./lib/headCoachInvite";
 import ChangePassword from "./components/ChangePassword";
 import ChallengesPanel from "./components/challenges/ChallengesPanel";
 import PerkTutorial from "./components/PerkTutorial";
@@ -183,7 +185,7 @@ function homeTabFor(profile: Profile | null | undefined): string {
 }
 
 export default function App() {
-  const { user, profile, authState } = useAuth();
+  const { user, profile, authState, linkNotice, clearLinkNotice } = useAuth();
   const { workouts, refresh: refreshWorkouts } = useWorkouts();
   // The platform admin's sandbox (migration 198): gold bar on every page.
   const inSandbox = useInSandbox(user?.id);
@@ -691,10 +693,25 @@ export default function App() {
       </div>
     );
   }
-  if (authState === "invite") return <ChangePassword title="Welcome to Winning Wall! 🦅" subtitle="Your account is ready. Please create your own personal password before continuing." onComplete={() => window.location.reload()} />;
-  if (authState === "recovery") return <ChangePassword title="Reset Your Password" subtitle="Enter your new password below." onComplete={() => window.location.reload()} />;
-  if (!user || !profile) return <LoginPage />;
-  if (profile.must_change_password === true) return <ChangePassword title="Welcome to Winning Wall! 🦅" subtitle="Your account was set up by a coach. Please create your own personal password before continuing." onComplete={() => window.location.reload()} />;
+  // A note about a sign-in link just opened ("you're now signed in as…", "that link expired"), over whatever screen shows.
+  const notice = linkNotice ? (
+    <div role="status" style={{ position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 3000, width: "min(560px, calc(100vw - 24px))",
+      background: "#1c2742", border: "1px solid rgba(147,180,255,0.45)", color: "#eef2ff", borderRadius: 12, padding: "12px 14px",
+      display: "flex", gap: 10, alignItems: "flex-start", fontSize: 13, lineHeight: 1.45, boxShadow: "0 8px 24px rgba(0,0,0,0.35)" }}>
+      <span style={{ flex: 1 }}>{linkNotice}</span>
+      <button onClick={clearLinkNotice} aria-label="Dismiss" style={{ background: "transparent", border: 0, color: "inherit", fontSize: 16, cursor: "pointer", lineHeight: 1 }}>✕</button>
+    </div>
+  ) : null;
+  const withNotice = (el: ReactNode) => <>{notice}{el}</>;
+
+  // A head-coach invite link (?invite=…) shows its own welcome page, signed in or not.
+  const inviteToken = readInviteToken();
+  if (inviteToken) return withNotice(<HeadCoachInvite token={inviteToken} userEmail={user?.email ?? null} userName={profile?.name ?? null} />);
+
+  if (authState === "invite") return withNotice(<ChangePassword title="Welcome to Winning Wall! 🦅" subtitle="Your account is ready. Please create your own personal password before continuing." onComplete={() => window.location.reload()} />);
+  if (authState === "recovery") return withNotice(<ChangePassword title="Reset Your Password" subtitle="Enter your new password below." onComplete={() => window.location.reload()} />);
+  if (!user || !profile) return withNotice(<LoginPage />);
+  if (profile.must_change_password === true) return withNotice(<ChangePassword title="Welcome to Winning Wall! 🦅" subtitle="Your account was set up by a coach. Please create your own personal password before continuing." onComplete={() => window.location.reload()} />);
 
   if (profile.role === "pending_player" || profile.role === "pending_coach") {
     const isCoachRequest = profile.role === "pending_coach";
@@ -801,6 +818,7 @@ export default function App() {
   return (
     <div id="app-screen" className={`screen active${isPlayer ? " has-bottom-tabs" : ""}${currentViewAs(user.id) || sandboxBar ? " viewing-as" : ""}`}>
       <ViewAsBanner userId={user.id} inSandbox={sandboxBar} />
+      {notice}
       {/* Header */}
       <div className="app-header">
         <img src="/logo.png" alt="Open menu" onClick={() => setSidebarOpen(o => !o)} style={{ height: 36, objectFit: "contain", flexShrink: 0, cursor: "pointer" }} />

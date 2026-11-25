@@ -16,66 +16,62 @@ export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
   const [authState, setAuthState] = useState<AuthState>("loading");
 
+  // Something to tell the person about a sign-in link they just opened:
+  // "you're now signed in as Marcus", or "that link has expired".
+  const [linkNotice, setLinkNotice] = useState<string | null>(null);
+
   useEffect(() => {
-    // ── Check URL for Supabase magic tokens first ──
-    // When someone clicks an invite or reset link, Supabase puts
-    // #access_token=...&type=invite (or type=recovery) in the URL
-    const hash = window.location.hash;
-    const params = new URLSearchParams(hash.replace("#", "?"));
-    const tokenType = params.get("type");
+    // ── A sign-in link? ──
+    // Invite, one-time sign-in and password-reset links land here with
+    // #access_token=…&type=… in the address (or #error=… when Supabase
+    // turned the link down).
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const accessToken = params.get("access_token");
-    const refreshToken = params.get("refresh_token");
+    const tokenType = params.get("type");
+    const clearAddress = () => window.history.replaceState(window.history.state, document.title, window.location.pathname + window.location.search);
 
-    if (accessToken && (tokenType === "invite" || tokenType === "signup")) {
-      // Player clicked invite link — sign them in and force password change
-      supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken ?? "",
-      }).then(({ data, error }) => {
-        if (error || !data.session) {
-          setAuthState("unauthenticated");
-          return;
-        }
-        setSession(data.session);
-        setUser(data.session.user);
-        // Clear the ugly token from the URL bar
-        window.history.replaceState({}, document.title, window.location.pathname);
-        // Always force password change for invite links
-        setAuthState("invite");
-        loadProfile(data.session.user.id);
-      });
-      return;
-    }
-
-    if (accessToken && tokenType === "recovery") {
-      // Password reset link
-      supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken ?? "",
-      }).then(({ data }) => {
-        if (data.session) {
-          setSession(data.session);
-          setUser(data.session.user);
-          window.history.replaceState({}, document.title, window.location.pathname);
-          setAuthState("recovery");
-          loadProfile(data.session.user.id);
-        } else {
-          setAuthState("unauthenticated");
-        }
-      });
-      return;
-    }
-
-    // ── Normal session check ──
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    async function normalCheck() {
+      const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
       setUser(session?.user ?? null);
-      if (session?.user) {
-        loadProfile(session.user.id);
-      } else {
-        setAuthState("unauthenticated");
-      }
-    });
+      if (session?.user) loadProfile(session.user.id);
+      else setAuthState("unauthenticated");
+    }
+
+    if (params.get("error")) {
+      clearAddress();
+      const code = params.get("error_code") ?? "";
+      setLinkNotice(/expired|otp/i.test(code + " " + (params.get("error_description") ?? ""))
+        ? "That sign-in link has expired or was already used. Ask whoever sent it to make you a new one."
+        : `That sign-in link didn't work: ${params.get("error_description") ?? params.get("error")}.`);
+      normalCheck();
+    } else if (accessToken) {
+      (async () => {
+        // Whoever was signed in here before the link was opened.
+        const { data: { session: before } } = await supabase.auth.getSession();
+        // The link's account takes over, even if someone else was signed in.
+        const { data, error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: params.get("refresh_token") ?? "" });
+        clearAddress();
+        if (error || !data.session) {
+          setLinkNotice("That sign-in link didn't work. It may have expired; ask whoever sent it to make you a new one.");
+          normalCheck();
+          return;
+        }
+        const now = data.session.user;
+        if (before?.user && before.user.id !== now.id) {
+          const who = (now.user_metadata as any)?.name || now.email || "the invited account";
+          setLinkNotice(`You're now signed in as ${who}, from the link you opened. To get back to your own account, sign out and sign in again.`);
+        }
+        setSession(data.session);
+        setUser(now);
+        // Invites always start with choosing a password; reset links too.
+        if (tokenType === "invite" || tokenType === "signup") setAuthState("invite");
+        else if (tokenType === "recovery") setAuthState("recovery");
+        loadProfile(now.id);
+      })();
+    } else {
+      normalCheck();
+    }
 
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -106,5 +102,5 @@ export function useAuth() {
     }
   }
 
-  return { user, profile, session, authState };
+  return { user, profile, session, authState, linkNotice, clearLinkNotice: () => setLinkNotice(null) };
 }

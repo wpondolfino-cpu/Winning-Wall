@@ -149,11 +149,13 @@ export function inviteLink(code: string): string {
   return `${window.location.origin}/?join=${code}`;
 }
 
-export interface InviteResult { status: "promoted" | "invited"; emailed?: boolean; link?: string; name?: string; }
+export interface InviteResult { status: "promoted" | "invited"; emailed?: boolean; link?: string; name?: string; invite_id?: string; expires_at?: string; }
 
-/** Make someone head coach by email (edge function invite-coach). An
- *  existing account is promoted right away; a new person gets an invite
- *  email, or -- if Supabase can't send it, or linkOnly -- a link to pass on. */
+/** Make someone head coach by email (edge function invite-coach). Email:
+ *  an existing account is promoted right away; a new person gets an invite
+ *  email, or -- if Supabase can't send it -- an invite link. linkOnly: always
+ *  an invite link (?invite=…), which is safe to open and used only when they
+ *  accept. */
 export async function inviteHeadCoach(programId: string, email: string, name: string, linkOnly: boolean): Promise<InviteResult> {
   const { data, error } = await supabase.functions.invoke("invite-coach", {
     body: { program_id: programId, email, name, link_only: linkOnly },
@@ -165,6 +167,33 @@ export async function inviteHeadCoach(programId: string, email: string, name: st
   }
   if ((data as any)?.error) throw new Error((data as any).error);
   return data as InviteResult;
+}
+
+async function callInviteCoach<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke("invite-coach", { body });
+  if (error) {
+    let detail = error.message;
+    try { const b = await (error as any).context?.json?.(); if (b?.error) detail = b.error; } catch { /* keep */ }
+    throw new Error(detail);
+  }
+  if ((data as any)?.error) throw new Error((data as any).error);
+  return data as T;
+}
+
+export interface HeadCoachInviteLink {
+  id: string; email: string; name: string | null; created_at: string; expires_at: string;
+  accepted_at: string | null; status: "open" | "used" | "revoked" | "expired"; link: string | null;
+}
+
+/** Invite links made for a program in the last 30 days (newest first). */
+export async function listHeadCoachInvites(programId: string): Promise<HeadCoachInviteLink[]> {
+  const r = await callInviteCoach<{ invites: HeadCoachInviteLink[] }>({ action: "list", program_id: programId });
+  return r.invites ?? [];
+}
+
+/** Turn an invite link off. Opening it afterwards shows "isn't active anymore". */
+export async function revokeHeadCoachInvite(id: string): Promise<void> {
+  await callInviteCoach({ action: "revoke", id });
 }
 
 export interface SetupStep { label: string; done: boolean; hint: string; }
