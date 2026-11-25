@@ -459,6 +459,8 @@ function ProgramManage({ org, program: p, onBack, onChanged }: {
                   const r = await inviteHeadCoach(p.id, invEmail.trim(), invName.trim(), invLinkOnly);
                   setInvResult(r); setInvEmail(""); setInvName("");
                 }, "Done.")}>{busy ? "Working…" : invLinkOnly ? "Make invite link" : "Send invite"}</button>
+              {/* Problems show right here too, not just at the top of the page where they're out of sight. */}
+              {err && <div role="alert" style={{ fontSize: 13, color: "var(--danger-text-2)" }}>Couldn't make the invite: {err}</div>}
               {invResult && (
                 <div role="status" style={{ fontSize: 13, lineHeight: 1.5, color: "var(--tx-c8cfde)", display: "flex", flexDirection: "column", gap: 8 }}>
                   {invResult.status === "promoted" && <span style={{ color: "var(--success-text)" }}>{invResult.name} already had an account and is now a head coach of {p.name}.</span>}
