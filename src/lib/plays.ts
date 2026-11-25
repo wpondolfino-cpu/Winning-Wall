@@ -395,6 +395,9 @@ export function carryForwardSignature(frame: PlayFrame): string {
     b: derived.ball ? [Math.round(derived.ball.x * 100), Math.round(derived.ball.y * 100)] : null,
     h: derived.ballHolderId ?? null,
     ...(derived.extraBalls?.length ? { e: derived.extraBalls.map((b) => [b.id, b.holderId ?? "", Math.round(b.x * 100), Math.round(b.y * 100)]) } : {}),
+    // Drills: cones and typed letters carry into later steps too.
+    ...(frame.cones?.length ? { c: frame.cones.map((c) => [Math.round(c.x * 100), Math.round(c.y * 100)]) } : {}),
+    ...(frame.players.some((p) => p.letter) ? { l: frame.players.map((p) => [p.id ?? "", p.letter ?? ""]) } : {}),
   });
 }
 
@@ -486,22 +489,96 @@ function reanchorFrame(frame: PlayFrame, derived: PlayFrame, gone: Set<string> =
  * positions and possession are recomputed, and action starts follow the
  * players they belong to.
  */
-export function restepFrom(frames: PlayFrame[], index: number): PlayFrame[] {
+export function restepFrom(frames: PlayFrame[], index: number, before?: PlayFrame): PlayFrame[] {
   if (index < 0 || index >= frames.length - 1) return frames;
   const out = frames.slice();
+  // What the edit to step `index` added, deleted or changed (when we know
+  // what it looked like before): those follow into every later step too.
+  const edits = before ? stepEdits(before, frames[index]) : null;
   for (let i = index; i < out.length - 1; i++) {
     const derived = deriveNextFrame(out[i]);
     // Players the earlier step no longer carries forward (they rotated into a line) leave the later one too.
     const ids = new Set(derived.players.map((p) => p.id));
     const gone = new Set(out[i].players.map((p) => p.id).filter((id): id is string => !!id && !ids.has(id)));
-    out[i + 1] = reanchorFrame(out[i + 1], derived, gone);
+    let next = reanchorFrame(out[i + 1], derived, gone);
+    if (edits) next = applyStepEdits(next, derived, edits);
+    out[i + 1] = next;
   }
   return out;
 }
 
+/**
+ * The difference one edit made to a step that later steps should share:
+ * players / coaches / lines and extra balls added or deleted, typed letters
+ * changed, cones added, deleted or moved. Anything added or deleted only on
+ * a later step isn't in here, so it stays as the coach left it there.
+ */
+interface StepEdits {
+  addedPlayers: Set<string>;
+  removedPlayers: Set<string>;
+  letters: Map<string, string | undefined>;
+  addedBalls: Set<string>;
+  removedBalls: Set<string>;
+  conesAdded: PlayPoint[];
+  conesRemoved: PlayPoint[];
+  conesMoved: { from: PlayPoint; to: PlayPoint }[];
+}
+const samePoint = (a: PlayPoint, b: PlayPoint) => Math.round(a.x) === Math.round(b.x) && Math.round(a.y) === Math.round(b.y);
+function stepEdits(before: PlayFrame, after: PlayFrame): StepEdits {
+  const was = deriveNextFrame(before), now = deriveNextFrame(after);
+  const wasIds = new Set(was.players.map((p) => p.id).filter(Boolean) as string[]);
+  const nowIds = new Set(now.players.map((p) => p.id).filter(Boolean) as string[]);
+  const letters = new Map<string, string | undefined>();
+  const beforeById = new Map(before.players.filter((p) => p.id).map((p) => [p.id as string, p]));
+  for (const p of after.players) {
+    const b = p.id ? beforeById.get(p.id) : undefined;
+    if (b && (b.letter ?? "") !== (p.letter ?? "")) letters.set(p.id as string, p.letter);
+  }
+  const wasBalls = new Set((before.extraBalls ?? []).map((b) => b.id));
+  const nowBalls = new Set((after.extraBalls ?? []).map((b) => b.id));
+  // Cones have no ids: same count and one spot changed is a move; otherwise
+  // whatever's new was added and whatever's gone was deleted.
+  const bc = before.cones ?? [], ac = after.cones ?? [];
+  const conesMoved: { from: PlayPoint; to: PlayPoint }[] = [];
+  let conesAdded: PlayPoint[] = [], conesRemoved: PlayPoint[] = [];
+  if (bc.length === ac.length) {
+    bc.forEach((c, i) => { if (!samePoint(c, ac[i])) conesMoved.push({ from: c, to: ac[i] }); });
+  } else {
+    conesAdded = ac.filter((c) => !bc.some((b) => samePoint(b, c)));
+    conesRemoved = bc.filter((b) => !ac.some((c) => samePoint(b, c)));
+  }
+  return {
+    addedPlayers: new Set([...nowIds].filter((id) => !wasIds.has(id))),
+    removedPlayers: new Set([...wasIds].filter((id) => !nowIds.has(id))),
+    letters,
+    addedBalls: new Set([...nowBalls].filter((id) => !wasBalls.has(id))),
+    removedBalls: new Set([...wasBalls].filter((id) => !nowBalls.has(id))),
+    conesAdded, conesRemoved, conesMoved,
+  };
+}
+function applyStepEdits(frame: PlayFrame, derived: PlayFrame, e: StepEdits): PlayFrame {
+  const base = (id: string | undefined) => (id ? id.split(LINE_STAY)[0] : "");
+  let players = frame.players.filter((p) => !(p.id && e.removedPlayers.has(p.id)));
+  const have = new Set(players.map((p) => p.id));
+  for (const d of derived.players) if (d.id && e.addedPlayers.has(d.id) && !have.has(d.id)) players.push({ ...d });
+  if (e.letters.size) players = players.map((p) => e.letters.has(base(p.id)) ? { ...p, letter: e.letters.get(base(p.id)) } : p);
+
+  let extraBalls = frame.extraBalls?.filter((b) => !e.removedBalls.has(b.id));
+  const haveBalls = new Set((extraBalls ?? []).map((b) => b.id));
+  for (const b of derived.extraBalls ?? []) if (e.addedBalls.has(b.id) && !haveBalls.has(b.id)) extraBalls = [...(extraBalls ?? []), { ...b }];
+
+  let cones = frame.cones;
+  if (e.conesMoved.length || e.conesAdded.length || e.conesRemoved.length) {
+    cones = (cones ?? []).filter((c) => !e.conesRemoved.some((r) => samePoint(r, c)))
+      .map((c) => e.conesMoved.find((m) => samePoint(m.from, c))?.to ?? c);
+    for (const a of e.conesAdded) if (!cones.some((c) => samePoint(c, a))) cones = [...cones, { ...a }];
+  }
+  return { ...frame, players, ...(extraBalls ? { extraBalls } : {}), ...(cones ? { cones } : {}) };
+}
+
 /** How many steps after `index` restepFrom would actually change. Drives the prompt's wording, and hides it entirely when the answer is none. */
-export function restepAffectedCount(frames: PlayFrame[], index: number): number {
-  const after = restepFrom(frames, index);
+export function restepAffectedCount(frames: PlayFrame[], index: number, before?: PlayFrame): number {
+  const after = restepFrom(frames, index, before);
   let n = 0;
   for (let i = index + 1; i < frames.length; i++) {
     if (JSON.stringify(frames[i]) !== JSON.stringify(after[i])) n++;

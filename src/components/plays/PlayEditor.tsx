@@ -238,8 +238,12 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   // nothing to offer. Cleared on step change so it never follows you
   // around the play.
   const [restepIdx, setRestepIdx] = useState<number | null>(null);
+  // What the step looked like before the edits the "Update later steps?"
+  // prompt is offering to carry through — so additions, deletions, cone
+  // moves and letter changes follow too, not just positions.
+  const restepBase = useRef<{ idx: number; frame: PlayFrame } | null>(null);
 
-  useEffect(() => { setSelected(null); setRestepIdx(null); }, [frameIdx]);
+  useEffect(() => { setSelected(null); setRestepIdx(null); restepBase.current = null; }, [frameIdx]);
 
   function pushHistory() {
     setHistory((h) => [...h.slice(-49), cloneFrames(frames)]);
@@ -252,6 +256,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
     // Only offer to re-step when this edit changed something a later step
     // is actually built from — a text label or a zone never should.
     if (frameIdx < frames.length - 1 && carryForwardSignature(before) !== carryForwardSignature(after)) {
+      if (restepBase.current?.idx !== frameIdx) restepBase.current = { idx: frameIdx, frame: before };
       setRestepIdx(frameIdx);
     }
     setFrames((fr) => fr.map((f, i) => (i === frameIdx ? after : f)));
@@ -260,8 +265,10 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
   function applyRestep() {
     if (restepIdx === null) return;
     pushHistory();
-    setFrames((fr) => restepFrom(fr, restepIdx));
+    const base = restepBase.current?.idx === restepIdx ? restepBase.current.frame : undefined;
+    setFrames((fr) => restepFrom(fr, restepIdx, base));
     setRestepIdx(null);
+    restepBase.current = null;
   }
 
   function undo() {
@@ -1534,8 +1541,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           />
         </div>
 
-        {restepIdx !== null && restepAffectedCount(frames, restepIdx) > 0 && (() => {
-          const n = restepAffectedCount(frames, restepIdx);
+        {restepIdx !== null && restepAffectedCount(frames, restepIdx, restepBase.current?.frame) > 0 && (() => {
+          const n = restepAffectedCount(frames, restepIdx, restepBase.current?.frame);
           const which = n === 1 ? `Step ${restepIdx + 2}` : `Steps ${restepIdx + 2}–${restepIdx + 1 + n}`;
           return (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
@@ -1549,7 +1556,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
                   style={{ padding: "5px 11px", fontSize: 12, fontWeight: 600, border: "none", borderRadius: 6, background: "var(--gold)", color: "#12141a", cursor: "pointer", fontFamily: "inherit" }}>
                   Update
                 </button>
-                <button onClick={() => setRestepIdx(null)}
+                <button onClick={() => { setRestepIdx(null); restepBase.current = null; }}
                   style={{ padding: "5px 11px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "transparent", color: "var(--muted)", cursor: "pointer", fontFamily: "inherit" }}>
                   Dismiss
                 </button>
@@ -1802,8 +1809,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
           />
         </div>
 
-        {restepIdx !== null && restepAffectedCount(frames, restepIdx) > 0 && (() => {
-          const n = restepAffectedCount(frames, restepIdx);
+        {restepIdx !== null && restepAffectedCount(frames, restepIdx, restepBase.current?.frame) > 0 && (() => {
+          const n = restepAffectedCount(frames, restepIdx, restepBase.current?.frame);
           const which = n === 1 ? `Step ${restepIdx + 2}` : `Steps ${restepIdx + 2}–${restepIdx + 1 + n}`;
           return (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
@@ -1817,7 +1824,7 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
                   style={{ padding: "5px 11px", fontSize: 12, fontWeight: 600, border: "none", borderRadius: 6, background: "var(--gold)", color: "#12141a", cursor: "pointer", fontFamily: "inherit" }}>
                   Update
                 </button>
-                <button onClick={() => setRestepIdx(null)}
+                <button onClick={() => { setRestepIdx(null); restepBase.current = null; }}
                   style={{ padding: "5px 11px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 6, background: "transparent", color: "var(--muted)", cursor: "pointer", fontFamily: "inherit" }}>
                   Dismiss
                 </button>
