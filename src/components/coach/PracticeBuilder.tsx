@@ -39,9 +39,16 @@ interface Props {
   startFromTemplate?: { id: string; name: string } | null;
   /** Template editor only: "Use for a new practice". */
   onUseTemplate?: (template: { id: string; name: string }) => void;
+  /** Previous / next practice (coaches' practice list). A missing side means there's nothing that way. */
+  nav?: {
+    prev?: { id: string; label: string };
+    next?: { id: string; label: string };
+    position: string;
+    onGo: (id: string) => void;
+  };
 }
 
-export default function PracticeBuilder({ practiceId, onClose, onSaved, startFromTemplate, onUseTemplate }: Props) {
+export default function PracticeBuilder({ practiceId, onClose, onSaved, startFromTemplate, onUseTemplate, nav }: Props) {
   // While this screen is open, the header ? opens its help.
   useHelpTopic("practicebuilder");
   const [practice, setPractice]   = useState<Practice | null>(null);
@@ -787,6 +794,18 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
 
   return (
     <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 14, padding: "18px 20px" }}>
+      {/* ── Previous / next practice ── */}
+      {nav && practice && !isTemplate && (nav.prev || nav.next) && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, paddingBottom: 12, marginBottom: 14, borderBottom: "1px solid var(--border)" }}>
+          <span style={{ flex: 1, display: "flex" }}>
+            {nav.prev && <button onClick={() => nav.onGo(nav.prev!.id)} style={{ ...secondaryBtn, whiteSpace: "nowrap" }} aria-label={`Previous practice, ${nav.prev.label}`}>‹ {nav.prev.label}</button>}
+          </span>
+          <span style={{ fontSize: 12, color: "var(--muted)", textAlign: "center", whiteSpace: "nowrap" }}>{nav.position}</span>
+          <span style={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
+            {nav.next && <button onClick={() => nav.onGo(nav.next!.id)} style={{ ...secondaryBtn, whiteSpace: "nowrap" }} aria-label={`Next practice, ${nav.next.label}`}>{nav.next.label} ›</button>}
+          </span>
+        </div>
+      )}
       {/* ── Header / metadata ── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <div>
