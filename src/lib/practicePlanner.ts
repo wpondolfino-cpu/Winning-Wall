@@ -3041,6 +3041,56 @@ export async function deletePracticeWeek(id: string): Promise<{ error: string | 
   return { error: error?.message ?? null };
 }
 
+// ── Practice from a pasted plan (lib/practicePaste.ts) ──────────
+/**
+ * Make a draft practice from a plan the coach pasted and checked. One
+ * part per team column; a part with no team is the whole practice.
+ * If anything fails partway, the half-made practice is removed.
+ */
+export async function createPracticeFromPlan(plan: {
+  practice_date: string;
+  start_time: string; // "HH:MM"
+  roster_ids: string[];
+  is_tryout: boolean;
+  blocks: {
+    duration_minutes: number;
+    water_break: boolean;
+    parts: { roster_id: string | null; drill_id: string | null; label: string | null; goal_text: string | null }[];
+  }[];
+}): Promise<{ id: string }> {
+  const { id: practiceId, error } = await createPractice({
+    practice_date: plan.practice_date,
+    start_time: plan.start_time.length === 5 ? plan.start_time + ":00" : plan.start_time,
+    roster_ids: plan.roster_ids,
+    is_tryout: plan.is_tryout,
+  });
+  if (error || !practiceId) throw new Error(error ?? "Couldn't create the practice.");
+  try {
+    for (let bi = 0; bi < plan.blocks.length; bi++) {
+      const b = plan.blocks[bi];
+      const { id: blockId, error: bErr } = await createBlock(practiceId, b.duration_minutes, bi);
+      if (bErr || !blockId) throw new Error(bErr ?? "Couldn't add a block.");
+      if (b.water_break) {
+        const { error: wErr } = await updateBlock(blockId, { water_break: true });
+        if (wErr) throw new Error(wErr);
+      }
+      for (const part of b.parts) {
+        const { id: segId, error: sErr } = await createSegment(blockId, part.roster_id ? "roster" : "combined", part.roster_id);
+        if (sErr || !segId) throw new Error(sErr ?? "Couldn't add a team column.");
+        const { error: dErr } = await createSegmentDrill(segId, {
+          drill_id: part.drill_id, order_index: 0, label: part.label, duration_minutes: b.duration_minutes,
+          goal_text: part.goal_text, coach_ids: [],
+        });
+        if (dErr) throw new Error(dErr);
+      }
+    }
+  } catch (e) {
+    await deletePractice(practiceId);
+    throw e;
+  }
+  return { id: practiceId };
+}
+
 // ── Re-importable export (hidden data embedded in a PDF) ────────
 // Rosters are captured by name and relinked (or set to "combined"
 // scope if no match) on import, since a total data loss means the

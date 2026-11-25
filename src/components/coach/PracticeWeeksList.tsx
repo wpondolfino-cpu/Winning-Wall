@@ -11,6 +11,7 @@ import { PracticeWeek, Practice, RosterWithCount, Season, getPracticeWeeks, getP
 import { embedJsonInPdf, extractJsonFromPdf, drawTextDocument } from "../../lib/pdfDataExport";
 import { inputStyle } from "../../lib/inputStyle";
 import PracticeBuilder from "./PracticeBuilder";
+import PracticeImportModal from "./PracticeImportModal";
 import PracticePrintView from "./PracticePrintView";
 import PracticeTimePanel from "./PracticeTimePanel";
 import TryoutPoolManager from "./TryoutPoolManager";
@@ -80,6 +81,7 @@ export default function PracticeWeeksList(props: Props) {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showImport, setShowImport] = useState(false);
   const [weekToDelete, setWeekToDelete] = useState<{ week: PracticeWeek; count: number; others: PracticeWeek[] } | null>(null);
   const [deleteStage, setDeleteStage] = useState<"choose" | "move" | "confirm">("choose");
   const [moveTargetId, setMoveTargetId] = useState("");
@@ -172,7 +174,7 @@ export default function PracticeWeeksList(props: Props) {
     setError(null);
     try {
       const payload = await extractJsonFromPdf(file);
-      if (!payload) { setError("This PDF doesn't contain practice plan data."); return; }
+      if (!payload) { setError("This PDF wasn't exported from Winning Wall, so there's no plan data in it to import. For a plan from Google Docs or Word, use Import / paste → Paste a plan."); return; }
       if (payload.dataType !== "practice_plan") { setError(`This file contains a ${payload.dataType.replace("_", " ")}, not a practice plan.`); return; }
       await importPracticeFromExportPayload(payload.data);
       await load();
@@ -515,7 +517,16 @@ export default function PracticeWeeksList(props: Props) {
 
       {error && <div className="error-msg">{error}</div>}
       <input ref={importFileRef} type="file" accept="application/pdf" style={{ display: "none" }} onChange={handleImportFileChosen} />
-      <button onClick={() => importFileRef.current?.click()} style={{ ...secondaryBtn, marginBottom: 14 }}>📥 Import practice from PDF</button>
+      <button onClick={() => { setError(null); setShowImport(true); }} style={{ ...secondaryBtn, marginBottom: 14 }}>📥 Import / paste</button>
+      {showImport && (
+        <PracticeImportModal
+          rosters={activeRosters}
+          defaultRosterId={activeTeamId}
+          onClose={() => setShowImport(false)}
+          onChoosePdf={() => { setShowImport(false); importFileRef.current?.click(); }}
+          onCreated={id => { setShowImport(false); load(); setOpenPracticeId(id); }}
+        />
+      )}
 
       {activeRosters.length > 0 && (
         <div style={{ display: "flex", gap: 4, alignItems: "center", background: "var(--surface2)", borderRadius: 10, padding: 4, marginBottom: 10, border: "1px solid var(--border)" }}>
