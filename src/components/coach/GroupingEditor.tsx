@@ -8,7 +8,7 @@
 
 import { supabase } from "../../lib/supabase";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { SavedGrouping, SegmentDrillGroup, SegmentDrill, getSegmentDrillGroups, generateBalancedGroups, generateGroupsByGrade, generateGradeMixedGroups, saveGeneratedGroups, assignSavedArrangementToSegmentDrill, createSavedArrangement, getSavedGroupingArrangement, deleteSavedGrouping, clearSegmentDrillGroups, removeGroupMember, addGroupMember, updateSegmentDrill, getCurrentSeason, splitGroupingsBySeason, setDrillSplitRule, clearSplitOverrides, setAllSplitOverrides, teamsInGroup, updateGroupPlaceAndCoaches, getAssignableCoaches, type CoachLite } from "../../lib/practicePlanner";
+import { SavedGrouping, SegmentDrillGroup, SegmentDrill, getSegmentDrillGroups, generateBalancedGroups, generateGroupsByGrade, generateGradeMixedGroups, saveGeneratedGroups, assignSavedArrangementToSegmentDrill, createSavedArrangement, getSavedGroupingArrangement, deleteSavedGrouping, clearSegmentDrillGroups, removeGroupMember, addGroupMember, updateSegmentDrill, getCurrentSeason, splitGroupingsBySeason, setDrillSplitRule, clearSplitOverrides, setAllSplitOverrides, teamsInGroup, updateGroupPlaceAndCoaches, getAssignableCoaches, setGroupMemberOrder, type CoachLite } from "../../lib/practicePlanner";
 
 interface PlayerLite { id: string; name: string; home_roster_id: string | null; grade?: number | null; }
 
@@ -101,16 +101,17 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
   }
   const [dragTeam, setDragTeam] = useState<{ id: string; groupIndex: number; teamIndex: number } | null>(null);
   /** Moves a player to another team in the same group (saved as that group's own split). */
-  async function moveToTeam(groupIndex: number, teamIndex: number) {
-    const drag = dragTeam; setDragTeam(null);
-    if (!drag || drag.groupIndex !== groupIndex || drag.teamIndex === teamIndex) return;
+  async function moveToTeam(groupIndex: number, teamIndex: number, beforeId?: string) {
+    const drag = dragTeam; setDragTeam(null); setDropAt(null);
+    if (!drag || drag.groupIndex !== groupIndex) return;
+    if (drag.teamIndex === teamIndex && (!beforeId || beforeId === drag.id)) return;
     if (teamIndex >= teamsInGroup(splitDrill, groupIndex, groups[groupIndex].member_ids).length
       && teamsInGroup(splitDrill, groupIndex, groups[groupIndex].member_ids)[drag.teamIndex]?.length === 1) return; // already alone
     const g = groups[groupIndex];
     const parts = teamsInGroup(splitDrill, groupIndex, g.member_ids).map(t => t.filter(id => id !== drag.id));
     // Dropped on "+ New team": a team of one, to fill by dragging.
     if (teamIndex >= parts.length) parts.push([drag.id]);
-    else parts[teamIndex] = [...parts[teamIndex], drag.id];
+    else parts[teamIndex] = insertBefore(parts[teamIndex], drag.id, beforeId);
     setDragPlayer(null);
     const next = { ...overridesRef.current, [String(groupIndex)]: parts.filter(t => t.length > 0) };
     await writeOverrides(next);
@@ -316,6 +317,31 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
   }
 
   function handleDragStart(playerId: string, from: string | null) { setDragPlayer({ id: playerId, from }); }
+  // Where a dragged player would land: above this player (shown as a line).
+  const [dropAt, setDropAt] = useState<string | null>(null);
+  /** The list with `id` put just above `beforeId` (or at the end). */
+  const insertBefore = (list: string[], id: string, beforeId?: string) => {
+    const rest = list.filter(x => x !== id);
+    const at = beforeId ? rest.indexOf(beforeId) : -1;
+    return at < 0 ? [...rest, id] : [...rest.slice(0, at), id, ...rest.slice(at)];
+  };
+  /** Drags a player up or down inside a group with no teams, or into a spot in another one. */
+  async function dropInGroup(to: string, beforeId: string) {
+    if (!dragPlayer) return;
+    const { id: playerId, from } = dragPlayer;
+    setDropAt(null);
+    if (playerId === beforeId) { setDragPlayer(null); return; }
+    if (from !== to) await handleDrop(to);
+    const g = groupsRef.current.find(x => x.id === to);
+    if (!g) return;
+    const order = insertBefore(g.member_ids, playerId, beforeId);
+    const moved = groupsRef.current.map(x => x.id === to ? { ...x, member_ids: order } : x);
+    setGroups(moved); groupsRef.current = moved;
+    setDragPlayer(null);
+    const { error } = await setGroupMemberOrder(to, order, tryoutIds);
+    if (error) { setSaveMsg(error); return; }
+    onChanged(); flashSaved();
+  }
 
   /**
    * Moves a player between groups (or to/from the bench). With teams on,
@@ -323,8 +349,8 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
    * the team they were dropped on (the last team if dropped elsewhere on
    * the card). Everyone else stays put.
    */
-  async function handleDrop(to: string | null, toTeam?: number) {
-    setDragTeam(null);
+  async function handleDrop(to: string | null, toTeam?: number, beforeId?: string) {
+    setDragTeam(null); setDropAt(null);
     if (!dragPlayer) return;
     const { id: playerId, from } = dragPlayer;
     if (from === to) { setDragPlayer(null); return; }
@@ -342,7 +368,7 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
       if (ti >= 0) {
         const parts = next[String(ti)].length ? next[String(ti)].map(t => [...t]) : [[]];
         if (toTeam != null && toTeam >= parts.length && parts[0].length) parts.push([playerId]); // "+ New team"
-        else parts[toTeam != null && toTeam < parts.length ? toTeam : parts.length - 1].push(playerId);
+        else { const t = toTeam != null && toTeam < parts.length ? toTeam : parts.length - 1; parts[t] = insertBefore(parts[t], playerId, beforeId); }
         next[String(ti)] = parts;
       }
       setOverrides(next); overridesRef.current = next;
@@ -586,8 +612,16 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
                           {team.map(pid => (
                             <div key={pid} draggable
                               onDragStart={() => { handleDragStart(pid, g.id); setDragTeam({ id: pid, groupIndex: gi, teamIndex: ti }); }}
-                              onDragEnd={() => setDragTeam(null)}
+                              onDragEnd={() => { setDragTeam(null); setDropAt(null); }}
+                              // Drop on a player to put the dragged one just above them.
+                              onDragOver={e => { e.preventDefault(); if (dropAt !== pid) setDropAt(pid); }}
+                              onDrop={e => {
+                                e.stopPropagation();
+                                if (dragTeam && dragTeam.groupIndex === gi) moveToTeam(gi, ti, pid);
+                                else handleDrop(g.id, ti, pid);
+                              }}
                               style={{ fontSize: 12, padding: "3px 6px", marginBottom: 2, borderRadius: 6, cursor: "grab",
+                                boxShadow: dropAt === pid && dragPlayer?.id !== pid ? "0 -2px 0 0 var(--royal)" : "none",
                                 background: excusedIds.has(pid) ? "rgba(226,75,74,0.12)" : "var(--surface)",
                                 color: excusedIds.has(pid) ? "var(--tx-ff9b9b)" : "var(--text)" }}>
                               {excusedIds.has(pid) ? "⚠ " : ""}{nameOf(pid)}
@@ -619,7 +653,12 @@ export default function GroupingEditor({ drill, attendees, excusedIds, rosterId,
                       const excused = excusedIds.has(pid);
                       return (
                         <div key={pid} draggable onDragStart={() => handleDragStart(pid, g.id)}
+                          onDragEnd={() => setDropAt(null)}
+                          // Drop on a player to put the dragged one just above them.
+                          onDragOver={e => { e.preventDefault(); if (dropAt !== pid) setDropAt(pid); }}
+                          onDrop={e => { e.stopPropagation(); dropInGroup(g.id, pid); }}
                           style={{
+                            boxShadow: dropAt === pid && dragPlayer?.id !== pid ? "0 -2px 0 0 var(--royal)" : "none",
                             fontSize: 12, padding: "4px 6px", marginBottom: 3, borderRadius: 6, cursor: "grab",
                             background: excused ? "rgba(226,75,74,0.12)" : "var(--surface)",
                             color: excused ? "var(--tx-ff9b9b)" : "var(--text)",

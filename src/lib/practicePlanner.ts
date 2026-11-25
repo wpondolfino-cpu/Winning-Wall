@@ -2281,12 +2281,26 @@ function memberRow(base: Record<string, any>, id: string, tryoutIds?: Set<string
 export async function getSegmentDrillGroups(segmentDrillId: string): Promise<SegmentDrillGroup[]> {
   const { data: groups, error } = await supabase.from("segment_drill_groups").select("*").eq("segment_drill_id", segmentDrillId).order("order_index", { ascending: true });
   if (error || !groups) return [];
-  const { data: members } = await supabase.from("segment_drill_group_members").select("group_id,player_id,tryout_player_id").in("group_id", groups.map((g: any) => g.id));
+  const { data: members } = await supabase.from("segment_drill_group_members").select("*").in("group_id", groups.map((g: any) => g.id));
+  // The order a coach dragged them into (SQL 219); anyone without a spot
+  // yet comes after, in the order they were added.
+  const ordered = ((members ?? []) as any[]).map((m, i) => ({ m, i }))
+    .sort((a, b) => (a.m.position ?? 1e9) - (b.m.position ?? 1e9) || a.i - b.i).map(x => x.m);
   return groups.map((g: any) => ({
     ...g,
-    member_ids: (members ?? []).filter((m: any) => m.group_id === g.id).map((m: any) => m.player_id ?? m.tryout_player_id),
-    tryout_member_ids: (members ?? []).filter((m: any) => m.group_id === g.id && m.tryout_player_id).map((m: any) => m.tryout_player_id),
+    member_ids: ordered.filter((m: any) => m.group_id === g.id).map((m: any) => m.player_id ?? m.tryout_player_id),
+    tryout_member_ids: ordered.filter((m: any) => m.group_id === g.id && m.tryout_player_id).map((m: any) => m.tryout_player_id),
   }));
+}
+
+/** Saves the order of a group's players, top to bottom (SQL 219). */
+export async function setGroupMemberOrder(groupId: string, orderedIds: string[], tryoutIds?: Set<string>): Promise<{ error: string | null }> {
+  for (const [i, id] of orderedIds.entries()) {
+    const { error } = await supabase.from("segment_drill_group_members")
+      .update({ position: i }).eq("group_id", groupId).eq(memberColumn(Boolean(tryoutIds?.has(id))), id);
+    if (error) return { error: /position/i.test(error.message) ? "Run SQL 219 in Supabase so the order can be saved." : error.message };
+  }
+  return { error: null };
 }
 
 export async function movePlayerBetweenGroups(fromGroupId: string, toGroupId: string, playerId: string, isTryout = false): Promise<{ error: string | null }> {
@@ -2802,7 +2816,9 @@ export async function getPracticePrintData(practiceId: string): Promise<PrintPra
   const drillDiagramById = Object.fromEntries(titleRows.map(d => [d.id, d.diagram_play_id ? diagramById[d.diagram_play_id] ?? null : null]));
   // And the plays linked to them, read-only (players can't open plays directly).
   const linkedPlayByDrill = await getDrillLinkedPlays(titleRows.filter((d: any) => d.linked_play_id).map(d => d.id));
-  const memberRows = await selectIn<any>("segment_drill_group_members", "group_id, player_id, tryout_player_id", "group_id", groupRows.map(g => g.id));
+  // In the order the coach dragged them into (SQL 219); unplaced ones after, as added.
+  const memberRows = (await selectIn<any>("segment_drill_group_members", "*", "group_id", groupRows.map(g => g.id)))
+    .map((m, i) => ({ m, i })).sort((a, b) => (a.m.position ?? 1e9) - (b.m.position ?? 1e9) || a.i - b.i).map(x => x.m);
   const drillTitleById = Object.fromEntries(titleRows.map(d => [d.id, d.title]));
   const drillDescById = Object.fromEntries(titleRows.map(d => [d.id, d.description]));
 
