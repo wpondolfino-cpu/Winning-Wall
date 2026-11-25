@@ -56,3 +56,97 @@ export function videoUrlWarning(url?: string | null): string | null {
   }
   return "This doesn't look like a YouTube link, so the video won't show. Only YouTube plays here.";
 }
+
+// ── Start / stop times ──────────────────────────────────────────
+// A video can be cued to a clip: "start at 2:50, stop at 3:40". The times
+// live in the saved link itself (…?v=ID&t=170&end=220), so every place a
+// link is copied — the shared library, exports, adopting a playbook —
+// carries them along with no extra fields. YouTube's own watch page
+// honours t= too, so "open in YouTube" links land on the same spot.
+
+/** "2:50" -> 170, "1:02:03" -> 3723, "95" -> 95. Blank -> null. Unreadable -> NaN. */
+export function parseClock(text: string): number | null {
+  const t = text.trim();
+  if (!t) return null;
+  if (/^\d+$/.test(t)) return Number(t);
+  const m = t.match(/^(?:(\d+):)?(\d{1,2}):(\d{2})$/);
+  if (!m) return NaN;
+  const [, h, mi, s] = m;
+  if (Number(s) > 59 || (h !== undefined && Number(mi) > 59)) return NaN;
+  return (h ? Number(h) * 3600 : 0) + Number(mi) * 60 + Number(s);
+}
+
+/** 170 -> "2:50", 3723 -> "1:02:03". */
+export function formatClock(sec: number): string {
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** YouTube's t= forms: "170", "170s", "2m50s", "1h2m3s". */
+function readT(v: string | null): number | null {
+  if (!v) return null;
+  if (/^\d+s?$/.test(v)) return parseInt(v, 10);
+  const m = v.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);
+  if (!m || (!m[1] && !m[2] && !m[3])) return null;
+  return (Number(m[1] ?? 0) * 3600) + (Number(m[2] ?? 0) * 60) + Number(m[3] ?? 0);
+}
+
+function splitUrl(url: string): { base: string; params: URLSearchParams; hash: string } {
+  const hashAt = url.indexOf("#");
+  const hash = hashAt >= 0 ? url.slice(hashAt) : "";
+  const noHash = hashAt >= 0 ? url.slice(0, hashAt) : url;
+  const q = noHash.indexOf("?");
+  return { base: q >= 0 ? noHash.slice(0, q) : noHash, params: new URLSearchParams(q >= 0 ? noHash.slice(q + 1) : ""), hash };
+}
+
+/** The clip times saved in a link (start from t= or start=, stop from end=). */
+export function videoTimes(url?: string | null): { start: number | null; end: number | null } {
+  if (!url) return { start: null, end: null };
+  const { params, hash } = splitUrl(url.trim());
+  const start = readT(params.get("t")) ?? readT(params.get("start")) ?? readT(new URLSearchParams(hash.replace(/^#/, "")).get("t"));
+  const end = readT(params.get("end"));
+  return { start: start && start > 0 ? start : null, end: end && end > 0 ? end : null };
+}
+
+/** The link without any clip times — what the link box shows. */
+export function stripVideoTimes(url: string): string {
+  const { base, params, hash } = splitUrl(url.trim());
+  params.delete("t"); params.delete("start"); params.delete("end");
+  const q = params.toString();
+  const h = hash.replace(/(^#|&)t=[^&]*/g, "").replace(/^#&?$/, "");
+  return base + (q ? `?${q}` : "") + (h && h !== "#" ? h : "");
+}
+
+/** The link with these clip times saved into it. */
+export function withVideoTimes(url: string, start: number | null, end: number | null): string {
+  const now = videoTimes(url);
+  // Nothing to add or take away: leave the link exactly as typed.
+  if (!start && !end && !now.start && !now.end) return url.trim();
+  const clean = stripVideoTimes(url);
+  if (!clean) return "";
+  const { base, params, hash } = splitUrl(clean);
+  if (start && start > 0) params.set("t", String(start));
+  if (end && end > 0) params.set("end", String(end));
+  const q = params.toString();
+  return base + (q ? `?${q}` : "") + hash;
+}
+
+/** "Starts at 2:50" / "Clip 2:50–3:40" / "Plays to 3:40", or null with no times. */
+export function videoClipLabel(url?: string | null): string | null {
+  const { start, end } = videoTimes(url);
+  if (start && end && end > start) return `Clip ${formatClock(start)}–${formatClock(end)}`;
+  if (start) return `Starts at ${formatClock(start)}`;
+  if (end) return `Plays to ${formatClock(end)}`;
+  return null;
+}
+
+/** The player address for a saved link, cued to its clip. Empty if it isn't a YouTube video. */
+export function youTubeEmbedUrl(url?: string | null): string {
+  const id = getYouTubeId(url);
+  if (!id) return "";
+  const { start, end } = videoTimes(url);
+  let src = `https://www.youtube.com/embed/${id}?rel=0&modestbranding=1&playsinline=1`;
+  if (start) src += `&start=${start}`;
+  if (end && (!start || end > start)) src += `&end=${end}`;
+  return src;
+}

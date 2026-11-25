@@ -1,5 +1,7 @@
 // src/components/WorkoutsPanel.tsx
 import { useState, useEffect, useRef } from "react";
+import { youTubeEmbedUrl } from "../lib/youtube";
+import VideoClipTag from "./shared/VideoClipTag";
 import { supabase, Workout, Score, submitScore as _submitScore, submitLibraryPracticeScore as _submitLibraryPracticeScore, getVideoId, computeRawScore, STREAK_BONUS_DAYS, STREAK_BONUS_PTS } from "../lib/supabase";
 import DrillTimer, { Stopwatch } from "./DrillTimer";
 import DurationInput from "./DurationInput";
@@ -627,10 +629,11 @@ export default function WorkoutsPanel({ workouts, myScores, playerId, onScoreLog
             {(() => {
               const vid = getVideoId(activeWorkout.video_url);
               if (!vid) return null;
-              return (
+              return (<>
                 <div style={{ borderRadius: 10, overflow: "hidden", marginBottom: 16, marginTop: 10, background: "#000", position: "relative", paddingTop: "56.25%" }}>
-                  <iframe src={`https://www.youtube.com/embed/${vid}?rel=0&modestbranding=1`} title={activeWorkout.title} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
+                  <iframe src={youTubeEmbedUrl(activeWorkout.video_url)} title={activeWorkout.title} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
                 </div>
+                <div style={{ marginTop: -10, marginBottom: 16 }}><VideoClipTag url={activeWorkout.video_url} /></div></>
               );
             })()}
 

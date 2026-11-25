@@ -1,7 +1,8 @@
 // src/components/coach/CoachPanel.tsx
 // Thin wrapper — layout + workout list. Logic lives in sub-components.
 import { useState, useEffect } from "react";
-import { supabase, Workout, getEmbedUrl, getVideoId } from "../../lib/supabase";
+import { youTubeEmbedUrl } from "../../lib/youtube";
+import { supabase, Workout, getVideoId } from "../../lib/supabase";
 import { renderRichText } from "../../lib/richtext";
 import GroupManager from "./GroupManager";
 import WorkoutBuilder from "./WorkoutBuilder";
@@ -234,7 +235,7 @@ export default function CoachPanel({ workouts, onPublished, coachId, coachName, 
               <button className="modal-close" style={{ position: "static", marginLeft: 12 }} onClick={() => setPreviewWorkout(null)}>✕</button>
             </div>
             <div className="video-container">
-              <iframe src={`${getEmbedUrl(previewWorkout.video_url)}&rel=0`} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
+              <iframe src={youTubeEmbedUrl(previewWorkout.video_url)} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
             </div>
             <div className="video-modal-body"><div className="video-desc" dangerouslySetInnerHTML={{ __html: renderRichText(previewWorkout.description ?? "") }} /></div>
           </div>

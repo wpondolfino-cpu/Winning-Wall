@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { getYouTubeId } from "../../lib/youtube";
-import VideoUrlNote from "../shared/VideoUrlNote";
+import VideoField from "../shared/VideoField";
 import {
   PracticeDrillCategory, PracticeDrillLibraryDrill, getPracticeDrillCategories,
   createPracticeDrillCategory, getPracticeDrillTags, getPracticeDrillLibrary,
@@ -361,8 +361,7 @@ export default function PracticeDrillLibrary({ canManage = true, onPick, onClose
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <input value={editDrill.title ?? ""} onChange={e => setEditDrill({ ...editDrill, title: e.target.value })} placeholder="Title" style={inputStyle} />
               <textarea value={editDrill.description ?? ""} onChange={e => setEditDrill({ ...editDrill, description: e.target.value })} placeholder="Description" rows={3} style={{ ...inputStyle, resize: "vertical" as const }} />
-              <input value={editDrill.video_url ?? ""} onChange={e => setEditDrill({ ...editDrill, video_url: e.target.value })} placeholder="YouTube link" style={inputStyle} />
-              <VideoUrlNote url={editDrill.video_url} />
+              <div><VideoField value={editDrill.video_url} onChange={url => setEditDrill(d => d ? { ...d, video_url: url } : d)} style={{ ...inputStyle, width: "100%" }} /></div>
               <select value={editDrill.category_name ?? ""} style={inputStyle}
                 onChange={async e => {
                   if (e.target.value !== "__new__") { setEditDrill({ ...editDrill, category_name: e.target.value || null }); return; }

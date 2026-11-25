@@ -1,7 +1,7 @@
 // src/components/lifting/ExercisePicker.tsx
 import { useState, useEffect } from "react";
 import { BankExercise, MuscleGroup, MUSCLE_GROUPS, getExerciseBank, upsertBankExercise } from "./lifting";
-import VideoUrlNote from "../shared/VideoUrlNote";
+import VideoField from "../shared/VideoField";
 
 interface Props {
   playerId: string;
@@ -160,9 +160,8 @@ export default function ExercisePicker({ playerId, onSelect, placeholder = "Sear
                   <input type="number" value={newRest} onChange={e => setNewRest(e.target.value)} placeholder="Rest (secs)"
                     style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 7, padding: "7px 10px", color: "var(--tx-e8eaf0)", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
                 </div>
-                <input value={newVideo} onChange={e => setNewVideo(e.target.value)} placeholder="YouTube link"
-                  style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 7, padding: "7px 10px", color: "var(--tx-e8eaf0)", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
-                <VideoUrlNote url={newVideo} />
+                <div><VideoField value={newVideo} onChange={setNewVideo}
+                  style={{ width: "100%", boxSizing: "border-box", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 7, padding: "7px 10px", color: "var(--tx-e8eaf0)", fontSize: 12, fontFamily: "inherit", outline: "none" }} /></div>
                 <div style={{ display: "flex", gap: 6 }}>
                   <button onClick={addNew} disabled={saving || !newName.trim()}
                     style={{ flex: 1, background: "#1a3fa8", color: "#fff", border: "none", borderRadius: 7, padding: "7px", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>

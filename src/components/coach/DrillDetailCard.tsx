@@ -11,7 +11,8 @@
 // diagram showing.
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { getYouTubeId } from "../../lib/youtube";
+import { getYouTubeId, youTubeEmbedUrl } from "../../lib/youtube";
+import VideoClipTag from "../shared/VideoClipTag";
 import { renderRichText } from "../../lib/richtext";
 import { supabase } from "../../lib/supabase";
 import { updatePracticeDrill, type PracticeDrillLibraryDrill } from "../../lib/practicePlanner";
@@ -138,11 +139,12 @@ export default function DrillDetailCard({ drill, diagram, canManage, onClose, on
         ) : null}
         {videoId && (
           <div style={{ position: "relative", paddingBottom: "56.25%", height: 0, marginBottom: 10, borderRadius: 8, overflow: "hidden" }}>
-            <iframe src={`https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`} title={drill.title}
+            <iframe src={youTubeEmbedUrl(drill.video_url)} title={drill.title}
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen
               style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
           </div>
         )}
+        {videoId && <div style={{ marginTop: -4, marginBottom: 10 }}><VideoClipTag url={drill.video_url} /></div>}
         {drill.description && <div style={{ fontSize: 13, color: "var(--text)", marginBottom: 10 }} dangerouslySetInnerHTML={{ __html: renderRichText(drill.description) }} />}
         {details}
         {(actions || canSend) && <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

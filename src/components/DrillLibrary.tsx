@@ -7,7 +7,8 @@
 import { useState, useEffect } from "react";
 import { supabase, Workout, getWorkouts } from "../lib/supabase";
 import { getCategories } from "../lib/categories";
-import { getYouTubeId } from "../lib/youtube";
+import { getYouTubeId, youTubeEmbedUrl } from "../lib/youtube";
+import VideoClipTag from "./shared/VideoClipTag";
 import { renderRichText } from "../lib/richtext";
 import WorkoutBuilder from "./coach/WorkoutBuilder";
 import RandomDrillModal from "./RandomDrillModal";
@@ -346,10 +347,11 @@ export default function DrillLibrary({ canManage, onPractice, onChanged, openRan
             {(() => {
               const vid = getYouTubeId(viewDrill.video_url);
               if (!vid) return null;
-              return (
+              return (<>
                 <div style={{ borderRadius: 10, overflow: "hidden", marginBottom: 16, background: "#000", position: "relative", paddingTop: "56.25%" }}>
-                  <iframe src={`https://www.youtube.com/embed/${vid}?rel=0&modestbranding=1`} title={viewDrill.title} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
+                  <iframe src={youTubeEmbedUrl(viewDrill.video_url)} title={viewDrill.title} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
                 </div>
+                <div style={{ marginTop: -10, marginBottom: 16 }}><VideoClipTag url={viewDrill.video_url} /></div></>
               );
             })()}
 

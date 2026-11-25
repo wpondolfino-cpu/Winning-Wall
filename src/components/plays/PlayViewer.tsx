@@ -15,7 +15,8 @@ import PlayerQuizList from "../quizzes/PlayerQuizList";
 import PlayCategoryManagerModal from "./PlayCategoryManagerModal";
 import RosterShareRows from "../shared/RosterShareRows";
 import { PlayCategory, getPlayCategories } from "../../lib/playCategories";
-import { getYouTubeId } from "../../lib/youtube";
+import { getYouTubeId, youTubeEmbedUrl } from "../../lib/youtube";
+import VideoClipTag from "../shared/VideoClipTag";
 import {
   Play, RosterPlayer, getMyPlays, getPlaysSharedWithMe, getMyAssignedPlaybooks,
   getPlaybookPlays, getPlayShares, revokePlayShare, markPlayViewed, markPlaybookViewed,
@@ -407,10 +408,11 @@ export default function PlayViewer({ currentUserRole, onEdit, onCreateNew, initi
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>🎬 Walkthrough</div>
             <div style={{ position: "relative", paddingTop: "56.25%", background: "#000", borderRadius: 10, overflow: "hidden" }}>
-              <iframe src={`https://www.youtube.com/embed/${getYouTubeId(openPlaybook.pb.video_url)}?rel=0&modestbranding=1`} title={openPlaybook.pb.name}
+              <iframe src={youTubeEmbedUrl(openPlaybook.pb.video_url)} title={openPlaybook.pb.name}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen
                 style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
             </div>
+            <VideoClipTag url={openPlaybook.pb.video_url} />
           </div>
         )}
         {openPlaybook.plays.length > 0 && (
@@ -840,10 +842,11 @@ function PlayDetail({ play, shareId, rosterMap, canManageShares, onBack, onEdit,
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>🎬 Game film</div>
           <div style={{ position: "relative", paddingTop: "56.25%", background: "#000", borderRadius: 10, overflow: "hidden" }}>
-            <iframe src={`https://www.youtube.com/embed/${getYouTubeId(play.video_url)}?rel=0&modestbranding=1`} title={play.title}
+            <iframe src={youTubeEmbedUrl(play.video_url)} title={play.title}
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen
               style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
           </div>
+          <VideoClipTag url={play.video_url} />
         </div>
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>

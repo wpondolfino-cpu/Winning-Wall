@@ -1,5 +1,7 @@
 // src/components/lifting/LiftingLogModal.tsx
 import { useState, useEffect, useRef } from "react";
+import { youTubeEmbedUrl } from "../../lib/youtube";
+import VideoClipTag from "../shared/VideoClipTag";
 import { DayExercise, LiftingLog, calc1RM, getBestSet, calcVolume, getYouTubeId, saveLog, updateLiftingRecord } from "./lifting";
 
 interface Props {
@@ -87,10 +89,11 @@ export default function LiftingLogModal({ dayExercise, playerId, playerName, ava
               </a>
             );
           }
-          return (
+          return (<>
             <div style={{ borderRadius: 10, overflow: "hidden", marginBottom: 14, background: "#000", position: "relative", paddingTop: "40%" }}>
-              <iframe src={`https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`} title={ex?.name} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
+              <iframe src={youTubeEmbedUrl(ex?.video_url)} title={ex?.name} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
             </div>
+            <div style={{ marginTop: -8, marginBottom: 14 }}><VideoClipTag url={ex?.video_url} /></div></>
           );
         })()}
 

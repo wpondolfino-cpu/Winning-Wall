@@ -13,7 +13,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useHelpTopic } from "../../lib/help";
 import { supabase } from "../../lib/supabase";
 import { Roster, PracticeWeek, Practice, PracticeBlock, BlockSegment, SegmentDrill, AttendanceOverride, SavedGrouping, getRosters, getPracticeWeeks, createPracticeWeek, suggestNextWeekName, getPractice, createPractice, updatePractice, setPracticeStatus, deletePractice, duplicatePractice, getPracticeBlocks, getPracticeTemplates, PracticeTemplate, createBlock, updateBlock, deleteBlock, reorderBlocks, getSegments, createSegment, deleteSegment, getSegmentDrills, createSegmentDrill, updateSegmentDrill, deleteSegmentDrill, autoSplitSegmentDrillDurations, reorderSegmentDrills, getAttendanceOverrides, setAttendanceOverride, clearAttendanceOverride, setAbsenceExcused, computeEffectiveAttendees, computeBlockTimes, totalDurationMinutes, formatDuration, columnTotals, getSavedGroupings, getAssignableCoaches, CoachLite, getGroupCountsForDrills, TryoutPlayer, getTryoutPlayers, getTryoutAttendance, getCurrentSeason, savePracticeAsTemplate, applyTemplateToPractice, deletePracticeTemplate, renamePracticeTemplate, updatePracticeDrill, createPracticeDrillCategory, getSegmentDrillGroups, updateGroupPlaceAndCoaches, getPracticeDrillCategories, PracticeDrillCategory, getPlaysForLinking, getPracticeDrillTags } from "../../lib/practicePlanner";
-import VideoUrlNote from "../shared/VideoUrlNote";
+import VideoField from "../shared/VideoField";
 import TagChipPicker from "./TagChipPicker";
 import { gradeFromGradYear } from "../../lib/teamDesigner";
 import GroupingEditor from "./GroupingEditor";
@@ -1448,8 +1448,7 @@ export default function PracticeBuilder({ practiceId, onClose, onSaved, startFro
                   </div>
                   <input value={drillForm.title} onChange={e => setDrillForm({ ...drillForm, title: e.target.value })} placeholder="Title" style={inputStyle} />
                   <textarea value={drillForm.description} onChange={e => setDrillForm({ ...drillForm, description: e.target.value })} placeholder="Description" rows={3} style={{ ...inputStyle, resize: "vertical" as const }} />
-                  <input value={drillForm.video_url} onChange={e => setDrillForm({ ...drillForm, video_url: e.target.value })} placeholder="YouTube link" style={inputStyle} />
-                  <VideoUrlNote url={drillForm.video_url} />
+                  <div><VideoField value={drillForm.video_url} onChange={url => setDrillForm(f => f ? { ...f, video_url: url } : f)} style={{ ...inputStyle, width: "100%" }} /></div>
                   <select value={drillForm.category_name} style={inputStyle}
                     onChange={async e => {
                       if (e.target.value !== "__new__") { setDrillForm({ ...drillForm, category_name: e.target.value }); return; }

@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback, useRef, lazy, Suspense, type Componen
 import { useHelpTopic } from "../../lib/help";
 import PlayCanvas, { CANVAS_W, CANVAS_H, defaultLetter } from "./PlayCanvas";
 import { hoopPositions } from "./courtGeometry";
-import VideoUrlNote from "../shared/VideoUrlNote";
+import VideoField from "../shared/VideoField";
 import {
   Play, PlayData, PlayFrame, PlayPlayer, PlayAction, ActionType, type PlayerLabels,
   CourtTemplate, COURT_TEMPLATES, COURT_TEMPLATE_LABELS,
@@ -1368,9 +1368,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
                 ))}
               </div>
             )}
-            <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film — YouTube link"
-              style={{ width: "100%", marginBottom: currentUserRole !== "player" ? 8 : 14, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
-            <VideoUrlNote url={videoUrl} />
+            <div style={{ marginBottom: currentUserRole !== "player" ? 8 : 14 }}><VideoField value={videoUrl} onChange={setVideoUrl} placeholder="🎬 Game film — YouTube link"
+              style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} /></div>
             {currentUserRole !== "player" && !isDrill && (
               <select value={category} onChange={(e) => setCategory(e.target.value)}
                 style={{ width: "100%", marginBottom: 14, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
@@ -1672,9 +1671,8 @@ export default function PlayEditor({ existingPlay, currentUserRole, onSaved, onC
             ))}
           </div>
         )}
-        <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="🎬 Game film — YouTube link, e.g. your team running this play"
-          style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
-        <VideoUrlNote url={videoUrl} />
+        <div style={{ marginBottom: 10 }}><VideoField value={videoUrl} onChange={setVideoUrl} placeholder="🎬 Game film — YouTube link, e.g. your team running this play"
+          style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} /></div>
         {currentUserRole !== "player" && !isDrill && (
           <select value={category} onChange={(e) => setCategory(e.target.value)}
             style={{ width: "100%", marginBottom: 10, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "inherit", outline: "none" }}>

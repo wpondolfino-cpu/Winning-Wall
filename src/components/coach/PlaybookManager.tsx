@@ -5,8 +5,9 @@
 
 import { supabase } from "../../lib/supabase";
 import { useState, useEffect } from "react";
-import { getYouTubeId } from "../../lib/youtube";
-import VideoUrlNote from "../shared/VideoUrlNote";
+import { getYouTubeId, youTubeEmbedUrl } from "../../lib/youtube";
+import VideoClipTag from "../shared/VideoClipTag";
+import VideoField from "../shared/VideoField";
 import PlayPrintView from "../plays/PlayPrintView";
 import PlaylistPlayer from "../plays/PlaylistPlayer";
 import RosterShareRows from "../shared/RosterShareRows";
@@ -147,8 +148,7 @@ export default function PlaybookManager({ onOpenPlay, initialExpandedId, onMakeQ
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Playbook name (e.g. Baseline out-of-bounds sets)" style={inputStyle} />
             <input value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Description (optional)" style={inputStyle} />
-            <input value={newVideoUrl} onChange={(e) => setNewVideoUrl(e.target.value)} placeholder="🎬 Walkthrough video — YouTube link" style={inputStyle} />
-            <VideoUrlNote url={newVideoUrl} />
+            <div><VideoField value={newVideoUrl} onChange={setNewVideoUrl} placeholder="🎬 Walkthrough video — YouTube link" style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} /></div>
             <div style={{ fontSize: 11, color: "var(--muted)", padding: "8px 10px", background: "rgba(240,192,64,0.06)", borderRadius: 8, border: "1px solid rgba(240,192,64,0.15)" }}>
               📝 Playbooks start as <strong style={{ color: "var(--gold-text)" }}>Draft</strong> — add plays and assign players, then hit <strong style={{ color: "var(--success-text)" }}>Publish</strong>.
             </div>
@@ -424,19 +424,20 @@ function PlaybookDetail({ playbook, onChanged, onPrint, onWatch, onOpenPlay }: {
           </button>
         </div>
         {editingVideo ? (
-          <div style={{ display: "flex", gap: 6 }}>
-            <input value={videoDraft} onChange={(e) => setVideoDraft(e.target.value)} placeholder="YouTube URL" style={inputStyle} />
+          <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+            <div style={{ flex: 1, minWidth: 0 }}><VideoField value={videoDraft} onChange={setVideoDraft} placeholder="YouTube URL" style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }} /></div>
             <button onClick={saveVideo} disabled={savingVideo} style={{ background: "var(--royal)", color: "#fff", border: "none", borderRadius: 7, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>
               {savingVideo ? "Saving…" : "Save"}
             </button>
           </div>
-        ) : getYouTubeId(playbook.video_url) ? (
+        ) : getYouTubeId(playbook.video_url) ? (<>
           <div style={{ position: "relative", paddingTop: "56.25%", background: "#000", borderRadius: 10, overflow: "hidden" }}>
-            <iframe src={`https://www.youtube.com/embed/${getYouTubeId(playbook.video_url)}?rel=0&modestbranding=1`} title={playbook.name}
+            <iframe src={youTubeEmbedUrl(playbook.video_url)} title={playbook.name}
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen
               style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }} />
           </div>
-        ) : (
+          <VideoClipTag url={playbook.video_url} />
+        </>) : (
           <div style={{ fontSize: 12, color: "var(--muted)" }}>No video added yet.</div>
         )}
       </div>
