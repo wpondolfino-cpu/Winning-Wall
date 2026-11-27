@@ -1,5 +1,6 @@
 // src/components/HallOfFame.tsx
 import { useState, useEffect } from "react";
+import GameTeamRecords from "./stats/GameTeamRecords";
 import { supabase, getRecords, getBestScoreRecords, useCompetition, competitionLabel } from "../lib/supabase";
 
 const SHORT: Record<string, string> = {
@@ -261,6 +262,9 @@ export default function HallOfFame({ canDelete = false, onViewWorkout }: Props) 
               );
             })}
           </div>
+
+          {/* Game and team records (box scores, finished games) */}
+          <GameTeamRecords isCoach={canDelete} />
 
           {/* Best score per drill */}
           <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--title)", letterSpacing: 1, marginBottom: 14 }}>

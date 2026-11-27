@@ -22,6 +22,8 @@ import { confirmNavAway } from "../../lib/navGuard";
 import { useHelpTopic } from "../../lib/help";
 import ShiftEntry from "./ShiftEntry";
 import LineupsTab from "./LineupsTab";
+import ReportWithPlayers from "../stats/ReportWithPlayers";
+import PlayerStatsTab from "../stats/PlayerStatsTab";
 
 interface Props {
   /** Opens straight into this game rather than the games list. */
@@ -43,7 +45,7 @@ type GamesView =
 type ReportsView = { mode: "history" } | { mode: "builder"; saved?: SavedReport };
 
 export default function GameStatsHub({ currentUserRole, userId, initialGameId, initialView }: Props) {
-  const [topTab, setTopTab] = useState<"games" | "reports" | "lineups" | "goals">("games");
+  const [topTab, setTopTab] = useState<"games" | "reports" | "lineups" | "players" | "goals">("games");
   // Opening straight into a game is what tapping a Schedule row means.
   // Without this the hub always started on its list, so Tracker and Report
   // both landed on the same front door rather than the game you tapped.
@@ -197,6 +199,7 @@ export default function GameStatsHub({ currentUserRole, userId, initialGameId, i
         <button className={`role-tab ${topTab === "games" ? "active" : ""}`} onClick={() => setTopTab("games")}>Games</button>
         <button className={`role-tab ${topTab === "reports" ? "active" : ""}`} onClick={() => setTopTab("reports")}>Reports</button>
         <button className={`role-tab ${topTab === "lineups" ? "active" : ""}`} onClick={() => setTopTab("lineups")}>Lineups</button>
+        <button className={`role-tab ${topTab === "players" ? "active" : ""}`} onClick={() => setTopTab("players")}>Players</button>
         <button className={`role-tab ${topTab === "goals" ? "active" : ""}`} onClick={() => setTopTab("goals")}>Goals</button>
       </div>
 
@@ -241,6 +244,7 @@ export default function GameStatsHub({ currentUserRole, userId, initialGameId, i
       )}
 
       {topTab === "lineups" && <LineupsTab userId={userId} />}
+      {topTab === "players" && <PlayerStatsTab />}
 
       {topTab === "goals" && <GoalsManager userId={userId} />}
     </div>
@@ -502,7 +506,9 @@ function GamesTab({
           <button onClick={() => setReportSel({ kind: "game" })} style={pillBtn(reportSel.kind === "game")}>Full game</button>
         )}
       </div>
-      <GameReport scope={scope} title={title} variant={reportSel.kind === "game" ? "full" : "in_game"} canManage={true} />
+      <ReportWithPlayers gameId={view.gameId} canManage={true}>
+        <GameReport scope={scope} title={title} variant={reportSel.kind === "game" ? "full" : "in_game"} canManage={true} />
+      </ReportWithPlayers>
     </div>
   );
 }
@@ -604,7 +610,9 @@ function PlayerGamesList({ userId }: { userId: string }) {
     return (
       <div>
         <button onClick={() => setView({ mode: "list" })} style={backBtn}>← Games</button>
-        <GameReport scope={{ kind: "game", gameId: view.gameId }} title={`vs ${view.opponent}`} />
+        <ReportWithPlayers gameId={view.gameId} canManage={false}>
+          <GameReport scope={{ kind: "game", gameId: view.gameId }} title={`vs ${view.opponent}`} />
+        </ReportWithPlayers>
       </div>
     );
   }

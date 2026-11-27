@@ -6,6 +6,7 @@ import { getActiveBadges, checkBadge, Badge, PlayerStats } from "../lib/badges";
 import ProfileEditor from "./ProfileEditor";
 import NotificationToggle from "./NotificationToggle";
 import AppearancePicker from "./AppearancePicker";
+import MyGameStats from "./stats/MyGameStats";
 
 interface Props {
   profile: Profile;
@@ -204,6 +205,9 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
           </div>
         )}
       </div>
+
+      {/* Game stats from box scores -- hidden unless the coach shares them. */}
+      <MyGameStats playerId={profile.id} homeRosterId={profile.home_roster_id ?? null} />
 
       {/* Notifications on/off for this device -- so a "Not now" on the
           first prompt isn't permanent. */}
