@@ -1,13 +1,16 @@
 // src/components/messages/CoachAnnouncements.tsx
 // A coach's Announcements page: the program's announcements, the staff
 // inbox (migration 203: head coaches and assistants), and -- head coaches
-// only -- the inbox with Winning Wall (migration 192).
+// only -- the inbox with Winning Wall (migration 192). Families (SQL 222):
+// approving parents, absences they report, and family links.
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import AnnouncementPanel from "../coach/AnnouncementPanel";
 import SendNotificationPanel from "../coach/SendNotificationPanel";
 import StaffInbox from "./StaffInbox";
+import FamiliesPanel from "./FamiliesPanel";
+import { getStaffFamilies } from "../../lib/family";
 
 interface Props {
   coachId: string;
@@ -21,13 +24,26 @@ interface Props {
   onStaffRead?: () => void;
 }
 
-type Tab = "announcements" | "messages";
+type Tab = "announcements" | "messages" | "families";
+
+// A "parent waiting" or "absence reported" push opens ?tab=announcements&sub=families.
+// Read once when the app loads, before the address is tidied.
+let openFamilies = (() => {
+  try { return new URLSearchParams(window.location.search).get("sub") === "families"; } catch { return false; }
+})();
 
 export default function CoachAnnouncements({ coachId, coachName, programId, unread, onMessagesRead, isHeadCoach = true, staffUnread = 0, onStaffRead }: Props) {
   // One Messages tab: staff conversations, plus Winning Wall ones for head
   // coaches. Opens there when something unread is waiting (e.g. from a push).
   const waiting = staffUnread + (isHeadCoach ? unread : 0);
-  const [tab, setTab] = useState<Tab>(waiting > 0 ? "messages" : "announcements");
+  const [tab, setTab] = useState<Tab>(() => {
+    if (openFamilies) { openFamilies = false; return "families"; }
+    return waiting > 0 ? "messages" : "announcements";
+  });
+  const [familiesWaiting, setFamiliesWaiting] = useState(0);
+  useEffect(() => {
+    getStaffFamilies().then(f => setFamiliesWaiting(f.filter(x => x.status === "pending").length)).catch(() => {});
+  }, [programId]);
   const [programName, setProgramName] = useState<string | null>(null);
   useEffect(() => {
     if (!programId) return;
@@ -49,8 +65,11 @@ export default function CoachAnnouncements({ coachId, coachName, programId, unre
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, background: "var(--surface)", borderRadius: 12, padding: 4, marginBottom: 16, alignSelf: "flex-start", width: "fit-content" }}>
         {tabBtn("announcements", "Announcements")}
         {tabBtn("messages", "Messages", waiting)}
+        {tabBtn("families", "Families", familiesWaiting)}
       </div>
-      {tab === "announcements" ? (
+      {tab === "families" ? (
+        <FamiliesPanel onWaitingChange={setFamiliesWaiting} />
+      ) : tab === "announcements" ? (
         <><AnnouncementPanel isAdmin={isHeadCoach} coachId={coachId} coachName={coachName} /><SendNotificationPanel /></>
       ) : (
         <div style={{ marginBottom: 24 }}>

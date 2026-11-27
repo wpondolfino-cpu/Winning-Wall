@@ -45,7 +45,7 @@ export type GradeCategory = typeof GRADE_CATEGORIES[number];
 export type ScoringType = "competitive" | "self_reported" | "flat" | "multi_spot";
 
 // ── Roles ─────────────────────────────────────────────────────
-export type Role = "player" | "coach" | "admin" | "inactive" | "pending_player" | "pending_coach";
+export type Role = "player" | "coach" | "admin" | "inactive" | "pending_player" | "pending_coach" | "parent";
 
 // ── Streak constants ──────────────────────────────────────────
 export const STREAK_BONUS_DAYS = 7;

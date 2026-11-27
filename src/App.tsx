@@ -23,6 +23,9 @@ import AdminSettings from "./components/AdminSettings";
 import InstallPrompt from "./components/InstallPrompt";
 import HeadCoachInvite from "./components/HeadCoachInvite";
 import { readInviteToken } from "./lib/headCoachInvite";
+import FamilyInvitePage from "./components/parent/FamilyInvitePage";
+import ParentApp from "./components/parent/ParentApp";
+import { readFamilyToken } from "./lib/family";
 import ChangePassword from "./components/ChangePassword";
 import ChallengesPanel from "./components/challenges/ChallengesPanel";
 import PerkTutorial from "./components/PerkTutorial";
@@ -422,7 +425,7 @@ export default function App() {
     // Never register this device to a test account (View as), or your own
     // notifications would stop arriving here.
     if (profile?.is_test || currentViewAs(user?.id)) return;
-    if (user && (profile?.role === "player" || profile?.role === "coach" || profile?.role === "admin")) ensurePushTag(user.id);
+    if (user && (profile?.role === "player" || profile?.role === "coach" || profile?.role === "admin" || profile?.role === "parent")) ensurePushTag(user.id);
   }, [user, profile]);
 
   // "Last seen": opening the app counts as checking in (migration 153).
@@ -707,11 +710,18 @@ export default function App() {
   // A head-coach invite link (?invite=…) shows its own welcome page, signed in or not.
   const inviteToken = readInviteToken();
   if (inviteToken) return withNotice(<HeadCoachInvite token={inviteToken} userEmail={user?.email ?? null} userName={profile?.name ?? null} />);
+  // A family link (?family=…, SQL 222): a parent joins to follow a player.
+  const familyToken = readFamilyToken();
+  if (familyToken) return withNotice(<FamilyInvitePage token={familyToken} userEmail={user?.email ?? null} userName={profile?.name ?? null} userRole={profile?.role ?? null} />);
 
   if (authState === "invite") return withNotice(<ChangePassword title="Welcome to Winning Wall! 🦅" subtitle="Your account is ready. Please create your own personal password before continuing." onComplete={() => window.location.reload()} />);
   if (authState === "recovery") return withNotice(<ChangePassword title="Reset Your Password" subtitle="Enter your new password below." onComplete={() => window.location.reload()} />);
   if (!user || !profile) return withNotice(<LoginPage />);
   if (profile.must_change_password === true) return withNotice(<ChangePassword title="Welcome to Winning Wall! 🦅" subtitle="Your account was set up by a coach. Please create your own personal password before continuing." onComplete={() => window.location.reload()} />);
+
+  // Parents get their own small app: their child's schedule, announcements
+  // for families, and reporting an absence. Nothing else.
+  if (profile.role === "parent") return withNotice(<ParentApp parentId={profile.id} parentName={profile.name} isTest={!!profile.is_test} />);
 
   if (profile.role === "pending_player" || profile.role === "pending_coach") {
     const isCoachRequest = profile.role === "pending_coach";

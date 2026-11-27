@@ -249,7 +249,7 @@ export async function getPracticeEndTimes(items: ScheduleItem[]): Promise<Record
   return out;
 }
 
-export async function updateScheduleFields(item: ScheduleItem, patch: {
+type SchedulePatch = {
   date?: string; time?: string | null; location?: string | null;
   opponent?: string; home_away?: string; title?: string;
   /** Games only: which of our teams plays it. null = no team (shows for everyone). */
@@ -266,7 +266,26 @@ export async function updateScheduleFields(item: ScheduleItem, patch: {
   uses_play_sheet?: boolean;
   /** Any kind: the free-text note. Empty clears it. */
   schedule_note?: string | null;
-}): Promise<{ error: string | null }> {
+};
+
+/** Parent portal (SQL 222): tell the families when an upcoming practice,
+ *  game or event moves, changes place or is cancelled. The database logs
+ *  the change; send-push checks that log, so this can't send anything
+ *  made up. Quiet if it fails: the edit itself already worked. */
+function tellFamilies(itemId: string) {
+  supabase.functions.invoke("send-push", { body: { scheduleChanged: { itemId } } }).catch(() => {});
+}
+
+export async function updateScheduleFields(item: ScheduleItem, patch: SchedulePatch): Promise<{ error: string | null }> {
+  const res = await writeScheduleFields(item, patch);
+  const moved = (!!patch.date && patch.date !== item.date)
+    || (patch.time !== undefined && (patch.time ?? "").slice(0, 5) !== (item.time ?? "").slice(0, 5))
+    || (patch.location !== undefined && item.kind !== "practice");
+  if (!res.error && moved) tellFamilies(item.id);
+  return res;
+}
+
+async function writeScheduleFields(item: ScheduleItem, patch: SchedulePatch): Promise<{ error: string | null }> {
   const noteFor = patch.schedule_note !== undefined ? { schedule_note: patch.schedule_note?.trim() || null } : {};
   const stamp = new Date().toISOString();
   // Moving a date has to move the week too. The schedule places rows by
@@ -333,6 +352,7 @@ export async function updateScheduleFields(item: ScheduleItem, patch: {
 export async function deleteScheduleItem(item: ScheduleItem): Promise<{ error: string | null }> {
   const table = item.kind === "practice" ? "practices" : item.kind === "game" ? "games" : "schedule_events";
   const { error } = await supabase.from(table).delete().eq("id", item.id);
+  if (!error) tellFamilies(item.id);
   return { error: error?.message ?? null };
 }
 

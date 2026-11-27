@@ -7,6 +7,7 @@ import ProfileEditor from "./ProfileEditor";
 import NotificationToggle from "./NotificationToggle";
 import AppearancePicker from "./AppearancePicker";
 import MyGameStats from "./stats/MyGameStats";
+import FamilyLinkCard from "./parent/FamilyLinkCard";
 
 interface Props {
   profile: Profile;
@@ -212,6 +213,9 @@ export default function ProfilePage({ profile, onUpdated, myScores, workouts, xp
       {/* Notifications on/off for this device -- so a "Not now" on the
           first prompt isn't permanent. */}
       {!profile.is_test && <NotificationToggle playerId={profile.id} />}
+
+      {/* Parent portal: the player's family link. */}
+      {profile.role === "player" && <FamilyLinkCard playerId={profile.id} />}
 
       <AppearancePicker initial={profile.appearance} />
 
