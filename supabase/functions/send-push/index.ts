@@ -19,6 +19,19 @@
 //       218): the server checks the send really happened (this sender, this
 //       drill, those teams, the last 10 minutes) and tells those teams'
 //       coaches. The wording is fixed.
+//   * Parent portal (SQL 222), all fixed text built here:
+//     { familyRequest: { linkId } }        a parent just asked to follow a
+//                                           player -> that program's coaches
+//     { absenceReported: { absenceIds } }   a parent reported an absence
+//                                           -> that program's coaches
+//     { parentAnnouncement: { announcementId } }  a coach's announcement for
+//                                           parents -> approved parents of
+//                                           players on its teams
+//     { scheduleChanged: { itemId } }       a coach moved or cancelled a
+//                                           practice, game or event -> parents
+//                                           of players on its teams
+//     Each is checked against what really happened in the last few minutes
+//     (this user made that request / report / announcement / change).
 //   * { title, message, allPlayers: true }
 //       Coaches of the program you're in (or the platform admin). Reaches
 //       every active member of THAT program only (migration 186) --
@@ -88,6 +101,23 @@ interface SendPushBody {
   joinCode?: string;
   /** A drill was just sent to these teams at the sender's school: tell their coaches. */
   drillSent?: { drillId?: string; programIds?: string[] };
+  /** Parent portal (SQL 222). */
+  familyRequest?: { linkId?: string };
+  absenceReported?: { absenceIds?: string[] };
+  parentAnnouncement?: { announcementId?: string };
+  scheduleChanged?: { itemId?: string };
+}
+
+/** "Tue, Dec 2" and "5:30 PM" for notification text. */
+function shortDate(d: string | null | undefined): string {
+  if (!d) return "";
+  const dt = new Date(d + "T12:00:00Z");
+  return dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+}
+function shortTime(t: string | null | undefined): string {
+  if (!t) return "";
+  const [h, m] = t.split(":").map(Number);
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
 }
 
 /** A name typed on the login screen: plain text, short. */
@@ -157,7 +187,93 @@ serve(async (req) => {
     const { data: { user } } = token ? await admin.auth.getUser(token) : { data: { user: null } };
     if (!user) return reply({ error: "Sign in to send notifications." }, 401);
 
-    if (body.drillSent) {
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const staffOf = async (programId: string) => {
+      const { data } = await admin.from("program_members").select("user_id")
+        .eq("program_id", programId).eq("status", "active").in("role", ["head_coach", "coach"]).eq("is_test", false);
+      return [...new Set<string>((data ?? []).map((m: any) => m.user_id))];
+    };
+    const isStaffOf = async (programId: string) => {
+      const { data: m } = await admin.from("program_members").select("role").eq("program_id", programId)
+        .eq("user_id", user.id).eq("status", "active").maybeSingle();
+      if (m?.role === "head_coach" || m?.role === "coach") return true;
+      const { data: pa } = await admin.from("platform_admins").select("user_id").eq("user_id", user.id).maybeSingle();
+      return !!pa;
+    };
+    /** Approved parents of players on these teams (no teams = every team). */
+    const parentsOf = async (programId: string, rosterIds: string[]) => {
+      const { data: links } = await admin.from("family_links").select("parent_id, player_id").eq("program_id", programId).eq("status", "active");
+      const rows = (links ?? []) as { parent_id: string; player_id: string }[];
+      if (!rosterIds.length) return [...new Set(rows.map((r) => r.parent_id))];
+      const { data: kids } = rows.length
+        ? await admin.from("profiles").select("id, home_roster_id").in("id", [...new Set(rows.map((r) => r.player_id))])
+        : { data: [] };
+      const onTeam = new Set(((kids ?? []) as any[]).filter((k) => rosterIds.includes(k.home_roster_id)).map((k) => k.id));
+      return [...new Set(rows.filter((r) => onTeam.has(r.player_id)).map((r) => r.parent_id))];
+    };
+
+    if (body.familyRequest) {
+      const { data: link } = await admin.from("family_links").select("program_id, player_id, created_at")
+        .eq("id", String(body.familyRequest.linkId ?? "")).eq("parent_id", user.id).gte("created_at", tenMinAgo).maybeSingle();
+      if (!link) return reply({ error: "No matching request." }, 403);
+      const [{ data: me }, { data: kid }] = await Promise.all([
+        admin.from("profiles").select("name").eq("id", user.id).maybeSingle(),
+        admin.from("profiles").select("name").eq("id", link.player_id).maybeSingle(),
+      ]);
+      playerIds = await staffOf(link.program_id);
+      if (!playerIds.length) return reply({ sent: false, reason: "no coaches" });
+      title = "👪 Parent waiting for approval";
+      message = `${cleanName(me?.name)} asked to follow ${cleanName(kid?.name)}. Approve them in Announcements → Families.`;
+      body.url = "/?tab=announcements&sub=families";
+    } else if (body.absenceReported) {
+      const ids = (body.absenceReported.absenceIds ?? []).filter((x) => typeof x === "string").slice(0, 20);
+      const { data: rows } = ids.length
+        ? await admin.from("parent_absences").select("program_id, player_id, item_label, item_date, reason")
+            .in("id", ids).eq("parent_id", user.id).gte("created_at", tenMinAgo)
+        : { data: [] };
+      const list = (rows ?? []) as any[];
+      if (!list.length) return reply({ error: "No matching report." }, 403);
+      const { data: kid } = await admin.from("profiles").select("name").eq("id", list[0].player_id).maybeSingle();
+      playerIds = await staffOf(list[0].program_id);
+      if (!playerIds.length) return reply({ sent: false, reason: "no coaches" });
+      const what = list.map((r) => `${r.item_label ?? "practice"} ${shortDate(r.item_date)}`).join(", ");
+      title = "📝 Absence reported";
+      message = `${cleanName(kid?.name)} will miss ${what} (${String(list[0].reason).slice(0, 40)}).`;
+      body.url = "/?tab=announcements&sub=families";
+    } else if (body.parentAnnouncement) {
+      const since = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const { data: a } = await admin.from("announcements").select("program_id, message, audience, roster_ids, is_pinned")
+        .eq("id", String(body.parentAnnouncement.announcementId ?? "")).gte("created_at", since).maybeSingle();
+      if (!a || !["parents", "both"].includes(a.audience)) return reply({ error: "No matching announcement." }, 403);
+      if (!(await isStaffOf(a.program_id))) return reply({ error: "Only coaches can notify parents." }, 403);
+      playerIds = await parentsOf(a.program_id, (a.roster_ids ?? []) as string[]);
+      if (!playerIds.length) return reply({ sent: false, reason: "no parents linked yet" });
+      const { data: prog } = await admin.from("programs").select("name").eq("id", a.program_id).maybeSingle();
+      title = `${a.is_pinned ? "📌" : "📢"} ${prog?.name ?? "Your team"}`;
+      message = String(a.message).slice(0, 500);
+      body.url = "/";
+    } else if (body.scheduleChanged) {
+      const { data: c } = await admin.from("schedule_changes").select("*")
+        .eq("item_id", String(body.scheduleChanged.itemId ?? "")).eq("changed_by", user.id).gte("changed_at", tenMinAgo)
+        .order("changed_at", { ascending: false }).limit(1).maybeSingle();
+      if (!c || !c.program_id) return reply({ error: "No matching change." }, 403);
+      if (!(await isStaffOf(c.program_id))) return reply({ error: "Only coaches can notify parents." }, 403);
+      if (c.label === "Tryout") return reply({ sent: false, reason: "tryouts aren't shown to families" });
+      playerIds = await parentsOf(c.program_id, (c.roster_ids ?? []) as string[]);
+      if (!playerIds.length) return reply({ sent: false, reason: "no parents linked yet" });
+      const label = c.label ?? "Practice";
+      if (c.change === "cancelled") {
+        title = "❌ Schedule change";
+        message = `${label} on ${shortDate(c.old_date)}${c.old_time ? ` at ${shortTime(c.old_time)}` : ""} is cancelled.`;
+      } else if (c.change === "moved") {
+        title = "📅 Schedule change";
+        message = `${label} ${shortDate(c.old_date)} is now ${shortDate(c.new_date)}${c.new_time ? ` at ${shortTime(c.new_time)}` : ""}.`;
+      } else {
+        title = "📍 New location";
+        message = `${label} on ${shortDate(c.new_date)} is now at ${String(c.new_place ?? "").slice(0, 80)}.`;
+      }
+      body.url = "/";
+    } else if (body.drillSent) {
       // ── A drill sent to other teams: fixed text, checked against the send ──
       const drillId = typeof body.drillSent.drillId === "string" ? body.drillSent.drillId : "";
       const wanted = (body.drillSent.programIds ?? []).filter((x) => typeof x === "string").slice(0, 50);
