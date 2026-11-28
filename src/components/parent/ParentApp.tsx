@@ -6,6 +6,9 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { signOut } from "../../lib/supabase";
 import NotificationToggle from "../NotificationToggle";
+import { getPortalInfo, type PortalInfo } from "../../lib/familyHub";
+import { ParentChecklist, ParentSignups } from "./ParentTabs";
+import FamilyThread from "./FamilyThread";
 import {
   ABSENCE_REASONS, cancelAbsence, downloadIcs, formatDay, formatTime, getParentAnnouncements, getParentCancellations,
   getParentChildren, getParentSchedule, mapsUrl, markAnnouncementsRead, reportAbsence, todayIso,
@@ -28,6 +31,13 @@ const chip = (on: boolean, color: string): CSSProperties => ({
   fontFamily: "inherit", cursor: "pointer",
 });
 const tag = (bg: string, fg: string): CSSProperties => ({ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, padding: "2px 7px", borderRadius: 6, background: bg, color: fg, textTransform: "uppercase" });
+
+type PTab = "home" | "signups" | "checklist" | "messages";
+// A push can open a tab: /?ptab=signups. Read once at load.
+let openTab: PTab | null = (() => {
+  try { const t = new URLSearchParams(window.location.search).get("ptab"); return t === "signups" || t === "checklist" || t === "messages" ? t : null; }
+  catch { return null; }
+})();
 
 const KIND_ICON: Record<string, string> = { practice: "🏀", game: "🏆", event: "📌" };
 
@@ -56,6 +66,9 @@ export default function ParentApp({ parentId, parentName, isTest }: Props) {
   const [loading, setLoading] = useState(false);
   const [showAbsence, setShowAbsence] = useState<FamilyScheduleItem | true | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [ptab, setPtab] = useState<PTab>(() => { const t = openTab ?? "home"; openTab = null; return t; });
+  const [info, setInfo] = useState<PortalInfo | null>(null);
+  const loadInfo = (id: string) => getPortalInfo(id).then(setInfo).catch(() => setInfo(null));
 
   const loadKids = () => {
     setLoadErr(null);
@@ -71,6 +84,7 @@ export default function ParentApp({ parentId, parentName, isTest }: Props) {
   const loadChild = async (id: string) => {
     setLoading(true);
     try {
+      loadInfo(id);
       const [s, c, a] = await Promise.all([getParentSchedule(id), getParentCancellations(id), getParentAnnouncements(id)]);
       setItems(s); setCancels(c); setAnns(a);
       const unread = a.filter(x => !x.read).map(x => x.id);
@@ -162,6 +176,9 @@ export default function ParentApp({ parentId, parentName, isTest }: Props) {
       </div>
     )}
 
+    <TabBar ptab={ptab} setPtab={t => { setPtab(t); loadInfo(child.player_id); }} info={info} color={color} />
+
+    {ptab === "home" && <>
     {cancels.length > 0 && (
       <div style={{ ...card, background: "rgba(220,50,50,0.10)", border: "1px solid rgba(220,50,50,0.35)" }}>
         {cancels.map(c => (
@@ -254,6 +271,21 @@ export default function ParentApp({ parentId, parentName, isTest }: Props) {
       )}
     </div>
 
+    </>}
+
+    {ptab === "signups" && (
+      <ParentSignups playerId={child.player_id} childName={first(child.name)} color={color}
+        suggestionsOn={info?.suggestions_on ?? false} onToast={setToast} onChanged={() => loadInfo(child.player_id)} />
+    )}
+    {ptab === "checklist" && <ParentChecklist playerId={child.player_id} childName={first(child.name)} />}
+    {ptab === "messages" && (
+      <div style={card}>
+        <div style={{ ...h2 }}>💬 Messages with the coaches</div>
+        <FamilyThread playerId={child.player_id} withWhom="the coaches" canSend={!!info?.messages_on} viewer="parent" color={color}
+          onRead={() => setInfo(i => (i ? { ...i, unread_messages: 0 } : i))} />
+      </div>
+    )}
+
     {!isTest && <NotificationToggle playerId={parentId} />}
 
     {showAbsence && (
@@ -331,6 +363,31 @@ function AbsenceModal({ childName, color, items, preselect, onClose, onSend }: {
           {busy ? "Sending…" : picked.size > 1 ? `Send (${picked.size})` : "Send"}
         </button>
       </div>
+    </div>
+  );
+}
+
+function TabBar({ ptab, setPtab, info, color }: { ptab: PTab; setPtab: (t: PTab) => void; info: PortalInfo | null; color: string }) {
+  const tabs: { key: PTab; label: string; badge?: string | null }[] = [
+    { key: "home", label: "Home" },
+    { key: "signups", label: "Sign-ups", badge: info?.open_signups ? String(info.open_signups) : null },
+    { key: "checklist", label: "Checklist", badge: info && info.checklist_total ? `${info.checklist_received}/${info.checklist_total}` : null },
+    ...(info?.messages_on || info?.has_messages
+      ? [{ key: "messages" as PTab, label: "Messages", badge: info?.unread_messages ? String(info.unread_messages) : null }]
+      : []),
+  ];
+  return (
+    <div role="tablist" style={{ display: "grid", gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))`, gap: 4, background: "var(--surface2, #141b2d)", border: "1px solid var(--border, rgba(176,184,200,0.15))", borderRadius: 12, padding: 4, overflowX: "auto" }}>
+      {tabs.map(t => {
+        const on = ptab === t.key;
+        return (
+          <button key={t.key} role="tab" aria-selected={on} onClick={() => setPtab(t.key)}
+            style={{ minWidth: 0, padding: "8px 2px", borderRadius: 9, border: "none", background: on ? color : "transparent", color: on ? "#fff" : "var(--muted, #9aa3b5)", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
+            {t.label}
+            {t.badge && <span style={{ marginLeft: 5, fontSize: 10.5, fontWeight: 700, background: on ? "rgba(255,255,255,0.25)" : "rgba(147,180,255,0.18)", color: on ? "#fff" : "var(--info-text, #93b4ff)", borderRadius: 999, padding: "1px 6px" }}>{t.badge}</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -7,6 +7,10 @@ import {
   createFamilyInvite, decideFamilyLink, formatDay, getStaffAbsences, getStaffFamilies, markAbsencesSeen, removeFamilyLink,
   type StaffAbsence, type StaffFamily,
 } from "../../lib/family";
+import { staffFamilyWaiting } from "../../lib/familyHub";
+import { FamilyChecklistAdmin, FamilyMessagesAdmin, FamilySignupsAdmin, FamilyTeamSettings } from "./FamilyAdminTabs";
+
+type Sub = "families" | "signups" | "checklist" | "messages" | "settings";
 
 interface Props {
   /** Called when the count of things waiting changes (for the tab badge). */
@@ -31,6 +35,35 @@ const pill = (on: boolean): CSSProperties => ({
 const KIND: Record<string, string> = { practice: "Practice", game: "Game", event: "Event" };
 
 export default function FamiliesPanel({ onWaitingChange }: Props) {
+  const [sub, setSub] = useState<Sub>("families");
+  const [counts, setCounts] = useState({ parents: 0, signups: 0, messages: 0 });
+  const report = (patch: Partial<typeof counts>) => setCounts(c => ({ ...c, ...patch }));
+  useEffect(() => { staffFamilyWaiting().then(report).catch(() => {}); }, []);
+  useEffect(() => { onWaitingChange?.(counts.parents + counts.signups + counts.messages); }, [counts]);
+  const SUBS: { key: Sub; label: string; n?: number }[] = [
+    { key: "families", label: "Families", n: counts.parents },
+    { key: "signups", label: "Sign-ups", n: counts.signups },
+    { key: "checklist", label: "Checklist" },
+    { key: "messages", label: "Messages", n: counts.messages },
+    { key: "settings", label: "Settings" },
+  ];
+  const nav = (
+    <div role="tablist" style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+      {SUBS.map(t => (
+        <button key={t.key} role="tab" aria-selected={sub === t.key} style={pill(sub === t.key)} onClick={() => setSub(t.key)}>
+          {t.label}{t.n ? <span style={{ marginLeft: 5, fontSize: 10.5, fontWeight: 700, background: sub === t.key ? "rgba(255,255,255,0.25)" : "var(--royal)", color: "#fff", borderRadius: 999, padding: "1px 6px" }}>{t.n}</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+  if (sub === "signups") return <>{nav}<FamilySignupsAdmin onPendingChange={n => report({ signups: n })} /></>;
+  if (sub === "checklist") return <>{nav}<FamilyChecklistAdmin /></>;
+  if (sub === "messages") return <>{nav}<FamilyMessagesAdmin onUnreadChange={n => report({ messages: n })} /></>;
+  if (sub === "settings") return <>{nav}<FamilyTeamSettings /></>;
+  return <>{nav}<FamiliesOverview onPendingChange={n => report({ parents: n })} /></>;
+}
+
+function FamiliesOverview({ onPendingChange }: { onPendingChange: (n: number) => void }) {
   const [families, setFamilies] = useState<StaffFamily[] | null>(null);
   const [absences, setAbsences] = useState<StaffAbsence[]>([]);
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
@@ -57,7 +90,7 @@ export default function FamiliesPanel({ onWaitingChange }: Props) {
       const unseen = a.filter(x => !x.seen_at).map(x => x.id);
       setNewIds(prev => new Set([...prev, ...unseen]));
       if (unseen.length) markAbsencesSeen(unseen).catch(() => {});
-      onWaitingChange?.(f.filter(x => x.status === "pending").length);
+      onPendingChange(f.filter(x => x.status === "pending").length);
     } catch (e: any) {
       setErr(e?.message ?? "Couldn't load families.");
       setFamilies([]);

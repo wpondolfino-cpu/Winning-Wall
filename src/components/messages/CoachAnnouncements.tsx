@@ -10,7 +10,7 @@ import AnnouncementPanel from "../coach/AnnouncementPanel";
 import SendNotificationPanel from "../coach/SendNotificationPanel";
 import StaffInbox from "./StaffInbox";
 import FamiliesPanel from "./FamiliesPanel";
-import { getStaffFamilies } from "../../lib/family";
+import { staffFamilyWaiting } from "../../lib/familyHub";
 
 interface Props {
   coachId: string;
@@ -42,7 +42,7 @@ export default function CoachAnnouncements({ coachId, coachName, programId, unre
   });
   const [familiesWaiting, setFamiliesWaiting] = useState(0);
   useEffect(() => {
-    getStaffFamilies().then(f => setFamiliesWaiting(f.filter(x => x.status === "pending").length)).catch(() => {});
+    staffFamilyWaiting().then(c => setFamiliesWaiting(c.parents + c.signups + c.messages)).catch(() => {});
   }, [programId]);
   const [programName, setProgramName] = useState<string | null>(null);
   useEffect(() => {
