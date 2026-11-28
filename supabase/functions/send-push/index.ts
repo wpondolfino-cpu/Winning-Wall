@@ -30,6 +30,18 @@
 //     { scheduleChanged: { itemId } }       a coach moved or cancelled a
 //                                           practice, game or event -> parents
 //                                           of players on its teams
+//   * Parent portal phase 2 (SQL 223), fixed text too:
+//     { signupSuggested: { signupId } }  a family suggested a sign-up -> coaches
+//     { signupOpened: { signupId } }     a coach opened or approved one -> the
+//                                         team's parents (and the family who
+//                                         suggested it)
+//     { signupUpdate: { updateId } }     organizer's update -> families signed up
+//     { signupReminder: { signupId } }   organizer or coach, at most every 12
+//                                         hours: signed-up families get "you're
+//                                         signed up", the rest "spots left"
+//     { familyMessage: { messageId } }   family message -> the staff, or a
+//                                         coach's reply -> that family. The
+//                                         text never includes the message.
 //     Each is checked against what really happened in the last few minutes
 //     (this user made that request / report / announcement / change).
 //   * { title, message, allPlayers: true }
@@ -106,6 +118,11 @@ interface SendPushBody {
   absenceReported?: { absenceIds?: string[] };
   parentAnnouncement?: { announcementId?: string };
   scheduleChanged?: { itemId?: string };
+  signupSuggested?: { signupId?: string };
+  signupOpened?: { signupId?: string };
+  signupUpdate?: { updateId?: string };
+  signupReminder?: { signupId?: string };
+  familyMessage?: { messageId?: string };
 }
 
 /** "Tue, Dec 2" and "5:30 PM" for notification text. */
@@ -130,6 +147,22 @@ function safeUrl(url: unknown): string {
   if (typeof url !== "string" || !url) return APP_URL;
   if (url.startsWith("/")) return APP_URL + url;
   return url.startsWith(APP_URL) ? url : APP_URL;
+}
+
+/** One fixed notification to these accounts (used where one request sends
+ *  two different messages, like sign-up reminders). */
+async function sendOneSignal(ids: string[], title: string, message: string, url: string): Promise<void> {
+  for (let i = 0; i < ids.length; i += 2000) {
+    await fetch("https://api.onesignal.com/notifications", {
+      method: "POST",
+      headers: { "Authorization": `Key ${ONE_SIGNAL_API_KEY}`, "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({
+        app_id: ONE_SIGNAL_APP_ID, target_channel: "push",
+        headings: { en: title }, contents: { en: message }, url: safeUrl(url),
+        include_aliases: { external_id: ids.slice(i, i + 2000) },
+      }),
+    }).catch(() => {});
+  }
 }
 
 serve(async (req) => {
@@ -273,6 +306,101 @@ serve(async (req) => {
         message = `${label} on ${shortDate(c.new_date)} is now at ${String(c.new_place ?? "").slice(0, 80)}.`;
       }
       body.url = "/";
+    } else if (body.signupSuggested) {
+      const { data: su } = await admin.from("family_signups").select("program_id, title, organizer_player_id")
+        .eq("id", String(body.signupSuggested.signupId ?? "")).eq("organizer_id", user.id).eq("status", "pending")
+        .gte("created_at", tenMinAgo).maybeSingle();
+      if (!su) return reply({ error: "No matching sign-up." }, 403);
+      const { data: kid } = await admin.from("profiles").select("name").eq("id", su.organizer_player_id).maybeSingle();
+      playerIds = await staffOf(su.program_id);
+      if (!playerIds.length) return reply({ sent: false, reason: "no coaches" });
+      title = "🙋 Sign-up to approve";
+      message = `${cleanName(kid?.name)}'s family suggested "${String(su.title).slice(0, 80)}". Approve it in Announcements → Families.`;
+      body.url = "/?tab=announcements&sub=families";
+    } else if (body.signupOpened) {
+      const since = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const { data: su } = await admin.from("family_signups")
+        .select("program_id, roster_id, title, event_date, organizer_id, organizer_is_parent, approved_at, status")
+        .eq("id", String(body.signupOpened.signupId ?? "")).eq("status", "open").gte("approved_at", since).maybeSingle();
+      if (!su) return reply({ error: "No matching sign-up." }, 403);
+      if (!(await isStaffOf(su.program_id))) return reply({ error: "Only coaches can do that." }, 403);
+      playerIds = (await parentsOf(su.program_id, su.roster_id ? [su.roster_id] : [])).filter((id) => id !== user.id);
+      if (su.organizer_is_parent && su.organizer_id && !playerIds.includes(su.organizer_id)) playerIds.push(su.organizer_id);
+      if (!playerIds.length) return reply({ sent: false, reason: "no parents linked yet" });
+      title = "🙋 New sign-up";
+      message = `${String(su.title).slice(0, 80)}${su.event_date ? ` (${shortDate(su.event_date)})` : ""}. Tap to see the spots.`;
+      body.url = "/?ptab=signups";
+    } else if (body.signupUpdate) {
+      const { data: u } = await admin.from("family_signup_updates").select("signup_id, message")
+        .eq("id", String(body.signupUpdate.updateId ?? "")).eq("author_id", user.id).gte("created_at", tenMinAgo).maybeSingle();
+      if (!u) return reply({ error: "No matching update." }, 403);
+      const [{ data: su }, { data: claims }] = await Promise.all([
+        admin.from("family_signups").select("title, organizer_id").eq("id", u.signup_id).maybeSingle(),
+        admin.from("family_signup_claims").select("parent_id").eq("signup_id", u.signup_id),
+      ]);
+      playerIds = [...new Set<string>([...((claims ?? []) as any[]).map((c) => c.parent_id), ...(su?.organizer_id ? [su.organizer_id] : [])])]
+        .filter((id) => id !== user.id);
+      if (!playerIds.length) return reply({ sent: false, reason: "nobody signed up yet" });
+      title = `📣 ${String(su?.title ?? "Sign-up").slice(0, 60)}`;
+      message = String(u.message).slice(0, 300);
+      body.url = "/?ptab=signups";
+    } else if (body.signupReminder) {
+      const sid = String(body.signupReminder.signupId ?? "");
+      const { data: su } = await admin.from("family_signups")
+        .select("id, program_id, roster_id, title, event_date, event_time, deadline, status, organizer_id, last_reminded_at")
+        .eq("id", sid).maybeSingle();
+      if (!su || !["open", "closed"].includes(su.status)) return reply({ error: "No matching sign-up." }, 403);
+      if (su.organizer_id !== user.id && !(await isStaffOf(su.program_id))) return reply({ error: "Only the organizer or a coach can send reminders." }, 403);
+      if (su.last_reminded_at && Date.now() - new Date(su.last_reminded_at).getTime() < 12 * 3600 * 1000) {
+        return reply({ sent: false, reason: "A reminder already went out in the last 12 hours." });
+      }
+      const [{ data: claims }, { data: spots }] = await Promise.all([
+        admin.from("family_signup_claims").select("parent_id, spot_id, qty").eq("signup_id", su.id),
+        admin.from("family_signup_spots").select("id, quantity").eq("signup_id", su.id),
+      ]);
+      const cl = (claims ?? []) as any[];
+      const signed = [...new Set<string>(cl.map((c) => c.parent_id))].filter((id) => id !== user.id);
+      const left = ((spots ?? []) as any[]).reduce((n, sp) => n + Math.max(0, sp.quantity - cl.filter((c) => c.spot_id === sp.id).reduce((a, c) => a + c.qty, 0)), 0);
+      const today = new Date().toISOString().slice(0, 10);
+      const stillOpen = su.status === "open" && today <= String(su.deadline ?? su.event_date ?? today) && left > 0;
+      const others = stillOpen
+        ? (await parentsOf(su.program_id, su.roster_id ? [su.roster_id] : [])).filter((id) => id !== user.id && !signed.includes(id))
+        : [];
+      if (!signed.length && !others.length) return reply({ sent: false, reason: "nobody to remind" });
+      await admin.from("family_signups").update({ last_reminded_at: new Date().toISOString() }).eq("id", su.id);
+      const when = su.event_date ? ` ${shortDate(su.event_date)}${su.event_time ? ` at ${shortTime(su.event_time)}` : ""}` : "";
+      const name = String(su.title).slice(0, 80);
+      let sentTo = 0;
+      if (signed.length) {
+        await sendOneSignal(signed, "⏰ Reminder", `You're signed up for ${name}${when}.`, "/?ptab=signups");
+        sentTo += signed.length;
+      }
+      if (others.length) {
+        await sendOneSignal(others, "🙋 Spots still open", `${name}${when}: ${left} spot${left === 1 ? "" : "s"} left${su.deadline ? `, sign up by ${shortDate(su.deadline)}` : ""}.`, "/?ptab=signups");
+        sentTo += others.length;
+      }
+      return reply({ sent: true, people: sentTo });
+    } else if (body.familyMessage) {
+      const { data: m } = await admin.from("family_messages").select("thread_id, program_id, author_kind, author_name")
+        .eq("id", String(body.familyMessage.messageId ?? "")).eq("author_id", user.id).gte("created_at", tenMinAgo).maybeSingle();
+      if (!m) return reply({ error: "No matching message." }, 403);
+      const { data: th } = await admin.from("family_threads").select("player_id").eq("id", m.thread_id).maybeSingle();
+      const { data: kid } = await admin.from("profiles").select("name").eq("id", th?.player_id ?? "").maybeSingle();
+      const first = cleanName(kid?.name).split(/\s+/)[0] || "your player";
+      if (m.author_kind === "parent") {
+        playerIds = (await staffOf(m.program_id)).filter((id) => id !== user.id);
+        title = "💬 Family message";
+        message = `New message from ${first}'s family. Open Announcements → Families → Messages.`;
+        body.url = "/?tab=announcements&sub=families";
+      } else {
+        const { data: links } = await admin.from("family_links").select("parent_id")
+          .eq("player_id", th?.player_id ?? "").eq("program_id", m.program_id).eq("status", "active");
+        playerIds = [...new Set<string>(((links ?? []) as any[]).map((l) => l.parent_id))];
+        title = "💬 Message from the coaches";
+        message = `${cleanName(m.author_name) || "A coach"} replied about ${first}.`;
+        body.url = "/?ptab=messages";
+      }
+      if (!playerIds.length) return reply({ sent: false, reason: "nobody to notify" });
     } else if (body.drillSent) {
       // ── A drill sent to other teams: fixed text, checked against the send ──
       const drillId = typeof body.drillSent.drillId === "string" ? body.drillSent.drillId : "";
